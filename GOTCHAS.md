@@ -178,3 +178,17 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: `confirmSynthetic` in `app/ledger-app.tsx` only sets browser state. The sole path to the RPC is `/api/v1/imports/confirm`, gated by authentication and `private.has_strong_owner_access` (aal2 + two verified TOTP factors).
 - Avoid: do not treat a UI walkthrough as end-to-end evidence for import contracts. Test the fingerprint contract with `tests/fingerprint-parity.test.ts`, and the RPC contracts with pgTAP; reaching the real HTTP path needs a locally provisioned owner with enrolled factors.
 - Verify: the synthetic confirm path sets status text and never calls `fetch`.
+
+## A blocked event loop silently starves a spawned child's stdin
+
+- Symptom: a `spawn`ed helper process appears to hang or never run its work, while the identical command works from a shell.
+- Cause: writes to a child's stdin are flushed by the event loop. Code that blocks synchronously after spawning — `Atomics.wait`, `execFileSync` in a poll loop — never lets the write drain, so the child sits waiting on input it will never receive.
+- Avoid: pass the work as an argument (`psql -c "…"`) instead of piping it, or do not block the event loop while a child is expected to consume stdin.
+- Verify: `tests/advisory-lock.test.ts` holds a lock through `psql -c`; running the same SQL through `-f -` with a synchronous poll loop leaves the holder idle and every contention assertion fails.
+
+## Killing `docker exec` does not stop the process inside the container
+
+- Symptom: a lock, transaction, or temp resource created by a spawned `docker exec` survives `child.kill()` and leaks into later tests.
+- Cause: `kill` terminates the local client, not the process the daemon started in the container.
+- Avoid: end the work from inside the database instead — for a Postgres session, tag it (`PGAPPNAME`) and `pg_terminate_backend` it by `application_name`.
+- Verify: the advisory lock release test terminates the holder through SQL and then observes the lock become available.
