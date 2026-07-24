@@ -6,9 +6,11 @@ Last verified: 2026-07-25
 
 The five high-risk backup and ledger findings from the original review have been implemented in `supabase/migrations/202607240004_backup_and_ledger_hardening.sql` and the related API/domain code. The four subsequent pgTAP review blockers are resolved: blocker 1 (digest trust) in `supabase/migrations/202607240005_confirm_import_digest_binding.sql` with matching client/pgTAP changes (DECISIONS D-012); blockers 3 and 4 (fractional restore counts, snapshot-sequence overflow) in `supabase/migrations/202607240006_restore_count_and_sequence_bounds.sql`; blocker 2 (empty-table restore) by a populated round-trip in `003_restore_contracts.sql` (DECISIONS D-013).
 
+The end-to-end import path now works against synthetic data: a PDF is parsed on-device into a statement and frame (D-015, D-016), assembled into a payload with checked account binding (D-017), and confirmed through an authenticated aal2 session into `confirm_import` (D-020). Recovery is proven over 1,200 rows (D-019) and the owner mutation lock is proven under real contention (D-018).
+
 The blocker-1 fingerprint follow-up is now closed as well. Migrations `202607240007_fingerprint_functions.sql` and `202607240008_confirm_import_fingerprint_binding.sql` add `private.normalize_source_text` / `private.row_fingerprint` and make `confirm_import` recompute each row's fingerprint and reject a claim that does not match; `lib/statement.ts` constrains source text to the charset that keeps JS and PostgreSQL NFKC in agreement (DECISIONS D-014).
 
-The local Supabase stack is running on its default Docker network. A clean reset applied migrations 001–004 and the synthetic seed, restarted the affected services, and left the project containers healthy. The unrelated older PostgreSQL and pgAdmin containers and the Windows PostgreSQL service were not modified.
+The local Supabase stack is running on its default Docker network. The most recent clean reset (2026-07-25) applied migrations 001–008 and the synthetic seed and left the project containers healthy. The unrelated older PostgreSQL and pgAdmin containers and the Windows PostgreSQL service were not modified. Several Vitest suites now mutate this database and clean up after themselves; `vitest.config.ts` sets `fileParallelism: false` so they cannot race (GOTCHAS).
 
 Current focused verification:
 
@@ -16,7 +18,7 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 71 passed / 3 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain; all three skips are unreachable-container reporters and ran green against the live container) |
+| Vitest | Passed, 75 passed / 4 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation; all four skips are unreachable-container reporters and ran green against the live container) |
 | pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
 | Production build | Passed |
 | Playwright | Passed, 4/4 across desktop and mobile (re-run 2026-07-25 after the parser and UI changes) |
