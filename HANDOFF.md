@@ -13,7 +13,7 @@ Read these maintained sources in order:
 
 Claude Code sessions start at `CLAUDE.md`; Codex sessions at `AGENTS.md`. Detailed product, design, architecture, parser, fixture, and recovery contracts remain in `PRODUCT.md`, `DESIGN.md`, and `docs/`.
 
-Project headline: no open review blockers. All four pgTAP blockers plus the carried fingerprint follow-up are resolved with red→green evidence — payload digest bound server-side (D-012), restore counts/sequence bounds and a populated restore round-trip (D-013), and row fingerprints now recomputed and rejected on mismatch behind a source-text charset guard (D-014, migrations 007–008 + `lib/statement.ts`). Local gate green on 2026-07-25: ESLint, TypeScript, Vitest 71 passed / 3 skipped, pgTAP 84/84 with migrations 001–008, Playwright 4/4, production build; each fix verified red by holding its migration out. Remaining work is ordinary next-local-tasks — see `PLAN.md`.
+Project headline: no open review blockers. All four pgTAP blockers plus the carried fingerprint follow-up are resolved with red→green evidence — payload digest bound server-side (D-012), restore counts/sequence bounds and a populated restore round-trip (D-013), and row fingerprints now recomputed and rejected on mismatch behind a source-text charset guard (D-014, migrations 007–008 + `lib/statement.ts`). Local gate green on 2026-07-25: ESLint, TypeScript, Vitest 75 passed / 4 skipped, pgTAP 84/84 with migrations 001–008, Playwright 4/4, production build; each fix verified red by holding its migration out. Remaining work is ordinary next-local-tasks — see `PLAN.md`.
 
 Migrations `202607240007`/`202607240008` are committed and applied to the local database. Four config files (`.gitignore`, `eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml`) remain intentionally uncommitted — run `git status --short` before assuming the tree is clean, and preserve them.
 
@@ -23,6 +23,8 @@ Krungthai parsing now reads a whole statement: `lib/krungthai-layout.ts` extract
 
 Recovery and concurrency are now proven at scale: `tests/backup-roundtrip.test.ts` drives the full schema-v2 chain over 1,200 rows non-destructively (D-019) and `tests/advisory-lock.test.ts` proves the owner mutation lock serializes across two real connections (D-018). Privacy, storage/network, and accessibility audits were re-run on 2026-07-25 against this round's code, and Playwright is current at 4/4.
 
-Remaining gap: the authenticated HTTP import path is still unexercised. A UI walkthrough does not reach it — `confirmSynthetic` only sets browser state, and `/api/v1/imports/confirm` sits behind `has_strong_owner_access` (see GOTCHAS). The charset rejection path likewise has no end-to-end coverage.
+The authenticated import path is now proven (D-020): `tests/import-confirm-e2e.test.ts` reaches aal2 with two verified TOTP factors and posts client-computed fingerprints and digest into `confirm_import`, asserting the import lands, a tampered fingerprint is rejected, and the same request without MFA is refused. It needed no hosted Supabase or OAuth resources — the owner gate never inspects the auth provider.
+
+Remaining gaps: the Next.js route wrapper (zod boundary, cookie handling) is still uncovered, since the e2e targets PostgREST; there is no accounts-list endpoint or binding UI, so an extracted statement cannot be confirmed from the app itself; and the charset rejection path has no browser coverage.
 
 Do not inspect `private-statements/`, use real financial data, commit, push, deploy, or create hosted resources without explicit authorization.
