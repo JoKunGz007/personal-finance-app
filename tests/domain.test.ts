@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { bangkokInstant, resolveKrungthaiYear } from "@/lib/dates";
 import { canonicalJson, confirmationDigest, normalizeSourceText, rowFingerprint } from "@/lib/canonical";
-import type { ImportPayload } from "@/lib/statement";
+import { sourceRowCandidateSchema, type ImportPayload } from "@/lib/statement";
 import { MAX_INT64, MIN_INT64, minor, minorUnitStringSchema, parseThb } from "@/lib/money";
 import { reconcileRows } from "@/lib/reconcile";
 import { syntheticImport } from "@/lib/synthetic";
@@ -56,6 +56,42 @@ describe("dates and canonical identity", () => {
     const changed = { ...syntheticImport, periodEnd: "2026-07-01" } as const;
     expect(await confirmationDigest(frameOf(changed), syntheticImport.rows))
       .not.toBe(await confirmationDigest(frameOf(syntheticImport), syntheticImport.rows));
+  });
+});
+
+// confirm_import recomputes each row fingerprint in PostgreSQL and rejects a claim
+// that does not match (migration 202607240008), so the two normalizers must agree.
+// The source-text charset is what makes that hold: it excludes the codepoints where
+// V8's ICU and PostgreSQL's Unicode data disagree under NFKC. Full cross-engine
+// parity is proven by the pgTAP-side harness; these guard the charset boundary that
+// the proof depends on, so a future widening cannot silently break the invariant.
+describe("source text charset guard", () => {
+  const rowWith = (text: string) => ({ ...syntheticImport.rows[0]!, description: text });
+
+  it("accepts the scripts a Krungthai statement can contain", () => {
+    for (const text of ["โอนเงินเข้าบัญชี", "Interest & tax", "Café Ø", "ＦＵＬＬＷＩＤＴＨ", "฿1,234.50", "ref—99"]) {
+      expect(sourceRowCandidateSchema.safeParse(rowWith(text)).success).toBe(true);
+    }
+  });
+
+  it("rejects the Unicode-16 exotics that diverge under PostgreSQL NFKC", () => {
+    // U+1CCF0 is the exact codepoint the 50k-string parity run diverged on: V8 folds
+    // it to "0", PostgreSQL's older Unicode data leaves it intact.
+    expect(sourceRowCandidateSchema.safeParse(rowWith("total \u{1CCF0}")).success).toBe(false);
+  });
+
+  it("rejects invisible controls that would not survive a round trip", () => {
+    for (const text of ["bom﻿inside", "zero​width", "emoji \u{1F600}"]) {
+      expect(sourceRowCandidateSchema.safeParse(rowWith(text)).success).toBe(false);
+    }
+  });
+
+  it("keeps every accepted string inside the settled planes after normalization", () => {
+    const allowed = fc.stringMatching(/^[ -~ -ɏ฀-๿‐- ₠-⃏！-￮]{1,40}$/u);
+    fc.assert(fc.property(allowed, (text) => {
+      if (!sourceRowCandidateSchema.safeParse(rowWith(text)).success) return true;
+      return [...(normalizeSourceText(text) ?? "")].every((character) => character.codePointAt(0)! <= 0xffef);
+    }));
   });
 });
 

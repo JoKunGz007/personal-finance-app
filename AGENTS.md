@@ -1,5 +1,3 @@
-In Code Mode, within each bounded stage, run independent, functions.exec-available tool calls concurrently in one functions.exec call. Use await Promise.allSettled([...]) when partial results are useful, and inspect every result; use await Promise.all([...]) only when any failure should abort the batch. Keep dependencies, waits/resumes, approvals, conflicting or interdependent mutations, and adaptive investigations where each result may change the next step sequential. Do not split otherwise batchable inspections across outer tool calls.
-
 # Project agent workflow
 
 Use subagents selectively. The parent owns decomposition, integration, final decisions, and user communication. See `CODEX_AGENT_WORKFLOW.md` for explanations and examples.
@@ -31,4 +29,11 @@ Use subagents selectively. The parent owns decomposition, integration, final dec
 
 - Read `SPEC.md`, `PLAN.md`, `DECISIONS.md`, and `GOTCHAS.md` before substantive work.
 - Update affected continuity docs often and before each final response; use `$sync-continuity` after substantive changes.
+- Keep `CLAUDE.md` and `HANDOFF.md` as lean entry points to the maintained docs.
 - Keep entries concise, evidence-based, and linked to source. Never include credentials, PII, or real financial data, and never inspect `private-statements/`.
+
+## Codex only
+
+Ignore this section unless running in Codex Code Mode; it does not apply to Claude Code.
+
+Within each bounded stage, run independent, functions.exec-available tool calls concurrently in one functions.exec call. Use await Promise.allSettled([...]) when partial results are useful, and inspect every result; use await Promise.all([...]) only when any failure should abort the batch. Keep dependencies, waits/resumes, approvals, conflicting or interdependent mutations, and adaptive investigations where each result may change the next step sequential. Do not split otherwise batchable inspections across outer tool calls.

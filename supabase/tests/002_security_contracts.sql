@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(29);
+select plan(30);
 
 -- Canonical signed-int64 text boundaries.
 select ok(private.is_canonical_int64_text('-9223372036854775808'), 'signed int64 minimum is canonical');
@@ -93,12 +93,26 @@ create temporary table contract_results(name text primary key, value uuid);
 -- recomputes it (frame + rows), so the contract tests exercise real digest binding
 -- rather than passing a trusted claim. Mirrors migration 202607240005 and the
 -- client in app/api/v1/imports/confirm/route.ts.
+--
+-- p_bind_fingerprints (default true) replaces each row's fingerprint with the value
+-- private.row_fingerprint derives from that row, mirroring what a correct client
+-- sends (migration 202607240008). Pass false to send the row's literal fingerprint
+-- when a test needs to exercise a wrong or deliberately colliding claim.
 create function pg_temp.confirm(
   p_artifact text, p_idempotency uuid, p_period_start date, p_period_end date,
-  p_opening text, p_closing text, p_rows jsonb
+  p_opening text, p_closing text, p_rows jsonb, p_bind_fingerprints boolean default true
 ) returns uuid language plpgsql as $fn$
 declare v_digest text;
 begin
+  if p_bind_fingerprints then
+    select coalesce(jsonb_agg(
+             r.value || jsonb_build_object(
+               'fingerprint',
+               private.row_fingerprint('11111111-2222-4333-8444-555555555555', 'KTB', r.value)
+             ) order by r.ordinality), '[]'::jsonb)
+      into p_rows
+      from jsonb_array_elements(p_rows) with ordinality r(value, ordinality);
+  end if;
   v_digest := private.sha256_jsonb(jsonb_build_object(
     'accountId', '11111111-2222-4333-8444-555555555555',
     'contractVersion', 'krungthai-layout-v1',
@@ -182,20 +196,43 @@ select throws_ok(
   $$select pg_temp.confirm(
     repeat('6',64), 'bbbbbbbb-0000-4000-8000-000000000004',
     '2026-02-01','2026-02-28','0','20',
-    '[{"sourceIndex":"1","sourceDate":"2026-02-01","effectiveDate":"2026-02-01","transactionLabel":"Synthetic","description":"Duplicate one","fingerprint":"6666666666666666666666666666666666666666666666666666666666666666","postBalance":{"minor":"10","currency":"THB"},"components":[{"kind":"deposit","amount":{"minor":"10","currency":"THB"}}],"provenance":{"page":"1","row":"1"}},{"sourceIndex":"2","sourceDate":"2026-02-02","effectiveDate":"2026-02-02","transactionLabel":"Synthetic","description":"Duplicate two","fingerprint":"6666666666666666666666666666666666666666666666666666666666666666","postBalance":{"minor":"20","currency":"THB"},"components":[{"kind":"deposit","amount":{"minor":"10","currency":"THB"}}],"provenance":{"page":"1","row":"2"}}]'::jsonb
+    '[{"sourceIndex":"1","sourceDate":"2026-02-01","effectiveDate":"2026-02-01","transactionLabel":"Synthetic","description":"Duplicate one","fingerprint":"6666666666666666666666666666666666666666666666666666666666666666","postBalance":{"minor":"10","currency":"THB"},"components":[{"kind":"deposit","amount":{"minor":"10","currency":"THB"}}],"provenance":{"page":"1","row":"1"}},{"sourceIndex":"2","sourceDate":"2026-02-02","effectiveDate":"2026-02-02","transactionLabel":"Synthetic","description":"Duplicate two","fingerprint":"6666666666666666666666666666666666666666666666666666666666666666","postBalance":{"minor":"20","currency":"THB"},"components":[{"kind":"deposit","amount":{"minor":"10","currency":"THB"}}],"provenance":{"page":"1","row":"2"}}]'::jsonb,
+    false
   )$$,
   'P0001',
   'ambiguous duplicate fingerprints',
   'duplicate fingerprints within one import are rejected'
 );
 
+-- The fingerprint is the ledger deduplication key, so a claim that does not match
+-- the row it identifies could silently drop a real transaction or force a spurious
+-- dedup. confirm_import recomputes it (migration 202607240008); a well-formed but
+-- wrong claim must fail closed. Sent with p_bind_fingerprints => false so the literal
+-- reaches the server, on a fresh artifact and idempotency key so nothing earlier in
+-- confirm_import can raise first.
+select throws_ok(
+  $$select pg_temp.confirm(
+    repeat('9',64), 'bbbbbbbb-0000-4000-8000-000000000006',
+    '2026-01-01','2026-01-31','10000','10100',
+    '[{"sourceIndex":"1","sourceDate":"2026-01-02","sourceTime":"09:15:00","effectiveDate":"2026-01-02","transactionLabel":"Synthetic credit","description":"Synthetic contract row","reference":"SYNTHETIC-001","branch":"","fingerprint":"7777777777777777777777777777777777777777777777777777777777777777","postBalance":{"minor":"10100","currency":"THB"},"components":[{"kind":"deposit","amount":{"minor":"100","currency":"THB"}}],"provenance":{"page":"1","row":"1"}}]'::jsonb,
+    false
+  )$$,
+  'P0001',
+  'fingerprint mismatch',
+  'a fingerprint that does not match its row is rejected'
+);
+
+-- Overlap means the same real transaction reappearing in a second statement, so this
+-- row must carry identical fingerprint inputs to the first import (only provenance,
+-- which is not fingerprinted, differs). Under fingerprint binding the collision is now
+-- derived from the row content rather than asserted by a shared literal.
 select lives_ok(
   $test$
     insert into contract_results(name, value)
     select 'overlap', pg_temp.confirm(
       repeat('8',64), 'bbbbbbbb-0000-4000-8000-000000000005',
       '2026-01-01','2026-01-31','10000','10100',
-      '[{"sourceIndex":"1","sourceDate":"2026-01-02","effectiveDate":"2026-01-02","transactionLabel":"Synthetic credit","description":"Synthetic overlap","fingerprint":"3333333333333333333333333333333333333333333333333333333333333333","postBalance":{"minor":"10100","currency":"THB"},"components":[{"kind":"deposit","amount":{"minor":"100","currency":"THB"}}],"provenance":{"page":"2","row":"1"}}]'::jsonb
+      '[{"sourceIndex":"1","sourceDate":"2026-01-02","sourceTime":"09:15:00","effectiveDate":"2026-01-02","transactionLabel":"Synthetic credit","description":"Synthetic contract row","reference":"SYNTHETIC-001","branch":"","fingerprint":"3333333333333333333333333333333333333333333333333333333333333333","postBalance":{"minor":"10100","currency":"THB"},"components":[{"kind":"deposit","amount":{"minor":"100","currency":"THB"}}],"provenance":{"page":"2","row":"1"}}]'::jsonb
     )
   $test$,
   'distinct artifact may overlap an existing transaction'

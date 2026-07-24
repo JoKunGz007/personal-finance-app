@@ -6,6 +6,8 @@ Last verified: 2026-07-25
 
 The five high-risk backup and ledger findings from the original review have been implemented in `supabase/migrations/202607240004_backup_and_ledger_hardening.sql` and the related API/domain code. The four subsequent pgTAP review blockers are resolved: blocker 1 (digest trust) in `supabase/migrations/202607240005_confirm_import_digest_binding.sql` with matching client/pgTAP changes (DECISIONS D-012); blockers 3 and 4 (fractional restore counts, snapshot-sequence overflow) in `supabase/migrations/202607240006_restore_count_and_sequence_bounds.sql`; blocker 2 (empty-table restore) by a populated round-trip in `003_restore_contracts.sql` (DECISIONS D-013).
 
+The blocker-1 fingerprint follow-up is now closed as well. Migrations `202607240007_fingerprint_functions.sql` and `202607240008_confirm_import_fingerprint_binding.sql` add `private.normalize_source_text` / `private.row_fingerprint` and make `confirm_import` recompute each row's fingerprint and reject a claim that does not match; `lib/statement.ts` constrains source text to the charset that keeps JS and PostgreSQL NFKC in agreement (DECISIONS D-014).
+
 The local Supabase stack is running on its default Docker network. A clean reset applied migrations 001–004 and the synthetic seed, restarted the affected services, and left the project containers healthy. The unrelated older PostgreSQL and pgAdmin containers and the Windows PostgreSQL service were not modified.
 
 Current focused verification:
@@ -14,11 +16,11 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 27/27 |
-| pgTAP | Passed, 83/83 with migrations 005–006 (002: 29, 003: 30). Red proofs: 002 test 19 fails pre-005; 003 fractional-count and int64-max tests fail pre-006 |
-| Production build | Passed (unchanged since migration 005; migration 006 and 003 touch SQL only) |
-| Playwright | Passed, 4/4 across desktop and mobile (not re-run for migrations 005–006; no UI behavior change) |
-| Clean database reset | Migrations 001–006 and synthetic seed applied |
+| Vitest | Passed, 31/31 (4 new source-text charset tests) |
+| pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
+| Production build | Passed |
+| Playwright | Passed, 4/4 across desktop and mobile (dated 2026-07-24; not re-run for migrations 005–008 or the charset guard — no UI behavior change, but the charset guard is an unexercised import-path rejection) |
+| Clean database reset | Migrations 001–008 and synthetic seed applied |
 
 These results used the ignored project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 because the system Node installation remains Node 20. A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
 
@@ -26,9 +28,9 @@ Python 3.14.6 and PyYAML 6.0.3 are installed for local Codex skill scaffolding a
 
 ## Current review blockers
 
-All four original review blockers are now resolved with red→green pgTAP evidence (2026-07-24). One follow-up (fingerprint binding) is carried into Next local tasks.
+All four original review blockers are now resolved with red→green pgTAP evidence (2026-07-24), and the one carried follow-up (fingerprint binding) is also resolved (2026-07-25, D-014). No open review blockers remain.
 
-1. ~~`confirm_import` trusts caller-supplied payload digests.~~ **Resolved** — migration `202607240005_confirm_import_digest_binding.sql` recomputes the canonical digest server-side and rejects mismatches (`payload digest mismatch`); the client computes the identical object (`confirmationDigest`). `002_security_contracts.sql` now uses real computed digests via a `pg_temp` wrapper and includes a tamper test (test 19) that fails on the pre-005 schema and passes after. See DECISIONS D-012. Follow-up: the fingerprint-recompute half of the original finding is not yet addressed — fingerprints are still caller-supplied; evaluate whether they also need server binding.
+1. ~~`confirm_import` trusts caller-supplied payload digests.~~ **Resolved** — migration `202607240005_confirm_import_digest_binding.sql` recomputes the canonical digest server-side and rejects mismatches (`payload digest mismatch`); the client computes the identical object (`confirmationDigest`). `002_security_contracts.sql` now uses real computed digests via a `pg_temp` wrapper and includes a tamper test (test 19) that fails on the pre-005 schema and passes after. See DECISIONS D-012. The fingerprint half of the finding is now closed by migrations 007–008 and the source-text charset guard — see DECISIONS D-014.
 2. ~~`003_restore_contracts.sql` commits only empty ledger tables.~~ **Resolved** — `003` now populates every ledger table, exports a canonical snapshot, rewrites the owner to a foreign id, wipes, restores, and asserts a re-export reproduces every restored table byte-for-byte (schemas, FKs, money-as-text, audit rows) and that every row is remapped to the caller. See DECISIONS D-013.
 3. ~~Restore manifest counts accept fractional JSON numbers.~~ **Resolved** — migration `202607240006_restore_count_and_sequence_bounds.sql` requires `tableCounts[kind]` and each descriptor `rowCount` to be canonical non-negative integer text, failing closed with `invalid restore manifest descriptor` instead of an uncaught `22P02` cast. Red proof: `003` fractional-count test fails on the pre-006 schema.
 4. ~~A staged snapshot sequence at signed-int64 maximum overflows on the commit increment.~~ **Resolved** — migration 006 makes the accepted range explicit: `snapshotSequence` must be `< 2^63-1`, reserving headroom for the single post-commit increment. Red proof: `003` int64-max test fails on the pre-006 schema.
@@ -47,11 +49,12 @@ All four original review blockers are now resolved with red→green pgTAP eviden
 
 ## Next local tasks
 
-1. Decide the fingerprint-binding follow-up under blocker 1: whether row fingerprints (still caller-supplied) also need server recomputation/binding like the payload digest now does. A parity spike (2026-07-25) showed a Postgres normalizer `btrim(regexp_replace(normalize(t,NFKC), E'[<js-whitespace-set incl. \\ufeff>]+',' ','g'))` matches JS `normalizeSourceText` byte-for-byte: 0 mismatches in 50k random realistic-charset strings; the only full-Unicode divergence (1 in 20k) is NFKC version skew on Unicode-16 exotics (e.g. U+1CCF0) that cannot appear in a statement. Conclusion: server fingerprint recomputation is viable **iff** the source-text fields (`transactionLabel`, `description`, `reference`, `branch`) get an explicit allowed-character constraint at the zod boundary; then ship the randomized parity test (realistic mode) as a regression guard. Prefer server-authoritative override (client value advisory) over reject-on-mismatch so any future skew degrades to a UX preview discrepancy, not a hard import failure.
-2. Add true multi-session concurrency coverage for the owner mutation advisory lock.
-3. Add a real schema-v2 export → encrypt → decrypt → stage → chunk → commit → re-export equality integration test, including more than 1,000 rows.
-4. Build approved synthetic Krungthai PDF geometry fixtures and implement exact parsing without weakening the fail-closed worker boundary.
-5. Repeat privacy, browser-storage/network, accessibility, and interface-guideline audits.
+1. Add true multi-session concurrency coverage for the owner mutation advisory lock.
+2. Add a real schema-v2 export → encrypt → decrypt → stage → chunk → commit → re-export equality integration test, including more than 1,000 rows.
+3. Build approved synthetic Krungthai PDF geometry fixtures and implement exact parsing without weakening the fail-closed worker boundary.
+4. Repeat privacy, browser-storage/network, accessibility, and interface-guideline audits.
+5. Drive one import end-to-end through the running app (`/verify`) to confirm the browser-computed fingerprint is accepted by the bound `confirm_import`. The pgTAP wrapper computes fingerprints server-side in `pg_temp`, so it proves the SQL is self-consistent, not that client and server agree on a real payload.
+6. Re-run Playwright once a UI-visible change lands; the charset guard adds an import-path rejection path that no browser test currently exercises.
 
 ## Later authorization gates
 

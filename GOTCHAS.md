@@ -157,3 +157,17 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: using `private-statements/` as convenient parser input.
 - Avoid: use approved synthetic geometry fixtures only. A real-PDF smoke test requires renewed explicit authorization.
 - Verify: privacy tests pass and repository searches contain no real values or statement passwords.
+
+## Fingerprint-bound imports change what pgTAP fixtures may assert
+
+- Symptom: after migration 008, a contract test that hand-writes a `fingerprint` literal fails with `fingerprint mismatch`, or an overlap fixture stops linking to the existing transaction.
+- Cause: `confirm_import` now derives the fingerprint from the row's identity facts, so a literal is only accepted when it equals the derived value. Two rows can no longer be made to collide by sharing a literal, and a row can no longer differ in `description` yet claim another row's fingerprint.
+- Avoid: let `pg_temp.confirm` inject derived fingerprints by default; pass `p_bind_fingerprints => false` only when the test needs a wrong or deliberately colliding claim. For overlap fixtures, make the fingerprint inputs identical and vary only `provenance`, which is not fingerprinted.
+- Verify: `002` test 23 expects `fingerprint mismatch` and fails on the pre-008 schema; the overlap test still asserts `linked_existing`.
+
+## Order of checks in confirm_import decides which error a fixture sees
+
+- Symptom: a test expecting `fingerprint mismatch` gets `ambiguous duplicate fingerprints` or `payload digest mismatch` instead.
+- Cause: `confirm_import` validates the digest and the distinct-fingerprint count before entering the per-row loop where the fingerprint is recomputed.
+- Avoid: give a fingerprint-mismatch fixture a fresh artifact and idempotency key, a correct digest, and a single row, so nothing earlier can raise first.
+- Verify: `002` test 23 passes with migration 008 applied and fails only on the expected missing exception without it.

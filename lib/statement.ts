@@ -11,14 +11,41 @@ export const componentSchema = z.object({
   if (component.kind === "withdrawal" && amount >= 0n) context.addIssue({ code: "custom", message: "Withdrawals must be negative." });
 });
 
+// Source text feeds row fingerprints, which the database independently recomputes
+// (private.row_fingerprint, migration 202607240007) and enforces (migration
+// 202607240008). That parity depends on NFKC agreeing between V8's ICU and
+// PostgreSQL's Unicode data, which only holds for long-settled codepoints: a
+// randomized 50k-string parity run diverged solely on Unicode-16-era exotics such
+// as U+1CCF0. Constraining these fields to the scripts a Krungthai statement can
+// actually contain excludes that class by construction, so a fingerprint mismatch
+// at import means tampering or a real bug rather than expected version skew.
+// Whitespace controls are allowed because both normalizers collapse them identically.
+const SOURCE_TEXT_CHARSET = new RegExp(
+  "^[" +
+    "\\u0009-\\u000D" + // tab, newline, CR family
+    "\\u0020-\\u007E" + // ASCII printable
+    "\\u00A0-\\u024F" + // Latin-1 Supplement, Latin Extended-A/B
+    "\\u0300-\\u036F" + // combining diacritical marks
+    "\\u0E00-\\u0E7F" + // Thai
+    "\\u2010-\\u205F" + // general punctuation (dashes, quotes, spaces)
+    "\\u20A0-\\u20CF" + // currency symbols
+    "\\u2122" + // trademark sign
+    "\\uFF01-\\uFFEE" + // halfwidth and fullwidth forms
+    "]*$",
+  "u"
+);
+
+const sourceText = (max: number) =>
+  z.string().trim().max(max).regex(SOURCE_TEXT_CHARSET, "Unsupported character in statement text.");
+
 export const sourceRowCandidateSchema = z.object({
   sourceDate: isoDateSchema,
   sourceTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/).nullable(),
   effectiveDate: isoDateSchema,
-  transactionLabel: z.string().trim().min(1).max(160),
-  description: z.string().trim().min(1).max(500),
-  reference: z.string().trim().max(200).nullable(),
-  branch: z.string().trim().max(160).nullable(),
+  transactionLabel: sourceText(160).min(1),
+  description: sourceText(500).min(1),
+  reference: sourceText(200).nullable(),
+  branch: sourceText(160).nullable(),
   components: z.array(componentSchema).min(1).max(2),
   postBalance: moneySchema,
   provenance: z.object({
