@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { payloadDigest, rowFingerprint } from "@/lib/canonical";
+import { confirmationDigest, rowFingerprint } from "@/lib/canonical";
 import { reconcileRows } from "@/lib/reconcile";
 import { importPayloadSchema } from "@/lib/statement";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
@@ -25,13 +25,21 @@ export async function POST(request: Request) {
   if (!parsed.success) return routeError("The import contract is invalid.", 422, parsed.error.flatten());
 
   const { payload, idempotencyKey, artifactDigest } = parsed.data;
-  const digest = await payloadDigest(payload);
   const fingerprints = await Promise.all(payload.rows.map((row) => rowFingerprint(payload.accountId, payload.bankCode, row)));
   const duplicates = fingerprints.filter((fingerprint, index) => fingerprints.indexOf(fingerprint) !== index);
   if (duplicates.length > 0) return routeError("Indistinguishable rows block confirmation.", 422, { code: "AMBIGUOUS_DUPLICATES" });
   const reconciliation = reconcileRows(payload.openingBalance.minor, payload.rows);
   if (reconciliation.blockers.length > 0) return routeError("Unexplained balance gaps block confirmation.", 422, { code: "BALANCE_RECONCILIATION_FAILED", blockers: reconciliation.blockers });
   const rpcRows = payload.rows.map((row, index) => ({ ...row, fingerprint: fingerprints[index], sourceIndex: index + 1 }));
+  const digest = await confirmationDigest({
+    accountId: payload.accountId,
+    contractVersion: payload.contractVersion,
+    currency: payload.currency,
+    periodStart: payload.periodStart,
+    periodEnd: payload.periodEnd,
+    openingBalanceMinor: payload.openingBalance.minor,
+    closingBalanceMinor: payload.closingBalance.minor
+  }, rpcRows);
   const { data, error } = await auth.supabase.rpc("confirm_import", {
     p_account_id: payload.accountId,
     p_artifact_digest: artifactDigest,

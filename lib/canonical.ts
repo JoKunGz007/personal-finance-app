@@ -1,4 +1,4 @@
-import type { ImportPayload, SourceRowCandidate } from "@/lib/statement";
+import type { SourceRowCandidate } from "@/lib/statement";
 
 export function normalizeSourceText(value: string | null): string | null {
   return value === null ? null : value.normalize("NFKC").replace(/\s+/gu, " ").trim();
@@ -53,6 +53,32 @@ export async function rowFingerprint(
   return sha256Hex(canonicalJson(facts));
 }
 
-export async function payloadDigest(payload: ImportPayload): Promise<string> {
-  return sha256Hex(canonicalJson(payload));
+// Digest over the exact facts confirm_import persists: the statement frame plus
+// the rows as sent to the RPC (fingerprint + sourceIndex injected). The server
+// recomputes this identically (private.canonical_jsonb) and rejects any mismatch,
+// so the digest provably binds the payload rather than being a trusted claim.
+export async function confirmationDigest(
+  frame: {
+    accountId: string;
+    contractVersion: string;
+    currency: string;
+    periodStart: string;
+    periodEnd: string;
+    openingBalanceMinor: string;
+    closingBalanceMinor: string;
+  },
+  rpcRows: unknown[]
+): Promise<string> {
+  return sha256Hex(
+    canonicalJson({
+      accountId: frame.accountId,
+      contractVersion: frame.contractVersion,
+      currency: frame.currency,
+      periodStart: frame.periodStart,
+      periodEnd: frame.periodEnd,
+      openingBalance: frame.openingBalanceMinor,
+      closingBalance: frame.closingBalanceMinor,
+      rows: rpcRows
+    })
+  );
 }

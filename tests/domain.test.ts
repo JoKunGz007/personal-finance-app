@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { bangkokInstant, resolveKrungthaiYear } from "@/lib/dates";
-import { canonicalJson, normalizeSourceText, payloadDigest, rowFingerprint } from "@/lib/canonical";
+import { canonicalJson, confirmationDigest, normalizeSourceText, rowFingerprint } from "@/lib/canonical";
+import type { ImportPayload } from "@/lib/statement";
 import { MAX_INT64, MIN_INT64, minor, minorUnitStringSchema, parseThb } from "@/lib/money";
 import { reconcileRows } from "@/lib/reconcile";
 import { syntheticImport } from "@/lib/synthetic";
@@ -43,8 +44,18 @@ describe("dates and canonical identity", () => {
 
   it("sorts object keys and changes the digest when immutable facts change", async () => {
     expect(canonicalJson({ z: 1, a: { y: true, x: "v" } })).toBe('{"a":{"x":"v","y":true},"z":1}');
+    const frameOf = (payload: ImportPayload) => ({
+      accountId: payload.accountId,
+      contractVersion: payload.contractVersion,
+      currency: payload.currency,
+      periodStart: payload.periodStart,
+      periodEnd: payload.periodEnd,
+      openingBalanceMinor: payload.openingBalance.minor,
+      closingBalanceMinor: payload.closingBalance.minor
+    });
     const changed = { ...syntheticImport, periodEnd: "2026-07-01" } as const;
-    expect(await payloadDigest(changed)).not.toBe(await payloadDigest(syntheticImport));
+    expect(await confirmationDigest(frameOf(changed), syntheticImport.rows))
+      .not.toBe(await confirmationDigest(frameOf(syntheticImport), syntheticImport.rows));
   });
 });
 

@@ -1,6 +1,6 @@
 # Private Ledger gotchas
 
-Last reviewed: 2026-07-24
+Last reviewed: 2026-07-25
 
 Record only repeatable, non-obvious traps. Each item states the symptom, cause, prevention, and verification.
 
@@ -15,8 +15,22 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 - Symptom: ESM startup failures or inconsistent Next/Vitest behavior under Node 20.
 - Cause: this project requires Node 24.
-- Avoid: install Node 24 and use Corepack/pnpm from the lockfile. Do not “fix” ESM errors by rewriting dependencies.
-- Verify: `node --version` is 24.x and lint, typecheck, tests, and build pass.
+- Avoid: use the ignored project-local Node 24 runtime and pinned Corepack/pnpm until the system runtime is upgraded. Do not “fix” ESM errors by rewriting dependencies.
+- Verify: the active `node --version` is 24.x and lint, typecheck, tests, and build pass.
+
+## pnpm 11 requires an explicit build-script allowlist
+
+- Symptom: a clean install ends with `ERR_PNPM_IGNORED_BUILDS` after packages are linked.
+- Cause: pnpm 11 replaced `onlyBuiltDependencies` with the stricter `allowBuilds` map.
+- Avoid: review each pending lifecycle script and allow only the required named packages in `pnpm-workspace.yaml`; never enable all dependency builds.
+- Verify: `pnpm install --frozen-lockfile --offline` succeeds and `pnpm ignored-builds` reports none.
+
+## Strict production CSP can block the Next.js development runtime
+
+- Symptom: Playwright clicks do nothing, no API request is made, and the browser reports that development `eval()` is blocked.
+- Cause: React and Next.js development tooling require behavior intentionally forbidden by the production CSP.
+- Avoid: run browser acceptance tests against `pnpm build && pnpm start`; do not weaken the production CSP with `unsafe-eval`.
+- Verify: the synthetic flow and accessibility tests pass against the production server without CSP console errors.
 
 ## Silent Python installers can outlive the calling shell
 
@@ -122,6 +136,20 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: v1 existed before real-data authorization and was retired rather than migrated.
 - Avoid: do not advertise v1 compatibility. Schema v2 is the first supported recovery contract.
 - Verify: docs and validation messages state v1 is unsupported.
+
+## `restore_request` strips nulls inside the chunk, breaking digest binding
+
+- Symptom: a hand-authored populated restore fixture fails with `restore chunk binding mismatch` even though the manifest and chunk look correct.
+- Cause: the `pg_temp.restore_request` test helper wraps the whole request in `jsonb_strip_nulls`, which recurses into the chunk and drops any row field whose value is `null` (for example `source_transactions.branch`). The chunk sent to `restore_backup` then differs from the one `finalize_restore_fixture` hashed, so `sha256_jsonb(chunk)` no longer matches the descriptor digest.
+- Avoid: give every nullable column a non-null value in populated restore fixtures, or build the request without `jsonb_strip_nulls`. Do not assume export→fixture round-trips are null-safe.
+- Verify: the populated round-trip in `supabase/tests/003_restore_contracts.sql` stages all 11 chunks and its re-export equality assertion passes.
+
+## Restore counts must be canonical integers, not merely JSON numbers
+
+- Symptom: a fractional manifest count (e.g. `1.5`) fails with an uncaught `22P02: invalid input syntax for type integer` instead of a controlled contract error.
+- Cause: validating counts only as `jsonb_typeof = 'number'` lets non-integers through to a `text::integer` cast.
+- Avoid: require canonical non-negative integer text (`^(0|[1-9][0-9]*)$`) for `tableCounts[kind]` and each descriptor `rowCount` before any cast.
+- Verify: the `003` fractional-count test expects `invalid restore manifest descriptor` and fails on the pre-006 schema.
 
 ## Never use real statements to develop the parser
 

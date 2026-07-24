@@ -2,7 +2,6 @@
 
 import { useMemo, useRef, useState } from "react";
 import { encryptBackup } from "@/lib/backup";
-import { payloadDigest } from "@/lib/canonical";
 import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload } from "@/lib/statement";
@@ -89,7 +88,6 @@ export function LedgerApp() {
 
   async function confirmSynthetic() {
     if (!statement) return;
-    await payloadDigest(statement);
     setStage("confirmed");
     setBackupStale(true);
     setStatus("Synthetic batch confirmed in this browser preview. Start local Supabase to persist authenticated imports.");
