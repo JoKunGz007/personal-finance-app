@@ -68,13 +68,16 @@ export function LedgerApp() {
     setStatus("Unlocking and checking the layout on this device…");
     const bytes = await file.arrayBuffer();
     const worker = new Worker(new URL("../workers/krungthai.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (event: MessageEvent<{ type: string; message?: string; rows?: unknown[]; pageCount?: number }>) => {
-      // Rows are read but not yet importable: the extractor reads the transaction
-      // grid, while the statement frame (account mapping, period, opening and
-      // closing balances) still has no geometry contract, so no payload can be
-      // assembled or confirmed from a PDF yet.
-      setStatus(event.data.type === "parsed"
-        ? `Read ${event.data.rows?.length ?? 0} rows from ${event.data.pageCount ?? 0} page(s) on this device. Statement-frame extraction is not implemented, so this cannot be confirmed yet.`
+    worker.onmessage = (event: MessageEvent<{
+      type: string; message?: string; rows?: unknown[]; pageCount?: number;
+      frame?: { accountLastFour: string; periodStart: string; periodEnd: string };
+    }>) => {
+      // The frame and rows are both read on this device. Binding them to a ledger
+      // account still needs an account mapping the parser cannot infer, so this
+      // reports what was read rather than confirming an import.
+      const frame = event.data.frame;
+      setStatus(event.data.type === "parsed" && frame
+        ? `Read ${event.data.rows?.length ?? 0} rows across ${event.data.pageCount ?? 0} page(s) for account ending ${frame.accountLastFour}, ${frame.periodStart} to ${frame.periodEnd}. Nothing has left this device.`
         : event.data.message ?? "The local parser stopped safely.");
       setPassword("");
       worker.terminate();
@@ -84,9 +87,7 @@ export function LedgerApp() {
       setPassword("");
       worker.terminate();
     };
-    // Two-digit Krungthai years resolve against the statement's end year; until the
-    // frame is extracted the current year is the only available anchor.
-    worker.postMessage({ type: "parse", bytes, password, statementEndYear: new Date().getFullYear() }, [bytes]);
+    worker.postMessage({ type: "parse", bytes, password }, [bytes]);
   }
 
   function openDetail(index: number) {

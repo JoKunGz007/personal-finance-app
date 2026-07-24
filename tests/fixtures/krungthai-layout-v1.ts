@@ -33,13 +33,52 @@ type RowSpec = {
   branch?: string;
 };
 
-export function buildPage(rows: readonly RowSpec[], options: { withSignature?: boolean; headings?: boolean } = {}): PageText {
-  const { withSignature = true, headings = true } = options;
+// The invented frame block, printed above the grid on page one as label/value
+// pairs sharing a line. Overriding a field to null omits it, so a test can prove
+// the extractor fails closed on a missing field.
+export type FrameSpec = {
+  accountType?: string | null;
+  accountNumber?: string | null;
+  period?: string | null;
+  opening?: string | null;
+  closing?: string | null;
+  currencyMarker?: string | null;
+};
+
+const DEFAULT_FRAME: Required<FrameSpec> = {
+  accountType: "บัญชีออมทรัพย์",
+  accountNumber: "123-4-56789-0",
+  period: "01/01/69 - 31/01/69",
+  opening: "10,000.00",
+  closing: "10,259.70",
+  currencyMarker: "สกุลเงิน THB (บาท)"
+};
+
+export function buildPage(
+  rows: readonly RowSpec[],
+  options: { withSignature?: boolean; headings?: boolean; frame?: FrameSpec | null } = {}
+): PageText {
+  const { withSignature = true, headings = true, frame = {} } = options;
   const items: TextItem[] = [];
 
   if (withSignature) {
     items.push({ str: "บมจ. ธนาคารกรุงไทย", x: 40, y: 780 });
-    items.push({ str: "รายการเดินบัญชี (สังเคราะห์)", x: 40, y: 760 });
+    items.push({ str: "รายการเดินบัญชี (สังเคราะห์)", x: 40, y: 770 });
+  }
+
+  if (frame) {
+    const values = { ...DEFAULT_FRAME, ...frame };
+    const push = (label: string, value: string | null, y: number) => {
+      if (value === null) return;
+      items.push({ str: label, x: 40, y });
+      items.push({ str: value, x: 170, y });
+    };
+    if (values.currencyMarker !== null) items.push({ str: values.currencyMarker, x: 400, y: 760 });
+    push("ประเภทบัญชี", values.accountType, 750);
+    push("เลขที่บัญชี", values.accountNumber, 740);
+    push("ระหว่างวันที่", values.period, 730);
+    push("ยอดยกมา", values.opening, 720);
+    push("ยอดยกไป", values.closing, 710);
   }
 
   if (headings) {
@@ -79,7 +118,7 @@ export const validStatement: PageText[] = [
   ]),
   buildPage([
     { date: "31/01/69", time: "23:59", label: "ดอกเบี้ยรับ", detail: "หักภาษี ณ ที่จ่าย", deposit: "12.00", withdrawal: "1.80", balance: "10,259.70" }
-  ], { withSignature: false })
+  ], { withSignature: false, frame: null })
 ];
 
 export const ROW_PITCH_FOR_TESTS = ROW_PITCH;

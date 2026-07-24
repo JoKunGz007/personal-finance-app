@@ -2,7 +2,7 @@
 import { getDocument } from "pdfjs-dist";
 import { extractStatement, type PageText, type TextItem } from "@/lib/krungthai-layout";
 
-type ParseMessage = { type: "parse"; bytes: ArrayBuffer; password: string; statementEndYear: number };
+type ParseMessage = { type: "parse"; bytes: ArrayBuffer; password: string };
 
 const workerScope: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -11,7 +11,7 @@ const workerScope: DedicatedWorkerGlobalScope = self as unknown as DedicatedWork
 // a document the caller did not intend to surface.
 workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
   if (event.data.type !== "parse") return;
-  const { bytes, statementEndYear } = event.data;
+  const { bytes } = event.data;
   let ephemeralPassword = event.data.password;
   try {
     const document = await getDocument({ data: new Uint8Array(bytes), password: ephemeralPassword }).promise;
@@ -30,7 +30,7 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
       pages.push(items);
     }
 
-    const result = extractStatement(pages, statementEndYear);
+    const result = extractStatement(pages);
     if (!result.ok) {
       workerScope.postMessage({
         type: "error",
@@ -42,7 +42,7 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
       return;
     }
 
-    workerScope.postMessage({ type: "parsed", rows: result.rows, pageCount: document.numPages });
+    workerScope.postMessage({ type: "parsed", frame: result.frame, rows: result.rows, pageCount: document.numPages });
   } catch (error) {
     const name = error instanceof Error ? error.name : "UnknownError";
     const code = name === "PasswordException" ? "WRONG_PASSWORD" : "PDF_PARSE_FAILED";
