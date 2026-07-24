@@ -60,7 +60,7 @@ All four original review blockers are now resolved with red→green pgTAP eviden
 
 Only after every local task above passes:
 
-1. Ask for renewed permission to run one local real-PDF smoke test without logging or retaining values.
+1. ~~Ask for renewed permission to run one local real-PDF smoke test without logging or retaining values.~~ **Granted 2026-07-25.** One local run only. The password is entered interactively and never logged; no value, screenshot, or derived fixture may be retained or committed; `private-statements/` stays outside automated discovery apart from that single run. Requires the owner present, so it cannot run unattended. Purpose: the fixture geometry is invented (D-015), so this is the only check of parser-vs-reality.
 2. Ask separately before creating hosted Supabase, OAuth, Vercel, or deployment resources.
 3. Test portable recovery into an empty separately bound project before importing real data.
 

@@ -2,29 +2,43 @@
 
 Last updated: 2026-07-25
 
-Intentionally a thin entry point. Do not duplicate project state here.
+Thin entry point. Project state lives in the maintained docs — do not duplicate it here.
 
-Read these maintained sources in order:
+Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-020) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
-1. [SPEC.md](SPEC.md) — scope, invariants, and acceptance gates.
-2. [PLAN.md](PLAN.md) — current verified checkpoint and next actions.
-3. [DECISIONS.md](DECISIONS.md) — durable architectural and workflow decisions.
-4. [GOTCHAS.md](GOTCHAS.md) — recurring operational and implementation traps.
+Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture, and recovery contracts are in `PRODUCT.md`, `DESIGN.md`, and `docs/`. Local setup and the validation order are in `docs/LOCAL_DEV.md`.
 
-Claude Code sessions start at `CLAUDE.md`; Codex sessions at `AGENTS.md`. Detailed product, design, architecture, parser, fixture, and recovery contracts remain in `PRODUCT.md`, `DESIGN.md`, and `docs/`.
+## Where the project stands
 
-Project headline: no open review blockers. All four pgTAP blockers plus the carried fingerprint follow-up are resolved with red→green evidence — payload digest bound server-side (D-012), restore counts/sequence bounds and a populated restore round-trip (D-013), and row fingerprints now recomputed and rejected on mismatch behind a source-text charset guard (D-014, migrations 007–008 + `lib/statement.ts`). Local gate green on 2026-07-25: ESLint, TypeScript, Vitest 75 passed / 4 skipped, pgTAP 84/84 with migrations 001–008, Playwright 4/4, production build; each fix verified red by holding its migration out. Remaining work is ordinary next-local-tasks — see `PLAN.md`.
+No open review blockers. The ledger, backup, restore, and import contracts are hardened and proven end to end against synthetic data. As of 2026-07-25 the full chain works: a PDF is parsed on-device into a statement, assembled into an import payload, and confirmed through an authenticated MFA session into `confirm_import`.
 
-Migrations `202607240007`/`202607240008` are committed and applied to the local database. Four config files (`.gitignore`, `eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml`) remain intentionally uncommitted — run `git status --short` before assuming the tree is clean, and preserve them.
+Verified on 2026-07-25 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
 
-JS↔PostgreSQL fingerprint agreement — the risk migration 008 makes load-bearing, since a divergence fails every import closed — is now covered by `tests/fingerprint-parity.test.ts`, which hashes the same rows with the real `lib/canonical.ts` and compares against `private.row_fingerprint` over psql. It was confirmed distinguishing by desyncing the bank code and observing a concrete hash mismatch. It skips when the container is unreachable, so a skipped run is not evidence.
+| Check | Result |
+| --- | --- |
+| ESLint / `tsc --noEmit` / production build | Passed |
+| Vitest | 75 passed, 4 skipped |
+| pgTAP | 84/84 (migrations 001–008) |
+| Playwright | 4/4 desktop and mobile |
 
-Krungthai parsing now reads a whole statement: `lib/krungthai-layout.ts` extracts the transaction grid and the frame (account type, last four, period, opening/closing balances, THB) from the pdf.js text layer against invented synthetic fixtures, cross-checks the closing balance against the last row, and anchors two-digit years on the extracted period end (D-015, D-016, 27 tests). The worker no longer hard-stops at `LAYOUT_V1_UNSUPPORTED_DOCUMENT`. Two limits to carry forward — the fixture geometry is invented, so agreement with a real Krungthai PDF is unverified until the authorized smoke test; and binding an extracted statement to a ledger account is deliberately not inferred by the parser, so a PDF still cannot produce a confirmable payload. The UI reports what was read and stops.
+The four skipped Vitest cases are unreachable-container reporters. They ran green against the live container; **a skipped run is not evidence** — start the stack with `pnpm supabase:start` before trusting a green suite.
 
-Recovery and concurrency are now proven at scale: `tests/backup-roundtrip.test.ts` drives the full schema-v2 chain over 1,200 rows non-destructively (D-019) and `tests/advisory-lock.test.ts` proves the owner mutation lock serializes across two real connections (D-018). Privacy, storage/network, and accessibility audits were re-run on 2026-07-25 against this round's code, and Playwright is current at 4/4.
+## Next steps (all three approved 2026-07-25)
 
-The authenticated import path is now proven (D-020): `tests/import-confirm-e2e.test.ts` reaches aal2 with two verified TOTP factors and posts client-computed fingerprints and digest into `confirm_import`, asserting the import lands, a tampered fingerprint is rejected, and the same request without MFA is refused. It needed no hosted Supabase or OAuth resources — the owner gate never inspects the auth provider.
+1. **Account-binding UI.** Add an accounts-list endpoint — only `/api/v1/accounts/[id]/transactions` exists — plus a chooser so an extracted statement can be bound to a ledger account. This is the last piece stopping a real PDF becoming a confirmed import from the app itself; extraction, assembly, and confirmation all work, but only a test wires them together. Binding must stay a checked user decision, never a parser inference (D-017).
+2. **Cover the Next.js route wrapper.** `tests/import-confirm-e2e.test.ts` targets PostgREST, so `/api/v1/imports/confirm`'s zod boundary and cookie handling are unexercised. It mirrors the route's fingerprint and digest computation line for line, but that equivalence was verified by reading, not by executing. Folds naturally into task 1 once the UI posts through the route.
+3. **Real-PDF smoke test — now authorized** (see the conditions below).
 
-Remaining gaps: the Next.js route wrapper (zod boundary, cookie handling) is still uncovered, since the e2e targets PostgREST; there is no accounts-list endpoint or binding UI, so an extracted statement cannot be confirmed from the app itself; and the charset rejection path has no browser coverage.
+## Standing authorizations and their conditions
 
-Do not inspect `private-statements/`, use real financial data, commit, push, deploy, or create hosted resources without explicit authorization.
+- **Real-PDF smoke test: approved 2026-07-25.** One local run, to check whether the invented fixture geometry matches an actual Krungthai statement. Conditions from `docs/FIXTURE_POLICY.md` and `PLAN.md` still bind: enter the document password interactively, never log or retain any value, never copy real content into a fixture, never commit anything derived from it, and do not browse `private-statements/` beyond that single run. Requires the owner present for the password, so it cannot run unattended. This is the assumption the whole parser rests on — the geometry was invented, so parser-vs-reality is genuinely unknown until this runs.
+- **Commit and push: granted this session and used.** Treat as spent; ask again next session.
+- **Hosted Supabase / OAuth / Vercel: still not needed.** Offered and declined 2026-07-25 — `private.has_strong_owner_access` never inspects the auth provider, so a local password session with two verified TOTP factors satisfies it (D-020).
+
+## Before you touch anything
+
+- Run `git status --short`. Four config files (`.gitignore`, `eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml`) are **intentionally uncommitted** — preserve them. Everything else is committed and pushed through `033fac2`.
+- `public.ledger_owners` binds exactly one owner and is immutable; a second owner cannot exist without a database reset. Authenticate as the seeded synthetic owner (`supabase/seed.sql` holds its password).
+- Several suites mutate the one local database, so `vitest.config.ts` sets `fileParallelism: false`. Leave it — without it, suites pass alone and fail together.
+- Never inspect `private-statements/`, `.env*`, or real financial data outside the authorized smoke test. Synthetic data only. Preserve the exact-money, currency, idempotency, append-only, audit, and least-privilege invariants, and do not weaken the CSP.
+- After substantive changes, run `/sync-continuity` to reconcile these docs against verified evidence.
