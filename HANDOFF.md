@@ -21,6 +21,8 @@ JS↔PostgreSQL fingerprint agreement — the risk migration 008 makes load-bear
 
 Krungthai parsing now reads a whole statement: `lib/krungthai-layout.ts` extracts the transaction grid and the frame (account type, last four, period, opening/closing balances, THB) from the pdf.js text layer against invented synthetic fixtures, cross-checks the closing balance against the last row, and anchors two-digit years on the extracted period end (D-015, D-016, 27 tests). The worker no longer hard-stops at `LAYOUT_V1_UNSUPPORTED_DOCUMENT`. Two limits to carry forward — the fixture geometry is invented, so agreement with a real Krungthai PDF is unverified until the authorized smoke test; and binding an extracted statement to a ledger account is deliberately not inferred by the parser, so a PDF still cannot produce a confirmable payload. The UI reports what was read and stops.
 
+Recovery and concurrency are now proven at scale: `tests/backup-roundtrip.test.ts` drives the full schema-v2 chain over 1,200 rows non-destructively (D-019) and `tests/advisory-lock.test.ts` proves the owner mutation lock serializes across two real connections (D-018). Privacy, storage/network, and accessibility audits were re-run on 2026-07-25 against this round's code, and Playwright is current at 4/4.
+
 Remaining gap: the authenticated HTTP import path is still unexercised. A UI walkthrough does not reach it — `confirmSynthetic` only sets browser state, and `/api/v1/imports/confirm` sits behind `has_strong_owner_access` (see GOTCHAS). The charset rejection path likewise has no end-to-end coverage.
 
 Do not inspect `private-statements/`, use real financial data, commit, push, deploy, or create hosted resources without explicit authorization.

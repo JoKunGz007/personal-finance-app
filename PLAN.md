@@ -16,10 +16,10 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 68 passed / 2 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention; both skips are unreachable-container reporters and ran green against the live container) |
+| Vitest | Passed, 71 passed / 3 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain; all three skips are unreachable-container reporters and ran green against the live container) |
 | pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
 | Production build | Passed |
-| Playwright | Passed, 4/4 across desktop and mobile (dated 2026-07-24; not re-run for migrations 005–008 or the charset guard — no UI behavior change, but the charset guard is an unexercised import-path rejection) |
+| Playwright | Passed, 4/4 across desktop and mobile (re-run 2026-07-25 after the parser and UI changes) |
 | Clean database reset | Migrations 001–008 and synthetic seed applied |
 
 These results used the ignored project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 because the system Node installation remains Node 20. A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
@@ -50,11 +50,11 @@ All four original review blockers are now resolved with red→green pgTAP eviden
 ## Next local tasks
 
 1. ~~Add true multi-session concurrency coverage for the owner mutation advisory lock.~~ **Done** (D-018) — `tests/advisory-lock.test.ts` contends for the key from two real connections and asserts same-owner blocking, different-owner independence, and release on backend termination. Not yet covered: contention through the RPCs themselves, which needs an authenticated owner (task 3).
-2. Add a real schema-v2 export → encrypt → decrypt → stage → chunk → commit → re-export equality integration test, including more than 1,000 rows.
+2. ~~Add a real schema-v2 export → encrypt → decrypt → stage → chunk → commit → re-export equality integration test, including more than 1,000 rows.~~ **Done** (D-019) — `tests/backup-roundtrip.test.ts` over 1,200 rows, non-destructive, confirmed distinguishing.
 3. Drive a real request through `/api/v1/imports/confirm`. **Blocked, not deferred.** Extraction (D-015/D-016) and payload assembly with checked account binding (D-017) are done and unit-tested; what is missing is an authenticated session. Two obstacles, both needing a decision outside the code: `strongOwnerClient` reads `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `OWNER_GOOGLE_EMAIL`, and `.env*` is out of scope to inspect under the standing safety rules; and owner identity is a Google OAuth account, whose creation is an explicit authorization gate. Also missing, and unblocked when the above is resolved: an accounts-list endpoint (only `/api/v1/accounts/[id]/transactions` exists) for the binding UI. Until then, every import contract hardened in D-012/D-014 is proven at the SQL and unit level only.
-4. Repeat privacy, browser-storage/network, accessibility, and interface-guideline audits.
+4. ~~Repeat privacy, browser-storage/network, accessibility, and interface-guideline audits.~~ **Done 2026-07-25** — re-audited against this round's new code. No storage APIs (`localStorage`/`sessionStorage`/`indexedDB`/`document.cookie`) anywhere in `app/`, `lib/`, `workers/`; one client `fetch`, same-origin to `/api/v1/demo`; no `console.*` in shipped code; CSP and Permissions-Policy unchanged and strict. Two regression guards added to `tests/privacy.test.ts` for the new parser surface: the worker may not post the password or raw page text, and the extracted frame may not carry a full account number. Accessibility re-verified by the axe checks in the Playwright run.
 5. Exercise the authenticated import path end-to-end. Note that driving the running app through the UI does **not** reach `confirm_import`: `confirmSynthetic` in `app/ledger-app.tsx` only sets browser state, and the sole route to the RPC (`/api/v1/imports/confirm`) is behind authentication plus `private.has_strong_owner_access` (aal2 + two verified TOTP factors). Reaching it needs a locally provisioned owner with enrolled factors. The JS/PostgreSQL fingerprint-agreement risk that motivated this item is now covered separately by `tests/fingerprint-parity.test.ts`, so what remains here is the HTTP/auth wiring, not the fingerprint contract.
-6. Re-run Playwright once a UI-visible change lands; the charset guard adds an import-path rejection path that no browser test currently exercises.
+6. ~~Re-run Playwright.~~ **Done 2026-07-25** — 4/4 across desktop and mobile after the parser and UI changes. Still unexercised in a browser: the charset rejection path and the authenticated import path (task 3).
 
 ## Later authorization gates
 
