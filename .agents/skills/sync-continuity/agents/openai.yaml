@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync Continuity"
+  short_description: "Keep project continuity documents current"
+  default_prompt: "Use $sync-continuity to reconcile the project continuity files with current verified evidence."
