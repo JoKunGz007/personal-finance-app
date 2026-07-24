@@ -198,15 +198,7 @@ These stages may be sequenced because only three child agents can be active conc
 
 ## Finance invariants
 
-All roles follow these repository rules when relevant:
-
-- Persist and calculate money with integer minor units or exact decimals, not binary floating point.
-- Keep currency explicit.
-- Require a dated exchange rate and defined rounding rule for conversions.
-- Define time zones, reporting-period boundaries, and recurring-date behavior.
-- Make imports, synchronization, retries, transfers, and other replayable operations idempotent.
-- Treat financial data, credentials, PII, migrations, and audit history as high-risk.
-- Test rounding boundaries, negative values, duplicates or replays, authorization failures, and migration compatibility.
+All roles follow the repository finance invariants. The single source is **`AGENTS.md` § Finance invariants** — integer minor units or exact decimals for money (never binary float); explicit currency with dated rates and defined rounding; defined time-zone, reporting-period, and recurring-date semantics; idempotent replayable operations (imports, sync, retries, transfers); high-risk handling of financial data, credentials, PII, migrations, and audit history with least privilege and traceability; and the boundary tests to run (rounding, negatives, duplicates/replays, authorization failures, date boundaries, migration compatibility). Do not restate them here — update `AGENTS.md` if they change.
 
 ## Permission behavior
 
