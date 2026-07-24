@@ -16,7 +16,7 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 32 passed / 1 skipped (charset boundary tests; JS↔PostgreSQL fingerprint parity ran against the live container — the skipped case is its unreachable-container reporter) |
+| Vitest | Passed, 45 passed / 1 skipped (adds 13 Krungthai geometry tests; JS↔PostgreSQL fingerprint parity ran against the live container — the skipped case is its unreachable-container reporter) |
 | pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
 | Production build | Passed |
 | Playwright | Passed, 4/4 across desktop and mobile (dated 2026-07-24; not re-run for migrations 005–008 or the charset guard — no UI behavior change, but the charset guard is an unexercised import-path rejection) |
@@ -51,7 +51,7 @@ All four original review blockers are now resolved with red→green pgTAP eviden
 
 1. Add true multi-session concurrency coverage for the owner mutation advisory lock.
 2. Add a real schema-v2 export → encrypt → decrypt → stage → chunk → commit → re-export equality integration test, including more than 1,000 rows.
-3. Build approved synthetic Krungthai PDF geometry fixtures and implement exact parsing without weakening the fail-closed worker boundary.
+3. Extract the statement **frame** from the PDF — account mapping (bank, type, last four), period, opening and closing balances, explicit THB currency. The transaction grid is done (D-015: `lib/krungthai-layout.ts`, synthetic fixtures, 13 tests, worker wired), but without the frame a parsed PDF still cannot become a confirmable `ImportPayload`, so the UI reports a row count and stops. Two-digit year resolution currently anchors on the current year and should anchor on the extracted period end.
 4. Repeat privacy, browser-storage/network, accessibility, and interface-guideline audits.
 5. Exercise the authenticated import path end-to-end. Note that driving the running app through the UI does **not** reach `confirm_import`: `confirmSynthetic` in `app/ledger-app.tsx` only sets browser state, and the sole route to the RPC (`/api/v1/imports/confirm`) is behind authentication plus `private.has_strong_owner_access` (aal2 + two verified TOTP factors). Reaching it needs a locally provisioned owner with enrolled factors. The JS/PostgreSQL fingerprint-agreement risk that motivated this item is now covered separately by `tests/fingerprint-parity.test.ts`, so what remains here is the HTTP/auth wiring, not the fingerprint contract.
 6. Re-run Playwright once a UI-visible change lands; the charset guard adds an import-path rejection path that no browser test currently exercises.
