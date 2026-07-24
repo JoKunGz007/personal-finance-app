@@ -171,3 +171,10 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: `confirm_import` validates the digest and the distinct-fingerprint count before entering the per-row loop where the fingerprint is recomputed.
 - Avoid: give a fingerprint-mismatch fixture a fresh artifact and idempotency key, a correct digest, and a single row, so nothing earlier can raise first.
 - Verify: `002` test 23 passes with migration 008 applied and fails only on the expected missing exception without it.
+
+## The app UI does not exercise confirm_import
+
+- Symptom: clicking through the running app reports a confirmed batch, yet no import reaches PostgreSQL and server-side contracts (digest binding, fingerprint binding) are never tested.
+- Cause: `confirmSynthetic` in `app/ledger-app.tsx` only sets browser state. The sole path to the RPC is `/api/v1/imports/confirm`, gated by authentication and `private.has_strong_owner_access` (aal2 + two verified TOTP factors).
+- Avoid: do not treat a UI walkthrough as end-to-end evidence for import contracts. Test the fingerprint contract with `tests/fingerprint-parity.test.ts`, and the RPC contracts with pgTAP; reaching the real HTTP path needs a locally provisioned owner with enrolled factors.
+- Verify: the synthetic confirm path sets status text and never calls `fetch`.

@@ -17,6 +17,8 @@ Project headline: no open review blockers. All four pgTAP blockers plus the carr
 
 Uncommitted and intentional: migrations `202607240007`/`202607240008` are untracked but **already applied** to the local database, alongside edits to `lib/statement.ts`, `tests/domain.test.ts`, `supabase/tests/002_security_contracts.sql`, and the earlier config/continuity changes. Run `git status --short` before assuming the tree is clean, and preserve these. Nothing in this round has been committed.
 
-Two gaps worth knowing before trusting the green gate: no test drives a real browser-computed fingerprint through `confirm_import` (the pgTAP wrapper computes fingerprints server-side, so it proves SQL self-consistency, not client/server agreement), and the new charset rejection path has no end-to-end coverage.
+JS↔PostgreSQL fingerprint agreement — the risk migration 008 makes load-bearing, since a divergence fails every import closed — is now covered by `tests/fingerprint-parity.test.ts`, which hashes the same rows with the real `lib/canonical.ts` and compares against `private.row_fingerprint` over psql. It was confirmed distinguishing by desyncing the bank code and observing a concrete hash mismatch. It skips when the container is unreachable, so a skipped run is not evidence.
+
+Remaining gap: the authenticated HTTP import path is still unexercised. A UI walkthrough does not reach it — `confirmSynthetic` only sets browser state, and `/api/v1/imports/confirm` sits behind `has_strong_owner_access` (see GOTCHAS). The charset rejection path likewise has no end-to-end coverage.
 
 Do not inspect `private-statements/`, use real financial data, commit, push, deploy, or create hosted resources without explicit authorization.
