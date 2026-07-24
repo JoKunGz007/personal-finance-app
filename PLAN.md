@@ -16,7 +16,7 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 45 passed / 1 skipped (adds 13 Krungthai geometry tests; JS↔PostgreSQL fingerprint parity ran against the live container — the skipped case is its unreachable-container reporter) |
+| Vitest | Passed, 68 passed / 2 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention; both skips are unreachable-container reporters and ran green against the live container) |
 | pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
 | Production build | Passed |
 | Playwright | Passed, 4/4 across desktop and mobile (dated 2026-07-24; not re-run for migrations 005–008 or the charset guard — no UI behavior change, but the charset guard is an unexercised import-path rejection) |
@@ -49,7 +49,7 @@ All four original review blockers are now resolved with red→green pgTAP eviden
 
 ## Next local tasks
 
-1. Add true multi-session concurrency coverage for the owner mutation advisory lock.
+1. ~~Add true multi-session concurrency coverage for the owner mutation advisory lock.~~ **Done** (D-018) — `tests/advisory-lock.test.ts` contends for the key from two real connections and asserts same-owner blocking, different-owner independence, and release on backend termination. Not yet covered: contention through the RPCs themselves, which needs an authenticated owner (task 3).
 2. Add a real schema-v2 export → encrypt → decrypt → stage → chunk → commit → re-export equality integration test, including more than 1,000 rows.
 3. Drive a real request through `/api/v1/imports/confirm`. **Blocked, not deferred.** Extraction (D-015/D-016) and payload assembly with checked account binding (D-017) are done and unit-tested; what is missing is an authenticated session. Two obstacles, both needing a decision outside the code: `strongOwnerClient` reads `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `OWNER_GOOGLE_EMAIL`, and `.env*` is out of scope to inspect under the standing safety rules; and owner identity is a Google OAuth account, whose creation is an explicit authorization gate. Also missing, and unblocked when the above is resolved: an accounts-list endpoint (only `/api/v1/accounts/[id]/transactions` exists) for the binding UI. Until then, every import contract hardened in D-012/D-014 is proven at the SQL and unit level only.
 4. Repeat privacy, browser-storage/network, accessibility, and interface-guideline audits.
