@@ -192,3 +192,17 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: `kill` terminates the local client, not the process the daemon started in the container.
 - Avoid: end the work from inside the database instead — for a Postgres session, tag it (`PGAPPNAME`) and `pg_terminate_backend` it by `application_name`.
 - Verify: the advisory lock release test terminates the holder through SQL and then observes the lock become available.
+
+## Database-driving tests race each other under Vitest file parallelism
+
+- Symptom: suites pass individually but fail when the whole suite runs — typically the backup round-trip and the import e2e, which wipe or insert against the same owner.
+- Cause: Vitest runs test files in parallel by default, and every suite here shares one local Postgres instance.
+- Avoid: keep `fileParallelism: false` in `vitest.config.ts`. The suite takes seconds, so serial execution costs little compared with debugging a nondeterministic failure.
+- Verify: `pnpm test` passes with all nine files; reverting the setting reproduces three failures across the two database-mutating files.
+
+## Only one ledger owner can ever exist locally
+
+- Symptom: inserting `mutation_sequences` or `accounts` for a freshly created auth user fails with a foreign key violation against `ledger_owners`.
+- Cause: `public.ledger_owners` holds a single binding row and is immutable — a trigger rejects updates and deletes — so a second owner cannot be bound without resetting the database.
+- Avoid: authenticate as the seeded synthetic owner (`supabase/seed.sql` sets its password) instead of creating a new user.
+- Verify: `select * from public.ledger_owners` returns exactly one row, and the import e2e signs in as that owner.
