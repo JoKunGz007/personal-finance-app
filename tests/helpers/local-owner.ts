@@ -1,5 +1,5 @@
-import { createHmac } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { totp } from "@/lib/dev/totp";
 
 // Shared local-stack harness for the suites that need a really authenticated owner.
 //
@@ -35,24 +35,10 @@ export function containerReachable(): boolean {
   return psql("select 1;").ok;
 }
 
-// RFC 6238 TOTP. Supabase returns the factor secret at enrollment, so a valid code
-// can be produced without any authenticator app.
-export function totp(secret: string): string {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = "";
-  for (const character of secret.replace(/=+$/u, "").toUpperCase()) {
-    const value = alphabet.indexOf(character);
-    if (value < 0) continue;
-    bits += value.toString(2).padStart(5, "0");
-  }
-  const key = Buffer.from((bits.match(/.{8}/gu) ?? []).map((byte) => parseInt(byte, 2)));
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 1000 / 30)));
-  const digest = createHmac("sha1", key).update(counter).digest();
-  const offset = digest[digest.length - 1]! & 0x0f;
-  const code = digest.readUInt32BE(offset) & 0x7fffffff;
-  return (code % 1_000_000).toString().padStart(6, "0");
-}
+// RFC 6238 TOTP lives in `lib/dev/totp.ts` and is re-exported here, because the dev
+// sign-in route needs the identical implementation. Supabase returns the factor secret
+// at enrollment, so a valid code can be produced without any authenticator app.
+export { totp };
 
 export async function api(path: string, init: RequestInit & { token?: string } = {}) {
   const { token, ...rest } = init;

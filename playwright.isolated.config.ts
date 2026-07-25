@@ -15,6 +15,10 @@ const PORT = 3100;
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // `owner-session.spec.ts` needs the development sign-in route, which answers 404
+  // unless the server was built with NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=1 — the guard
+  // working as intended. It runs under `playwright.owner.config.ts`, which sets it.
+  testIgnore: /owner-session\.spec\.ts/u,
   fullyParallel: true,
   use: { baseURL: `http://127.0.0.1:${PORT}`, trace: "retain-on-failure" },
   webServer: {

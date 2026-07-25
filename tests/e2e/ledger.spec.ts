@@ -1,6 +1,18 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+test("offers no development sign-in in a build that did not opt into one", async ({ page }) => {
+  // This config builds without NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION, so the branch in
+  // ledger-app.tsx is never taken and no such control is rendered (D-036).
+  //
+  // Note what this does and does not say. The bundler inlines the missing variable as
+  // `undefined`, which fails the comparison — it does not eliminate the string literal,
+  // so "Dev sign-in" is still findable inside the JavaScript chunk. Nothing renders it,
+  // and the route answers 404 without the same flag, but a build is not free of the text.
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Dev sign-in" })).toHaveCount(0);
+});
+
 test("reviews and confirms the synthetic statement without a PDF", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Use synthetic statement" }).click();

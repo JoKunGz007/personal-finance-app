@@ -140,6 +140,23 @@ export function LedgerApp() {
     worker.postMessage({ type: "parse", bytes, password }, [bytes]);
   }
 
+  // Development only, and stripped from a production bundle along with its button. The
+  // real login is Google OAuth; this mints the aal2 cookie session the owner-bound routes
+  // require, so the binding chooser and the import path can be reached in a browser.
+  // See app/api/v1/dev/session/route.ts for why a password session satisfies the gate.
+  async function devSignIn() {
+    setStatus("Minting a development owner session…");
+    const response = await fetch("/api/v1/dev/session", { method: "POST", cache: "no-store" });
+    const body: unknown = await response.json().catch(() => null);
+    const record = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+    if (!response.ok) {
+      setStatus(typeof record.error === "string" ? record.error : "The development session could not be created.");
+      return;
+    }
+    const warning = typeof record.warning === "string" ? ` ${record.warning}` : "";
+    setStatus(`Signed in as the synthetic owner at ${String(record.level)} with ${String(record.verifiedFactors)} verified factors.${warning}`);
+  }
+
   async function loadAccounts() {
     setStatus("Loading your ledger accounts…");
     const response = await fetch("/api/v1/accounts", { cache: "no-store" });
@@ -308,6 +325,17 @@ export function LedgerApp() {
             <button className="primary-button" type="button" onClick={parsePdf}>Unlock & check layout</button>
             <span className="or-rule">or</span>
             <button className="secondary-button" type="button" onClick={loadSynthetic}>Use synthetic statement</button>
+            {/* Local acceptance only, and opt-in. The bundler inlines the flag at build
+                time, so in a build that did not set it the comparison is `undefined ===
+                "1"` and this is never rendered — though the literal below does survive in
+                the chunk, since a dead branch is not the same as an absent string. The
+                route answers 404 without the same flag, which is the guard that matters.
+                Not gated on NODE_ENV: the browser suite runs against a production build,
+                because the strict CSP forbids the eval() React needs under `next dev`
+                (GOTCHAS, D-036). */}
+            {process.env.NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION === "1" ? (
+              <button className="secondary-button" type="button" onClick={devSignIn}>Dev sign-in</button>
+            ) : null}
           </div>
           <p className="status-line" role="status"><span aria-hidden="true">●</span>{status}</p>
 
