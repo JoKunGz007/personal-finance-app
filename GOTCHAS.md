@@ -172,12 +172,26 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: give a fingerprint-mismatch fixture a fresh artifact and idempotency key, a correct digest, and a single row, so nothing earlier can raise first.
 - Verify: `002` test 23 passes with migration 008 applied and fails only on the expected missing exception without it.
 
-## The app UI does not exercise confirm_import
+## The synthetic path in the app UI does not exercise confirm_import
 
 - Symptom: clicking through the running app reports a confirmed batch, yet no import reaches PostgreSQL and server-side contracts (digest binding, fingerprint binding) are never tested.
-- Cause: `confirmSynthetic` in `app/ledger-app.tsx` only sets browser state. The sole path to the RPC is `/api/v1/imports/confirm`, gated by authentication and `private.has_strong_owner_access` (aal2 + two verified TOTP factors).
-- Avoid: do not treat a UI walkthrough as end-to-end evidence for import contracts. Test the fingerprint contract with `tests/fingerprint-parity.test.ts`, and the RPC contracts with pgTAP; reaching the real HTTP path needs a locally provisioned owner with enrolled factors.
-- Verify: the synthetic confirm path sets status text and never calls `fetch`.
+- Cause: `confirmSynthetic` in `app/ledger-app.tsx` only sets browser state. Only the *bound* path — a parsed statement bound to a ledger account through the chooser — posts to `/api/v1/imports/confirm`, and that route is gated by authentication and `private.has_strong_owner_access` (aal2 + two verified TOTP factors). Reaching it needs a real PDF, so no automated browser run covers it.
+- Avoid: do not treat a synthetic UI walkthrough as end-to-end evidence for import contracts. Check which button was pressed: "Confirm synthetic batch" is browser state, "Confirm import" is the route. Route contracts are covered by `tests/import-route.test.ts`, the RPC by pgTAP and `tests/import-confirm-e2e.test.ts`.
+- Verify: `confirmSynthetic` contains no `fetch`; `confirmBoundImport` posts to `/api/v1/imports/confirm` and is reachable only once `boundAccount` is set.
+
+## A restore can leave the audit_events identity sequence behind an existing id
+
+- Symptom: an import that worked yesterday fails with `duplicate key value violates unique constraint "audit_events_pkey"`, naming an id that already exists, on a database nobody changed.
+- Cause: `public.audit_events` is append-only, so rows accumulate, while `public.restore_backup` re-inserts audit rows with explicit ids and then sets the identity sequence to `greatest(max(id),1)`. A restore that ran while the table was empty or held only low ids leaves the sequence at or below an id a later run re-introduces, and the next audit insert collides. The failed insert consumes a value, so a retry can appear to fix itself — which is what makes this look intermittent.
+- Avoid: in tests, clear the owner's audit rows and realign the sequence together — `resetOwnerImportSurface` in `tests/helpers/local-owner.ts` does both. In product code, leave the `setval` in migration 006 alone; it is correct for the table it is given.
+- Verify: `select last_value from public.audit_events_id_seq` is at least `max(id)` from `public.audit_events`. When it is lower, `tests/import-confirm-e2e.test.ts` fails on its first confirmation with a 409 whose body names `audit_events_pkey`.
+
+## Signing in again at aal1 downgrades a shared Supabase cookie session
+
+- Symptom: tests that share one stored session start returning 403 "AAL2 and two verified TOTP factors are required" after an unrelated test deliberately signs in without MFA — and re-storing the aal2 session does not fix them.
+- Cause: a password sign-in replaces the stored session for that storage key, and a token later refreshed in that family is no longer aal2. `setSession` with the old access token does not reliably restore the stronger claim.
+- Avoid: order aal1 and unauthenticated cases after every test that needs strong access, rather than trying to restore the strong session between them. Mint a fresh aal2 session if a test genuinely needs one after a weak sign-in.
+- Verify: `tests/import-route.test.ts` keeps its `without strong owner access` block last; moving it earlier reproduces a cascade of 403s in the tests that follow.
 
 ## A blocked event loop silently starves a spawned child's stdin
 

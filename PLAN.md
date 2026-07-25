@@ -8,6 +8,8 @@ The five high-risk backup and ledger findings from the original review have been
 
 The end-to-end import path now works against synthetic data: a PDF is parsed on-device into a statement and frame (D-015, D-016), assembled into a payload with checked account binding (D-017), and confirmed through an authenticated aal2 session into `confirm_import` (D-020). Recovery is proven over 1,200 rows (D-019) and the owner mutation lock is proven under real contention (D-018).
 
+That path is now reachable from the app itself rather than only from a test. `GET /api/v1/accounts` lists the owner's accounts and the UI gained a bind stage between parsing and review, so a parsed statement is bound to a chosen account and posted to `/api/v1/imports/confirm` (D-021). The Next.js route wrapper — its zod boundary, its `@supabase/ssr` cookie session, and its own fingerprint and digest computation — is covered by `tests/import-route.test.ts`, which invokes the real handlers against a real aal2 cookie session (D-022). The local-stack harness both authenticated suites use now lives in `tests/helpers/local-owner.ts`.
+
 The blocker-1 fingerprint follow-up is now closed as well. Migrations `202607240007_fingerprint_functions.sql` and `202607240008_confirm_import_fingerprint_binding.sql` add `private.normalize_source_text` / `private.row_fingerprint` and make `confirm_import` recompute each row's fingerprint and reject a claim that does not match; `lib/statement.ts` constrains source text to the charset that keeps JS and PostgreSQL NFKC in agreement (DECISIONS D-014).
 
 The local Supabase stack is running on its default Docker network. The most recent clean reset (2026-07-25) applied migrations 001–008 and the synthetic seed and left the project containers healthy. The unrelated older PostgreSQL and pgAdmin containers and the Windows PostgreSQL service were not modified. Several Vitest suites now mutate this database and clean up after themselves; `vitest.config.ts` sets `fileParallelism: false` so they cannot race (GOTCHAS).
@@ -18,11 +20,11 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 75 passed / 4 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation; all four skips are unreachable-container reporters and ran green against the live container) |
+| Vitest | Passed, 87 passed / 5 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation, Next.js route handlers; all five skips are unreachable-container reporters and ran green against the live container) |
 | pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
 | Production build | Passed |
-| Playwright | Passed, 4/4 across desktop and mobile (re-run 2026-07-25 after the parser and UI changes) |
-| Clean database reset | Migrations 001–008 and synthetic seed applied |
+| Playwright | Passed, 4/4 across desktop and mobile (re-run 2026-07-25 after the binding UI landed) |
+| Clean database reset | Migrations 001–008 and synthetic seed applied (last run earlier on 2026-07-25; no migration has changed since, and this round's work touched no SQL) |
 
 These results used the ignored project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 because the system Node installation remains Node 20. A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
 
@@ -53,10 +55,12 @@ All four original review blockers are now resolved with red→green pgTAP eviden
 
 1. ~~Add true multi-session concurrency coverage for the owner mutation advisory lock.~~ **Done** (D-018) — `tests/advisory-lock.test.ts` contends for the key from two real connections and asserts same-owner blocking, different-owner independence, and release on backend termination. Not yet covered: contention through the RPCs themselves, which needs an authenticated owner (task 3).
 2. ~~Add a real schema-v2 export → encrypt → decrypt → stage → chunk → commit → re-export equality integration test, including more than 1,000 rows.~~ **Done** (D-019) — `tests/backup-roundtrip.test.ts` over 1,200 rows, non-destructive, confirmed distinguishing.
-3. ~~Drive a real authenticated request into `confirm_import`.~~ **Done** (D-020) — `tests/import-confirm-e2e.test.ts` signs in as the seeded owner, reaches aal2 with two verified TOTP factors, and posts fingerprints and a digest computed by `lib/canonical.ts` from a parser-extracted statement; asserts the import lands, a tampered fingerprint is rejected, and the same request without MFA is refused. No hosted resources were needed. Still uncovered: the Next.js route wrapper itself (zod boundary and cookie handling) — the test targets PostgREST — and the accounts-list endpoint for a binding UI does not exist yet.
+3. ~~Drive a real authenticated request into `confirm_import`.~~ **Done** (D-020) — `tests/import-confirm-e2e.test.ts` signs in as the seeded owner, reaches aal2 with two verified TOTP factors, and posts fingerprints and a digest computed by `lib/canonical.ts` from a parser-extracted statement; asserts the import lands, a tampered fingerprint is rejected, and the same request without MFA is refused. No hosted resources were needed. The follow-up gap it left — the Next.js route wrapper — is now closed by `tests/import-route.test.ts` (D-022).
 4. ~~Repeat privacy, browser-storage/network, accessibility, and interface-guideline audits.~~ **Done 2026-07-25** — re-audited against this round's new code. No storage APIs (`localStorage`/`sessionStorage`/`indexedDB`/`document.cookie`) anywhere in `app/`, `lib/`, `workers/`; one client `fetch`, same-origin to `/api/v1/demo`; no `console.*` in shipped code; CSP and Permissions-Policy unchanged and strict. Two regression guards added to `tests/privacy.test.ts` for the new parser surface: the worker may not post the password or raw page text, and the extracted frame may not carry a full account number. Accessibility re-verified by the axe checks in the Playwright run.
-5. Build the account-binding UI: an accounts-list endpoint plus a chooser, so an extracted statement can be bound and confirmed from the app rather than from a test.
-6. ~~Re-run Playwright.~~ **Done 2026-07-25** — 4/4 across desktop and mobile after the parser and UI changes. Still unexercised in a browser: the charset rejection path and the authenticated import path (task 3).
+5. ~~Build the account-binding UI: an accounts-list endpoint plus a chooser, so an extracted statement can be bound and confirmed from the app rather than from a test.~~ **Done** (D-021) — `GET /api/v1/accounts` plus a bind stage in `app/ledger-app.tsx`; the bound payload is posted to `/api/v1/imports/confirm` with the PDF's own SHA-256 as the artifact digest and one idempotency key per bound statement. Route coverage came with it (D-022). Still uncovered: the chooser in a browser, which needs a real PDF to reach.
+6. ~~Re-run Playwright.~~ **Done 2026-07-25** — 4/4 across desktop and mobile, re-run after the binding UI landed. Still unexercised in a browser: the charset rejection path, the binding chooser, and the authenticated import path — all three sit behind a real PDF.
+
+Every local task above is now complete and verified, so the next action is the authorized real-PDF smoke test (gate 1 below), which is also the only way to reach the binding chooser and the authenticated import path in a browser.
 
 ## Later authorization gates
 

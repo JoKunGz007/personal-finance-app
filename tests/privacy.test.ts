@@ -44,6 +44,36 @@ describe("privacy guardrails", () => {
     expect(worker).toMatch(/ephemeralPassword = ""/);
   });
 
+  it("keeps every client request same-origin and limited to the import contract", () => {
+    const ui = readFileSync("app/ledger-app.tsx", "utf8");
+    const targets = [...ui.matchAll(/fetch\(\s*"([^"]+)"/gu)].map((match) => match[1]!);
+    expect(targets.length).toBeGreaterThan(0);
+    targets.forEach((target) => expect(target).toMatch(/^\/api\/v1\//u));
+    // The confirmation body is the contract and nothing else. The document password
+    // and the PDF bytes must never be serialized into a request; only the artifact
+    // digest, which cannot be reversed into statement content, describes the file.
+    const body = /JSON\.stringify\(\{ idempotencyKey[^)]*\)/su.exec(ui)?.[0] ?? "";
+    expect(body).toBe("JSON.stringify({ idempotencyKey, artifactDigest, payload: statement })");
+  });
+
+  it("never infers which ledger account a statement belongs to", () => {
+    const ui = readFileSync("app/ledger-app.tsx", "utf8");
+    // Binding is a checked user decision (DECISIONS D-017): the account id comes from
+    // the chooser, and assembleImportPayload re-checks it against the printed account
+    // and currency. Matching an account to the statement automatically — however
+    // convenient — would make a parser reading the ledger's routing decision.
+    expect(ui).toContain("assembleImportPayload(");
+    expect(ui).toContain("accounts?.find((item) => item.id === chosenAccountId)");
+    expect(ui).not.toMatch(/find\([^)]*accountLastFour/u);
+  });
+
+  it("does not widen the accounts listing beyond the chooser's needs", () => {
+    const route = readFileSync("app/api/v1/accounts/route.ts", "utf8");
+    // An explicit column list, never select("*"): a future column must be opted into.
+    expect(route).toContain('.select("id,bank_code,label,account_type,last_four,currency,timezone")');
+    expect(route).not.toMatch(/select\(\s*"\*"/u);
+  });
+
   it("reduces the account number to its last four digits inside the parser", () => {
     const layout = readFileSync("lib/krungthai-layout.ts", "utf8");
     // The extracted frame must never carry a full account number, so no later code

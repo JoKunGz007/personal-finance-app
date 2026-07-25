@@ -1,18 +1,29 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { encryptBackup } from "@/lib/backup";
+import { sha256HexBytes } from "@/lib/canonical";
+import { assembleImportPayload } from "@/lib/import-assembly";
+import type { StatementFrame } from "@/lib/krungthai-layout";
 import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows } from "@/lib/reconcile";
-import { importPayloadSchema, type ImportPayload } from "@/lib/statement";
+import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
 
-type Stage = "select" | "unlock" | "review" | "confirmed";
+type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
 const stages: Array<{ id: Stage; label: string }> = [
   { id: "select", label: "Select PDF" },
   { id: "unlock", label: "Unlock & parse locally" },
+  { id: "bind", label: "Choose account" },
   { id: "review", label: "Review" },
   { id: "confirmed", label: "Confirmed" }
 ];
+
+type Extracted = { frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number };
+
+type WorkerReply =
+  | { type: "parsed"; frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number }
+  | { type: "error"; code: string; message: string };
 
 const categories = ["Uncategorized", "Income", "Food", "Cash", "Fees", "Interest"];
 
@@ -26,6 +37,13 @@ export function LedgerApp() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("No PDF selected. Try the synthetic statement to review the complete flow safely.");
   const [statement, setStatement] = useState<ImportPayload | null>(null);
+  const [extracted, setExtracted] = useState<Extracted | null>(null);
+  const [artifactDigest, setArtifactDigest] = useState("");
+  const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
+  const [chosenAccountId, setChosenAccountId] = useState("");
+  const [boundAccount, setBoundAccount] = useState<LedgerAccount | null>(null);
+  const [idempotencyKey, setIdempotencyKey] = useState("");
+  const [bindingError, setBindingError] = useState<string | null>(null);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
   const [backupPassword, setBackupPassword] = useState("");
@@ -55,6 +73,9 @@ export function LedgerApp() {
       setStatus("The synthetic fixture failed its own contract. Run the unit tests before continuing.");
       return;
     }
+    setExtracted(null);
+    setBoundAccount(null);
+    setBindingError(null);
     setStatement(parsed.data);
     setStage("review");
     setStatus("Synthetic statement ready. Nothing in this review came from a real account.");
@@ -67,18 +88,27 @@ export function LedgerApp() {
     }
     setStatus("Unlocking and checking the layout on this device…");
     const bytes = await file.arrayBuffer();
+    // Digest the artifact before the buffer is transferred to the worker. This
+    // identifies the PDF for import_artifacts so re-importing the same statement is
+    // a detectable conflict; the bytes themselves never leave the device.
+    const digest = await sha256HexBytes(bytes);
     const worker = new Worker(new URL("../workers/krungthai.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (event: MessageEvent<{
-      type: string; message?: string; rows?: unknown[]; pageCount?: number;
-      frame?: { accountLastFour: string; periodStart: string; periodEnd: string };
-    }>) => {
-      // The frame and rows are both read on this device. Binding them to a ledger
-      // account still needs an account mapping the parser cannot infer, so this
-      // reports what was read rather than confirming an import.
-      const frame = event.data.frame;
-      setStatus(event.data.type === "parsed" && frame
-        ? `Read ${event.data.rows?.length ?? 0} rows across ${event.data.pageCount ?? 0} page(s) for account ending ${frame.accountLastFour}, ${frame.periodStart} to ${frame.periodEnd}. Nothing has left this device.`
-        : event.data.message ?? "The local parser stopped safely.");
+    worker.onmessage = (event: MessageEvent<WorkerReply>) => {
+      const reply = event.data;
+      if (reply.type === "parsed") {
+        // The frame and rows are both read on this device. Which ledger account they
+        // belong to is not something the parser may infer (DECISIONS D-017), so the
+        // next step is an explicit, checked choice by the owner.
+        setArtifactDigest(digest);
+        setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
+        setStatement(null);
+        setBoundAccount(null);
+        setBindingError(null);
+        setStage("bind");
+        setStatus(`Read ${reply.rows.length} rows across ${reply.pageCount} page(s) for account ending ${reply.frame.accountLastFour}, ${reply.frame.periodStart} to ${reply.frame.periodEnd}. Nothing has left this device. Choose the ledger account it belongs to.`);
+      } else {
+        setStatus(reply.message);
+      }
       setPassword("");
       worker.terminate();
     };
@@ -88,6 +118,78 @@ export function LedgerApp() {
       worker.terminate();
     };
     worker.postMessage({ type: "parse", bytes, password }, [bytes]);
+  }
+
+  async function loadAccounts() {
+    setStatus("Loading your ledger accounts…");
+    const response = await fetch("/api/v1/accounts", { cache: "no-store" });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = typeof body === "object" && body !== null && "error" in body ? String((body as { error: unknown }).error) : "Accounts could not be loaded.";
+      setAccounts(null);
+      setStatus(message);
+      return;
+    }
+    const parsed = accountListSchema.safeParse(body);
+    if (!parsed.success) {
+      setAccounts(null);
+      setStatus("The accounts response did not match its contract, so nothing can be bound.");
+      return;
+    }
+    setAccounts(parsed.data.accounts);
+    setStatus(parsed.data.accounts.length === 0
+      ? "No ledger accounts exist yet. One must be created before a statement can be bound."
+      : `${parsed.data.accounts.length} ledger account(s) available. Binding is checked against the printed account and currency.`);
+  }
+
+  // Binding is a user decision, and assembleImportPayload refuses to act on it
+  // blindly: the chosen account's last four digits and currency must match what the
+  // statement printed, so a mis-click cannot post one account's rows into another.
+  function bindStatement() {
+    if (!extracted) return;
+    const account = accounts?.find((item) => item.id === chosenAccountId);
+    if (!account) {
+      setBindingError("Choose the ledger account this statement belongs to.");
+      return;
+    }
+    const result = assembleImportPayload(extracted.frame, extracted.rows, {
+      accountId: account.id,
+      lastFour: account.last_four,
+      currency: account.currency
+    });
+    if (!result.ok) {
+      setBindingError(result.message);
+      setStatus(`Binding refused: ${result.message}`);
+      return;
+    }
+    setBindingError(null);
+    setBoundAccount(account);
+    setStatement(result.payload);
+    // One key per bound statement, so retrying a failed confirmation is a retry
+    // rather than a second import.
+    setIdempotencyKey(crypto.randomUUID());
+    setStage("review");
+    setStatus(`Bound to ${account.label} •••• ${account.last_four}. Review every balance before confirming.`);
+  }
+
+  async function confirmBoundImport() {
+    if (!statement || !boundAccount) return;
+    setStatus("Confirming this import…");
+    const response = await fetch("/api/v1/imports/confirm", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idempotencyKey, artifactDigest, payload: statement })
+    });
+    const body: unknown = await response.json().catch(() => null);
+    const record = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+    if (!response.ok) {
+      setStatus(typeof record.error === "string" ? record.error : "The import could not be confirmed.");
+      return;
+    }
+    setStage("confirmed");
+    setBackupStale(true);
+    setStatus(`Confirmed ${statement.rows.length} rows into ${boundAccount.label} as batch ${String(record.batchId)}. The backup is now stale.`);
   }
 
   function openDetail(index: number) {
@@ -190,17 +292,51 @@ export function LedgerApp() {
           <p className="status-line" role="status"><span aria-hidden="true">●</span>{status}</p>
         </section>
 
+        {extracted && !boundAccount ? (
+          <section className="binding-bench" aria-labelledby="binding-title">
+            <div className="bench-heading">
+              <p className="section-index">Bind / 02</p>
+              <div>
+                <h2 id="binding-title">Choose the ledger account</h2>
+                <p>The statement printed account ending <b>{extracted.frame.accountLastFour}</b> in {extracted.frame.currency}, {extracted.frame.periodStart} to {extracted.frame.periodEnd}. The parser is not allowed to guess which of your accounts that is.</p>
+              </div>
+            </div>
+            <div className="binding-controls">
+              <button className="secondary-button" type="button" onClick={loadAccounts}>Load ledger accounts</button>
+              <label className="account-control">
+                <span>Ledger account</span>
+                <select
+                  value={chosenAccountId}
+                  disabled={!accounts || accounts.length === 0}
+                  onChange={(event) => { setChosenAccountId(event.target.value); setBindingError(null); }}
+                >
+                  <option value="">{accounts ? "Select an account…" : "Load accounts first…"}</option>
+                  {(accounts ?? []).map((account) => (
+                    <option key={account.id} value={account.id}>{account.label} · {account.account_type} •••• {account.last_four} · {account.currency}</option>
+                  ))}
+                </select>
+              </label>
+              <button className="primary-button" type="button" disabled={chosenAccountId === ""} onClick={bindStatement}>Bind statement to this account</button>
+            </div>
+            {bindingError ? <div className="warning error" role="alert"><strong>Binding refused</strong><span>{bindingError}</span></div> : null}
+          </section>
+        ) : null}
+
         {statement && reconciliation && totals ? (
           <section className="review" aria-labelledby="review-title">
             <div className="review-heading">
               <div>
-                <p className="section-index">Review / 02</p>
-                <h2 id="review-title">Synthetic current account <span>•••• 4242</span></h2>
-                <p>1–30 June 2026 · THB · Asia/Bangkok</p>
+                <p className="section-index">Review / {boundAccount ? "03" : "02"}</p>
+                <h2 id="review-title">{boundAccount ? boundAccount.label : "Synthetic current account"} <span>•••• {boundAccount?.last_four ?? "4242"}</span></h2>
+                <p>{boundAccount ? `${statement.periodStart} to ${statement.periodEnd}` : "1–30 June 2026"} · {statement.currency} · Asia/Bangkok</p>
               </div>
               <div className="review-actions">
-                <span className="synthetic-badge">Synthetic data</span>
-                <button type="button" className="primary-button" onClick={confirmSynthetic}>Confirm synthetic batch</button>
+                {boundAccount
+                  ? <span className="synthetic-badge bound">Bound · checked</span>
+                  : <span className="synthetic-badge">Synthetic data</span>}
+                {boundAccount
+                  ? <button type="button" className="primary-button" disabled={reconciliation.blockers.length > 0} onClick={confirmBoundImport}>Confirm import</button>
+                  : <button type="button" className="primary-button" onClick={confirmSynthetic}>Confirm synthetic batch</button>}
               </div>
             </div>
 
@@ -256,7 +392,11 @@ export function LedgerApp() {
           </section>
         ) : null}
 
-        {statement ? (
+        {/* The .pldemo envelope is labelled synthetic and is not a restorable ledger
+            backup, so it is offered only for the synthetic preview. Wrapping real
+            confirmed rows in a file that calls itself synthetic would be a lie about
+            what the artifact holds. */}
+        {statement && !boundAccount ? (
           <section className={`backup-band ${backupStale ? "stale" : ""}`} aria-labelledby="backup-title">
             <div><p className="section-index">Recovery demo / 03</p><h2 id="backup-title">{backupStale ? "The synthetic preview has changed" : "Export an encrypted synthetic preview"}</h2><p>This demonstration file is encrypted locally but is not a restorable ledger backup. The password is never sent to the server.</p></div>
             <div className="backup-form">

@@ -29,6 +29,13 @@ export async function sha256Hex(value: string): Promise<string> {
   return toHex(digest);
 }
 
+// Digest of an artifact's own bytes, used as the import artifact identity. A digest
+// is not statement content: it cannot be reversed into rows, and it is what makes
+// re-importing the same PDF a detectable conflict rather than a duplicate ledger.
+export async function sha256HexBytes(bytes: ArrayBuffer): Promise<string> {
+  return toHex(await crypto.subtle.digest("SHA-256", bytes));
+}
+
 export async function rowFingerprint(
   accountId: string,
   bankCode: "KTB",
