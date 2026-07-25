@@ -207,6 +207,47 @@ describe("privacy guardrails", () => {
     }
   });
 
+  it("keeps the masked diagnostics module dependency-free", () => {
+    const diagnostics = readFileSync("lib/masked-diagnostics.ts", "utf8");
+    // This is the privacy-critical surface, and `scripts/mask-statement.mjs` runs it
+    // under plain Node against a real statement (D-035). Both properties depend on it
+    // importing nothing: nothing it can reach can widen what it emits, and Node can load
+    // it without alias resolution or a bundler. An import here would break both at once.
+    expect(diagnostics).not.toMatch(/^\s*import\s/mu);
+    expect(diagnostics).toMatch(/export function maskShape/u);
+  });
+
+  it("keeps the masking harness to diagnostics output and a stdin-only password", () => {
+    const harness = readFileSync("scripts/mask-statement.mjs", "utf8");
+    // The harness is the one thing in this repo that opens a real statement. It may write
+    // only what the value-free diagnostics produce, so the dump it leaves on disk carries
+    // no amount, balance, date, account number, name, or counterparty.
+    expect(harness).toMatch(/await writeFile\(outputPath, dump, "utf8"\)/u);
+    const render = /function renderDump\(\{[\s\S]*?\n\}/u.exec(harness)?.[0] ?? "";
+    expect(render).toContain("describeStructure(pages)");
+    expect(render).toContain("describeLabelGeometry(pages)");
+    expect(render).toContain("describeValueLabels(pages)");
+    // Nothing else from a page may reach the dump: `.str` is the raw run text, and
+    // reading it here would put document content into a file rather than a shape.
+    expect(render).not.toMatch(/\.str\b/u);
+    // The password may arrive by stdin only. An argument is visible to every process on
+    // the machine and lands in shell history, and an environment variable outlives the
+    // run — and these passwords are identity-grade and non-rotatable (D-035).
+    expect(harness).not.toMatch(/process\.env/u);
+    expect(harness).toMatch(/readPassword\(/u);
+    const withoutLiterals = harness.replace(/"(?:[^"\\]|\\.)*"/gu, '""').replace(/`(?:[^`\\]|\\.)*`/gu, "``");
+    expect(withoutLiterals).not.toMatch(/password\s*=\s*(?:argv|positional|process\.argv)/u);
+    expect(harness).toMatch(/password = ""/u);
+  });
+
+  it("keeps masked dumps out of git", () => {
+    const ignored = readFileSync(".gitignore", "utf8");
+    // A dump is value-free but describes a real document, so committing one would make
+    // every fixture written afterwards non-invented (docs/FIXTURE_POLICY.md).
+    expect(ignored).toMatch(/^masked-dumps\/$/mu);
+    expect(ignored).toMatch(/^private-statements\/$/mu);
+  });
+
   it("reduces the account number to its last four digits inside the parser", () => {
     const layout = readFileSync("lib/krungthai-layout.ts", "utf8");
     // The extracted frame must never carry a full account number, so no later code

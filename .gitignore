@@ -6,9 +6,17 @@
 # Private financial source documents
 private-statements/
 
+# Masked structural dumps from scripts/mask-statement.mjs — value-free, but they
+# describe a real document, so committing one would make every fixture written
+# afterwards non-invented (DECISIONS D-035, docs/FIXTURE_POLICY.md).
+masked-dumps/
+
 # Next.js, tests, and local Supabase state
 node_modules/
+.pnpm-store/
 .next/
+.runtime/
+.tmp-node-install/
 *.tsbuildinfo
 coverage/
 playwright-report/
