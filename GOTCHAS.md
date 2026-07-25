@@ -186,6 +186,14 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: give pdf.js a real `Worker` through `GlobalWorkerOptions.workerPort`, built from a dedicated entry module (`workers/pdf.worker.entry.ts`) with `new URL("./pdf.worker.entry.ts", import.meta.url)`. That is the same relative-URL form the app already uses for the parser worker, and it emits a separate chunk, so the two never share a scope or a channel.
 - Verify: `tests/e2e/parser.spec.ts` parses a generated PDF in a real browser. Both of its tests fail with `PDF_PARSE_FAILED / Error` on the pre-fix worker, which is the red proof; no unit test can catch this, because none of them run pdf.js.
 
+## A frame label that equals a column heading moves the grid header
+
+- Symptom: one frame field reports `MISSING_FRAME_FIELD … (label not found)` while other frame fields on lines printed *higher up the page* read correctly. The column anchors all matched, so the failure looks like a wording problem in the one field.
+- Cause: `extractStatement` resolves `headerY` from the first line containing *any* column anchor, while `findColumns` requires all seven on one line. A real statement prints `Branch` as a frame label above the grid, which matches the `branch` column anchor, so `headerY` lands on that frame line. `extractFrame` then filters `frameLines` to `y > headerY + LINE_TOLERANCE` and silently drops every frame line below it — the fields printed above the stray match survive, which is what makes it read as a per-field problem.
+- Avoid: take `headerY` from the line `findColumns` actually matched — it returns its `y` alongside the columns — rather than from the first anchor hit anywhere. Do not special-case the colliding word; any frame label equal to a column heading (`Branch`, `Balance`, `Transaction` …) reproduces this. Fixed 2026-07-25, D-028.
+- Verify: the fixtures print a `Branch` frame label between `Account Type` and `Account Number`, and `tests/krungthai-layout.test.ts` ("finds the grid header even when a frame label matches a column heading") asserts that printed order as well as the resulting suffix — the order is what makes the failure partial and therefore misleading. Restoring the any-anchor search fails 26 of the 32 layout tests with the real statement's exact message.
+- Related trap: a fixture whose frame is a flat list of labels cannot reproduce this at all. Adding a frame label to `FRAME_LABEL_STOPS` without also printing it in the fixture leaves the same class of bug undetectable.
+
 ## A frame label's value runs into the next field on the same line
 
 - Symptom: the account's last four digits are wrong but plausible — no error, no failed check, just the wrong account bound to an import.

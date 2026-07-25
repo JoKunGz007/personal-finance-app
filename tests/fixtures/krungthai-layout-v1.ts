@@ -101,11 +101,20 @@ export function buildPage(
     // Wordings a real statement prints (D-026). `Branch Code` shares the account-number
     // line, as it does on a real statement, so the fixture exercises the stop rule that
     // keeps one field's value out of the next.
+    //
+    // The printed order matters, not just the labels. A real statement prints a `Branch`
+    // frame label between the statement period and the account number, and `Branch`
+    // matches the `branch` *column* anchor — so a reader that takes the grid boundary
+    // from the first line matching any anchor reads the two fields above it and reports
+    // the account number as missing. Reproducing that order makes the fixture fail with
+    // the real statement's exact message rather than merely failing (GOTCHAS).
+    push("Statement Period", values.period, 760);
     push("Account Type", values.accountType, 750);
-    push("Account Number", values.accountNumber, 740);
-    items.push({ str: "Branch Code", x: 303, y: 740 });
-    items.push({ str: "555", x: 397, y: 740 });
-    push("Statement Period", values.period, 730);
+    items.push({ str: "Branch", x: 40, y: 740 });
+    items.push({ str: "Synthetic Central Branch", x: 170, y: 740 });
+    push("Account Number", values.accountNumber, 730);
+    items.push({ str: "Branch Code", x: 303, y: 730 });
+    items.push({ str: "555", x: 397, y: 730 });
     push("Opening Balance", values.opening, 720);
     push("Closing Balance", values.closing, 710);
   }

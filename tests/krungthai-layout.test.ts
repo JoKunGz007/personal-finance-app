@@ -107,6 +107,30 @@ describe("krungthai frame extraction", () => {
     expect(result.frame.accountLastFour).toBe("7890");
   });
 
+  it("finds the grid header even when a frame label matches a column heading", () => {
+    // The fixture prints a `Branch` frame label above the grid, as a real statement does,
+    // and `Branch` is also a column heading. Taking the frame/grid boundary from the first
+    // line matching *any* column anchor put it on that label's line, so every frame field
+    // printed below it was cut out of the frame region — the account number among them.
+    const page = buildPage([{ date: "02/01/69", label: "x", deposit: "1.00", balance: "10,259.70" }]);
+    const heading = page.find((item) => item.str === "Date/Time")!;
+    const strayLabel = page.filter((item) => item.str === "Branch" && item.y > heading.y);
+    expect(strayLabel, "the fixture must print a bare `Branch` label above the grid").toHaveLength(1);
+    // It has to sit *between* frame fields: the fields above a stray match still read,
+    // which is what made a boundary bug look like a per-field wording problem.
+    const accountNumber = page.find((item) => item.str === "Account Number")!;
+    const accountType = page.find((item) => item.str === "Account Type")!;
+    expect(accountNumber.y).toBeLessThan(strayLabel[0]!.y);
+    expect(accountType.y).toBeGreaterThan(strayLabel[0]!.y);
+
+    const result = extractStatement([page]);
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    expect(result.frame.accountLastFour).toBe("7890");
+    expect(result.frame.accountType).toBe("Savings");
+    expect(result.frame.periodEnd).toBe("2026-01-31");
+  });
+
   it("keeps only the last four account digits", () => {
     const result = extractStatement(validStatement);
     if (!result.ok) throw new Error(result.message);

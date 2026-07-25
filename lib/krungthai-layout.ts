@@ -280,14 +280,24 @@ export function describeStructure(pages: readonly PageText[]): string[] {
   return described;
 }
 
-function findColumns(lines: TextItem[][]): Columns | null {
+// Locates the transaction grid's heading line and returns both its column x positions
+// and its own `y`. The `y` is what separates the frame block above the grid from the
+// rows below it, and it has to come from *this* line — the one carrying all seven
+// headings — rather than from the first line matching any single anchor. A real
+// statement prints `Branch` as a frame label above the grid, which matches the `branch`
+// anchor on its own, so an any-anchor search puts the boundary on a frame line and
+// silently drops every frame field printed below it (GOTCHAS). The collision is generic
+// to any frame label that equals a column heading, so it is not special-cased.
+function findColumns(lines: TextItem[][]): { columns: Columns; y: number } | null {
   for (const line of lines) {
     const found: Partial<Columns> = {};
     for (const item of line) {
       const anchor = COLUMN_ANCHORS.find((candidate) => candidate.pattern.test(item.str.trim()));
       if (anchor) found[anchor.key] = item.x;
     }
-    if (COLUMN_ANCHORS.every((anchor) => found[anchor.key] !== undefined)) return found as Columns;
+    if (COLUMN_ANCHORS.every((anchor) => found[anchor.key] !== undefined)) {
+      return { columns: found as Columns, y: line[0]!.y };
+    }
   }
   return null;
 }
@@ -458,16 +468,15 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
 
   for (const [pageIndex, page] of pages.entries()) {
     const lines = groupIntoLines(page);
-    const columns = findColumns(lines);
-    if (!columns) {
+    const header = findColumns(lines);
+    if (!header) {
       return {
         ok: false,
         code: "MISSING_COLUMN_ANCHOR",
         message: `Page ${pageIndex + 1} has no line carrying every required column heading.`
       };
     }
-    const headerY = lines.find((line) => line.some((item) =>
-      COLUMN_ANCHORS.some((anchor) => anchor.pattern.test(item.str.trim()))))![0]!.y;
+    const { columns, y: headerY } = header;
 
     // The frame is printed once, above the grid on page one.
     if (pageIndex === 0) {
