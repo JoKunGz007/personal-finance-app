@@ -194,6 +194,15 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Verify: the fixtures print a `Branch` frame label between `Account Type` and `Account Number`, and `tests/krungthai-layout.test.ts` ("finds the grid header even when a frame label matches a column heading") asserts that printed order as well as the resulting suffix — the order is what makes the failure partial and therefore misleading. Restoring the any-anchor search fails 26 of the 32 layout tests with the real statement's exact message.
 - Related trap: a fixture whose frame is a flat list of labels cannot reproduce this at all. Adding a frame label to `FRAME_LABEL_STOPS` without also printing it in the fixture leaves the same class of bug undetectable.
 
+## PowerShell mangles commit messages two different ways
+
+- Symptom one: `git commit -m @'…'@` fails with `error: pathspec 'word' did not match any file(s)` and a wall of message text quoted back as more pathspecs.
+- Cause one: a here-string is only recognized when `@'` is the last thing on its line. A single trailing space after it silently makes it not a here-string, so PowerShell word-splits the message and every apostrophe inside starts a new quoted token.
+- Symptom two: the commit lands, but `git log --oneline` shows an invisible character before the subject (`﻿docs: …`).
+- Cause two: `Out-File -Encoding utf8` in PowerShell 5.1 writes a UTF-8 **BOM**, and `git commit -F` takes those bytes as the first characters of the subject line.
+- Avoid: write the message with the `Write` tool (no BOM) and pass it to `git commit -F`. Do not hand-build message files through `Out-File`/`Set-Content`, and do not rely on here-strings for anything multi-line.
+- Verify: `git log --format=%s -1 | Format-Hex | Select-Object -First 1` — the first bytes must be the subject's own characters, not `EF BB BF`. Note the blemish is not worth a force push to fix on an already-pushed commit.
+
 ## The summary block sits inside the row region, so it can be eaten by the last transaction
 
 - Symptom: the final row of a statement carries extra text in its cells, or fails with an unreadable date/time cell whose shape has trailing words and digits — but only on statements whose last page ends tightly.
