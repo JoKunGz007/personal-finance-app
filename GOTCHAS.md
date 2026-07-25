@@ -179,6 +179,27 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: do not treat a synthetic UI walkthrough as end-to-end evidence for import contracts. Check which button was pressed: "Confirm synthetic batch" is browser state, "Confirm import" is the route. Route contracts are covered by `tests/import-route.test.ts`, the RPC by pgTAP and `tests/import-confirm-e2e.test.ts`.
 - Verify: `confirmSynthetic` contains no `fetch`; `confirmBoundImport` posts to `/api/v1/imports/confirm` and is reachable only once `boundAccount` is set.
 
+## pdf.js needs its worker handed over explicitly, and pointing at the package path backfires
+
+- Symptom: every PDF fails identically with `PDF_PARSE_FAILED / Error` — a bare `Error`, not one of pdf.js's named exceptions — no matter what the file contains. Setting `GlobalWorkerOptions.workerSrc` to `pdfjs-dist/build/pdf.worker.mjs` then changes the symptom to a status line of `undefined (undefined)`.
+- Cause: with `GlobalWorkerOptions` unconfigured, pdf.js falls back to loading its worker module inline and throws before reading any page. Setting `workerSrc` to a package path does not help under Turbopack: the module is bundled into the parser worker's own chunk, executes in that global scope, replaces `self.onmessage`, and posts pdf.js's internal protocol messages straight to the main thread — so the UI renders pdf.js's message shape instead of the parser's.
+- Avoid: give pdf.js a real `Worker` through `GlobalWorkerOptions.workerPort`, built from a dedicated entry module (`workers/pdf.worker.entry.ts`) with `new URL("./pdf.worker.entry.ts", import.meta.url)`. That is the same relative-URL form the app already uses for the parser worker, and it emits a separate chunk, so the two never share a scope or a channel.
+- Verify: `tests/e2e/parser.spec.ts` parses a generated PDF in a real browser. Both of its tests fail with `PDF_PARSE_FAILED / Error` on the pre-fix worker, which is the red proof; no unit test can catch this, because none of them run pdf.js.
+
+## Playwright reuses a server someone else started, so browser runs can test stale code
+
+- Symptom: a browser test keeps failing on behaviour you just fixed, with the identical error every run, while the unit suite covering the same logic is green. Or the reverse — it passes after a change that could not possibly work.
+- Cause: `playwright.config.ts` sets `reuseExistingServer: !process.env.CI`, so if anything is already listening on port 3000 the `pnpm build && pnpm start` command never runs. A server started by hand keeps serving the build it booted with, no matter how much source changes afterwards.
+- Avoid: before trusting a browser run, compare the listening process's start time with the source mtime — `Get-NetTCPConnection -LocalPort 3000 -State Listen` for the pid, `(Get-Item .next\BUILD_ID).LastWriteTime` for the build. Free the port and let Playwright build, or restart the manual server after every source change.
+- Verify: three consecutive runs reported `MISSING_COLUMN_ANCHOR` against a reader that no longer had those anchors; the build was 16 minutes older than `lib/krungthai-layout.ts`.
+
+## A unit suite that feeds the layout reader fixtures proves nothing about reading a PDF
+
+- Symptom: 27 green parser tests, a green build, and a green Playwright run, while the app cannot open any PDF at all.
+- Cause: `tests/krungthai-layout.test.ts` calls `extractStatement` with `PageText` arrays, and the synthetic UI path fetches `/api/v1/demo`, so neither touches `getDocument`, the worker bundle, or the CSP. The layout rules and the PDF integration are separate risks, and only the first was covered.
+- Avoid: keep at least one test that puts real PDF bytes through the real worker in a real browser. `tests/fixtures/synthetic-pdf.ts` generates those bytes from the same invented geometry, so this needs no real statement — a Type0/Identity-H font with an identity ToUnicode CMap and no embedded glyphs is enough, because pdf.js recovers text from ToUnicode rather than from outlines.
+- Verify: `pnpm test:e2e` runs 8 tests, of which 4 are the parser specs across desktop and mobile.
+
 ## A restore can leave the audit_events identity sequence behind an existing id
 
 - Symptom: an import that worked yesterday fails with `duplicate key value violates unique constraint "audit_events_pkey"`, naming an id that already exists, on a database nobody changed.

@@ -19,7 +19,7 @@ describe("krungthai frame extraction", () => {
 
     expect(result.frame).toEqual({
       bankCode: "KTB",
-      accountType: "บัญชีออมทรัพย์",
+      accountType: "Savings",
       accountLastFour: "7890",
       periodStart: "2026-01-01",
       periodEnd: "2026-01-31",

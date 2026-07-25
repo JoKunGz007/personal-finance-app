@@ -78,6 +78,12 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .status-line { margin: 30px 0 0 167px; display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
 .status-line span { color: var(--blue); font-size: 8px; }
 
+.label-diagnostic { margin: 16px 0 0 167px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--mist); font-size: 13px; }
+.label-diagnostic summary { color: var(--navy); font-weight: 600; cursor: pointer; }
+.label-diagnostic p { margin: 10px 0 0; color: var(--muted); }
+.label-diagnostic ol { margin: 12px 0 0; padding-left: 22px; display: grid; gap: 6px; }
+.label-diagnostic code { color: var(--navy); font-family: var(--font-data); font-size: 12px; overflow-wrap: anywhere; }
+
 .binding-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
 .binding-bench .bench-heading b { color: var(--navy); font: 500 1em/1 var(--font-data); }
 .binding-controls { margin: 26px 0 0 167px; display: grid; grid-template-columns: auto minmax(260px, 1fr) auto; align-items: end; gap: 12px; }
@@ -167,6 +173,7 @@ footer p { margin: 0; }
   .import-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .binding-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .binding-bench .warning { margin-left: 0; }
+  .label-diagnostic { margin-left: 0; }
   .status-line { margin-left: 0; }
   .or-rule { display: none; }
   .statement-strip { grid-template-columns: repeat(3, 1fr); }

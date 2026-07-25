@@ -23,7 +23,7 @@ type Extracted = { frame: StatementFrame; rows: SourceRowCandidate[]; pageCount:
 
 type WorkerReply =
   | { type: "parsed"; frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number }
-  | { type: "error"; code: string; message: string };
+  | { type: "error"; code: string; reason?: string; labelCandidates?: string[][]; message: string };
 
 const categories = ["Uncategorized", "Income", "Food", "Cash", "Fees", "Interest"];
 
@@ -44,6 +44,7 @@ export function LedgerApp() {
   const [boundAccount, setBoundAccount] = useState<LedgerAccount | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const [bindingError, setBindingError] = useState<string | null>(null);
+  const [labelCandidates, setLabelCandidates] = useState<string[][]>([]);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
   const [backupPassword, setBackupPassword] = useState("");
@@ -100,6 +101,7 @@ export function LedgerApp() {
         // belong to is not something the parser may infer (DECISIONS D-017), so the
         // next step is an explicit, checked choice by the owner.
         setArtifactDigest(digest);
+        setLabelCandidates([]);
         setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
         setStatement(null);
         setBoundAccount(null);
@@ -107,7 +109,12 @@ export function LedgerApp() {
         setStage("bind");
         setStatus(`Read ${reply.rows.length} rows across ${reply.pageCount} page(s) for account ending ${reply.frame.accountLastFour}, ${reply.frame.periodStart} to ${reply.frame.periodEnd}. Nothing has left this device. Choose the ledger account it belongs to.`);
       } else {
-        setStatus(reply.message);
+        // Show the typed code alongside the message. The code is a fixed enum from
+        // lib/krungthai-layout.ts and carries no statement content, and without it
+        // every failure except an unsupported layout reads identically — which makes
+        // a single diagnostic run far less informative than it needs to be.
+        setStatus(`${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})`);
+        setLabelCandidates(reply.labelCandidates ?? []);
       }
       setPassword("");
       worker.terminate();
@@ -290,6 +297,23 @@ export function LedgerApp() {
             <button className="secondary-button" type="button" onClick={loadSynthetic}>Use synthetic statement</button>
           </div>
           <p className="status-line" role="status"><span aria-hidden="true">●</span>{status}</p>
+
+          {labelCandidates.length > 0 ? (
+            <details className="label-diagnostic">
+              <summary>Heading words this PDF prints ({labelCandidates.length} candidate line(s))</summary>
+              <p>
+                Repairing the reader needs only the column heading words — the positions come from
+                the PDF itself. Every text run containing a digit was dropped before this list was
+                built, so amounts, balances, dates, and account numbers cannot appear here. Read it
+                before sharing it, and redact anything you do not want to leave this device.
+              </p>
+              <ol>
+                {labelCandidates.map((line, index) => (
+                  <li key={index}><code lang="th">{line.join("  ·  ")}</code></li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
         </section>
 
         {extracted && !boundAccount ? (

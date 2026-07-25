@@ -20,10 +20,10 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 87 passed / 5 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation, Next.js route handlers; all five skips are unreachable-container reporters and ran green against the live container) |
+| Vitest | Passed, 88 passed / 5 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation, Next.js route handlers; all five skips are unreachable-container reporters and ran green against the live container) |
 | pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
 | Production build | Passed |
-| Playwright | Passed, 4/4 across desktop and mobile (re-run 2026-07-25 after the binding UI landed) |
+| Playwright | Passed, 8/8 across desktop and mobile — the synthetic review path plus two specs that put a generated PDF through the real pdf.js worker (D-023). Run against a freshly built server: `reuseExistingServer` silently reuses a stale one (GOTCHAS) |
 | Clean database reset | Migrations 001–008 and synthetic seed applied (last run earlier on 2026-07-25; no migration has changed since, and this round's work touched no SQL) |
 
 These results used the ignored project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 because the system Node installation remains Node 20. A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
@@ -60,7 +60,13 @@ All four original review blockers are now resolved with red→green pgTAP eviden
 5. ~~Build the account-binding UI: an accounts-list endpoint plus a chooser, so an extracted statement can be bound and confirmed from the app rather than from a test.~~ **Done** (D-021) — `GET /api/v1/accounts` plus a bind stage in `app/ledger-app.tsx`; the bound payload is posted to `/api/v1/imports/confirm` with the PDF's own SHA-256 as the artifact digest and one idempotency key per bound statement. Route coverage came with it (D-022). Still uncovered: the chooser in a browser, which needs a real PDF to reach.
 6. ~~Re-run Playwright.~~ **Done 2026-07-25** — 4/4 across desktop and mobile, re-run after the binding UI landed. Still unexercised in a browser: the charset rejection path, the binding chooser, and the authenticated import path — all three sit behind a real PDF.
 
-Every local task above is now complete and verified, so the next action is the authorized real-PDF smoke test (gate 1 below), which is also the only way to reach the binding chooser and the authenticated import path in a browser.
+7. **Read a real statement end to end.** Two attempts on 2026-07-25, both productive, neither complete:
+   - Attempt 1 failed with `PDF_PARSE_FAILED` before pdf.js read a page — `GlobalWorkerOptions` had never been configured, so no PDF could be opened at all (D-023). Not a geometry result.
+   - Attempt 2 reached `MISSING_COLUMN_ANCHOR`, and the on-device label diagnostic showed the real column model: one combined `Date/Time` column and a separate `Transaction` column, neither of which the invented geometry had. The reader and fixtures are corrected (D-024).
+
+   Confirmed against reality so far: the file opens, the text layer decodes, the bank signature matches, and the seven column headings are now known and matched. Still unknown: the date format inside the `Date/Time` cell, the frame label wording for account number, period, and balances, and every row-level value — **the real statement has not been re-read since the correction**. A further run is needed, with the owner present for the password. Failures now report a masked shape (`dd/dd/dd dd:dd`) rather than an opaque code, so each run should narrow the gap.
+
+The other six tasks are complete and verified. Task 7 is the only remaining local action, and it is still the only way to reach the binding chooser and the authenticated import path against a real statement.
 
 ## Later authorization gates
 

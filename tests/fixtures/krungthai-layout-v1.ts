@@ -4,16 +4,24 @@ import type { PageText, TextItem } from "@/lib/krungthai-layout";
 //
 // Per docs/FIXTURE_POLICY.md every value and coordinate here is made up: no real
 // statement was opened, measured, redacted, or perturbed to produce it. Names,
-// amounts, balances, branches, and Thai labels are fictional, and the column
-// positions are chosen to be readable rather than copied from anything.
+// amounts, balances, branches, and labels are fictional, and the column positions are
+// chosen to be readable rather than copied from anything.
+//
+// The column *structure* does follow what a real statement prints, as reported by the
+// 2026-07-25 smoke test (DECISIONS D-024): one `Date/Time` column rather than separate
+// date and time columns, and `Transaction` printed separately from
+// `Description/Cheque No.`. Matching the structure is what makes these fixtures worth
+// anything — the previous invented shape could never have matched a real statement.
+// Heading words are the bank's boilerplate, not statement content; no figure, name, or
+// date from a real document appears here.
 
 const COLUMN_X = {
-  date: 40,
-  time: 110,
-  description: 170,
-  withdrawal: 330,
-  deposit: 400,
-  balance: 470,
+  dateTime: 40,
+  transaction: 150,
+  description: 240,
+  withdrawal: 360,
+  deposit: 420,
+  balance: 480,
   branch: 545
 } as const;
 
@@ -33,6 +41,9 @@ type RowSpec = {
   branch?: string;
 };
 
+// The date and time share one column, printed as two runs on the same line — which is
+// also the case the reader has to tolerate, since pdf.js may emit them either way.
+
 // The invented frame block, printed above the grid on page one as label/value
 // pairs sharing a line. Overriding a field to null omits it, so a test can prove
 // the extractor fails closed on a missing field.
@@ -45,13 +56,17 @@ export type FrameSpec = {
   currencyMarker?: string | null;
 };
 
+// Labels are English because a real statement prints them that way (D-024). Only
+// `Account Type` is confirmed by the smoke test — the account-number, period, and
+// balance labels sit on lines the label diagnostic redacts, so their exact wording is
+// still a guess and the reader keeps accepting the Thai alternates too.
 const DEFAULT_FRAME: Required<FrameSpec> = {
-  accountType: "บัญชีออมทรัพย์",
+  accountType: "Savings",
   accountNumber: "123-4-56789-0",
   period: "01/01/69 - 31/01/69",
   opening: "10,000.00",
   closing: "10,259.70",
-  currencyMarker: "สกุลเงิน THB (บาท)"
+  currencyMarker: "Currency THB"
 };
 
 export function buildPage(
@@ -62,8 +77,10 @@ export function buildPage(
   const items: TextItem[] = [];
 
   if (withSignature) {
-    items.push({ str: "บมจ. ธนาคารกรุงไทย", x: 40, y: 780 });
-    items.push({ str: "รายการเดินบัญชี (สังเคราะห์)", x: 40, y: 770 });
+    // The bank signature the reader looks for. A real statement carries the English
+    // name, which is what the smoke test's first check confirmed.
+    items.push({ str: "Krungthai Bank Public Company Limited", x: 40, y: 780 });
+    items.push({ str: "Statement of Account (synthetic)", x: 40, y: 770 });
   }
 
   if (frame) {
@@ -74,28 +91,29 @@ export function buildPage(
       items.push({ str: value, x: 170, y });
     };
     if (values.currencyMarker !== null) items.push({ str: values.currencyMarker, x: 400, y: 760 });
-    push("ประเภทบัญชี", values.accountType, 750);
-    push("เลขที่บัญชี", values.accountNumber, 740);
-    push("ระหว่างวันที่", values.period, 730);
-    push("ยอดยกมา", values.opening, 720);
-    push("ยอดยกไป", values.closing, 710);
+    push("Account Type", values.accountType, 750);
+    push("Account No.", values.accountNumber, 740);
+    push("Period", values.period, 730);
+    push("Opening Balance", values.opening, 720);
+    push("Closing Balance", values.closing, 710);
   }
 
   if (headings) {
-    items.push({ str: "วันที่", x: COLUMN_X.date, y: HEADER_Y });
-    items.push({ str: "เวลา", x: COLUMN_X.time, y: HEADER_Y });
-    items.push({ str: "รายการ", x: COLUMN_X.description, y: HEADER_Y });
-    items.push({ str: "ถอนเงิน", x: COLUMN_X.withdrawal, y: HEADER_Y });
-    items.push({ str: "ฝากเงิน", x: COLUMN_X.deposit, y: HEADER_Y });
-    items.push({ str: "ยอดคงเหลือ", x: COLUMN_X.balance, y: HEADER_Y });
-    items.push({ str: "ช่องทาง", x: COLUMN_X.branch, y: HEADER_Y });
+    items.push({ str: "Date/Time", x: COLUMN_X.dateTime, y: HEADER_Y });
+    items.push({ str: "Transaction", x: COLUMN_X.transaction, y: HEADER_Y });
+    items.push({ str: "Description/Cheque No.", x: COLUMN_X.description, y: HEADER_Y });
+    items.push({ str: "Withdrawal", x: COLUMN_X.withdrawal, y: HEADER_Y });
+    items.push({ str: "Deposit", x: COLUMN_X.deposit, y: HEADER_Y });
+    items.push({ str: "Balance", x: COLUMN_X.balance, y: HEADER_Y });
+    items.push({ str: "Branch", x: COLUMN_X.branch, y: HEADER_Y });
   }
 
   rows.forEach((row, index) => {
     const y = FIRST_ROW_Y - index * ROW_PITCH;
-    items.push({ str: row.date, x: COLUMN_X.date, y });
-    if (row.time) items.push({ str: row.time, x: COLUMN_X.time, y });
-    items.push({ str: row.label, x: COLUMN_X.description, y });
+    items.push({ str: row.date, x: COLUMN_X.dateTime, y });
+    // Same column as the date, printed a little to its right on the same line.
+    if (row.time) items.push({ str: row.time, x: COLUMN_X.dateTime + 55, y });
+    items.push({ str: row.label, x: COLUMN_X.transaction, y });
     if (row.withdrawal) items.push({ str: row.withdrawal, x: COLUMN_X.withdrawal, y });
     if (row.deposit) items.push({ str: row.deposit, x: COLUMN_X.deposit, y });
     items.push({ str: row.balance, x: COLUMN_X.balance, y });

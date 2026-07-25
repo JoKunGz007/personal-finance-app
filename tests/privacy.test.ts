@@ -42,6 +42,10 @@ describe("privacy guardrails", () => {
     const withoutLiterals = worker.replace(/"(?:[^"\\]|\\.)*"/gu, '""').replace(/`(?:[^`\\]|\\.)*`/gu, "``");
     expect(withoutLiterals).not.toMatch(/postMessage\([^)]*\b(ephemeralPassword|password|bytes|pages|content|items)\b/su);
     expect(worker).toMatch(/ephemeralPassword = ""/);
+    // The layout diagnostic may only cross as the reducer's output. Posting anything
+    // else derived from `pages` would defeat the check above by renaming a local.
+    expect(worker).toMatch(/const labelCandidates = describeLabelGeometry\(pages\);/);
+    expect(withoutLiterals).not.toMatch(/labelCandidates\s*:/u);
   });
 
   it("keeps every client request same-origin and limited to the import contract", () => {
@@ -72,6 +76,26 @@ describe("privacy guardrails", () => {
     // An explicit column list, never select("*"): a future column must be opted into.
     expect(route).toContain('.select("id,bank_code,label,account_type,last_four,currency,timezone")');
     expect(route).not.toMatch(/select\(\s*"\*"/u);
+  });
+
+  it("keeps digits out of the layout diagnostic entirely", async () => {
+    const { describeLabelGeometry } = await import("@/lib/krungthai-layout");
+    const { validStatement } = await import("./fixtures/krungthai-layout-v1");
+    // The diagnostic exists so a real statement's heading words can repair the reader
+    // without anyone reading the statement. Every amount, balance, date, time, account
+    // number, and reference contains a digit, so excluding digit-bearing runs makes it
+    // structurally unable to carry financial values — this asserts that property over
+    // the full invented statement, whose rows are dense with money.
+    const described = describeLabelGeometry(validStatement);
+    expect(described.length).toBeGreaterThan(0);
+    const flattened = described.flat().join(" ");
+    expect(flattened).not.toMatch(/\p{Nd}/u);
+    // The headings survive, so the diagnostic is actually useful — this is exactly the
+    // information that repaired the reader after the 2026-07-25 smoke test.
+    expect(flattened).toContain("Date/Time");
+    expect(flattened).toContain("Description/Cheque No.");
+    // A sparse line — a name or address rather than a heading row — is not reported.
+    expect(describeLabelGeometry([[{ str: "นายสังเคราะห์ ทดสอบ", x: 40, y: 700 }]])).toEqual([]);
   });
 
   it("reduces the account number to its last four digits inside the parser", () => {

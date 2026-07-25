@@ -1,6 +1,13 @@
 /// <reference lib="webworker" />
-import { getDocument } from "pdfjs-dist";
-import { extractStatement, type PageText, type TextItem } from "@/lib/krungthai-layout";
+import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
+import { describeLabelGeometry, extractStatement, type PageText, type TextItem } from "@/lib/krungthai-layout";
+
+// pdf.js needs its own worker, and it has to be handed over explicitly. Left unset it
+// falls back to loading that module inline, which throws a bare `Error` before any page
+// is read — so every PDF looks unparseable no matter what it contains. A `workerPort`
+// built from a dedicated entry module keeps pdf.js in its own scope; see
+// workers/pdf.worker.entry.ts for why `workerSrc` with a package path is not enough.
+GlobalWorkerOptions.workerPort = new Worker(new URL("./pdf.worker.entry.ts", import.meta.url), { type: "module" });
 
 type ParseMessage = { type: "parse"; bytes: ArrayBuffer; password: string };
 
@@ -32,9 +39,19 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
 
     const result = extractStatement(pages);
     if (!result.ok) {
+      // A layout that will not read is fixed by knowing which heading words the
+      // statement prints, so send those candidate labels back for the owner to see.
+      // describeLabelGeometry drops every item containing a digit, so no amount,
+      // balance, date, or account number can travel with them.
+      //
+      // Reduced here, one statement before the post, deliberately: `pages` must never
+      // appear inside a postMessage call, so the call site can be read at a glance to
+      // confirm only derived values cross. tests/privacy.test.ts enforces both halves.
+      const labelCandidates = describeLabelGeometry(pages);
       workerScope.postMessage({
         type: "error",
         code: result.code,
+        labelCandidates,
         message: result.code === "UNSUPPORTED_LAYOUT"
           ? "This PDF does not match the supported Krungthai layout. No data left this device."
           : "This layout could not be read exactly, so nothing was imported. No data left this device."
@@ -46,7 +63,16 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
   } catch (error) {
     const name = error instanceof Error ? error.name : "UnknownError";
     const code = name === "PasswordException" ? "WRONG_PASSWORD" : "PDF_PARSE_FAILED";
-    workerScope.postMessage({ type: "error", code, message: code === "WRONG_PASSWORD" ? "The PDF password is incorrect." : "The PDF could not be parsed safely." });
+    // The error's class name goes back, never its message. pdf.js names are a fixed
+    // set of library constants (PasswordException, InvalidPDFException,
+    // UnknownErrorException…), so they distinguish "this file is not a PDF" from "our
+    // worker is misconfigured" without carrying anything read out of the document.
+    workerScope.postMessage({
+      type: "error",
+      code,
+      reason: name,
+      message: code === "WRONG_PASSWORD" ? "The PDF password is incorrect." : "The PDF could not be parsed safely."
+    });
   } finally {
     ephemeralPassword = "";
   }

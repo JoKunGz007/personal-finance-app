@@ -53,10 +53,17 @@ const DETAIL_TOLERANCE = 14;
 const BANK_SIGNATURE = /Krungthai|กรุงไทย/iu;
 
 // Column anchors, in printed order. `key` names the field the band feeds.
+//
+// The seven columns below are the ones a real statement prints (see the 2026-07-25
+// smoke test, DECISIONS D-024). The date and the time share a single `Date/Time`
+// column, and the transaction type is printed separately from the description — the
+// earlier invented model split date from time and had no transaction column at all,
+// which no real statement could ever satisfy. Thai wordings are kept as alternates
+// because the contract allows either language; the structure is what must match.
 const COLUMN_ANCHORS = [
-  { key: "date", pattern: /^(วันที่|Date)$/iu },
-  { key: "time", pattern: /^(เวลา|Time)$/iu },
-  { key: "description", pattern: /^(รายการ|Description)$/iu },
+  { key: "dateTime", pattern: /^(Date\/Time|วันที่\/เวลา|วันที่|Date)$/iu },
+  { key: "transaction", pattern: /^(Transaction|รายการ)$/iu },
+  { key: "description", pattern: /^(Description\/Cheque No\.?|Description|คำอธิบาย|รายละเอียด)$/iu },
   { key: "withdrawal", pattern: /^(ถอนเงิน|Withdrawal)$/iu },
   { key: "deposit", pattern: /^(ฝากเงิน|Deposit)$/iu },
   { key: "balance", pattern: /^(ยอดคงเหลือ|Balance)$/iu },
@@ -66,8 +73,12 @@ const COLUMN_ANCHORS = [
 type ColumnKey = (typeof COLUMN_ANCHORS)[number]["key"];
 type Columns = Record<ColumnKey, number>;
 
-const DATE_PATTERN = /^(\d{2})\/(\d{2})\/(\d{2})$/;
-const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
+// One cell carries the date and, optionally, the time. Whether pdf.js emits them as
+// one run or two does not matter: a cell's runs are joined before matching.
+const DATE_TIME_PATTERN =
+  /^(\d{2})\/(\d{2})\/(\d{2})(?:\s+(([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?))?$/;
+// The frame's period is printed as two plain dates, never with a time.
+const DATE_ONLY_PATTERN = /^(\d{2})\/(\d{2})\/(\d{2})$/;
 
 // Frame labels live above the transaction heading line. Each value is read from
 // the same printed line, to the right of its label.
@@ -105,6 +116,46 @@ function assign(columns: Columns, item: TextItem): ColumnKey | null {
 
 function textOf(cells: Partial<Record<ColumnKey, string[]>>, key: ColumnKey): string {
   return (cells[key] ?? []).join(" ").replace(/\s+/gu, " ").trim();
+}
+
+// On-device diagnostic for a layout that will not read.
+//
+// When the anchors do not match, the only thing needed to fix the reader is the set of
+// heading words the statement actually prints — the x positions come from the PDF at
+// runtime. This returns those candidate labels and nothing else, so a layout can be
+// repaired without anyone reading the statement.
+//
+// Two filters make the output structurally incapable of carrying financial data: any
+// item containing a digit is dropped (excluding amounts, balances, dates, times,
+// account and reference numbers), and only lines holding at least three surviving
+// short items are reported — heading rows are dense, whereas a name or address line is
+// not. It is a diagnostic aid, not a sanitizer: it is shown to the owner on this
+// device, and what leaves the device stays their decision.
+const DIAGNOSTIC_MAX_LABEL = 24;
+const DIAGNOSTIC_MIN_ITEMS_PER_LINE = 3;
+const DIAGNOSTIC_MAX_LINES = 12;
+
+// Reduces text to its shape: every digit becomes `d`, every letter `x`, and everything
+// else — separators, punctuation, spacing — is kept. `01/01/26 09:15` becomes
+// `dd/dd/dd dd:dd`, which says what format a cell is printed in while destroying the
+// value. Row-level failures report this instead of the cell, so a date or amount format
+// can be diagnosed without any figure leaving the device.
+export function maskShape(value: string): string {
+  return value.replace(/\p{Nd}/gu, "d").replace(/\p{L}/gu, "x");
+}
+
+export function describeLabelGeometry(pages: readonly PageText[]): string[][] {
+  const described: string[][] = [];
+  for (const page of pages) {
+    for (const line of groupIntoLines(page)) {
+      const labels = line
+        .map((item) => item.str.normalize("NFKC").trim())
+        .filter((label) => label.length > 0 && label.length <= DIAGNOSTIC_MAX_LABEL && !/\p{Nd}/u.test(label));
+      if (labels.length >= DIAGNOSTIC_MIN_ITEMS_PER_LINE) described.push(labels);
+      if (described.length >= DIAGNOSTIC_MAX_LINES) return described;
+    }
+  }
+  return described;
 }
 
 function findColumns(lines: TextItem[][]): Columns | null {
@@ -161,7 +212,7 @@ function extractFrame(lines: TextItem[][], headerY: number):
 
   // The period end year anchors every two-digit year in the statement, including
   // its own start date, so it is resolved first against its own printed value.
-  const endParts = DATE_PATTERN.exec(periodDates[1]!)!;
+  const endParts = DATE_ONLY_PATTERN.exec(periodDates[1]!)!;
   const endYear = resolveKrungthaiYear(Number(endParts[3]), new Date().getUTCFullYear());
   const periodEnd = toIsoDate(periodDates[1]!, endYear);
   const periodStart = toIsoDate(periodDates[0]!, endYear);
@@ -200,7 +251,7 @@ function extractFrame(lines: TextItem[][], headerY: number):
 // Resolves a printed dd/mm/yy against an already-known year, rejecting dates that
 // are not real calendar dates (Date silently rolls 31/02 over).
 function toIsoDate(printed: string, year: number): string | null {
-  const match = DATE_PATTERN.exec(printed);
+  const match = DATE_ONLY_PATTERN.exec(printed);
   if (!match) return null;
   const [, day, month] = match;
   const iso = `${year}-${month}-${day}`;
@@ -254,23 +305,28 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
         (cells[key] ??= []).push(item.str.trim());
       }
 
-      const dateText = textOf(cells, "date");
-      if (DATE_PATTERN.test(dateText)) {
+      const dateText = textOf(cells, "dateTime");
+      if (DATE_TIME_PATTERN.test(dateText)) {
         current = { cells, y: line[0]!.y };
         pageRows.push(cells);
         continue;
+      }
+      // A date/time cell that carries digits but does not parse is a row this reader
+      // cannot read — never a continuation line and never stray text. Skipping it would
+      // drop a transaction silently, and merging it would fold one row's date into
+      // another's description, so both directions fail closed. Text without digits
+      // (a sub-heading such as a brought-forward label) is genuinely not a row.
+      if (dateText && /\p{Nd}/u.test(dateText)) {
+        return {
+          ok: false,
+          code: current ? "AMBIGUOUS_ROW_GEOMETRY" : "INVALID_ROW_CONTENT",
+          message: `Page ${pageIndex + 1} has a date/time cell that does not parse, shape ${maskShape(dateText)}.`
+        };
       }
       if (!current) continue; // stray text above the first row
       if (current.y - line[0]!.y > DETAIL_TOLERANCE) {
         current = null; // too far below to be a continuation; treat as footer
         continue;
-      }
-      if (dateText) {
-        return {
-          ok: false,
-          code: "AMBIGUOUS_ROW_GEOMETRY",
-          message: `Page ${pageIndex + 1} has a continuation line carrying an unparsable date cell.`
-        };
       }
       for (const key of Object.keys(cells) as ColumnKey[]) {
         (current.cells[key] ??= []).push(...cells[key]!);
@@ -316,9 +372,12 @@ function toRow(
   const invalid = (message: string): { ok: false; code: LayoutErrorCode; message: string } =>
     ({ ok: false, code: "INVALID_ROW_CONTENT", message: `Page ${page} row ${row}: ${message}` });
 
-  const dateMatch = DATE_PATTERN.exec(textOf(cells, "date"));
-  if (!dateMatch) return invalid("unreadable date.");
-  const [, day, month, shortYear] = dateMatch;
+  const printedDateTime = textOf(cells, "dateTime");
+  const dateMatch = DATE_TIME_PATTERN.exec(printedDateTime);
+  // A shape rather than the value: digits become `d` and letters `x`, so a format
+  // mismatch can be diagnosed on this device without the cell's contents.
+  if (!dateMatch) return invalid(`unreadable date/time cell, shape ${maskShape(printedDateTime)}.`);
+  const [, day, month, shortYear, printedTime] = dateMatch;
   const year = resolveKrungthaiYear(Number(shortYear), statementEndYear);
   const sourceDate = `${year}-${month}-${day}`;
   // Reject impossible calendar dates such as 31/02; Date rolls them over silently.
@@ -327,17 +386,16 @@ function toRow(
     return invalid("date is not a real calendar date.");
   }
 
-  const timeText = textOf(cells, "time");
-  if (timeText && !TIME_PATTERN.test(timeText)) return invalid("unreadable time.");
+  const timeText = printedTime ?? "";
 
-  // The heading line is the label; any wrapped continuation is the description.
-  const descriptionParts = cells.description ?? [];
-  if (descriptionParts.length === 0) return invalid("no description text.");
-  const transactionLabel = descriptionParts[0]!.trim();
-  const description = descriptionParts.length > 1
-    ? descriptionParts.slice(1).join(" ").replace(/\s+/gu, " ").trim()
-    : transactionLabel;
-  if (!transactionLabel || !description) return invalid("empty description text.");
+  // The transaction type and the description are printed in separate columns. Either
+  // may be blank on a given row, and a wrapped continuation appends to whichever
+  // column it sits under, so the two are merged only as a last resort.
+  const transactionText = textOf(cells, "transaction");
+  const descriptionText = textOf(cells, "description");
+  if (!transactionText && !descriptionText) return invalid("no transaction or description text.");
+  const transactionLabel = transactionText || descriptionText;
+  const description = descriptionText || transactionText;
 
   const withdrawalText = textOf(cells, "withdrawal");
   const depositText = textOf(cells, "deposit");
@@ -351,7 +409,12 @@ function toRow(
       balance: parseThb(textOf(cells, "balance")).minor
     };
   } catch {
-    return invalid("unparsable money text.");
+    return invalid(
+      "unparsable money text, shapes " +
+      `withdrawal ${maskShape(withdrawalText) || "—"}, ` +
+      `deposit ${maskShape(depositText) || "—"}, ` +
+      `balance ${maskShape(textOf(cells, "balance")) || "—"}.`
+    );
   }
 
   const components: SourceRowCandidate["components"] = [];
@@ -391,7 +454,7 @@ function toRow(
       provenance: {
         page,
         row,
-        parserFields: { contractVersion: "krungthai-layout-v1", printedDate: textOf(cells, "date") }
+        parserFields: { contractVersion: "krungthai-layout-v1", printedDateTime }
       }
     }
   };
