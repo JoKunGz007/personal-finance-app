@@ -83,6 +83,7 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .label-diagnostic p { margin: 10px 0 0; color: var(--muted); }
 .label-diagnostic ol { margin: 12px 0 0; padding-left: 22px; display: grid; gap: 6px; }
 .label-diagnostic code { color: var(--navy); font-family: var(--font-data); font-size: 12px; overflow-wrap: anywhere; }
+.structure-dump { width: 100%; margin: 10px 0 0; padding: 10px 12px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-family: var(--font-data); font-size: 11px; line-height: 1.5; white-space: pre; overflow: auto; resize: vertical; }
 
 .binding-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
 .binding-bench .bench-heading b { color: var(--navy); font: 500 1em/1 var(--font-data); }

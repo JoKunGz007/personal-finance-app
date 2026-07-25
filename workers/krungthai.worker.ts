@@ -1,6 +1,9 @@
 /// <reference lib="webworker" />
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
-import { describeLabelGeometry, extractStatement, type PageText, type TextItem } from "@/lib/krungthai-layout";
+import {
+  describeLabelGeometry, describeStructure, describeValueLabels, extractStatement,
+  type PageText, type TextItem
+} from "@/lib/krungthai-layout";
 
 // pdf.js needs its own worker, and it has to be handed over explicitly. Left unset it
 // falls back to loading that module inline, which throws a bare `Error` before any page
@@ -48,10 +51,20 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
       // appear inside a postMessage call, so the call site can be read at a glance to
       // confirm only derived values cross. tests/privacy.test.ts enforces both halves.
       const labelCandidates = describeLabelGeometry(pages);
+      const valueLabels = describeValueLabels(pages);
+      const structure = describeStructure(pages);
+      // The reader's own message carries the detail that makes a failure actionable —
+      // masked cell shapes and allowlisted token names. Every message in
+      // lib/krungthai-layout.ts is built from static text, field names, maskShape(), or
+      // the currency allowlist, never from raw cell text; tests/privacy.test.ts guards
+      // that. Discarding it, as this worker used to, made each failure a bare code.
       workerScope.postMessage({
         type: "error",
         code: result.code,
         labelCandidates,
+        valueLabels,
+        structure,
+        detail: result.message,
         message: result.code === "UNSUPPORTED_LAYOUT"
           ? "This PDF does not match the supported Krungthai layout. No data left this device."
           : "This layout could not be read exactly, so nothing was imported. No data left this device."

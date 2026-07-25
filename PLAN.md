@@ -20,10 +20,10 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 88 passed / 5 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation, Next.js route handlers; all five skips are unreachable-container reporters and ran green against the live container) |
+| Vitest | Passed, 95 passed / 5 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation, Next.js route handlers; all five skips are unreachable-container reporters and ran green against the live container) |
 | pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
 | Production build | Passed |
-| Playwright | Passed, 8/8 across desktop and mobile — the synthetic review path plus two specs that put a generated PDF through the real pdf.js worker (D-023). Run against a freshly built server: `reuseExistingServer` silently reuses a stale one (GOTCHAS) |
+| Playwright | Passed, 8/8 across desktop and mobile — the synthetic review path plus two specs that put a generated PDF through the real pdf.js worker (D-023). Run with `--config=playwright.isolated.config.ts`, which never reuses a stale server (D-027) |
 | Clean database reset | Migrations 001–008 and synthetic seed applied (last run earlier on 2026-07-25; no migration has changed since, and this round's work touched no SQL) |
 
 These results used the ignored project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 because the system Node installation remains Node 20. A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
@@ -64,7 +64,12 @@ All four original review blockers are now resolved with red→green pgTAP eviden
    - Attempt 1 failed with `PDF_PARSE_FAILED` before pdf.js read a page — `GlobalWorkerOptions` had never been configured, so no PDF could be opened at all (D-023). Not a geometry result.
    - Attempt 2 reached `MISSING_COLUMN_ANCHOR`, and the on-device label diagnostic showed the real column model: one combined `Date/Time` column and a separate `Transaction` column, neither of which the invented geometry had. The reader and fixtures are corrected (D-024).
 
-   Confirmed against reality so far: the file opens, the text layer decodes, the bank signature matches, and the seven column headings are now known and matched. Still unknown: the date format inside the `Date/Time` cell, the frame label wording for account number, period, and balances, and every row-level value — **the real statement has not been re-read since the correction**. A further run is needed, with the owner present for the password. Failures now report a masked shape (`dd/dd/dd dd:dd`) rather than an opaque code, so each run should narrow the gap.
+   - Attempt 3 reached `UNSUPPORTED_CURRENCY`: the currency is printed below the grid, not in the frame block (D-025).
+   - Attempts 4 and 5 reached `MISSING_FRAME_FIELD`. A masked structural dump of the whole statement identified the real frame contract in one pass (D-026): labels are `Account Number` and `Statement Period`, no opening or closing balance is printed anywhere, each row's time sits on its own line, and frame lines carry several label/value pairs. Three latent defects were fixed as a result — a neighbouring field's digits being read as the account suffix, a footer aborting a valid statement, and an anchored label pattern rejecting padded whitespace.
+
+   Confirmed against reality: the file opens, the text decodes, the bank signature matches, all seven column headings match, the currency is found, and account type and statement period read correctly. Still unknown: the account number label's exact spacing (the whitespace fix is unverified against the real file), the summary-block label wordings on the last page, and every row-level value — **the statement has not been re-read since the latest correction**. Failures report masked shapes, so each run narrows the gap without exposing data.
+
+   Worth reading before the next attempt: the last page carries a summary block — item count, total withdrawal and total deposit, each with a count — which would restore a global integrity check stronger than a closing balance. Its label wordings are not yet known, so nothing reads it. The diagnostics now cover the last page for exactly this reason.
 
 The other six tasks are complete and verified. Task 7 is the only remaining local action, and it is still the only way to reach the binding chooser and the authenticated import path against a real statement.
 

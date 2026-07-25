@@ -186,11 +186,25 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: give pdf.js a real `Worker` through `GlobalWorkerOptions.workerPort`, built from a dedicated entry module (`workers/pdf.worker.entry.ts`) with `new URL("./pdf.worker.entry.ts", import.meta.url)`. That is the same relative-URL form the app already uses for the parser worker, and it emits a separate chunk, so the two never share a scope or a channel.
 - Verify: `tests/e2e/parser.spec.ts` parses a generated PDF in a real browser. Both of its tests fail with `PDF_PARSE_FAILED / Error` on the pre-fix worker, which is the red proof; no unit test can catch this, because none of them run pdf.js.
 
+## A frame label's value runs into the next field on the same line
+
+- Symptom: the account's last four digits are wrong but plausible — no error, no failed check, just the wrong account bound to an import.
+- Cause: frame lines carry several label/value pairs (`Account Number … 1234567890 … Branch Code … 555`). Reading everything to the right of a label concatenates the following field's digits, and `digits.slice(-4)` then takes them from the wrong field.
+- Avoid: stop a label's value at the next item matching any known frame label — `FRAME_LABEL_STOPS` in `lib/krungthai-layout.ts`, which lists the fields that are printed but not read as well as the ones that are. Add new frame labels there, not only to `FRAME_LABELS`.
+- Verify: `tests/krungthai-layout.test.ts` prints `Branch Code 555` on the account-number line and asserts the suffix is `7890`, never `5555`.
+
+## An anchored label pattern rejects padded whitespace you cannot see
+
+- Symptom: one frame field reports as missing while its neighbours on the same printed line read correctly, and every diagnostic shows the label spelled exactly as the pattern expects.
+- Cause: `^…$` against the raw run, where the label is printed with padded or non-standard internal spacing (`Account  Number`). NFKC folds a non-breaking space to a normal one but does not collapse runs of them, and neither a rendered page nor a copied diagnostic shows the difference.
+- Avoid: collapse internal whitespace before matching a label (`str.replace(/\s+/gu, " ").trim()`), and do not abandon the search when a label occurrence carries no value — the same wording can appear as a bare heading above the pair that actually holds the value.
+- Verify: `tests/krungthai-layout.test.ts` rewrites the label to `Account  Number` and still expects a successful read.
+
 ## Playwright reuses a server someone else started, so browser runs can test stale code
 
 - Symptom: a browser test keeps failing on behaviour you just fixed, with the identical error every run, while the unit suite covering the same logic is green. Or the reverse — it passes after a change that could not possibly work.
 - Cause: `playwright.config.ts` sets `reuseExistingServer: !process.env.CI`, so if anything is already listening on port 3000 the `pnpm build && pnpm start` command never runs. A server started by hand keeps serving the build it booted with, no matter how much source changes afterwards.
-- Avoid: before trusting a browser run, compare the listening process's start time with the source mtime — `Get-NetTCPConnection -LocalPort 3000 -State Listen` for the pid, `(Get-Item .next\BUILD_ID).LastWriteTime` for the build. Free the port and let Playwright build, or restart the manual server after every source change.
+- Avoid: run `pnpm exec playwright test --config=playwright.isolated.config.ts`, which uses port 3100 and never reuses a server (D-027). If using the default config, first compare the listening process's start time with the source mtime — `Get-NetTCPConnection -LocalPort 3000 -State Listen` for the pid, `(Get-Item .next\BUILD_ID).LastWriteTime` for the build.
 - Verify: three consecutive runs reported `MISSING_COLUMN_ANCHOR` against a reader that no longer had those anchors; the build was 16 minutes older than `lib/krungthai-layout.ts`.
 
 ## A unit suite that feeds the layout reader fixtures proves nothing about reading a PDF

@@ -25,8 +25,86 @@ describe("krungthai frame extraction", () => {
       periodEnd: "2026-01-31",
       openingBalance: "1000000",
       closingBalance: "1025970",
-      currency: "THB"
+      currency: "THB",
+      balancesPrinted: true
     });
+  });
+
+  it("derives the balances when the statement does not print them", () => {
+    // A real statement prints no opening or closing balance in the frame (D-026), so the
+    // opening figure is the first row's printed balance less that row's own movement.
+    const rows = [
+      { date: "02/01/69", time: "09:15", label: "in", deposit: "1,000.00", balance: "11,000.00" },
+      { date: "05/01/69", time: "18:42", label: "out", withdrawal: "250.50", balance: "10,749.50" }
+    ];
+    const result = extractStatement([buildPage(rows, { frame: { opening: null, closing: null } })]);
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.frame.balancesPrinted).toBe(false);
+    // 11,000.00 printed after a 1,000.00 deposit means 10,000.00 before it.
+    expect(result.frame.openingBalance).toBe("1000000");
+    expect(result.frame.closingBalance).toBe("1074950");
+    // Derived balances must still reconcile the rows they were derived from.
+    expect(reconcileRows(result.frame.openingBalance, result.rows).blockers).toEqual([]);
+  });
+
+  it("still rejects a printed closing balance that disagrees with the rows", () => {
+    // The cross-check is skipped only when nothing was printed to check against.
+    const rows = [{ date: "02/01/69", label: "x", deposit: "1.00", balance: "10,259.70" }];
+    expect(extractStatement([buildPage(rows, { frame: { closing: "99,999.00" } })]))
+      .toMatchObject({ ok: false, code: "CLOSING_BALANCE_MISMATCH" });
+  });
+
+  it("reads a time printed on its own line under the date", () => {
+    // The date and time are separate printed lines in the same column (D-026).
+    const page = buildPage([{ date: "02/01/69", time: "09:15", label: "x", deposit: "1.00", balance: "10,259.70" }]);
+    const date = page.find((item) => item.str === "02/01/69");
+    const time = page.find((item) => item.str === "09:15");
+    expect(time!.y).toBeLessThan(date!.y);
+    expect(time!.x).toBe(date!.x);
+
+    const result = extractStatement([page]);
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    expect(result.rows[0]!.sourceTime).toBe("09:15");
+  });
+
+  it("reads a currency stated below the transaction grid", () => {
+    // A real statement prints the currency under the transactions, not in the label
+    // block above them (D-025). This pins that down: narrowing the search back to the
+    // frame block would fail here rather than only against a real PDF.
+    const page = buildPage([{ date: "02/01/69", label: "x", deposit: "1.00", balance: "10,259.70" }]);
+    const currency = page.find((item) => /THB/u.test(item.str));
+    const header = page.find((item) => item.str === "Date/Time");
+    expect(currency, "the fixture must print a currency marker").toBeDefined();
+    expect(currency!.y).toBeLessThan(header!.y);
+    expect(extractStatement([page])).toMatchObject({ ok: true });
+  });
+
+  it("matches a frame label whose internal spacing is padded", () => {
+    // A padded or non-standard space inside a label is invisible in any printed or
+    // reported form, so an anchored pattern rejecting it looks like a missing field.
+    const page = buildPage([{ date: "02/01/69", label: "x", deposit: "1.00", balance: "10,259.70" }])
+      .map((item) => item.str === "Account Number" ? { ...item, str: "Account  Number" } : item);
+    const result = extractStatement([page]);
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    expect(result.frame.accountLastFour).toBe("7890");
+  });
+
+  it("does not let one frame field swallow the next field's value", () => {
+    // The fixture prints `Branch Code 555` on the account-number line, as a real
+    // statement does. Reading everything to the right of a label mixed those digits in,
+    // which produced a wrong but entirely plausible account suffix.
+    const page = buildPage([{ date: "02/01/69", label: "x", deposit: "1.00", balance: "10,259.70" }]);
+    expect(page.some((item) => item.str === "Branch Code"), "the fixture must print a second pair").toBe(true);
+
+    const result = extractStatement([page]);
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    // 7890 from the account number, never 5555 or 8905 from the branch code beside it.
+    expect(result.frame.accountLastFour).toBe("7890");
   });
 
   it("keeps only the last four account digits", () => {
@@ -109,9 +187,9 @@ describe("krungthai frame fails closed", () => {
   it.each([
     ["account type", { accountType: null }],
     ["account number", { accountNumber: null }],
-    ["statement period", { period: null }],
-    ["opening balance", { opening: null }],
-    ["closing balance", { closing: null }]
+    ["statement period", { period: null }]
+    // Opening and closing balance are deliberately absent: a real statement does not
+    // print them, so their absence is valid and they are derived (D-026).
   ])("rejects a frame with no %s", (_field, frame) => {
     expect(onePage(rows, { frame })).toMatchObject({ ok: false, code: "MISSING_FRAME_FIELD" });
   });

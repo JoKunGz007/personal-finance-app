@@ -29,6 +29,10 @@ const HEADER_Y = 700;
 const FIRST_ROW_Y = 676;
 const ROW_PITCH = 24;
 const DETAIL_OFFSET = 10;
+// The time sits on its own line just under its row's date, within DETAIL_TOLERANCE.
+const TIME_OFFSET = 12;
+// A footer line, well clear of DETAIL_TOLERANCE below the last row the fixtures use.
+const CURRENCY_Y = 480;
 
 type RowSpec = {
   date: string;
@@ -90,10 +94,18 @@ export function buildPage(
       items.push({ str: label, x: 40, y });
       items.push({ str: value, x: 170, y });
     };
-    if (values.currencyMarker !== null) items.push({ str: values.currencyMarker, x: 400, y: 760 });
+    // Printed below the transaction grid, which is where a real statement puts it
+    // (D-025) — far enough below the last row that it cannot be read as a
+    // continuation line. The reader therefore has to scan the whole page for it.
+    if (values.currencyMarker !== null) items.push({ str: values.currencyMarker, x: 40, y: CURRENCY_Y });
+    // Wordings a real statement prints (D-026). `Branch Code` shares the account-number
+    // line, as it does on a real statement, so the fixture exercises the stop rule that
+    // keeps one field's value out of the next.
     push("Account Type", values.accountType, 750);
-    push("Account No.", values.accountNumber, 740);
-    push("Period", values.period, 730);
+    push("Account Number", values.accountNumber, 740);
+    items.push({ str: "Branch Code", x: 303, y: 740 });
+    items.push({ str: "555", x: 397, y: 740 });
+    push("Statement Period", values.period, 730);
     push("Opening Balance", values.opening, 720);
     push("Closing Balance", values.closing, 710);
   }
@@ -111,8 +123,9 @@ export function buildPage(
   rows.forEach((row, index) => {
     const y = FIRST_ROW_Y - index * ROW_PITCH;
     items.push({ str: row.date, x: COLUMN_X.dateTime, y });
-    // Same column as the date, printed a little to its right on the same line.
-    if (row.time) items.push({ str: row.time, x: COLUMN_X.dateTime + 55, y });
+    // The time is printed on its own line below the date, in the same column, which is
+    // what a real statement does (D-026). The reader has to merge it back.
+    if (row.time) items.push({ str: row.time, x: COLUMN_X.dateTime, y: y - TIME_OFFSET });
     items.push({ str: row.label, x: COLUMN_X.transaction, y });
     if (row.withdrawal) items.push({ str: row.withdrawal, x: COLUMN_X.withdrawal, y });
     if (row.deposit) items.push({ str: row.deposit, x: COLUMN_X.deposit, y });

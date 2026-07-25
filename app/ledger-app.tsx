@@ -23,7 +23,11 @@ type Extracted = { frame: StatementFrame; rows: SourceRowCandidate[]; pageCount:
 
 type WorkerReply =
   | { type: "parsed"; frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number }
-  | { type: "error"; code: string; reason?: string; labelCandidates?: string[][]; message: string };
+  | {
+      type: "error"; code: string; reason?: string; detail?: string;
+      labelCandidates?: string[][]; valueLabels?: string[]; structure?: string[];
+      message: string;
+    };
 
 const categories = ["Uncategorized", "Income", "Food", "Cash", "Fees", "Interest"];
 
@@ -45,6 +49,8 @@ export function LedgerApp() {
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const [bindingError, setBindingError] = useState<string | null>(null);
   const [labelCandidates, setLabelCandidates] = useState<string[][]>([]);
+  const [valueLabels, setValueLabels] = useState<string[]>([]);
+  const [structure, setStructure] = useState<string[]>([]);
   const [selectedRow, setSelectedRow] = useState<number | null>(null);
   const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
   const [backupPassword, setBackupPassword] = useState("");
@@ -102,6 +108,8 @@ export function LedgerApp() {
         // next step is an explicit, checked choice by the owner.
         setArtifactDigest(digest);
         setLabelCandidates([]);
+        setValueLabels([]);
+        setStructure([]);
         setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
         setStatement(null);
         setBoundAccount(null);
@@ -113,8 +121,13 @@ export function LedgerApp() {
         // lib/krungthai-layout.ts and carries no statement content, and without it
         // every failure except an unsupported layout reads identically — which makes
         // a single diagnostic run far less informative than it needs to be.
-        setStatus(`${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})`);
+        setStatus(
+          `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})` +
+          (reply.detail ? ` — ${reply.detail}` : "")
+        );
         setLabelCandidates(reply.labelCandidates ?? []);
+        setValueLabels(reply.valueLabels ?? []);
+        setStructure(reply.structure ?? []);
       }
       setPassword("");
       worker.terminate();
@@ -312,6 +325,30 @@ export function LedgerApp() {
                   <li key={index}><code lang="th">{line.join("  ·  ")}</code></li>
                 ))}
               </ol>
+              {valueLabels.length > 0 ? (
+                <>
+                  <p>
+                    Labels printed immediately left of a number — the account, period, and
+                    balance fields. A label only appears here when the run beside it carries a
+                    digit, so a name or address label cannot qualify.
+                  </p>
+                  <ol>
+                    {valueLabels.map((label) => <li key={label}><code lang="th">{label}</code></li>)}
+                  </ol>
+                </>
+              ) : null}
+              {structure.length > 0 ? (
+                <>
+                  <p>
+                    Structure of the whole statement, with every value replaced by its shape —
+                    <code>d</code> for a digit, <code>x</code> for a letter, positions after the
+                    <code>@</code>. This shows formats, columns, wrapped lines, and page breaks
+                    while containing no name, amount, balance, date, or account number. Select all
+                    and copy if a reader needs fixing.
+                  </p>
+                  <textarea className="structure-dump" readOnly rows={14} value={structure.join("\n")} />
+                </>
+              ) : null}
             </details>
           ) : null}
         </section>

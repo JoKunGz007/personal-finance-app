@@ -39,6 +39,9 @@ export type StatementFrame = {
   openingBalance: MinorUnitString;
   closingBalance: MinorUnitString;
   currency: "THB";
+  // False when the statement printed neither balance and both were derived from the
+  // rows. The closing cross-check only means something when the value was printed.
+  balancesPrinted: boolean;
 };
 
 export type LayoutResult =
@@ -79,18 +82,65 @@ const DATE_TIME_PATTERN =
   /^(\d{2})\/(\d{2})\/(\d{2})(?:\s+(([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?))?$/;
 // The frame's period is printed as two plain dates, never with a time.
 const DATE_ONLY_PATTERN = /^(\d{2})\/(\d{2})\/(\d{2})$/;
+// A time on its own line, which is how the time is printed for each row.
+const TIME_ONLY_PATTERN = /^([01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
+// Deliberately loose: anything date-shaped enough that treating it as "not a row" would
+// risk dropping a transaction. Tighter than "contains a digit", which matched footers.
+const LOOSE_DATE_PROBE = /\d{1,4}[/-]\d{1,2}[/-]\d{1,4}/u;
 
 // Frame labels live above the transaction heading line. Each value is read from
 // the same printed line, to the right of its label.
+// Wordings confirmed against a real statement on 2026-07-25 (D-026): `Account Number`
+// and `Statement Period`, not the abbreviations previously guessed. Opening and closing
+// balances are not printed in the frame at all — see extractStatement, which derives
+// them from the rows.
 const FRAME_LABELS = {
-  accountType: /^(ประเภทบัญชี|Account type)$/iu,
-  accountNumber: /^(เลขที่บัญชี|Account no\.?)$/iu,
-  period: /^(ระหว่างวันที่|Period)$/iu,
-  opening: /^(ยอดยกมา|Opening balance)$/iu,
-  closing: /^(ยอดยกไป|Closing balance)$/iu
+  accountType: /^(ประเภทบัญชี|Account Type)$/iu,
+  accountNumber: /^(เลขที่บัญชี|Account Number|Account No\.?)$/iu,
+  period: /^(ระหว่างวันที่|Statement Period|Period)$/iu,
+  opening: /^(ยอดยกมา|Opening Balance|Balance Brought Forward)$/iu,
+  closing: /^(ยอดยกไป|Closing Balance)$/iu
 } as const;
 
+// Other labels printed in the frame block. They are not read for any value, but a
+// label's value must stop before the next label begins: a frame line carries several
+// label/value pairs (`Account Number … Branch Code …`), so taking everything to the
+// right of a label swept the following field's digits into it — which silently produced
+// the wrong last four for the account.
+const FRAME_LABEL_STOPS: RegExp[] = [
+  ...Object.values(FRAME_LABELS),
+  /^(Account Name|ชื่อบัญชี)$/iu,
+  /^(Branch|สาขา)$/iu,
+  /^(Branch Code|รหัสสาขา)$/iu,
+  /^(Current Address|ที่อยู่)$/iu,
+  /^(Overdraft Limit|วงเงินเบิกเกินบัญชี)$/iu,
+  /^(Requested Date|วันที่ขอ)$/iu,
+  /^(Check Book No\.?|Cheque Book No\.?)$/iu,
+  /^(Currency|สกุลเงิน)$/iu
+];
+
 const CURRENCY_MARKER = /\b(THB)\b|บาท/u;
+
+// Currency wordings worth looking for when the marker above does not match. This is an
+// allowlist: the diagnostic reports which of these names were seen and on which side of
+// the heading line, never any text taken from the statement.
+const CURRENCY_TOKENS: Array<{ name: string; pattern: RegExp }> = [
+  { name: "THB", pattern: /\bTHB\b/u },
+  { name: "Baht", pattern: /\bbaht\b/iu },
+  { name: "บาท", pattern: /บาท/u },
+  { name: "Currency", pattern: /\bcurrency\b/iu },
+  { name: "สกุลเงิน", pattern: /สกุลเงิน/u }
+];
+
+function currencyEvidence(lines: TextItem[][], headerY: number): string {
+  const seenIn = (subset: TextItem[][]) =>
+    CURRENCY_TOKENS.filter(({ pattern }) => subset.some((line) => line.some((item) => pattern.test(item.str))))
+      .map(({ name }) => name);
+  const above = lines.filter((line) => line[0]!.y > headerY + LINE_TOLERANCE);
+  const below = lines.filter((line) => line[0]!.y <= headerY + LINE_TOLERANCE);
+  const format = (names: string[]) => names.length > 0 ? names.join(", ") : "none";
+  return `Currency wording above the grid: ${format(seenIn(above))}; below: ${format(seenIn(below))}.`;
+}
 
 function groupIntoLines(items: PageText): TextItem[][] {
   const lines: TextItem[][] = [];
@@ -135,13 +185,21 @@ const DIAGNOSTIC_MAX_LABEL = 24;
 const DIAGNOSTIC_MIN_ITEMS_PER_LINE = 3;
 const DIAGNOSTIC_MAX_LINES = 12;
 
-// Reduces text to its shape: every digit becomes `d`, every letter `x`, and everything
-// else — separators, punctuation, spacing — is kept. `01/01/26 09:15` becomes
-// `dd/dd/dd dd:dd`, which says what format a cell is printed in while destroying the
-// value. Row-level failures report this instead of the cell, so a date or amount format
-// can be diagnosed without any figure leaving the device.
+// Reduces text to its shape: every numeral becomes `d`, every letter or combining mark
+// `x`, and everything else — separators, punctuation, spacing — is kept. `01/01/26 09:15`
+// becomes `dd/dd/dd dd:dd`, which says what format a cell is printed in while destroying
+// the value. Row-level failures report this instead of the cell, so a date or amount
+// format can be diagnosed without any figure leaving the device.
+//
+// Combining marks must be masked, not just letters: Thai vowel and tone marks are
+// `\p{M}`, so masking `\p{L}` alone left them intact and `โอนเงินเข้า` came out as
+// `xxxxxิxxx้x`, leaking fragments of the real text. `\p{N}` rather than `\p{Nd}` for the
+// same reason — non-decimal numerals are still values.
+// One pass, not two: masking numerals to `d` and then letters to `x` overwrites those
+// `d`s, because `d` is itself a letter — which silently turned every date into
+// `xx/xx/xx` and made the shapes useless for reading a format.
 export function maskShape(value: string): string {
-  return value.replace(/\p{Nd}/gu, "d").replace(/\p{L}/gu, "x");
+  return value.replace(/[\p{N}\p{L}\p{M}]/gu, (character) => /\p{N}/u.test(character) ? "d" : "x");
 }
 
 export function describeLabelGeometry(pages: readonly PageText[]): string[][] {
@@ -158,6 +216,70 @@ export function describeLabelGeometry(pages: readonly PageText[]): string[][] {
   return described;
 }
 
+// The frame labels — account number, period, opening and closing balance — sit on lines
+// whose values carry digits, so describeLabelGeometry filters those lines out entirely
+// and their wording stays unknown. This reports a label only when the item printed
+// *immediately* to its right carries a digit, which is exactly the label/value shape
+// those fields use. The account holder's name is excluded by construction: its value is
+// text, not digits, so the label never qualifies.
+export function describeValueLabels(pages: readonly PageText[]): string[] {
+  const labels = new Set<string>();
+  // The first and last pages: the frame is on page one, and a statement's summary totals
+  // are on the last, where their labels are the only way to read them.
+  const scanned = pages.length > 1 ? [pages[0]!, pages[pages.length - 1]!] : pages.slice(0, 1);
+  for (const page of scanned) {
+    for (const line of groupIntoLines(page)) {
+      line.forEach((item, index) => {
+        const text = item.str.normalize("NFKC").trim();
+        if (!text || text.length > DIAGNOSTIC_MAX_LABEL || /\p{Nd}/u.test(text)) return;
+        const next = line[index + 1];
+        if (next && /\p{Nd}/u.test(next.str)) labels.add(text);
+      });
+    }
+  }
+  return [...labels].slice(0, DIAGNOSTIC_MAX_LINES * 2);
+}
+
+// The whole statement's structure with none of its content: every line, every run's
+// x position, and each run reduced by maskShape to `d` for a digit and `x` for a letter.
+// Punctuation and spacing survive, so formats, column bands, wrapped continuation lines,
+// page breaks, and footer blocks are all visible while no name, amount, balance, date, or
+// account number can be. Page one is reported in full because the frame and the first
+// rows live there; later pages contribute only their opening lines, which is enough to
+// show how a continuation page begins.
+const STRUCTURE_MAX_LINES = 120;
+const STRUCTURE_CONTINUATION_LINES = 12;
+
+export function describeStructure(pages: readonly PageText[]): string[] {
+  const described: string[] = [];
+  const lastIndex = pages.length - 1;
+  const render = (line: TextItem[], pageIndex: number) => {
+    const cells = line
+      .map((item) => `${maskShape(item.str.normalize("NFKC").trim())}@${Math.round(item.x)}`)
+      .join("  ");
+    described.push(`p${pageIndex + 1} y=${Math.round(line[0]!.y)}  ${cells}`);
+  };
+
+  pages.forEach((page, pageIndex) => {
+    if (pageIndex === lastIndex && lastIndex > 0) return; // rendered in full below
+    const lines = groupIntoLines(page);
+    const limit = pageIndex === 0 ? lines.length : STRUCTURE_CONTINUATION_LINES;
+    for (const line of lines.slice(0, limit)) {
+      if (described.length >= STRUCTURE_MAX_LINES) return;
+      render(line, pageIndex);
+    }
+  });
+
+  // The last page in full, always. A statement may close with a summary block — totals,
+  // an opening or closing balance — and that is exactly the region a middle-page cap
+  // would hide. Without it, balances have to be derived rather than read (D-026).
+  if (lastIndex > 0) {
+    described.push(`--- last page (${lastIndex + 1}) in full ---`);
+    for (const line of groupIntoLines(pages[lastIndex]!)) render(line, lastIndex);
+  }
+  return described;
+}
+
 function findColumns(lines: TextItem[][]): Columns | null {
   for (const line of lines) {
     const found: Partial<Columns> = {};
@@ -170,45 +292,110 @@ function findColumns(lines: TextItem[][]): Columns | null {
   return null;
 }
 
+// The frame as printed: balances are nullable because a real statement does not print
+// them. extractStatement turns this into a StatementFrame once the rows are known.
+type FrameDraft = Omit<StatementFrame, "openingBalance" | "closingBalance" | "balancesPrinted"> & {
+  openingBalance: MinorUnitString | null;
+  closingBalance: MinorUnitString | null;
+};
+
 // Reads the label/value block above the transaction grid on page one.
 function extractFrame(lines: TextItem[][], headerY: number):
-  { ok: true; frame: StatementFrame } | { ok: false; code: LayoutErrorCode; message: string } {
+  { ok: true; draft: FrameDraft } | { ok: false; code: LayoutErrorCode; message: string } {
   const frameLines = lines.filter((line) => line[0]!.y > headerY + LINE_TOLERANCE);
-  const frameText = frameLines.flat().map((item) => item.str).join(" ");
 
-  if (!CURRENCY_MARKER.test(frameText)) {
-    return { ok: false, code: "UNSUPPORTED_CURRENCY", message: "The statement frame does not state THB." };
+  // The currency is looked for across the whole of page one, not just the label block
+  // above the grid: a real statement prints it below the transactions (D-025). The
+  // requirement is unchanged — page one must state THB explicitly — but this is a
+  // weaker guard than a frame-only match, because a statement in another currency that
+  // merely mentioned THB would satisfy it. Deliberately not paired with a foreign-code
+  // scan: transaction descriptions can legitimately contain a currency code, so that
+  // check would reject valid statements. The hard enforcement stays downstream, where
+  // `parseThb` and the `THB` literal in `importPayloadSchema` refuse anything else.
+  const pageText = lines.flat().map((item) => item.str).join(" ");
+
+  if (!CURRENCY_MARKER.test(pageText)) {
+    // Which currency wording a statement uses, and whether it is printed above the grid
+    // at all, decides whether this is the wrong marker or the wrong region to look in.
+    // Only allowlisted token names are reported, so nothing from the document is echoed.
+    return {
+      ok: false,
+      code: "UNSUPPORTED_CURRENCY",
+      message: `The statement frame does not state THB. ${currencyEvidence(lines, headerY)}`
+    };
   }
 
-  // The value for a label is whatever is printed to its right on the same line.
-  const valueFor = (label: RegExp): string | null => {
+  // A label's value is what is printed to its right on the same line, up to the next
+  // label. Frame lines carry more than one pair, so an unbounded slice would append the
+  // following field's value — `Account Number` would swallow the `Branch Code` digits.
+  // Internal whitespace is collapsed before matching. A frame label may be padded or
+  // use a non-standard space, and an anchored pattern rejects `Account  Number` while
+  // the text looks identical anywhere it is printed or reported — which is exactly how
+  // one field stayed "missing" while its neighbours on the same line matched.
+  const labelText = (item: TextItem) => item.str.replace(/\s+/gu, " ").trim();
+
+  // Reports whether the label was found separately from whether it had a value, so a
+  // wording mismatch is never confused with an empty or mis-sliced value.
+  const valueFor = (label: RegExp): { found: boolean; value: string | null } => {
+    let found = false;
     for (const line of frameLines) {
-      const index = line.findIndex((item) => label.test(item.str.trim()));
+      const index = line.findIndex((item) => label.test(labelText(item)));
       if (index === -1) continue;
-      const value = line.slice(index + 1).map((item) => item.str.trim()).join(" ").replace(/\s+/gu, " ").trim();
-      return value || null;
+      found = true;
+      const rest = line.slice(index + 1);
+      const stop = rest.findIndex((item) => FRAME_LABEL_STOPS.some((pattern) => pattern.test(labelText(item))));
+      const value = (stop === -1 ? rest : rest.slice(0, stop))
+        .map((item) => item.str.trim()).join(" ").replace(/\s+/gu, " ").trim();
+      // Keep looking if this occurrence carried no value: the same wording can appear as
+      // a bare heading elsewhere in the block, and stopping there would report a field
+      // that is printed further down as missing.
+      if (value) return { found: true, value };
     }
-    return null;
+    return { found, value: null };
   };
 
-  const missing = (field: string) =>
-    ({ ok: false as const, code: "MISSING_FRAME_FIELD" as const, message: `The statement frame has no ${field}.` });
   const invalid = (field: string) =>
     ({ ok: false as const, code: "INVALID_FRAME_CONTENT" as const, message: `The statement frame has an unreadable ${field}.` });
 
-  const accountType = valueFor(FRAME_LABELS.accountType);
-  if (!accountType) return missing("account type");
+  // Every label is resolved before any is reported, so one run names every field whose
+  // wording does not match rather than only the first. Reporting them one at a time cost
+  // a whole authorized statement read per field. Field names only — no value is echoed.
+  // Opening and closing balances are deliberately absent from this list: a real
+  // statement does not print them in the frame (D-026), so requiring them would reject
+  // every statement. They are read when present and derived from the rows otherwise.
+  const resolved = {
+    "account type": valueFor(FRAME_LABELS.accountType),
+    "account number": valueFor(FRAME_LABELS.accountNumber),
+    "statement period": valueFor(FRAME_LABELS.period)
+  };
+  const absent = Object.entries(resolved).filter(([, result]) => !result.value);
+  if (absent.length > 0) {
+    const complete = Object.entries(resolved).filter(([, result]) => result.value).map(([field]) => field);
+    return {
+      ok: false as const,
+      code: "MISSING_FRAME_FIELD" as const,
+      message:
+        "The statement frame has no " +
+        absent.map(([field, result]) => `${field} (${result.found ? "label found, value empty" : "label not found"})`).join(", no ") +
+        `. Fields that did read: ${complete.length > 0 ? complete.join(", ") : "none"}.`
+    };
+  }
 
-  const accountNumber = valueFor(FRAME_LABELS.accountNumber);
-  if (!accountNumber) return missing("account number");
+  const accountType = resolved["account type"]!.value!;
+  const accountNumber = resolved["account number"]!.value!;
   const digits = accountNumber.replace(/\D/gu, "");
   if (digits.length < 4) return invalid("account number");
   const accountLastFour = digits.slice(-4);
 
-  const periodText = valueFor(FRAME_LABELS.period);
-  if (!periodText) return missing("statement period");
+  const periodText = resolved["statement period"]!.value!;
   const periodDates = periodText.match(/\d{2}\/\d{2}\/\d{2}/gu);
-  if (!periodDates || periodDates.length !== 2) return invalid("statement period");
+  if (!periodDates || periodDates.length !== 2) {
+    return {
+      ok: false as const,
+      code: "INVALID_FRAME_CONTENT" as const,
+      message: `The statement frame has an unreadable statement period, shape ${maskShape(periodText)}.`
+    };
+  }
 
   // The period end year anchors every two-digit year in the statement, including
   // its own start date, so it is resolved first against its own printed value.
@@ -219,31 +406,30 @@ function extractFrame(lines: TextItem[][], headerY: number):
   if (!periodStart || !periodEnd) return invalid("statement period");
   if (periodStart > periodEnd) return invalid("statement period (start is after end)");
 
-  const openingText = valueFor(FRAME_LABELS.opening);
-  if (!openingText) return missing("opening balance");
-  const closingText = valueFor(FRAME_LABELS.closing);
-  if (!closingText) return missing("closing balance");
+  // Read when printed, left null otherwise for extractStatement to derive.
+  const openingText = valueFor(FRAME_LABELS.opening).value;
+  const closingText = valueFor(FRAME_LABELS.closing).value;
 
-  let openingBalance: MinorUnitString;
-  let closingBalance: MinorUnitString;
+  let openingBalance: MinorUnitString | null = null;
+  let closingBalance: MinorUnitString | null = null;
   try {
-    openingBalance = parseThb(openingText).minor;
-    closingBalance = parseThb(closingText).minor;
+    if (openingText) openingBalance = parseThb(openingText).minor;
+    if (closingText) closingBalance = parseThb(closingText).minor;
   } catch {
     return invalid("opening or closing balance");
   }
 
   return {
     ok: true,
-    frame: {
-      bankCode: "KTB",
+    draft: {
+      bankCode: "KTB" as const,
       accountType,
       accountLastFour,
       periodStart,
       periodEnd,
       openingBalance,
       closingBalance,
-      currency: "THB"
+      currency: "THB" as const
     }
   };
 }
@@ -267,7 +453,7 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
     return { ok: false, code: "UNSUPPORTED_LAYOUT", message: "No Krungthai signature on the first page." };
   }
 
-  let frame: StatementFrame | null = null;
+  let draft: FrameDraft | null = null;
   const rows: SourceRowCandidate[] = [];
 
   for (const [pageIndex, page] of pages.entries()) {
@@ -287,7 +473,7 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
     if (pageIndex === 0) {
       const extracted = extractFrame(lines, headerY);
       if (!extracted.ok) return extracted;
-      frame = extracted.frame;
+      draft = extracted.draft;
     }
 
     // A row starts on the line whose date cell parses; any following line that has no
@@ -311,12 +497,27 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
         pageRows.push(cells);
         continue;
       }
-      // A date/time cell that carries digits but does not parse is a row this reader
+      // A real statement prints the time on its own line below the date, in the same
+      // column (D-026). Such a line is a genuine continuation: merged into the row's
+      // cells it makes the date/time cell read `dd/mm/yy HH:MM`, which is exactly what
+      // DATE_TIME_PATTERN expects, so it needs no special handling beyond not being
+      // mistaken for a broken row.
+      if (dateText && TIME_ONLY_PATTERN.test(dateText) && current) {
+        for (const key of Object.keys(cells) as ColumnKey[]) {
+          (current.cells[key] ??= []).push(...cells[key]!);
+        }
+        continue;
+      }
+
+      // A date/time cell that looks like a date but does not parse is a row this reader
       // cannot read — never a continuation line and never stray text. Skipping it would
       // drop a transaction silently, and merging it would fold one row's date into
-      // another's description, so both directions fail closed. Text without digits
-      // (a sub-heading such as a brought-forward label) is genuinely not a row.
-      if (dateText && /\p{Nd}/u.test(dateText)) {
+      // another's description, so both directions fail closed.
+      //
+      // The probe is date-shaped rather than "contains a digit": a footer address line
+      // beginning with a street number would otherwise abort a statement that had
+      // already parsed correctly.
+      if (dateText && LOOSE_DATE_PROBE.test(dateText)) {
         return {
           ok: false,
           code: current ? "AMBIGUOUS_ROW_GEOMETRY" : "INVALID_ROW_CONTENT",
@@ -336,23 +537,44 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
     for (const [rowIndex, cells] of pageRows.entries()) {
       // Two-digit row years resolve against the extracted period end, not the
       // current year, so a statement stays readable regardless of when it is parsed.
-      const parsed = toRow(cells, Number(frame!.periodEnd.slice(0, 4)), pageIndex + 1, rowIndex + 1);
+      const parsed = toRow(cells, Number(draft!.periodEnd.slice(0, 4)), pageIndex + 1, rowIndex + 1);
       if (!parsed.ok) return parsed;
       rows.push(parsed.row);
     }
   }
 
-  if (!frame) {
+  if (!draft) {
     return { ok: false, code: "MISSING_FRAME_FIELD", message: "The statement has no readable frame." };
   }
   if (rows.length === 0) {
     return { ok: false, code: "INVALID_ROW_CONTENT", message: "The statement has no readable rows." };
   }
 
-  // The printed closing balance must equal the last row's printed balance. A
-  // mismatch means rows were dropped or misread, so nothing may be imported.
+  // A statement that does not print its balances still has to yield an opening figure,
+  // because reconciliation chains from it. The first row's printed balance minus that
+  // row's own movement is the balance the account held before it — arithmetic on values
+  // already read, not an assumption.
+  //
+  // What this costs, stated plainly: reconciliation can no longer detect a dropped
+  // *first* row, since the derived opening is defined to agree with it, and there is no
+  // printed closing figure to cross-check the chain against. Rows two onward are still
+  // fully checked against the chain, which is where a misread row shows up. See D-026.
+  const balancesPrinted = draft.openingBalance !== null && draft.closingBalance !== null;
+  const firstRow = rows[0]!;
+  const firstMovement = firstRow.components.reduce((sum, item) => sum + BigInt(item.amount.minor), 0n);
+  const derivedOpening = (BigInt(firstRow.postBalance.minor) - firstMovement).toString() as MinorUnitString;
   const lastPrinted = rows[rows.length - 1]!.postBalance.minor;
-  if (lastPrinted !== frame.closingBalance) {
+
+  const frame: StatementFrame = {
+    ...draft,
+    openingBalance: draft.openingBalance ?? derivedOpening,
+    closingBalance: draft.closingBalance ?? lastPrinted,
+    balancesPrinted
+  };
+
+  // Only meaningful when the statement actually printed a closing balance: comparing a
+  // derived value against the row it was derived from would assert nothing.
+  if (draft.closingBalance !== null && lastPrinted !== draft.closingBalance) {
     return {
       ok: false,
       code: "CLOSING_BALANCE_MISMATCH",

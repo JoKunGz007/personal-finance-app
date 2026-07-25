@@ -98,6 +98,75 @@ describe("privacy guardrails", () => {
     expect(describeLabelGeometry([[{ str: "นายสังเคราะห์ ทดสอบ", x: 40, y: 700 }]])).toEqual([]);
   });
 
+  it("reports only labels whose value is a number, never ones naming a person", async () => {
+    const { describeValueLabels } = await import("@/lib/krungthai-layout");
+    const { validStatement } = await import("./fixtures/krungthai-layout-v1");
+    // This diagnostic exists to reveal the frame label wording, which sits on lines the
+    // label diagnostic drops. A label qualifies only when the run immediately right of it
+    // carries a digit, so an account number or balance label is reported while
+    // `Account Name` — whose value is text — cannot be.
+    const labels = describeValueLabels(validStatement);
+    expect(labels).toContain("Account Number");
+    expect(labels).toContain("Statement Period");
+    expect(labels.join(" ")).not.toMatch(/\p{Nd}/u);
+
+    const withName: Array<Array<{ str: string; x: number; y: number }>> = [[
+      { str: "Account Name", x: 40, y: 760 },
+      { str: "Synthetic Owner", x: 170, y: 760 },
+      { str: "Account No.", x: 40, y: 750 },
+      { str: "123-4-56789-0", x: 170, y: 750 }
+    ]];
+    const reported = describeValueLabels(withName);
+    expect(reported).toContain("Account No.");
+    expect(reported).not.toContain("Account Name");
+    // And the name itself never appears, as a label or otherwise.
+    expect(reported.join(" ")).not.toContain("Synthetic Owner");
+  });
+
+  it("reduces the structural dump to shapes with no value surviving", async () => {
+    const { describeStructure } = await import("@/lib/krungthai-layout");
+    const { validStatement } = await import("./fixtures/krungthai-layout-v1");
+    const dumped = describeStructure(validStatement);
+    expect(dumped.length).toBeGreaterThan(0);
+
+    // Each reported run is `<shape>@<x>`. The shape may hold only `d`, `x`, punctuation,
+    // symbols and spacing — never a digit or any other letter — so no amount, balance,
+    // date, account number, name, or description word can survive it.
+    for (const line of dumped) {
+      if (line.startsWith("---")) continue; // the last-page separator
+      const cells = line.replace(/^p\d+ y=-?\d+\s+/u, "").split("  ").filter(Boolean);
+      for (const cell of cells) {
+        const shape = cell.slice(0, cell.lastIndexOf("@"));
+        expect(shape, `unmasked run in: ${line}`).toMatch(/^[dx\p{P}\p{S}\p{Z}]*$/u);
+      }
+    }
+
+    // Spot-check that real-looking values from the fixture are genuinely gone.
+    const joined = dumped.join("\n");
+    for (const value of ["10,000.00", "1,000.00", "Savings", "Krungthai", "56789", "02/01/69"]) {
+      expect(joined).not.toContain(value);
+    }
+    // Structure is still there: the header line keeps seven runs, and formats show through.
+    expect(joined).toMatch(/dd\/dd\/dd/u);
+    expect(joined).toMatch(/d,ddd\.dd/u);
+  });
+
+  it("never interpolates raw cell text into a layout error message", () => {
+    const layout = readFileSync("lib/krungthai-layout.ts", "utf8");
+    // Layout failure messages now reach the UI (the worker forwards result.message), so
+    // they are a disclosure boundary. A cell's text may only appear through maskShape;
+    // interpolating textOf(...) or item.str directly would put statement content into a
+    // status line. Only template literals are checked, since that is the only way a
+    // value can reach a message.
+    const templates = layout.match(/`(?:[^`\\]|\\.)*`/gu) ?? [];
+    const interpolations = templates.flatMap((template) => template.match(/\$\{[^}]*\}/gu) ?? []);
+    expect(interpolations.length).toBeGreaterThan(0);
+    for (const interpolation of interpolations) {
+      if (!/textOf\(|item\.str|\.str\b|cells\[|dateText|printedDateTime|withdrawalText|depositText/u.test(interpolation)) continue;
+      expect(interpolation, `unmasked cell text in a message: ${interpolation}`).toMatch(/maskShape\(/u);
+    }
+  });
+
   it("reduces the account number to its last four digits inside the parser", () => {
     const layout = readFileSync("lib/krungthai-layout.ts", "utf8");
     // The extracted frame must never carry a full account number, so no later code
