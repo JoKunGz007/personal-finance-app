@@ -1,4 +1,4 @@
-import { resolveKrungthaiYear } from "@/lib/dates";
+import { gregorianYearFrom, resolveStatementEra, type StatementEra } from "@/lib/dates";
 import { parseThb, type MinorUnitString } from "@/lib/money";
 import type { SourceRowCandidate } from "@/lib/statement";
 
@@ -14,7 +14,10 @@ import type { SourceRowCandidate } from "@/lib/statement";
 // glyph run a position, and the risk being managed is column/row assignment, not
 // PDF decoding.
 
-export type TextItem = { str: string; x: number; y: number };
+// `width` is the printed width of the run, as pdf.js reports it. It is optional only
+// because a hand-written fixture may omit it; real input always carries it, and column
+// assignment needs it (see `centreOf`).
+export type TextItem = { str: string; x: number; y: number; width?: number };
 export type PageText = readonly TextItem[];
 
 export type LayoutErrorCode =
@@ -152,14 +155,31 @@ function groupIntoLines(items: PageText): TextItem[][] {
   return lines.map((line) => line.sort((a, b) => a.x - b.x));
 }
 
-// A column owns every item from its own anchor x up to the next anchor's x. The
-// last column extends to the right page edge.
+// Nominal width per character, used only when a fixture omits `width`. Real input comes
+// from pdf.js, which always reports it.
+const NOMINAL_GLYPH_WIDTH = 4;
+
+// A run's horizontal midpoint. This, not its left edge, is what decides its column.
+//
+// The text columns are left-aligned but the money and branch columns are right-aligned,
+// so a wider figure starts further left: on a real statement a `dd,ddd.dd` balance begins
+// 4 units left of where a `d,ddd.dd` balance does, which was enough to carry it out of
+// the balance band and into the deposit band (D-030). A midpoint is stable under
+// alignment because it moves by half a glyph rather than a whole one, and it places every
+// run on a real statement — headings included — in its own column.
+function centreOf(item: TextItem): number {
+  const width = item.width ?? item.str.trim().length * NOMINAL_GLYPH_WIDTH;
+  return item.x + width / 2;
+}
+
+// A column owns every item whose midpoint falls from its own anchor x up to the next
+// anchor's x. The last column extends to the right page edge.
 function assign(columns: Columns, item: TextItem): ColumnKey | null {
   const ordered = COLUMN_ANCHORS.map((anchor) => ({ key: anchor.key, x: columns[anchor.key] }))
     .sort((a, b) => a.x - b.x);
+  const centre = centreOf(item);
   for (let index = ordered.length - 1; index >= 0; index -= 1) {
-    // Allow a small left overhang so a right-aligned number still lands in its band.
-    if (item.x >= ordered[index]!.x - LINE_TOLERANCE) return ordered[index]!.key;
+    if (centre >= ordered[index]!.x) return ordered[index]!.key;
   }
   return null;
 }
@@ -310,8 +330,11 @@ type FrameDraft = Omit<StatementFrame, "openingBalance" | "closingBalance" | "ba
 };
 
 // Reads the label/value block above the transaction grid on page one.
+// `era` is returned beside the draft rather than inside it: it is how this statement's dates
+// were read, not a fact about the account, and StatementFrame is hashed into the import
+// digest — adding a field there would change a committed payload contract.
 function extractFrame(lines: TextItem[][], headerY: number):
-  { ok: true; draft: FrameDraft } | { ok: false; code: LayoutErrorCode; message: string } {
+  { ok: true; draft: FrameDraft; era: StatementEra } | { ok: false; code: LayoutErrorCode; message: string } {
   const frameLines = lines.filter((line) => line[0]!.y > headerY + LINE_TOLERANCE);
 
   // The currency is looked for across the whole of page one, not just the label block
@@ -407,12 +430,26 @@ function extractFrame(lines: TextItem[][], headerY: number):
     };
   }
 
-  // The period end year anchors every two-digit year in the statement, including
-  // its own start date, so it is resolved first against its own printed value.
+  // The period end decides two things for the whole statement: which calendar its
+  // two-digit years are printed in, and the year every other date is anchored on.
   const endParts = DATE_ONLY_PATTERN.exec(periodDates[1]!)!;
-  const endYear = resolveKrungthaiYear(Number(endParts[3]), new Date().getUTCFullYear());
+  const startParts = DATE_ONLY_PATTERN.exec(periodDates[0]!)!;
+  const resolvedEnd = ((): { era: StatementEra; year: number } | null => {
+    try { return resolveStatementEra(Number(endParts[3]), new Date().getUTCFullYear()); }
+    catch { return null; }
+  })();
+  if (!resolvedEnd) {
+    return {
+      ok: false as const,
+      code: "INVALID_FRAME_CONTENT" as const,
+      message: `The statement period's year reads as neither a plausible Gregorian nor Buddhist year, shape ${maskShape(periodText)}.`
+    };
+  }
+  const { era, year: endYear } = resolvedEnd;
   const periodEnd = toIsoDate(periodDates[1]!, endYear);
-  const periodStart = toIsoDate(periodDates[0]!, endYear);
+  // The start's own printed year, read in the same era and anchored on the end year, so a
+  // period that crosses a new year does not silently inherit the end's year.
+  const periodStart = toIsoDate(periodDates[0]!, gregorianYearFrom(Number(startParts[3]), endYear, era));
   if (!periodStart || !periodEnd) return invalid("statement period");
   if (periodStart > periodEnd) return invalid("statement period (start is after end)");
 
@@ -431,6 +468,7 @@ function extractFrame(lines: TextItem[][], headerY: number):
 
   return {
     ok: true,
+    era,
     draft: {
       bankCode: "KTB" as const,
       accountType,
@@ -457,6 +495,40 @@ function toIsoDate(printed: string, year: number): string | null {
   return iso;
 }
 
+type RowFailure = { code: LayoutErrorCode; message: string };
+
+// How many distinct failure classes one result reports. Enough to cover a statement's
+// remaining defects in a single read without an unbounded status line.
+const MAX_REPORTED_FAILURE_CLASSES = 6;
+
+// Groups row failures by everything except which page and row they occurred on, so a
+// defect that repeats across 200 rows is reported once with a count and one location.
+// The message is already fully masked by `toRow`, so grouping adds no disclosure.
+function summarizeFailures(failures: readonly RowFailure[]): LayoutResult {
+  const classes = new Map<string, { exemplar: string; count: number }>();
+  for (const failure of failures) {
+    const key = failure.message.replace(/^Page \d+ row (?:\d+|—): /u, "");
+    const existing = classes.get(key);
+    if (existing) existing.count += 1;
+    else classes.set(key, { exemplar: failure.message, count: 1 });
+  }
+
+  const reported = [...classes.values()].slice(0, MAX_REPORTED_FAILURE_CLASSES);
+  const omitted = classes.size - reported.length;
+  const summary = reported.map(({ exemplar, count }) => count > 1 ? `${count}× ${exemplar}` : exemplar).join(" | ");
+
+  return {
+    ok: false,
+    // The first failure's code, so a single-defect statement reports exactly what it did
+    // before this batching existed.
+    code: failures[0]!.code,
+    message:
+      `${failures.length} row${failures.length === 1 ? "" : "s"} could not be read` +
+      `${classes.size > 1 ? `, in ${classes.size} distinct cases` : ""}. ${summary}` +
+      `${omitted > 0 ? ` | and ${omitted} further case${omitted === 1 ? "" : "s"} not shown` : ""}`
+  };
+}
+
 export function extractStatement(pages: readonly PageText[]): LayoutResult {
   const firstPageText = (pages[0] ?? []).map((item) => item.str).join(" ").normalize("NFKC");
   if (!BANK_SIGNATURE.test(firstPageText)) {
@@ -464,7 +536,11 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
   }
 
   let draft: FrameDraft | null = null;
+  // Decided once from the frame's period end and applied to every row, so a statement can
+  // never be read half in one calendar and half in the other.
+  let era: StatementEra = "buddhist";
   const rows: SourceRowCandidate[] = [];
+  const failures: RowFailure[] = [];
 
   for (const [pageIndex, page] of pages.entries()) {
     const lines = groupIntoLines(page);
@@ -483,6 +559,7 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
       const extracted = extractFrame(lines, headerY);
       if (!extracted.ok) return extracted;
       draft = extracted.draft;
+      era = extracted.era;
     }
 
     // A row starts on the line whose date cell parses; any following line that has no
@@ -527,11 +604,12 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
       // beginning with a street number would otherwise abort a statement that had
       // already parsed correctly.
       if (dateText && LOOSE_DATE_PROBE.test(dateText)) {
-        return {
-          ok: false,
+        failures.push({
           code: current ? "AMBIGUOUS_ROW_GEOMETRY" : "INVALID_ROW_CONTENT",
-          message: `Page ${pageIndex + 1} has a date/time cell that does not parse, shape ${maskShape(dateText)}.`
-        };
+          message: `Page ${pageIndex + 1} row —: date/time cell does not parse. Cells: dateTime[${maskShape(dateText)}]`
+        });
+        current = null; // do not fold an unreadable row into the previous one
+        continue;
       }
       if (!current) continue; // stray text above the first row
       if (current.y - line[0]!.y > DETAIL_TOLERANCE) {
@@ -546,8 +624,11 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
     for (const [rowIndex, cells] of pageRows.entries()) {
       // Two-digit row years resolve against the extracted period end, not the
       // current year, so a statement stays readable regardless of when it is parsed.
-      const parsed = toRow(cells, Number(draft!.periodEnd.slice(0, 4)), pageIndex + 1, rowIndex + 1);
-      if (!parsed.ok) return parsed;
+      const parsed = toRow(cells, Number(draft!.periodEnd.slice(0, 4)), era, pageIndex + 1, rowIndex + 1);
+      if (!parsed.ok) {
+        failures.push({ code: parsed.code, message: parsed.message });
+        continue;
+      }
       rows.push(parsed.row);
     }
   }
@@ -555,6 +636,13 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
   if (!draft) {
     return { ok: false, code: "MISSING_FRAME_FIELD", message: "The statement has no readable frame." };
   }
+  // Every unreadable row is reported together, deduplicated by its masked shape. The
+  // import still fails closed — no partial statement is ever returned — but the *diagnosis*
+  // is no longer serialized one row per attempt. Reading a real statement cost seven
+  // owner-driven runs because each one surfaced a single row's failure and stopped; rows
+  // repeat their shapes, so a whole statement's remaining defects collapse to a handful of
+  // classes that one run can hand back.
+  if (failures.length > 0) return summarizeFailures(failures);
   if (rows.length === 0) {
     return { ok: false, code: "INVALID_ROW_CONTENT", message: "The statement has no readable rows." };
   }
@@ -597,19 +685,35 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
 function toRow(
   cells: Partial<Record<ColumnKey, string[]>>,
   statementEndYear: number,
+  era: StatementEra,
   page: number,
   row: number
 ): { ok: true; row: SourceRowCandidate } | { ok: false; code: LayoutErrorCode; message: string } {
+  // Every row-level rejection reports the whole row reduced to shapes, `key[shape]` per
+  // column, with maskShape turning digits into `d` and letters and marks into `x`. The
+  // narrower messages this replaces named the failing check without saying what was
+  // printed, which cost an authorized statement read per iteration to resolve. It also
+  // left the one message a real statement actually produced under-determined: "withdrawal
+  // column is not positive" fits both a printed `0.00` and a printed negative, and those
+  // need opposite handling — a negative withdrawal is a credit, so reading it as a
+  // withdrawal would invert a real transaction's sign. `d.dd` versus `-ddd.dd` decides it
+  // without any figure leaving the device.
+  const describeCells = () =>
+    COLUMN_ANCHORS.map(({ key }) => `${key}[${maskShape(textOf(cells, key))}]`).join(" ");
+
   const invalid = (message: string): { ok: false; code: LayoutErrorCode; message: string } =>
-    ({ ok: false, code: "INVALID_ROW_CONTENT", message: `Page ${page} row ${row}: ${message}` });
+    ({ ok: false, code: "INVALID_ROW_CONTENT", message: `Page ${page} row ${row}: ${message} Cells: ${describeCells()}.` });
 
   const printedDateTime = textOf(cells, "dateTime");
   const dateMatch = DATE_TIME_PATTERN.exec(printedDateTime);
-  // A shape rather than the value: digits become `d` and letters `x`, so a format
-  // mismatch can be diagnosed on this device without the cell's contents.
-  if (!dateMatch) return invalid(`unreadable date/time cell, shape ${maskShape(printedDateTime)}.`);
+  // The cell dump `invalid` appends carries the date/time shape, so a format mismatch is
+  // diagnosable on this device without the cell's contents.
+  if (!dateMatch) return invalid("unreadable date/time cell.");
   const [, day, month, shortYear, printedTime] = dateMatch;
-  const year = resolveKrungthaiYear(Number(shortYear), statementEndYear);
+  // The statement's own era, never re-derived per row: a row printed `26` in a Gregorian
+  // statement and `69` in a Buddhist one are both this year, and deciding row by row would
+  // let one file carry both readings.
+  const year = gregorianYearFrom(Number(shortYear), statementEndYear, era);
   const sourceDate = `${year}-${month}-${day}`;
   // Reject impossible calendar dates such as 31/02; Date rolls them over silently.
   const asDate = new Date(`${sourceDate}T00:00:00Z`);
@@ -640,25 +744,31 @@ function toRow(
       balance: parseThb(textOf(cells, "balance")).minor
     };
   } catch {
-    return invalid(
-      "unparsable money text, shapes " +
-      `withdrawal ${maskShape(withdrawalText) || "—"}, ` +
-      `deposit ${maskShape(depositText) || "—"}, ` +
-      `balance ${maskShape(textOf(cells, "balance")) || "—"}.`
-    );
+    return invalid("unparsable money text.");
   }
 
+  // A printed `0.00` means the column carries no movement, so it contributes no component.
+  // A real statement prints its withholding-tax column as `0.00` on an interest posting
+  // where no tax was withheld, and rejecting that stopped a statement that had already
+  // read ~118 rows (D-029). This is deliberately not a zero-amount component: nothing
+  // moved, so nothing belongs in the ledger, and the balance chain is unaffected either
+  // way. A *negative* figure is still refused — these columns print unsigned, so a sign
+  // would mean the statement encodes direction some other way, and reading a credit as a
+  // withdrawal would invert a real transaction.
   const components: SourceRowCandidate["components"] = [];
-  if (money.deposit !== undefined) {
-    if (BigInt(money.deposit) <= 0n) return invalid("deposit column is not positive.");
+  if (money.deposit !== undefined && BigInt(money.deposit) !== 0n) {
+    if (BigInt(money.deposit) < 0n) return invalid("deposit column is negative.");
     components.push({ kind: "deposit", amount: { minor: money.deposit, currency: "THB" } });
   }
-  if (money.withdrawal !== undefined) {
+  if (money.withdrawal !== undefined && BigInt(money.withdrawal) !== 0n) {
     // Withdrawals print unsigned; the ledger stores them negative.
     const magnitude = BigInt(money.withdrawal);
-    if (magnitude <= 0n) return invalid("withdrawal column is not positive.");
+    if (magnitude < 0n) return invalid("withdrawal column is negative.");
     components.push({ kind: "withdrawal", amount: { minor: (-magnitude).toString(), currency: "THB" } });
   }
+  // Both columns printed but neither moved anything. Fails closed rather than importing a
+  // transaction with no components, which no downstream contract expects.
+  if (components.length === 0) return invalid("no movement in either money column.");
   if (components.length === 2) {
     // Only the recognized interest/tax pairing may share a row; anything else is
     // an unknown compound row and must fail closed.

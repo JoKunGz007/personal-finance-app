@@ -35,7 +35,10 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
         if (!("str" in item) || item.str.trim() === "") continue;
         // pdf.js transform is [a, b, c, d, e, f]; e and f are the device x and y.
         const [, , , , x, y] = item.transform as number[];
-        items.push({ str: item.str.normalize("NFKC"), x: x!, y: y! });
+        // The run's width matters as much as its x: the money and branch columns are
+        // right-aligned, so a wider figure starts further left and its left edge alone
+        // cannot say which column it belongs to (D-030).
+        items.push({ str: item.str.normalize("NFKC"), x: x!, y: y!, width: item.width });
       }
       pages.push(items);
     }

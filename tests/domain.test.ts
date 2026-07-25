@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { bangkokInstant, resolveKrungthaiYear } from "@/lib/dates";
+import { bangkokInstant, gregorianYearFrom, resolveStatementEra } from "@/lib/dates";
 import { canonicalJson, confirmationDigest, normalizeSourceText, rowFingerprint } from "@/lib/canonical";
 import { sourceRowCandidateSchema, type ImportPayload } from "@/lib/statement";
 import { MAX_INT64, MIN_INT64, minor, minorUnitStringSchema, parseThb } from "@/lib/money";
@@ -31,8 +31,26 @@ describe("exact THB money", () => {
 
 describe("dates and canonical identity", () => {
   it("resolves Thai statement years and defines Bangkok instants", () => {
-    expect(resolveKrungthaiYear(69, 2026)).toBe(2026);
+    // The same month of the same year, printed in each calendar a Krungthai statement uses.
+    expect(gregorianYearFrom(69, 2026, "buddhist")).toBe(2026);
+    expect(gregorianYearFrom(26, 2026, "gregorian")).toBe(2026);
     expect(bangkokInstant("2026-06-01", "23:59")).toBe("2026-06-01T23:59:00+07:00");
+  });
+
+  it("decides the statement era from its period end, refusing an implausible year", () => {
+    // The two readings of the same digits are always 543 years apart, so a window narrower
+    // than that admits exactly one. `26` in 2026 is Gregorian 2026, never Buddhist 1983 —
+    // the bug a real statement exposed, which redated every row by 43 years without failing.
+    expect(resolveStatementEra(26, 2026)).toEqual({ era: "gregorian", year: 2026 });
+    expect(resolveStatementEra(69, 2026)).toEqual({ era: "buddhist", year: 2026 });
+    // Neither reading is plausible: Gregorian 2035 is in the future, Buddhist 1992 too old.
+    expect(() => resolveStatementEra(35, 2026)).toThrow();
+    // The two plausible ranges never overlap — Gregorian admits 06–27, Buddhist 49–70 —
+    // which is what makes this a determination rather than a preference between calendars.
+    for (let twoDigit = 0; twoDigit <= 99; twoDigit += 1) {
+      expect(() => resolveStatementEra(twoDigit, 2026), `ambiguous at ${twoDigit}`)
+        .not.toThrow(/ambiguous/u);
+    }
   });
 
   it("normalizes NFKC and collapsed whitespace for fingerprints", async () => {

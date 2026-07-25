@@ -4,20 +4,22 @@ Last updated: 2026-07-25
 
 Thin entry point. Project state lives in the maintained docs — do not duplicate it here.
 
-Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-028) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
+Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-032) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture, and recovery contracts are in `PRODUCT.md`, `DESIGN.md`, and `docs/`. Local setup and the validation order are in `docs/LOCAL_DEV.md`.
 
 ## Where the project stands
 
-No open review blockers and no open parser defect. Two local tasks remain in `PLAN.md`: reading a real statement end to end, which has cost six attempts and found seven real defects — none detectable without a real file, every one in code the unit suite called green, and the last of them **now fixed and reproduced by the fixtures** (D-028) — and then reading the last page's summary block as a global integrity check. The ledger, backup, restore, and import contracts are hardened and proven end to end against synthetic data. As of 2026-07-25 the app itself can carry a statement the whole way: a PDF is parsed on-device, bound to a chosen ledger account through the new chooser, and confirmed through `/api/v1/imports/confirm` into `confirm_import` under an authenticated MFA session (D-021, D-022).
+No open review blockers and no open parser defect. **A real statement now reads end to end** — 233 rows across 12 pages, through to the account-binding stage — after ten owner-driven reads that found eleven real defects, none detectable without a real file and every one in code the unit suite called green (D-023 … D-032). Two of the eleven did not fail closed, including a 543-year calendar shift that parsed cleanly and would have written 1983 dates into an append-only ledger (D-031). The ledger, backup, restore, and import contracts are hardened and proven end to end against synthetic data.
+
+What remains is verification rather than parsing: nothing cross-checks the row count (the last page's `Total Withdrawal` / `Total Deposit` counts would — `PLAN.md` task 8, and D-026 already gave up the closing-chain protection), the statement's 13-month period is unconfirmed against the document, and binding has never run because the app reported `Local Supabase is not configured`. As of 2026-07-25 the app itself can carry a statement the whole way: a PDF is parsed on-device, bound to a chosen ledger account through the new chooser, and confirmed through `/api/v1/imports/confirm` into `confirm_import` under an authenticated MFA session (D-021, D-022).
 
 Verified on 2026-07-25 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
 
 | Check | Result |
 | --- | --- |
 | ESLint / `tsc --noEmit` / production build | Passed |
-| Vitest | 96 passed, 5 skipped |
+| Vitest | 106 passed, 5 skipped |
 | pgTAP | 84/84 (migrations 001–008) |
 | Playwright | 8/8 desktop and mobile |
 
@@ -50,7 +52,7 @@ Still unreached in a browser behind a real PDF: the binding chooser, the authent
 
 ## Before you touch anything
 
-- Run `git status --short`. Four config files (`.gitignore`, `eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml`) are **intentionally uncommitted** — preserve them. Everything else is committed and pushed.
+- Run `git status --short`. Four config files (`.gitignore`, `eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml`) are **intentionally uncommitted** — preserve them. Everything else is committed. `main` is **two commits ahead of `origin/main`** — the D-028 frame-boundary fix, and the D-029…D-032 parser corrections that followed the real-statement reads. Both are committed but not pushed; pushing was not authorized.
 - Never rewrite a Markdown file through PowerShell `Get-Content`/`Set-Content`. In PowerShell 5.1 the read defaults to ANSI, so every em dash, ellipsis and arrow in these docs comes back as mojibake and is then written out as real UTF-8. It corrupted `HANDOFF.md` once and had to be restored from git. Use the editing tools.
 - `public.ledger_owners` binds exactly one owner and is immutable; a second owner cannot exist without a database reset. Authenticate as the seeded synthetic owner (`supabase/seed.sql` holds its password).
 - Several suites mutate the one local database, so `vitest.config.ts` sets `fileParallelism: false`. Leave it — without it, suites pass alone and fail together.

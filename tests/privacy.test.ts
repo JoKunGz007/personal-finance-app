@@ -167,6 +167,46 @@ describe("privacy guardrails", () => {
     }
   });
 
+  it("reduces a rejected row to shapes, with no value or wording surviving", async () => {
+    const { extractStatement } = await import("@/lib/krungthai-layout");
+    const { buildPage } = await import("./fixtures/krungthai-layout-v1");
+    // A rejected row's message reaches the UI, and it is the only diagnostic that reports
+    // a *row* rather than a heading or a structure — so it is the one most likely to carry
+    // an amount or a counterparty. The static guard above checks that no unmasked cell is
+    // interpolated; this checks the produced message, which also covers the dump being
+    // built by a helper whose name says nothing about cell text.
+    const result = extractStatement([buildPage([
+      {
+        date: "02/01/69", time: "09:15", label: "ถอนเงินสด", detail: "Synthetic branch withdrawal",
+        withdrawal: "0.00", balance: "10,000.00", branch: "สาขาสีลม"
+      }
+    ])]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("INVALID_ROW_CONTENT");
+
+    // Every column is reported as `key[shape]`, and a shape may hold only `d`, `x`,
+    // punctuation, symbols and spacing — never a digit or any other letter.
+    const reported = [...result.message.matchAll(/([A-Za-z]+)\[([^\]]*)\]/gu)];
+    expect(reported).toHaveLength(7);
+    for (const [, , shape] of reported) {
+      expect(shape, `unmasked run in: ${result.message}`).toMatch(/^[dx\p{P}\p{S}\p{Z}]*$/u);
+    }
+    // Past the parser's own counters — the failure count, the distinct-class count, and the
+    // page/row provenance, none of which come from the document — nothing in the message may
+    // carry a digit or a Thai character, so no amount, balance, date, time, branch name or
+    // transaction wording can survive it.
+    const reportedContent = result.message
+      .replace(/^\d+ rows? could not be read(?:, in \d+ distinct cases?)?\. /u, "")
+      .replace(/\d+× /gu, "")
+      .replace(/Page \d+ row (?:\d+|—): /gu, "");
+    expect(reportedContent).not.toMatch(/\p{Nd}/u);
+    expect(reportedContent).not.toMatch(/\p{Script=Thai}/u);
+    for (const value of ["10,000.00", "0.00", "09:15", "02/01/69", "Synthetic branch withdrawal"]) {
+      expect(result.message).not.toContain(value);
+    }
+  });
+
   it("reduces the account number to its last four digits inside the parser", () => {
     const layout = readFileSync("lib/krungthai-layout.ts", "utf8");
     // The extracted frame must never carry a full account number, so no later code

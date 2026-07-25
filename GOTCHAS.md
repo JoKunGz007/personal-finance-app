@@ -194,6 +194,20 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Verify: the fixtures print a `Branch` frame label between `Account Type` and `Account Number`, and `tests/krungthai-layout.test.ts` ("finds the grid header even when a frame label matches a column heading") asserts that printed order as well as the resulting suffix — the order is what makes the failure partial and therefore misleading. Restoring the any-anchor search fails 26 of the 32 layout tests with the real statement's exact message.
 - Related trap: a fixture whose frame is a flat list of labels cannot reproduce this at all. Adding a frame label to `FRAME_LABEL_STOPS` without also printing it in the fixture leaves the same class of bug undetectable.
 
+## A right-aligned number's left edge is not inside its own column
+
+- Symptom: a statement reads correctly for hundreds of rows, then one row fails with two amounts joined in one money cell and the next cell empty — `deposit[ddd.dd dd,ddd.dd] balance[]`. The trigger is a *magnitude*, not a row type: it appears the first time a figure gets wide enough.
+- Cause: money and branch columns are right-aligned while text columns are left-aligned, so a wider figure starts further left. Banding by left edge therefore drifts one column left as magnitudes grow. Measured on a real statement: the balance column is right-aligned to ~518 with a digit width of 4, so `d,ddd.dd` starts at 491 but `dd,ddd.dd` starts at 487 — under the 489 boundary. The margin was 2 units, and a 7-digit branch code sat exactly on its boundary with none.
+- Avoid: band by the run's **midpoint**, using the `width` pdf.js reports (`centreOf` in `lib/krungthai-layout.ts`). A midpoint moves half a glyph per extra character where a left edge moves a whole one. Do not widen the left-edge tolerance instead — that only moves the magnitude at which it breaks.
+- Verify: `tests/krungthai-layout.test.ts` ("assigns a right-aligned amount by its midpoint") starts a `dd,ddd.dd` balance left of its anchor with its midpoint inside. Restoring the left-edge rule fails it with the real statement's exact shape. Note the worker must keep forwarding `item.width`; drop it and fixtures still pass on their estimate while real statements regress.
+
+## A two-digit year on a Thai statement belongs to either calendar, and guessing wrong is silent
+
+- Symptom: the statement parses, every row reads, nothing fails closed — and the dates are 43 years off. A period shows as `1983-07-01` when the file says July 2026.
+- Cause: `2500 + 26 - 543 = 1983`. A Thai-language statement dates 2026 as `69` (Buddhist 2569); an English-language one dates it `26`. Assuming either calendar unconditionally shifts every date in the file by 543 years, and because rows anchor on the period-end year, the whole import shifts together and stays internally consistent — so reconciliation, balances and fingerprints all still agree.
+- Avoid: determine the era once from the period end via `resolveStatementEra`, then apply it to every date. The two readings are always exactly 543 years apart, so a plausibility window narrower than that admits at most one — that makes it arithmetic rather than a heuristic. Fail closed when neither reading is plausible; never fall back to a default calendar.
+- Verify: `tests/domain.test.ts` walks all 100 two-digit years and asserts the ambiguous branch is unreachable (Gregorian admits 06–27, Buddhist 49–70, disjoint). `tests/krungthai-layout.test.ts` reads a Gregorian statement as 2026 and a Buddhist one as 2026. **This class cannot be caught by a fail-closed check** — only by asserting a resolved date against an independently known one, which is why the bind screen prints the period.
+
 ## A frame label's value runs into the next field on the same line
 
 - Symptom: the account's last four digits are wrong but plausible — no error, no failed check, just the wrong account bound to an import.
