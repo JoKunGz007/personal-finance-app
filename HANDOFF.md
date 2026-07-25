@@ -12,14 +12,16 @@ Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser
 
 No open review blockers and no open parser defect. **A real statement now reads end to end** — 233 rows across 12 pages, through to the account-binding stage — after ten owner-driven reads that found eleven real defects, none detectable without a real file and every one in code the unit suite called green (D-023 … D-032). Two of the eleven did not fail closed, including a 543-year calendar shift that parsed cleanly and would have written 1983 dates into an append-only ledger (D-031). The ledger, backup, restore, and import contracts are hardened and proven end to end against synthetic data.
 
-What remains is verification rather than parsing: nothing cross-checks the row count (the last page's `Total Withdrawal` / `Total Deposit` counts would — `PLAN.md` task 8, and D-026 already gave up the closing-chain protection), the statement's 13-month period is unconfirmed against the document, and binding has never run because the app reported `Local Supabase is not configured`. As of 2026-07-25 the app itself can carry a statement the whole way: a PDF is parsed on-device, bound to a chosen ledger account through the new chooser, and confirmed through `/api/v1/imports/confirm` into `confirm_import` under an authenticated MFA session (D-021, D-022).
+The parse is now **independently verified** against the document (D-033): the statement's own printed counts sum to exactly the 233 rows the reader found, and its printed totals close the balance chain onto the last row — the first confirmation that D-026's derived opening is right. That cross-check is enforced in code and fails closed on any disagreement. The 13-month period, the account, and the currency position are all confirmed by the owner.
+
+One owner action blocks the rest: `.env.local` still lacks a real `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, so the app reports `Local Supabase is not configured` and the binding chooser, the authenticated import path, and the charset rejection path have never run behind a real PDF (`PLAN.md` task 10). Agents must not read `.env*`. After that, the remaining build work is the other five layouts (task 11). As of 2026-07-25 the app itself can carry a statement the whole way: a PDF is parsed on-device, bound to a chosen ledger account through the new chooser, and confirmed through `/api/v1/imports/confirm` into `confirm_import` under an authenticated MFA session (D-021, D-022).
 
 Verified on 2026-07-25 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
 
 | Check | Result |
 | --- | --- |
 | ESLint / `tsc --noEmit` / production build | Passed |
-| Vitest | 106 passed, 5 skipped |
+| Vitest | 114 passed, 5 skipped |
 | pgTAP | 84/84 (migrations 001–008) |
 | Playwright | 8/8 desktop and mobile |
 

@@ -1,5 +1,5 @@
 import { gregorianYearFrom, resolveStatementEra, type StatementEra } from "@/lib/dates";
-import { parseThb, type MinorUnitString } from "@/lib/money";
+import { formatThb, parseThb, type MinorUnitString } from "@/lib/money";
 import type { SourceRowCandidate } from "@/lib/statement";
 
 // Geometry reader for contract version krungthai-layout-v1 (docs/KRUNGTHAI_CONTRACT.md).
@@ -28,7 +28,8 @@ export type LayoutErrorCode =
   | "MISSING_FRAME_FIELD"
   | "INVALID_FRAME_CONTENT"
   | "UNSUPPORTED_CURRENCY"
-  | "CLOSING_BALANCE_MISMATCH";
+  | "CLOSING_BALANCE_MISMATCH"
+  | "SUMMARY_MISMATCH";
 
 // The account number is reduced to its last four digits here, at the point of
 // extraction, so no full account number is ever carried past the parser
@@ -121,6 +122,33 @@ const FRAME_LABEL_STOPS: RegExp[] = [
   /^(Check Book No\.?|Cheque Book No\.?)$/iu,
   /^(Currency|สกุลเงิน)$/iu
 ];
+
+// The summary block on the last page. Each money label prints a row count and then a total;
+// `Total Page` prints a page count and a carry-forward marker rather than an amount.
+//
+// This is the statement's own arithmetic, and checking the rows against it is the only
+// *global* integrity check the reader has: it confirms that no row was dropped and that
+// every amount was read. That matters because D-026 derives the balances from the rows,
+// which gave up both the dropped-first-row check and the closing-balance chain.
+//
+// English wordings are confirmed against a real statement (2026-07-25). The Thai alternates
+// are unverified guesses; a statement matching neither yields no cross-check rather than a
+// failure, since not every layout prints this block.
+const SUMMARY_LABELS = {
+  pages: /^(Total Page|รวมจำนวนหน้า)$/iu,
+  withdrawals: /^(Total Withdrawal|รวมรายการถอน|รวมถอนเงิน)$/iu,
+  deposits: /^(Total Deposit|รวมรายการฝาก|รวมฝากเงิน)$/iu
+} as const;
+
+const SUMMARY_COUNT_PATTERN = /^\d{1,9}$/;
+
+type StatementTotals = {
+  pageCount: number | null;
+  withdrawalCount: number | null;
+  withdrawalTotal: MinorUnitString | null;
+  depositCount: number | null;
+  depositTotal: MinorUnitString | null;
+};
 
 const CURRENCY_MARKER = /\b(THB)\b|บาท/u;
 
@@ -337,17 +365,17 @@ function extractFrame(lines: TextItem[][], headerY: number):
   { ok: true; draft: FrameDraft; era: StatementEra } | { ok: false; code: LayoutErrorCode; message: string } {
   const frameLines = lines.filter((line) => line[0]!.y > headerY + LINE_TOLERANCE);
 
-  // The currency is looked for across the whole of page one, not just the label block
-  // above the grid: a real statement prints it below the transactions (D-025). The
-  // requirement is unchanged — page one must state THB explicitly — but this is a
-  // weaker guard than a frame-only match, because a statement in another currency that
-  // merely mentioned THB would satisfy it. Deliberately not paired with a foreign-code
-  // scan: transaction descriptions can legitimately contain a currency code, so that
-  // check would reject valid statements. The hard enforcement stays downstream, where
-  // `parseThb` and the `THB` literal in `importPayloadSchema` refuse anything else.
-  const pageText = lines.flat().map((item) => item.str).join(" ");
+  // The currency must be stated in the frame block above the grid, not merely somewhere on
+  // page one. D-025 widened this to the whole page on the strength of a diagnostic that
+  // reported the marker as printed *below* the grid; that reading came from `headerY` being
+  // resolved to a frame label rather than the heading line (the D-028 bug), which classified
+  // a frame line as below it. A real statement prints `Currency THB` in the frame block,
+  // confirmed directly on 2026-07-25, so the narrow guard is correct and is restored here.
+  // It matters: the wide version accepted a statement denominated in another currency that
+  // merely mentioned THB anywhere on the page, including inside a transaction description.
+  const frameText = frameLines.flat().map((item) => item.str).join(" ");
 
-  if (!CURRENCY_MARKER.test(pageText)) {
+  if (!CURRENCY_MARKER.test(frameText)) {
     // Which currency wording a statement uses, and whether it is printed above the grid
     // at all, decides whether this is the wrong marker or the wrong region to look in.
     // Only allowlisted token names are reported, so nothing from the document is echoed.
@@ -495,6 +523,96 @@ function toIsoDate(printed: string, year: number): string | null {
   return iso;
 }
 
+// Reads the summary block from below the grid on the last page. A missing block leaves every
+// field null, which disables the cross-check; a block that is printed but unreadable fails
+// closed, because silently skipping it would let a mismatch through unnoticed.
+function extractTotals(lines: TextItem[][], headerY: number):
+  { ok: true; totals: StatementTotals } | { ok: false; code: LayoutErrorCode; message: string } {
+  const below = lines.filter((line) => line[0]!.y < headerY - LINE_TOLERANCE);
+  const valuesAfter = (pattern: RegExp): TextItem[] | null => {
+    for (const line of below) {
+      const index = line.findIndex((item) => pattern.test(item.str.replace(/\s+/gu, " ").trim()));
+      if (index !== -1) return line.slice(index + 1);
+    }
+    return null;
+  };
+
+  try {
+    const readCount = (rest: TextItem[] | null): number | null => {
+      if (!rest) return null;
+      const text = (rest[0]?.str ?? "").replace(/,/gu, "").trim();
+      if (!SUMMARY_COUNT_PATTERN.test(text)) throw new Error("unreadable summary count");
+      return Number(text);
+    };
+    // The amount is the run after the count. `Total Page` has no amount, so it is read for
+    // its count only and whatever follows it is ignored.
+    const readTotal = (rest: TextItem[] | null): MinorUnitString | null => {
+      if (!rest) return null;
+      const text = rest[1]?.str.trim();
+      if (!text) throw new Error("missing summary total");
+      return parseThb(text).minor;
+    };
+
+    const withdrawals = valuesAfter(SUMMARY_LABELS.withdrawals);
+    const deposits = valuesAfter(SUMMARY_LABELS.deposits);
+    return {
+      ok: true,
+      totals: {
+        pageCount: readCount(valuesAfter(SUMMARY_LABELS.pages)),
+        withdrawalCount: readCount(withdrawals),
+        withdrawalTotal: readTotal(withdrawals),
+        depositCount: readCount(deposits),
+        depositTotal: readTotal(deposits)
+      }
+    };
+  } catch {
+    return {
+      ok: false,
+      code: "SUMMARY_MISMATCH",
+      message: "The statement prints a summary block whose counts or totals could not be read, so the import cannot be cross-checked."
+    };
+  }
+}
+
+// Compares the rows actually read against the statement's own printed summary. Counts are
+// reported plainly — a row count is not a financial value — but a total mismatch reports only
+// the masked shape of the gap, which gives its order of magnitude without the figure.
+function verifyTotals(totals: StatementTotals, rows: readonly SourceRowCandidate[], pageCount: number): LayoutResult | null {
+  const rowsWith = (kind: "withdrawal" | "deposit") =>
+    rows.filter((row) => row.components.some((component) => component.kind === kind)).length;
+  const magnitudeOf = (kind: "withdrawal" | "deposit") =>
+    rows.reduce((sum, row) => sum + row.components
+      .filter((component) => component.kind === kind)
+      .reduce((inner, component) => {
+        const value = BigInt(component.amount.minor);
+        return inner + (value < 0n ? -value : value);
+      }, 0n), 0n);
+
+  const mismatch = (message: string): LayoutResult => ({ ok: false, code: "SUMMARY_MISMATCH", message });
+
+  if (totals.pageCount !== null && totals.pageCount !== pageCount) {
+    return mismatch(`The statement says it has ${totals.pageCount} pages but the reader found ${pageCount}.`);
+  }
+  for (const kind of ["withdrawal", "deposit"] as const) {
+    const printedCount = kind === "withdrawal" ? totals.withdrawalCount : totals.depositCount;
+    const printedTotal = kind === "withdrawal" ? totals.withdrawalTotal : totals.depositTotal;
+    if (printedCount !== null && printedCount !== rowsWith(kind)) {
+      return mismatch(`The statement counts ${printedCount} ${kind} rows but the reader found ${rowsWith(kind)}.`);
+    }
+    if (printedTotal !== null) {
+      const gap = BigInt(printedTotal) - magnitudeOf(kind);
+      if (gap !== 0n) {
+        const absolute = ((gap < 0n ? -gap : gap).toString()) as MinorUnitString;
+        return mismatch(
+          `The statement's printed ${kind} total does not match the rows read; the gap is ` +
+          `${maskShape(formatThb(absolute))}.`
+        );
+      }
+    }
+  }
+  return null;
+}
+
 type RowFailure = { code: LayoutErrorCode; message: string };
 
 // How many distinct failure classes one result reports. Enough to cover a statement's
@@ -539,6 +657,7 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
   // Decided once from the frame's period end and applied to every row, so a statement can
   // never be read half in one calendar and half in the other.
   let era: StatementEra = "buddhist";
+  let lastPage: { lines: TextItem[][]; headerY: number } | null = null;
   const rows: SourceRowCandidate[] = [];
   const failures: RowFailure[] = [];
 
@@ -553,6 +672,8 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
       };
     }
     const { columns, y: headerY } = header;
+    // Ends the loop holding the last page, where the summary block is printed.
+    lastPage = { lines, headerY };
 
     // The frame is printed once, above the grid on page one.
     if (pageIndex === 0) {
@@ -609,6 +730,14 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
           message: `Page ${pageIndex + 1} row —: date/time cell does not parse. Cells: dateTime[${maskShape(dateText)}]`
         });
         current = null; // do not fold an unreadable row into the previous one
+        continue;
+      }
+      // A summary line ends the grid. Recognizing it explicitly matters because it sits in
+      // the row region: a statement printing it closer than DETAIL_TOLERANCE below the last
+      // row would otherwise have its counts and totals merged into that row's cells.
+      if (line.some((item) => Object.values(SUMMARY_LABELS)
+        .some((pattern) => pattern.test(item.str.replace(/\s+/gu, " ").trim())))) {
+        current = null;
         continue;
       }
       if (!current) continue; // stray text above the first row
@@ -677,6 +806,18 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
       code: "CLOSING_BALANCE_MISMATCH",
       message: "The final row balance does not match the printed closing balance."
     };
+  }
+
+  // The statement's own totals are the last check and the only global one. A mismatch means
+  // the reader and the bank disagree about what the document contains, so it fails closed
+  // rather than warning: an append-only ledger cannot take back a dropped or misread row.
+  // A statement that prints no summary block is accepted with no cross-check, which is the
+  // same shape of compromise as `balancesPrinted`.
+  if (lastPage) {
+    const summary = extractTotals(lastPage.lines, lastPage.headerY);
+    if (!summary.ok) return summary;
+    const mismatch = verifyTotals(summary.totals, rows, pages.length);
+    if (mismatch) return mismatch;
   }
 
   return { ok: true, frame, rows };

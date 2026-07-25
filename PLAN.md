@@ -22,7 +22,7 @@ Current focused verification:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 106 passed / 5 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation, Next.js route handlers; all five skips are unreachable-container reporters and ran green against the live container) |
+| Vitest | Passed, 114 passed / 5 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation, Next.js route handlers; all five skips are unreachable-container reporters and ran green against the live container) |
 | pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
 | Production build | Passed |
 | Playwright | Passed, 8/8 across desktop and mobile — the synthetic review path plus two specs that put a generated PDF through the real pdf.js worker (D-023). Run with `--config=playwright.isolated.config.ts`, which never reuses a stale server (D-027) |
@@ -77,19 +77,30 @@ The one open **task** blocker — the parser's `headerY` resolution — is fixed
 
    **The reader now works against a real statement end to end.** Confirmed against reality: the file opens and decodes, the signature matches, all seven column headings match, the currency is found, the frame reads (account type, account number, statement period), all 233 rows parse, and the app reaches the account-binding stage. The date format is confirmed as `dd/mm/yy` with the time on its own line.
 
-   Open, in priority order:
-   1. **The row count is unverified.** 233 rows is what the reader found, not what the statement says it contains. The last page prints `Total Withdrawal` and `Total Deposit` counts that would confirm it — task 8. Nothing currently cross-checks them, and D-026 already gave up the dropped-first-row and closing-chain protections, so there is presently *no* global integrity check on the import.
-   2. **The 13-month period is unconfirmed.** The statement prints a range of 2025-07-01 to 2026-07-31, which is plausible for a custom download but has not been checked against the document by the owner. Before D-031 the start silently inherited the end's year, so this range had never been read correctly.
-   3. **The currency guard is still the weakened version** from D-025, whose rationale is now known to be wrong — see the correction note under that entry's follow-up in this task.
-   4. **Binding is untested against a real statement**: the app reported `Local Supabase is not configured`, so `Load ledger accounts` was never exercised. The chooser, the authenticated import path, and the charset rejection path all remain unreached behind a real PDF.
+   Verified by the owner against the document on 2026-07-25, closing every parser question this task opened:
+   - **The row count is confirmed.** Page 12 prints 131 withdrawal rows and 102 deposit rows; 131 + 102 = 233, exactly the number the reader found. Now enforced in code (task 8, D-033).
+   - **The balance chain is confirmed.** The first row is a withdrawal leaving a zero balance, so the opening figure derives cleanly; opening + printed deposits − printed withdrawals lands exactly on the last row's printed balance. This is the first independent evidence that D-026's derived opening is correct.
+   - **The 13-month period is confirmed.** The document prints `Statement Period 01/07/25 to 31/07/26` and `Requested Date 24/07/26` — Gregorian, and a genuinely 13-month range.
+   - **The account is confirmed** as the right one by the owner, against the last four the bind screen shows.
+   - **The currency position is confirmed** as the frame block, above the grid; the guard is restored (task 9, D-034).
 
-   **Correction to D-025:** the real statement prints `Currency` at `y=670` with its value beside it, above the grid heading line at `y=601` — i.e. inside the frame block, where the original design looked for it. D-025 concluded it was printed *below* the grid and deliberately weakened the guard to search all of page one; that conclusion came from `currencyEvidence` classifying `y=670` as "below" while `headerY` was wrongly 717 (the D-028 bug). The weakening can be reverted, restoring a guard that a foreign-currency statement merely mentioning THB would not pass.
+   The counts summing to *exactly* 233 also confirms D-029 independently: the bank does not count the `0.00` withholding-tax column of a zero-tax interest posting as a withdrawal either.
 
-8. **Read the last page's summary block as a global integrity check.** Its labels are known from attempt 6 — `Total Page`, `Total Withdrawal` and `Total Deposit`, each printing a count and then an amount in two recurring positions of its own (masked as `ddd` then `dd,ddd.dd`). Whether those positions coincide with any grid column was not measured, so the block's geometry still has to be read from a structural dump rather than assumed. Reading them would restore a check stronger than a closing balance: it validates every amount *and* that no row was dropped, which matters because D-026 derives the opening balance from the first row and thereby lost both the dropped-first-row and the closing-chain protections. Nothing reads them yet.
+   Still unreached behind a real PDF: the binding chooser, the authenticated import path, and the charset rejection path — all three blocked on task 10, not on the parser.
 
-   Not started, and deliberately not bundled into task 7: a new fail-closed check added before the first successful read could block a statement that would otherwise have parsed. It also carries an unresolved product question — whether a count or total mismatch should refuse an import outright, warn at review, or record a blocker — which is a decision for the owner rather than a parser detail.
+8. ~~Read the last page's summary block as a global integrity check.~~ **Done** (D-033) — `extractTotals` reads `Total Page`, `Total Withdrawal` and `Total Deposit` from below the grid on the last page, and `verifyTotals` checks the page count, the per-kind row counts and the per-kind absolute totals against the rows parsed. A disagreement fails closed as `SUMMARY_MISMATCH`; an absent block is tolerated as "no cross-check"; a block printed but unreadable fails closed. The open product question is resolved in favour of failing closed, because an append-only ledger cannot take back a dropped row.
 
-The other six tasks are complete and verified. Task 7 is the next action and still the only way to reach the binding chooser and the authenticated import path against a real statement; task 8 follows it.
+   Verified against the real statement on 2026-07-25 by the owner reading page 12: the printed counts sum exactly to the 233 rows the reader found, and the printed totals close the chain from the opening figure derived from the first row to the last row's printed balance. That is the first independent confirmation that the parse is complete and that D-026's derived opening is correct.
+
+   Left undone: whether an import *was* cross-checked is not persisted. `StatementFrame` is hashed into the import digest, so recording it needs a migration and a payload-contract change — until then the ledger cannot distinguish a cross-checked import from an unverified one.
+
+9. ~~Restore the currency guard to the frame block.~~ **Done** (D-034, supersedes D-025) — confirmed directly against the real statement, which prints `Currency THB` above the grid.
+
+10. **Configure the app's local Supabase env so binding can run.** `.env.local` exists but `lib/server/supabase.ts` still reports `Local Supabase is not configured`, which means `NEXT_PUBLIC_SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is missing or still holds the `replace-with…` placeholder from `.env.example`. The values are printed by `supabase status`. Until this is set, the binding chooser, the authenticated import path and the charset rejection path remain unreached behind a real PDF — the last three gaps in the end-to-end proof. Owner action; agents must not read `.env*`.
+
+11. **Extend the reader to the remaining statement and receipt layouts.** Two further statement formats (SCB, KBANK) and three receipt formats are in scope. Most of the eleven defects found on the Krungthai layout were reader-architecture faults rather than bank-specific ones — the worker, the frame/grid boundary, midpoint column assignment, zero money columns and the calendar era all carry over — so the per-format cost should be far below Krungthai's ten reads. Planned approach: a local masking harness that writes a masked structural dump per format to a gitignored path, so a layout can be developed offline from one dump instead of one owner-driven read per defect, plus layout descriptors as data rather than a hand-written reader per bank. Receipts may not be a column grid at all and need one dump before any design claim.
+
+Tasks 1–9 are complete and verified. Task 10 is owner action and blocks the last three end-to-end gaps; task 11 is the remaining build work.
 
 ## Later authorization gates
 

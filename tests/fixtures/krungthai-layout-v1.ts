@@ -31,8 +31,15 @@ const ROW_PITCH = 24;
 const DETAIL_OFFSET = 10;
 // The time sits on its own line just under its row's date, within DETAIL_TOLERANCE.
 const TIME_OFFSET = 12;
-// A footer line, well clear of DETAIL_TOLERANCE below the last row the fixtures use.
-const CURRENCY_Y = 480;
+// The currency sits in the frame block above the grid, which is where a real statement
+// prints it — `Currency  THB` on its own line (confirmed 2026-07-25, superseding D-025).
+const CURRENCY_Y = 705;
+// A footer line below the last row the fixtures use, well clear of DETAIL_TOLERANCE. It
+// begins with a street number, as a real statement's footer does, so the fixtures keep
+// exercising the guard that stops a numeric footer from aborting a statement (D-026).
+const FOOTER_Y = 480;
+// The summary block's first line, likewise clear of the last row.
+const SUMMARY_Y = 600;
 
 type RowSpec = {
   date: string;
@@ -73,11 +80,23 @@ const DEFAULT_FRAME: Required<FrameSpec> = {
   currencyMarker: "Currency THB"
 };
 
+// The summary block a real statement prints on its last page (D-033): each money label
+// followed by a row count and then a total, and `Total Page` followed by a page count and a
+// carry-forward marker rather than an amount. Overriding a field to null omits that line, so
+// a test can prove the cross-check both fires and tolerates absence.
+export type TotalsSpec = {
+  pages?: string | null;
+  withdrawalCount?: string | null;
+  withdrawalTotal?: string | null;
+  depositCount?: string | null;
+  depositTotal?: string | null;
+};
+
 export function buildPage(
   rows: readonly RowSpec[],
-  options: { withSignature?: boolean; headings?: boolean; frame?: FrameSpec | null } = {}
+  options: { withSignature?: boolean; headings?: boolean; frame?: FrameSpec | null; totals?: TotalsSpec | null } = {}
 ): PageText {
-  const { withSignature = true, headings = true, frame = {} } = options;
+  const { withSignature = true, headings = true, frame = {}, totals = null } = options;
   const items: TextItem[] = [];
 
   if (withSignature) {
@@ -94,10 +113,10 @@ export function buildPage(
       items.push({ str: label, x: 40, y });
       items.push({ str: value, x: 170, y });
     };
-    // Printed below the transaction grid, which is where a real statement puts it
-    // (D-025) — far enough below the last row that it cannot be read as a
-    // continuation line. The reader therefore has to scan the whole page for it.
-    if (values.currencyMarker !== null) items.push({ str: values.currencyMarker, x: 40, y: CURRENCY_Y });
+    // In the frame block above the grid, on its own line, as a real statement prints it.
+    // Its own line matters: sharing the closing-balance line would put `Currency THB` inside
+    // that field's value, since a two-word run does not match the single-word stop pattern.
+    if (values.currencyMarker !== null) items.push({ str: values.currencyMarker, x: 303, y: CURRENCY_Y });
     // Wordings a real statement prints (D-026). `Branch Code` shares the account-number
     // line, as it does on a real statement, so the fixture exercises the stop rule that
     // keeps one field's value out of the next.
@@ -144,12 +163,35 @@ export function buildPage(
     if (row.detail) items.push({ str: row.detail, x: COLUMN_X.description, y: y - DETAIL_OFFSET });
   });
 
+  // A footer, as every page of a real statement carries. It starts with a street number so
+  // the fixtures keep proving that a numeric footer does not abort a statement.
+  if (rows.length > 0) items.push({ str: "88 Synthetic Road, Bangkok 10110", x: 40, y: FOOTER_Y });
+
+  if (totals) {
+    // Below the last row the fixtures use and well clear of DETAIL_TOLERANCE, as on a real
+    // statement — the reader must not absorb these into the final transaction.
+    const push = (label: string, count: string | null, amount: string | null, y: number) => {
+      if (count === null) return;
+      items.push({ str: label, x: 40, y });
+      items.push({ str: count, x: 110, y });
+      if (amount !== null) items.push({ str: amount, x: 170, y });
+    };
+    push("Total Page", totals.pages ?? null, "C/F", SUMMARY_Y);
+    push("Total Withdrawal", totals.withdrawalCount ?? null, totals.withdrawalTotal ?? null, SUMMARY_Y - 15);
+    push("Total Deposit", totals.depositCount ?? null, totals.depositTotal ?? null, SUMMARY_Y - 30);
+  }
+
   return items;
 }
 
 // A well-formed two-page statement: a plain deposit, a withdrawal with a wrapped
 // detail line and a branch, a row without a printed time, and an interest/tax
 // compound row on page two.
+//
+// The last page carries a summary block whose counts and totals agree with those rows —
+// 3 withdrawal rows totalling 752.30, 2 deposit rows totalling 1,012.00, across 2 pages —
+// so the main fixture exercises the global cross-check rather than only the row parsing.
+// Note the compound row counts in *both* columns, which is what a real statement does.
 export const validStatement: PageText[] = [
   buildPage([
     { date: "02/01/69", time: "09:15", label: "โอนเงินเข้า", detail: "Synthetic inbound transfer", deposit: "1,000.00", balance: "11,000.00" },
@@ -158,7 +200,11 @@ export const validStatement: PageText[] = [
   ]),
   buildPage([
     { date: "31/01/69", time: "23:59", label: "ดอกเบี้ยรับ", detail: "หักภาษี ณ ที่จ่าย", deposit: "12.00", withdrawal: "1.80", balance: "10,259.70" }
-  ], { withSignature: false, frame: null })
+  ], {
+    withSignature: false,
+    frame: null,
+    totals: { pages: "2", withdrawalCount: "3", withdrawalTotal: "752.30", depositCount: "2", depositTotal: "1,012.00" }
+  })
 ];
 
 export const ROW_PITCH_FOR_TESTS = ROW_PITCH;

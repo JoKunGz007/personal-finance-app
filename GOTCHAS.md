@@ -194,6 +194,13 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Verify: the fixtures print a `Branch` frame label between `Account Type` and `Account Number`, and `tests/krungthai-layout.test.ts` ("finds the grid header even when a frame label matches a column heading") asserts that printed order as well as the resulting suffix — the order is what makes the failure partial and therefore misleading. Restoring the any-anchor search fails 26 of the 32 layout tests with the real statement's exact message.
 - Related trap: a fixture whose frame is a flat list of labels cannot reproduce this at all. Adding a frame label to `FRAME_LABEL_STOPS` without also printing it in the fixture leaves the same class of bug undetectable.
 
+## The summary block sits inside the row region, so it can be eaten by the last transaction
+
+- Symptom: the final row of a statement carries extra text in its cells, or fails with an unreadable date/time cell whose shape has trailing words and digits — but only on statements whose last page ends tightly.
+- Cause: `Total Page` / `Total Withdrawal` / `Total Deposit` are printed below the grid heading, which is exactly the region the row scanner walks. They carry no date, so they fall through to the continuation branch, and a block printed within `DETAIL_TOLERANCE` of the last row is merged into it.
+- Avoid: match `SUMMARY_LABELS` in the row loop and end the current row there. Distance alone is not a guard — it works on the one statement measured (33 units of clearance) and silently does not on a tighter one.
+- Verify: `tests/krungthai-layout.test.ts` ("never absorbs a summary line into the last row, even printed close to it") shifts the block to within `DETAIL_TOLERANCE` and still expects one clean row.
+
 ## A right-aligned number's left edge is not inside its own column
 
 - Symptom: a statement reads correctly for hundreds of rows, then one row fails with two amounts joined in one money cell and the next cell empty — `deposit[ddd.dd dd,ddd.dd] balance[]`. The trigger is a *magnitude*, not a row type: it appears the first time a figure gets wide enough.

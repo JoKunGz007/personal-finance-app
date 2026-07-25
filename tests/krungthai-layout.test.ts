@@ -70,16 +70,20 @@ describe("krungthai frame extraction", () => {
     expect(result.rows[0]!.sourceTime).toBe("09:15");
   });
 
-  it("reads a currency stated below the transaction grid", () => {
-    // A real statement prints the currency under the transactions, not in the label
-    // block above them (D-025). This pins that down: narrowing the search back to the
-    // frame block would fail here rather than only against a real PDF.
+  it("requires the currency in the frame block, not merely somewhere on page one", () => {
+    // A real statement prints `Currency THB` above the grid (confirmed 2026-07-25). D-025 had
+    // widened the search to the whole page, which accepted a statement in another currency
+    // that merely mentioned THB — including inside a transaction description.
     const page = buildPage([{ date: "02/01/69", label: "x", deposit: "1.00", balance: "10,259.70" }]);
     const currency = page.find((item) => /THB/u.test(item.str));
     const header = page.find((item) => item.str === "Date/Time");
     expect(currency, "the fixture must print a currency marker").toBeDefined();
-    expect(currency!.y).toBeLessThan(header!.y);
+    expect(currency!.y).toBeGreaterThan(header!.y);
     expect(extractStatement([page])).toMatchObject({ ok: true });
+
+    // The same marker moved below the grid no longer satisfies it.
+    const moved = page.map((item) => item === currency ? { ...item, y: header!.y - 100 } : item);
+    expect(extractStatement([moved])).toMatchObject({ ok: false, code: "UNSUPPORTED_CURRENCY" });
   });
 
   it("matches a frame label whose internal spacing is padded", () => {
@@ -270,6 +274,68 @@ describe("krungthai layout extraction", () => {
     if (!result.ok) throw new Error(result.message);
     const reconciliation = reconcileRows(result.frame.openingBalance, result.rows);
     expect(reconciliation.blockers).toHaveLength(0);
+  });
+});
+
+describe("krungthai summary cross-check", () => {
+  // One deposit row, one page: the totals below state exactly that.
+  const rows = [{ date: "02/01/69", label: "x", deposit: "1.00", balance: "10,259.70" }];
+  const agreeing = {
+    pages: "1", withdrawalCount: "0", withdrawalTotal: "0.00", depositCount: "1", depositTotal: "1.00"
+  };
+
+  it("accepts a statement whose printed totals agree with the rows read", () => {
+    const result = onePage(rows, { totals: agreeing });
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+  });
+
+  it("still reads a statement that prints no summary block at all", () => {
+    // Not every layout prints one, and its absence must not be a failure — it only means the
+    // cross-check is unavailable, the same compromise as `balancesPrinted` (D-026).
+    expect(onePage(rows, { totals: null })).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    ["a row count", { depositCount: "2" }],
+    ["a page count", { pages: "3" }],
+    ["a money total", { depositTotal: "9,999.00" }]
+  ])("fails closed when %s disagrees with the rows read", (_field, override) => {
+    expect(onePage(rows, { totals: { ...agreeing, ...override } }))
+      .toMatchObject({ ok: false, code: "SUMMARY_MISMATCH" });
+  });
+
+  it("reports a total mismatch as a masked gap, never as a figure", () => {
+    const result = onePage(rows, { totals: { ...agreeing, depositTotal: "9,999.00" } });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // The order of magnitude survives; the value does not.
+    expect(result.message).toContain("d,ddd.dd");
+    expect(result.message).not.toMatch(/\d/u);
+  });
+
+  it("fails closed when a printed summary cannot be read", () => {
+    // A block that is printed but unparseable must not be silently skipped, or a mismatch
+    // would pass unnoticed — the opposite of an absent block.
+    expect(onePage(rows, { totals: { ...agreeing, depositCount: "not-a-count" } }))
+      .toMatchObject({ ok: false, code: "SUMMARY_MISMATCH" });
+  });
+
+  it("never absorbs a summary line into the last row, even printed close to it", () => {
+    // The block sits inside the row region. A statement printing it within DETAIL_TOLERANCE of
+    // the final row would otherwise have its counts merged into that row's cells.
+    const page = buildPage(rows, { totals: agreeing });
+    const lastRowY = Math.max(...page.filter((item) => item.str === "02/01/69").map((item) => item.y));
+    const shifted = page.map((item) => item.y <= 600 && item.y >= 570
+      ? { ...item, y: lastRowY - (600 - item.y) - 8 }
+      : item);
+    const summary = shifted.find((item) => item.str === "Total Page")!;
+    expect(lastRowY - summary.y, "the fixture must print the summary within DETAIL_TOLERANCE").toBeLessThanOrEqual(14);
+
+    const result = extractStatement([shifted]);
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]!.sourceDate).toBe("2026-01-02");
   });
 });
 
