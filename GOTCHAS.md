@@ -153,10 +153,10 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 ## Never use real statements to develop the parser
 
-- Symptom: private PDF bytes, passwords, or values appear in logs, fixtures, screenshots, or commits.
+- Symptom: private PDF bytes, passwords, or values appear in logs, fixtures, screenshots, a session transcript, or commits.
 - Cause: using `private-statements/` as convenient parser input.
-- Avoid: use approved synthetic geometry fixtures only. A real-PDF smoke test requires renewed explicit authorization.
-- Verify: privacy tests pass and repository searches contain no real values or statement passwords.
+- Avoid: use approved synthetic geometry fixtures only. Since 2026-07-25 there is exactly one sanctioned route to a real document — **invoke `scripts/mask-statement.mjs`, never read the PDF** — and it emits only masked structure to the gitignored `masked-dumps/` (D-035, `docs/FIXTURE_POLICY.md`). A dump is working material, never a fixture: do not transcribe its coordinates or wordings into one, and never commit it. A real-PDF browser smoke test still requires renewed explicit authorization.
+- Verify: privacy tests pass, `git status` never shows a dump, and repository searches contain no real values or statement passwords.
 
 ## Fingerprint-bound imports change what pgTAP fixtures may assert
 
@@ -293,3 +293,31 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: `public.ledger_owners` holds a single binding row and is immutable — a trigger rejects updates and deletes — so a second owner cannot be bound without resetting the database.
 - Avoid: authenticate as the seeded synthetic owner (`supabase/seed.sql` sets its password) instead of creating a new user.
 - Verify: `select * from public.ledger_owners` returns exactly one row, and the import e2e signs in as that owner.
+
+## Plain Node can run this repo's TypeScript, but only a module that imports nothing
+
+- Symptom: `scripts/mask-statement.mjs` dies with `ERR_MODULE_NOT_FOUND` on `@/lib/dates` after an unrelated edit to the diagnostics.
+- Cause: Node 24 strips types, so it loads a `.ts` file directly — but it does not resolve the `@/` alias and does not accept an extensionless specifier. Both are bundler features the app gets from Next.js and Vitest and the harness does not.
+- Avoid: keep `lib/masked-diagnostics.ts` free of imports. That is why the diagnostics live there rather than in `lib/krungthai-layout.ts`, which imports three aliased modules and therefore cannot be loaded by the harness at all. The same constraint applies to any throwaway Node script that reaches into `tests/fixtures/` — a `import type` line is erased and is fine, a value import of an aliased module is not.
+- Verify: `tests/privacy.test.ts` ("keeps the masked diagnostics module dependency-free") fails the moment an import is added, before the harness does.
+
+## A guard keyed on `NODE_ENV` is unreachable in the build that must exercise it
+
+- Symptom: a development-only route or affordance works under `next dev` and is untestable in the browser suite, or a spec written against `next dev` sees clicks do nothing at all.
+- Cause: two constraints meet. Browser tests here run against `pnpm build && pnpm start`, because the strict CSP forbids the `eval()` React needs in development mode (see the CSP entry above) — and `next build` sets `NODE_ENV=production`, so anything gated on `NODE_ENV !== "production"` is switched off in exactly that build.
+- Avoid: gate on an explicit opt-in flag the test config sets, not on the build mode — `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION` in `playwright.owner.config.ts` (D-036). A `NEXT_PUBLIC_` flag is inlined at build time, so it must be set for `pnpm build` as well as for `next start`; Playwright's `webServer.env` covers both. Never relax the CSP to make `next dev` work.
+- Verify: `tests/dev-session.test.ts` asserts a 404 without the flag; `tests/e2e/owner-session.spec.ts` passes only under its own config and self-skips elsewhere.
+
+## Leftover test accounts collide on a unique constraint in another suite
+
+- Symptom: `tests/import-route.test.ts` and `tests/import-confirm-e2e.test.ts` both fail at setup with `duplicate key value violates unique constraint "accounts_owner_id_bank_code_last_four_key"`, naming neither the suite nor the file that caused it.
+- Cause: `public.accounts` is unique on (owner_id, bank_code, last_four), there is exactly one owner, and every suite that binds the synthetic statement wants an account ending 7890. A suite that inserts one and does not remove it breaks the next suite rather than itself.
+- Avoid: clean up in `afterAll`, not only in `beforeEach` — a run that ends leaves the database as it found it. `resetOwnerImportSurface` takes the account ids to drop.
+- Verify: run the browser suite and then `pnpm test`; both pass in either order.
+
+## An absolute Windows path is not a valid ESM specifier
+
+- Symptom: a one-off Node script fails with `ERR_UNSUPPORTED_ESM_URL_SCHEME`, naming a perfectly correct path.
+- Cause: ESM resolves an absolute specifier as a URL, and `D:/…` parses as a `d:` scheme rather than a path. Only relative specifiers and `file://` URLs work.
+- Avoid: write `file:///D:/Projects/…` in the import, or use a relative specifier. `node --experimental-strip-types` reports it the same way whether the target is `.ts` or `.mjs`, so the message does not point at type stripping.
+- Verify: the scratch script that builds a synthetic PDF from the repo fixtures imports them by `file:///` URL and runs.

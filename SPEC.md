@@ -8,7 +8,7 @@ This file is the stable entry point for project requirements. It summarizes only
 
 Private Ledger is a local-first, single-owner application that converts a supported Krungthai statement into a reconciled, reviewable ledger without exposing the PDF, its password, or private financial data.
 
-Committed data remains invented only. Hosted Supabase, OAuth setup, Vercel, deployment, commits, and pushes require separate explicit authorization. Local real-statement smoke tests were authorized on 2026-07-25 under stated conditions and have been run six times by the owner; every finding came from on-device masked diagnostics, so no real value entered the repository and `docs/FIXTURE_POLICY.md` is unamended. See `PLAN.md` § Later authorization gates and `HANDOFF.md` § Standing authorizations before acting on it.
+Committed data remains invented only. Hosted Supabase, OAuth setup, Vercel, deployment, commits, and pushes require separate explicit authorization. Local real-statement smoke tests were authorized on 2026-07-25 under stated conditions and were run ten times by the owner, reading a statement end to end; every finding came from on-device masked diagnostics, so no real value entered the repository. Direct access to `private-statements/` was granted the same day under an **invoke, don't read** boundary, and `docs/FIXTURE_POLICY.md` is amended accordingly (D-035) — a masking harness may be run against a statement, and the statement itself may not be read. See `PLAN.md` § Later authorization gates and `HANDOFF.md` § Standing authorizations before acting on any of it.
 
 Detailed product and interface direction:
 

@@ -21,7 +21,18 @@ pnpm test
 pnpm supabase:reset
 pnpm supabase:test
 pnpm build
-pnpm test:e2e
+pnpm exec playwright test --config=playwright.isolated.config.ts
+pnpm exec playwright test --config=playwright.owner.config.ts
+```
+
+Use the isolated config rather than `pnpm test:e2e`: the default one reuses a server someone else left running, so a browser run can silently test stale code (D-027).
+
+The owner config is a second browser suite, for the specs that need a signed-in owner — the binding chooser, the authenticated import path, and the charset rejection path. It builds with `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=1`, which is what makes the development sign-in exist at all (D-036); no other build has it. Both browser suites and `pnpm test` share one database and one owner, and all three want an account ending 7890, so each cleans up after itself — see GOTCHAS if you meet a `accounts_owner_id_bank_code_last_four_key` violation.
+
+The masking harness is run on demand, never as part of validation, and needs the owner present to type a document password:
+
+```powershell
+node scripts/mask-statement.mjs private-statements/<file>.pdf --label <format>
 ```
 
 ## Docker / Supabase acceptance
