@@ -1,9 +1,10 @@
 /// <reference lib="webworker" />
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 import {
-  describeLabelGeometry, describeStructure, describeValueLabels, extractStatement,
+  describeLabelGeometry, describeStructure, describeValueLabels,
   type PageText, type TextItem
 } from "@/lib/krungthai-layout";
+import { readStatement } from "@/lib/read-statement";
 
 // pdf.js needs its own worker, and it has to be handed over explicitly. Left unset it
 // falls back to loading that module inline, which throws a bare `Error` before any page
@@ -43,7 +44,8 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
       pages.push(items);
     }
 
-    const result = extractStatement(pages);
+    // Three layouts now, chosen by the document rather than by the caller.
+    const result = readStatement(pages);
     if (!result.ok) {
       // A layout that will not read is fixed by knowing which heading words the
       // statement prints, so send those candidate labels back for the owner to see.
@@ -69,7 +71,7 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
         structure,
         detail: result.message,
         message: result.code === "UNSUPPORTED_LAYOUT"
-          ? "This PDF does not match the supported Krungthai layout. No data left this device."
+          ? "This PDF does not match a supported statement layout. No data left this device."
           : "This layout could not be read exactly, so nothing was imported. No data left this device."
       });
       return;

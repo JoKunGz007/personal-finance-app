@@ -1,3 +1,4 @@
+import type { BankCode } from "@/lib/statement-frame";
 import type { SourceRowCandidate } from "@/lib/statement";
 
 export function normalizeSourceText(value: string | null): string | null {
@@ -38,7 +39,7 @@ export async function sha256HexBytes(bytes: ArrayBuffer): Promise<string> {
 
 export async function rowFingerprint(
   accountId: string,
-  bankCode: "KTB",
+  bankCode: BankCode,
   row: SourceRowCandidate
 ): Promise<string> {
   const deposit = row.components.filter((item) => item.kind === "deposit").reduce((sum, item) => sum + BigInt(item.amount.minor), 0n);

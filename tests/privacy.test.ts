@@ -209,6 +209,67 @@ describe("privacy guardrails", () => {
     expect(joined).toMatch(/d,ddd\.dd/u);
   });
 
+  it("never interpolates raw run text into a descriptor-driven layout message", () => {
+    const layout = readFileSync("lib/statement-layout.ts", "utf8");
+    // Same boundary as the Krungthai check below, applied to the reader that now handles
+    // two more layouts. Its messages reach the UI, so a run's text may only appear through
+    // maskShape — `labelText(...)` and `.str` are the two ways raw text can be reached.
+    const templates = layout.match(/`(?:[^`\\]|\\.)*`/gu) ?? [];
+    const interpolations = templates.flatMap((template) => template.match(/\$\{[^}]*\}/gu) ?? []);
+    expect(interpolations.length).toBeGreaterThan(0);
+    for (const interpolation of interpolations) {
+      if (!/labelText\(|item\.str|\.str\b|textOf\(|describeLine\(/u.test(interpolation)) continue;
+      expect(interpolation, `unmasked run text in a message: ${interpolation}`)
+        .toMatch(/maskShape\(|describeLine\(/u);
+    }
+    // describeLine is the only way a whole row reaches a message, and it must mask.
+    const describeLine = /function describeLine\([\s\S]*?\n\}/u.exec(layout)?.[0] ?? "";
+    expect(describeLine).toContain("maskShape(");
+  });
+
+  it("reduces a rejected row to shapes in the descriptor-driven reader", async () => {
+    const { extractStatement } = await import("@/lib/statement-layout");
+    const { buildScbPage } = await import("./fixtures/statement-layouts");
+    // A rejected row's message reaches the UI, and it is the diagnostic most likely to
+    // carry an amount or a counterparty. This is the produced message, not a static scan.
+    const result = extractStatement([buildScbPage([
+      {
+        dateTime: "02/01/26 09:15", code: "E1", channel: "ENET",
+        debit: "0.00", balance: "5,000.00", description: "Synthetic counterparty name"
+      }
+    ], { carryForward: "5,000.00" })]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    // Every run is reported as `[shape]`, and a shape may hold only `d`, `x`, punctuation,
+    // symbols and spacing — never a digit or any other letter.
+    const reported = [...result.message.matchAll(/\[([^\]]*)\]/gu)];
+    expect(reported.length).toBeGreaterThan(0);
+    for (const [, shape] of reported) {
+      expect(shape, `unmasked run in: ${result.message}`).toMatch(/^[dx\p{P}\p{S}\p{Z}]*$/u);
+    }
+    for (const value of ["5,000.00", "0.00", "09:15", "02/01/26", "Synthetic counterparty name", "ENET"]) {
+      expect(result.message).not.toContain(value);
+    }
+  });
+
+  it("reports a balance gap as a shape, never as a figure", async () => {
+    const { extractStatement } = await import("@/lib/statement-layout");
+    const { buildScbPage } = await import("./fixtures/statement-layouts");
+    // The direction and carry-forward checks are the only places an *arithmetic* result
+    // derived from real amounts reaches a message, so they are their own disclosure risk:
+    // a gap is a figure the document never printed but which is computed from two that it
+    // did. Both report through maskShape.
+    const result = extractStatement([buildScbPage([
+      { dateTime: "02/01/26 09:15", code: "E1", channel: "ENET", debit: "250.50", balance: "4,000.00", description: "Synthetic outbound" }
+    ], { carryForward: "5,000.00" })]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("AMBIGUOUS_ROW_DIRECTION");
+    expect(result.message).not.toMatch(/\d[\d,]*\.\d\d/u);
+    expect(result.message).toMatch(/[d,]+\.dd/u);
+  });
+
   it("never interpolates raw cell text into a layout error message", () => {
     const layout = readFileSync("lib/krungthai-layout.ts", "utf8");
     // Layout failure messages now reach the UI (the worker forwards result.message), so
@@ -337,13 +398,16 @@ describe("privacy guardrails", () => {
     expect(ignored).toMatch(/^private-statements\/$/mu);
   });
 
-  it("reduces the account number to its last four digits inside the parser", () => {
-    const layout = readFileSync("lib/krungthai-layout.ts", "utf8");
-    // The extracted frame must never carry a full account number, so no later code
-    // path, log line, or error message can leak one.
-    const frameType = /export type StatementFrame = \{[^}]*\}/su.exec(layout)?.[0] ?? "";
+  it("reduces the account number to its last four digits inside every parser", () => {
+    // The extracted frame must never carry a full account number, so no later code path,
+    // log line, or error message can leak one. The type is now shared by three readers
+    // and lives in its own module; each reader has to do the reduction itself.
+    const frame = readFileSync("lib/statement-frame.ts", "utf8");
+    const frameType = /export type StatementFrame = \{[^}]*\}/su.exec(frame)?.[0] ?? "";
     expect(frameType).toContain("accountLastFour");
     expect(frameType).not.toMatch(/accountNumber/u);
-    expect(layout).toMatch(/slice\(-4\)/);
+    for (const reader of ["lib/krungthai-layout.ts", "lib/statement-layout.ts"]) {
+      expect(readFileSync(reader, "utf8"), reader).toMatch(/slice\(-4\)/);
+    }
   });
 });

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(30);
+select plan(36);
 
 -- Canonical signed-int64 text boundaries.
 select ok(private.is_canonical_int64_text('-9223372036854775808'), 'signed int64 minimum is canonical');
@@ -274,6 +274,100 @@ select throws_ok(
   'P0001',
   'snapshot sequence changed',
   'stale snapshot sequence is rejected after mutation'
+);
+
+-- Migration 009: the three supported layouts, and the pairing between a contract
+-- version and the bank whose account it may be confirmed into.
+--
+-- Red proof against the pre-009 schema: the SCB import below fails with
+-- 'invalid import contract', because confirm_import compared p_contract_version to the
+-- literal 'krungthai-layout-v1'. Widening only that comparison is not enough either —
+-- with the CHECK constraints relaxed but the fingerprint's bank code left as the literal
+-- 'KTB', the same import fails with 'fingerprint mismatch', which is why the bank code
+-- now comes from the bound account.
+
+select is(
+  array[
+    private.contract_bank_code('krungthai-layout-v1'),
+    private.contract_bank_code('scb-layout-v1'),
+    private.contract_bank_code('kbank-layout-v1'),
+    private.contract_bank_code('receipt-layout-v1')
+  ],
+  array['KTB', 'SCB', 'KBANK', null],
+  'a contract version maps to exactly one bank, and an unknown one maps to nothing'
+);
+
+select ok(
+  (select count(*) from public.accounts
+    where owner_id = '11111111-1111-4111-8111-111111111111'
+      and bank_code in ('KTB', 'SCB', 'KBANK') and last_four = '4242') = 3,
+  'one owner may hold an account at each supported bank sharing a last four'
+);
+
+select throws_ok(
+  $$insert into public.accounts(owner_id, bank_code, label, account_type, last_four, currency, timezone)
+    values ('11111111-1111-4111-8111-111111111111', 'HSBC', 'Unsupported', 'savings', '1111', 'THB', 'Asia/Bangkok')$$,
+  '23514',
+  null,
+  'a bank with no reader is still refused'
+);
+
+-- Mirrors pg_temp.confirm, parameterised by account, bank and contract version. The
+-- fingerprint is derived with the *statement's* bank code, exactly as lib/canonical.ts
+-- does on the client, so a server that hard-coded a different one would fail here.
+create function pg_temp.confirm_as(
+  p_account uuid, p_bank text, p_contract text, p_artifact text, p_idempotency uuid,
+  p_period_start date, p_period_end date, p_opening text, p_closing text, p_rows jsonb
+) returns uuid language plpgsql as $fn$
+declare v_digest text;
+begin
+  select coalesce(jsonb_agg(
+           r.value || jsonb_build_object('fingerprint', private.row_fingerprint(p_account, p_bank, r.value))
+           order by r.ordinality), '[]'::jsonb)
+    into p_rows
+    from jsonb_array_elements(p_rows) with ordinality r(value, ordinality);
+  v_digest := private.sha256_jsonb(jsonb_build_object(
+    'accountId', p_account::text, 'contractVersion', p_contract, 'currency', 'THB',
+    'periodStart', to_char(p_period_start, 'YYYY-MM-DD'),
+    'periodEnd', to_char(p_period_end, 'YYYY-MM-DD'),
+    'openingBalance', p_opening, 'closingBalance', p_closing, 'rows', p_rows
+  ));
+  return public.confirm_import(
+    p_account, p_artifact, v_digest, p_idempotency, p_contract,
+    p_period_start, p_period_end, p_opening, p_closing, 'THB', p_rows
+  );
+end;
+$fn$;
+
+select lives_ok(
+  $$select pg_temp.confirm_as(
+    '11111111-2222-4333-8444-555555555556', 'SCB', 'scb-layout-v1',
+    repeat('c',64), 'bbbbbbbb-0000-4000-8000-000000000011',
+    '2026-01-01','2026-01-31','500000','400000',
+    '[{"sourceIndex":"1","sourceDate":"2026-01-02","sourceTime":"09:15:00","effectiveDate":"2026-01-02","transactionLabel":"ENET","description":"Synthetic outbound transfer","reference":"E1","branch":"","fingerprint":"0000000000000000000000000000000000000000000000000000000000000000","postBalance":{"minor":"400000","currency":"THB"},"components":[{"kind":"withdrawal","amount":{"minor":"-100000","currency":"THB"}}],"provenance":{"page":"1","row":"1","parserFields":{"contractVersion":"scb-layout-v1"}}}]'::jsonb
+  )$$,
+  'an SCB statement confirms into the owner''s SCB account'
+);
+
+select is(
+  (select contract_version from public.import_artifacts
+    where owner_id = '11111111-1111-4111-8111-111111111111' and artifact_digest = repeat('c',64)),
+  'scb-layout-v1',
+  'the artifact records the contract version that read it'
+);
+
+-- A layout reads one bank, so confirming it into another bank's account is a mis-binding
+-- and is named as one rather than surfacing as a fingerprint error.
+select throws_ok(
+  $$select pg_temp.confirm_as(
+    '11111111-2222-4333-8444-555555555555', 'SCB', 'scb-layout-v1',
+    repeat('d',64), 'bbbbbbbb-0000-4000-8000-000000000012',
+    '2026-01-01','2026-01-31','500000','400000',
+    '[{"sourceIndex":"1","sourceDate":"2026-01-02","sourceTime":"09:15:00","effectiveDate":"2026-01-02","transactionLabel":"ENET","description":"Synthetic outbound transfer","reference":"E1","branch":"","fingerprint":"0000000000000000000000000000000000000000000000000000000000000000","postBalance":{"minor":"400000","currency":"THB"},"components":[{"kind":"withdrawal","amount":{"minor":"-100000","currency":"THB"}}],"provenance":{"page":"1","row":"1"}}]'::jsonb
+  )$$,
+  'P0001',
+  'contract version does not match account bank',
+  'an SCB statement cannot be confirmed into a Krungthai account'
 );
 
 select * from finish();

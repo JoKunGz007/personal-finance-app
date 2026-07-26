@@ -25,6 +25,13 @@ const PAGE_HEIGHT = 842;
 // spacing (GOTCHAS).
 const FONT_SIZE = 6;
 
+// Every glyph is DW 500, so a rendered run advances this much per character. A fixture
+// that places right-aligned columns has to use the same figure, or the right edges pdf.js
+// reports will not be the ones the fixture intended — and the SCB and KBANK readers
+// decide which money column a figure sits in from exactly those edges (D-039). Exported
+// rather than duplicated so the two cannot drift apart silently.
+export const SYNTHETIC_GLYPH_ADVANCE = FONT_SIZE / 2;
+
 const TO_UNICODE_CMAP = `/CIDInit /ProcSet findresource begin
 12 dict begin
 begincmap

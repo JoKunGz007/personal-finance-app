@@ -1,4 +1,4 @@
-import type { StatementFrame } from "@/lib/krungthai-layout";
+import type { StatementFrame } from "@/lib/statement-frame";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
 import { reconcileRows } from "@/lib/reconcile";
 
@@ -12,12 +12,14 @@ import { reconcileRows } from "@/lib/reconcile";
 
 export type BindingTarget = {
   accountId: string;
+  bankCode: string;
   lastFour: string;
   currency: string;
 };
 
 export type AssemblyErrorCode =
   | "ACCOUNT_MISMATCH"
+  | "BANK_MISMATCH"
   | "CURRENCY_MISMATCH"
   | "BALANCE_RECONCILIATION_FAILED"
   | "INVALID_PAYLOAD";
@@ -31,6 +33,18 @@ export function assembleImportPayload(
   rows: readonly SourceRowCandidate[],
   target: BindingTarget
 ): AssemblyResult {
+  // Checked before the last four, because the last four alone no longer identifies an
+  // account: three banks are supported and `public.accounts` is unique on
+  // (owner_id, bank_code, last_four), so one owner can hold three accounts ending in the
+  // same digits. `confirm_import` refuses the pair too, but a mismatch surfacing there
+  // would arrive as a fingerprint error rather than as a mis-binding.
+  if (target.bankCode !== frame.bankCode) {
+    return {
+      ok: false,
+      code: "BANK_MISMATCH",
+      message: "The selected account is not held at the bank that issued this statement."
+    };
+  }
   if (target.lastFour !== frame.accountLastFour) {
     return {
       ok: false,
@@ -61,7 +75,9 @@ export function assembleImportPayload(
   }
 
   const candidate = {
-    contractVersion: "krungthai-layout-v1",
+    // From the frame, not hard-coded: three layouts reach this function now, and the
+    // schema pins the contract version to the bank code so a mismatch cannot pass.
+    contractVersion: frame.contractVersion,
     fingerprintVersion: "fingerprint-v1",
     accountId: target.accountId,
     bankCode: frame.bankCode,

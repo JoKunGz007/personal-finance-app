@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
 import { moneySchema } from "@/lib/money";
+import { BANK_CODES, CONTRACT_BANK, CONTRACT_VERSIONS } from "@/lib/statement-frame";
 
 export const componentSchema = z.object({
   kind: z.enum(["deposit", "withdrawal"]),
@@ -20,6 +21,9 @@ export const componentSchema = z.object({
 // actually contain excludes that class by construction, so a fingerprint mismatch
 // at import means tampering or a real bug rather than expected version skew.
 // Whitespace controls are allowed because both normalizers collapse them identically.
+// The three supported layouts print Thai and ASCII and nothing else; the one document
+// that decoded outside this range was a KBANK bank-abbreviation glossary, which is not a
+// statement and is refused on its signature (docs/KBANK_CONTRACT.md).
 const SOURCE_TEXT_CHARSET = new RegExp(
   "^[" +
     "\\u0009-\\u000D" + // tab, newline, CR family
@@ -63,10 +67,10 @@ export const sourceRowCandidateSchema = z.object({
 });
 
 export const importPayloadSchema = z.object({
-  contractVersion: z.literal("krungthai-layout-v1"),
+  contractVersion: z.enum(CONTRACT_VERSIONS),
   fingerprintVersion: z.literal("fingerprint-v1"),
   accountId: z.string().uuid(),
-  bankCode: z.literal("KTB"),
+  bankCode: z.enum(BANK_CODES),
   currency: z.literal("THB"),
   periodStart: isoDateSchema,
   periodEnd: isoDateSchema,
@@ -74,6 +78,12 @@ export const importPayloadSchema = z.object({
   closingBalance: moneySchema,
   rows: z.array(sourceRowCandidateSchema).min(1).max(5000)
 }).strict().superRefine((payload, context) => {
+  // A layout reads one bank, so these two cannot vary independently. The bank code is
+  // hashed into every row fingerprint, so an unpinned pair would let a payload change
+  // what the fingerprints mean while still validating.
+  if (CONTRACT_BANK[payload.contractVersion] !== payload.bankCode) {
+    context.addIssue({ code: "custom", message: "The contract version does not read this bank's layout.", path: ["bankCode"] });
+  }
   if (payload.periodStart > payload.periodEnd) context.addIssue({ code: "custom", message: "Statement period is inverted.", path: ["periodEnd"] });
   if (payload.openingBalance.currency !== payload.currency || payload.closingBalance.currency !== payload.currency) {
     context.addIssue({ code: "custom", message: "Statement-frame currency must match.", path: ["currency"] });

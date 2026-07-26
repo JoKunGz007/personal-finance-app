@@ -5,7 +5,7 @@ import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { encryptBackup } from "@/lib/backup";
 import { sha256HexBytes } from "@/lib/canonical";
 import { assembleImportPayload } from "@/lib/import-assembly";
-import type { StatementFrame } from "@/lib/krungthai-layout";
+import type { StatementFrame } from "@/lib/statement-frame";
 import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
@@ -90,7 +90,7 @@ export function LedgerApp() {
 
   async function parsePdf() {
     if (!file || !password) {
-      setStatus("Choose a Krungthai PDF and enter its document password.");
+      setStatus("Choose a statement PDF and enter its document password.");
       return;
     }
     setStatus("Unlocking and checking the layout on this device…");
@@ -191,6 +191,7 @@ export function LedgerApp() {
     }
     const result = assembleImportPayload(extracted.frame, extracted.rows, {
       accountId: account.id,
+      bankCode: account.bank_code,
       lastFour: account.last_four,
       currency: account.currency
     });
@@ -303,7 +304,7 @@ export function LedgerApp() {
             <p className="section-index">Import / 01</p>
             <div>
               <h2 id="import-title">Open a statement locally</h2>
-              <p>Only the inspected Krungthai layout is accepted. Unknown layouts fail closed.</p>
+              <p>Only the inspected Krungthai, SCB and KBANK layouts are accepted. Unknown layouts fail closed.</p>
             </div>
           </div>
           <div className="import-controls">

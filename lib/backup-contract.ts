@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema } from "@/lib/money";
+import { BANK_CODES, CONTRACT_VERSIONS } from "@/lib/statement-frame";
 
 export const BACKUP_TABLE_KINDS = [
   "accounts", "categories", "import_artifacts", "import_batches", "source_transactions",
@@ -18,7 +19,7 @@ const jsonObjectSchema = z.record(z.string(), z.unknown());
 const accountRowSchema = z.object({
   id: uuidSchema,
   owner_id: uuidSchema,
-  bank_code: z.literal("KTB"),
+  bank_code: z.enum(BANK_CODES),
   label: z.string().min(1).max(120),
   account_type: z.enum(["savings", "current"]),
   last_four: z.string().regex(/^\d{4}$/),
@@ -40,7 +41,7 @@ const importArtifactRowSchema = z.object({
   id: uuidSchema,
   owner_id: uuidSchema,
   artifact_digest: digestSchema,
-  contract_version: z.literal("krungthai-layout-v1"),
+  contract_version: z.enum(CONTRACT_VERSIONS),
   created_at: timestampSchema
 }).strict();
 

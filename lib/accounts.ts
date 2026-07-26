@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BANK_CODES } from "@/lib/statement-frame";
 
 // Wire contract for GET /api/v1/accounts, shared by the route's consumers and its
 // tests. Column names stay as the database returns them, matching the other read
@@ -6,7 +7,7 @@ import { z } from "zod";
 // list cannot carry a full account number.
 export const ledgerAccountSchema = z.object({
   id: z.string().uuid(),
-  bank_code: z.literal("KTB"),
+  bank_code: z.enum(BANK_CODES),
   label: z.string().min(1).max(120),
   account_type: z.enum(["savings", "current"]),
   last_four: z.string().regex(/^[0-9]{4}$/),

@@ -12,7 +12,7 @@ function extracted() {
   return result;
 }
 
-const target = { accountId: ACCOUNT_ID, lastFour: "7890", currency: "THB" };
+const target = { accountId: ACCOUNT_ID, bankCode: "KTB", lastFour: "7890", currency: "THB" };
 
 describe("import payload assembly", () => {
   it("assembles a confirmable payload from an extracted statement", () => {

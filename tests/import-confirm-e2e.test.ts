@@ -49,6 +49,7 @@ function buildPayload() {
   if (!extractedStatement.ok) throw new Error(extractedStatement.message);
   const assembled = assembleImportPayload(extractedStatement.frame, extractedStatement.rows, {
     accountId: ACCOUNT_ID,
+    bankCode: extractedStatement.frame.bankCode,
     lastFour: extractedStatement.frame.accountLastFour,
     currency: "THB"
   });

@@ -5,6 +5,7 @@ import {
   type PageText, type TextItem
 } from "@/lib/masked-diagnostics";
 import { formatThb, parseThb, type MinorUnitString } from "@/lib/money";
+import type { LayoutErrorCode, LayoutResult, StatementFrame } from "@/lib/statement-frame";
 import type { SourceRowCandidate } from "@/lib/statement";
 
 // Geometry reader for contract version krungthai-layout-v1 (docs/KRUNGTHAI_CONTRACT.md).
@@ -27,37 +28,14 @@ import type { SourceRowCandidate } from "@/lib/statement";
 export type { PageText, TextItem };
 export { describeLabelGeometry, describeStructure, describeValueLabels, maskShape };
 
-export type LayoutErrorCode =
-  | "UNSUPPORTED_LAYOUT"
-  | "MISSING_COLUMN_ANCHOR"
-  | "AMBIGUOUS_ROW_GEOMETRY"
-  | "INVALID_ROW_CONTENT"
-  | "MISSING_FRAME_FIELD"
-  | "INVALID_FRAME_CONTENT"
-  | "UNSUPPORTED_CURRENCY"
-  | "CLOSING_BALANCE_MISMATCH"
-  | "SUMMARY_MISMATCH";
-
-// The account number is reduced to its last four digits here, at the point of
-// extraction, so no full account number is ever carried past the parser
+// The frame, result and error-code types are shared with the descriptor-driven reader in
+// `lib/statement-layout.ts` and live in `lib/statement-frame.ts`. Only the types are
+// shared; none of the geometry below is, deliberately — this reader is proven against a
+// real statement and is not being refactored into an abstraction that has not been
+// (HANDOFF, § Next step). The account number is reduced to its last four digits at the
+// point of extraction, so no full account number is ever carried past the parser
 // (docs/KRUNGTHAI_CONTRACT.md: "account mapping (bank, type, last four only)").
-export type StatementFrame = {
-  bankCode: "KTB";
-  accountType: string;
-  accountLastFour: string;
-  periodStart: string;
-  periodEnd: string;
-  openingBalance: MinorUnitString;
-  closingBalance: MinorUnitString;
-  currency: "THB";
-  // False when the statement printed neither balance and both were derived from the
-  // rows. The closing cross-check only means something when the value was printed.
-  balancesPrinted: boolean;
-};
-
-export type LayoutResult =
-  | { ok: true; frame: StatementFrame; rows: SourceRowCandidate[] }
-  | { ok: false; code: LayoutErrorCode; message: string };
+export type { LayoutErrorCode, LayoutResult, StatementFrame };
 
 // A detail line belongs to the row above it when it sits within this distance.
 const DETAIL_TOLERANCE = 14;
@@ -382,6 +360,7 @@ function extractFrame(lines: TextItem[][], headerY: number):
     era,
     draft: {
       bankCode: "KTB" as const,
+      contractVersion: "krungthai-layout-v1" as const,
       accountType,
       accountLastFour,
       periodStart,

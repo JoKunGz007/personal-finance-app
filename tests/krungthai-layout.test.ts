@@ -19,6 +19,9 @@ describe("krungthai frame extraction", () => {
 
     expect(result.frame).toEqual({
       bankCode: "KTB",
+      // Carried on the frame rather than hard-coded at assembly, now that three readers
+      // reach `assembleImportPayload` and the payload schema pins the pair.
+      contractVersion: "krungthai-layout-v1",
       accountType: "Savings",
       accountLastFour: "7890",
       periodStart: "2026-01-01",
