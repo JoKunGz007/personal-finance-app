@@ -37,7 +37,8 @@ describe("scb-layout-v1", () => {
       currency: "THB",
       // The opening is printed, so unlike Krungthai it is never derived; the closing is
       // not, so it comes from the last row.
-      balancesPrinted: false
+      balancesPrinted: false,
+      crossChecked: true
     });
 
     expect(result.rows).toHaveLength(3);
@@ -48,6 +49,39 @@ describe("scb-layout-v1", () => {
     expect(result.rows.map((row) => row.components[0]!.kind)).toEqual(["withdrawal", "deposit", "withdrawal"]);
     expect(result.rows.map((row) => row.components[0]!.amount.minor)).toEqual(["-25050", "100000", "-74950"]);
     expect(result.rows.map((row) => row.postBalance.minor)).toEqual(["474950", "574950", "500000"]);
+  });
+
+  it("reports whether the rows were checked against the statement's own totals", () => {
+    const checked = extractStatement(scbStatement);
+    if (!checked.ok) throw new Error(checked.message);
+    expect(checked.frame.crossChecked).toBe(true);
+
+    // The same statement with no summary block still reads — that tolerance is deliberate
+    // (D-033), because not every layout prints one — but nothing then confirms the rows
+    // against the bank's arithmetic, and the frame has to say so. Before D-042 the two
+    // outcomes were indistinguishable at the point of confirming.
+    const unchecked = extractStatement([
+      scbStatement[0]!,
+      buildScbPage([
+        { dateTime: "09/01/26 12:00", code: "P3", channel: "POS", debit: "749.50", balance: "5,000.00", description: "Synthetic purchase" }
+      ], { frame: null, carryForward: "5,749.50", totals: null })
+    ]);
+    if (!unchecked.ok) throw new Error(unchecked.message);
+    expect(unchecked.frame.crossChecked).toBe(false);
+    expect(unchecked.rows).toHaveLength(3);
+  });
+
+  it("does not call a partially readable summary block a cross-check", () => {
+    // One direction's total present and the other absent confirms part of the parse.
+    // Reporting that as cross-checked would overstate it by exactly the amount that matters.
+    const partial = extractStatement([
+      scbStatement[0]!,
+      buildScbPage([
+        { dateTime: "09/01/26 12:00", code: "P3", channel: "POS", debit: "749.50", balance: "5,000.00", description: "Synthetic purchase" }
+      ], { frame: null, carryForward: "5,749.50", totals: { creditTotal: null, debitCount: null, creditCount: null } })
+    ]);
+    if (!partial.ok) throw new Error(partial.message);
+    expect(partial.frame.crossChecked).toBe(false);
   });
 
   it("splits the combined date-and-time run", () => {

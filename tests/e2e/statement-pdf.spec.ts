@@ -55,6 +55,15 @@ test("reads a synthetic SCB PDF through the real pdf.js worker", async ({ page }
 
   await expect(page.getByRole("heading", { name: "Choose the ledger account" })).toBeVisible();
   await expect(page.locator('input[name="statement-unlock-code"]')).toHaveValue("");
+
+  // The bind stage is the last screen where the owner can decline, so it has to say which
+  // of the three layouts read the statement and whether the rows were checked against the
+  // bank's own printed totals (D-042). This fixture prints a summary block, so they were.
+  const bindPanel = page.locator(".binding-bench");
+  await expect(bindPanel).toContainText("Read as a SCB statement");
+  await expect(bindPanel).toContainText("scb-layout-v1");
+  await expect(bindPanel.locator(".cross-check-note")).toContainText("printed counts and totals agree with all 3 rows");
+  await expect(bindPanel.locator(".cross-check-warning")).toHaveCount(0);
 });
 
 test("reads a synthetic KBANK PDF, whose money columns sit eight units apart", async ({ page }, testInfo) => {

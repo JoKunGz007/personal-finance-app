@@ -87,6 +87,19 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 
 .binding-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
 .binding-bench .bench-heading b { color: var(--navy); font: 500 1em/1 var(--font-data); }
+
+/* Whether the parse was checked against the bank's own arithmetic. The unchecked case is
+   deliberately louder than the checked one: it is the state that needs a decision. */
+.binding-bench .bench-heading p.cross-check-note {
+  margin-top: 10px; color: var(--celadon-ink);
+  border-left: 3px solid var(--celadon); padding-left: 10px;
+}
+.binding-bench .bench-heading p.cross-check-warning {
+  margin-top: 10px; color: var(--red);
+  border-left: 3px solid var(--red); padding-left: 10px;
+  background: color-mix(in srgb, var(--red) 8%, var(--paper));
+  padding-block: 8px; border-radius: 0 var(--radius) var(--radius) 0;
+}
 .binding-controls { margin: 26px 0 0 167px; display: grid; grid-template-columns: auto minmax(260px, 1fr) auto; align-items: end; gap: 12px; }
 .account-control { display: grid; gap: 7px; }
 .account-control > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }

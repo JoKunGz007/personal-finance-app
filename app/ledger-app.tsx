@@ -115,7 +115,15 @@ export function LedgerApp() {
         setBoundAccount(null);
         setBindingError(null);
         setStage("bind");
-        setStatus(`Read ${reply.rows.length} rows across ${reply.pageCount} page(s) for account ending ${reply.frame.accountLastFour}, ${reply.frame.periodStart} to ${reply.frame.periodEnd}. Nothing has left this device. Choose the ledger account it belongs to.`);
+        // Three layouts read now, so the status line says which one ran — and whether the
+        // rows were checked against the statement's own totals, which is the difference
+        // between a verified parse and an unverified one (D-042).
+        setStatus(
+          `Read ${reply.rows.length} rows across ${reply.pageCount} page(s) as a ${reply.frame.bankCode} statement, ` +
+          `for account ending ${reply.frame.accountLastFour}, ${reply.frame.periodStart} to ${reply.frame.periodEnd}. ` +
+          `${reply.frame.crossChecked ? "Cross-checked against the statement's printed totals." : "NOT cross-checked: this statement printed no readable summary block."} ` +
+          "Nothing has left this device. Choose the ledger account it belongs to."
+        );
       } else {
         // Show the typed code alongside the message. The code is a fixed enum from
         // lib/krungthai-layout.ts and carries no statement content, and without it
@@ -388,7 +396,19 @@ export function LedgerApp() {
               <p className="section-index">Bind / 02</p>
               <div>
                 <h2 id="binding-title">Choose the ledger account</h2>
-                <p>The statement printed account ending <b>{extracted.frame.accountLastFour}</b> in {extracted.frame.currency}, {extracted.frame.periodStart} to {extracted.frame.periodEnd}. The parser is not allowed to guess which of your accounts that is.</p>
+                <p>Read as a <b>{extracted.frame.bankCode}</b> statement ({extracted.frame.contractVersion}). It printed account ending <b>{extracted.frame.accountLastFour}</b> in {extracted.frame.currency}, {extracted.frame.periodStart} to {extracted.frame.periodEnd}. The parser is not allowed to guess which of your accounts that is.</p>
+                {/* Whether the parse was checked against the bank's own arithmetic is the
+                    difference between "these are the rows" and "these are the rows the
+                    statement says it has". A statement printing no readable summary block is
+                    accepted with no such check at all, and this is the last screen where the
+                    owner can decline (D-033, D-042). */}
+                {extracted.frame.crossChecked ? (
+                  <p className="cross-check-note">Cross-checked: the statement&apos;s own printed counts and totals agree with all {extracted.rows.length} rows.</p>
+                ) : (
+                  <p className="cross-check-warning" role="alert">
+                    <b>Not cross-checked.</b> This statement printed no summary block the reader could read, so the {extracted.rows.length} rows were not verified against the bank&apos;s own counts and totals. A dropped or misread row would not have been caught. Check it against the document before confirming.
+                  </p>
+                )}
               </div>
             </div>
             <div className="binding-controls">

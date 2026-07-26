@@ -739,6 +739,10 @@ export function extractWithLayout(descriptor: LayoutDescriptor, pages: readonly 
   if (!totals.ok) return totals;
   const mismatch = verifyTotals(totals.totals, directed.rows);
   if (mismatch) return mismatch;
+  // Strict on purpose: a partially read block confirms part of the parse, and reporting
+  // that as "cross-checked" would overstate it. All four per-direction figures, or nothing.
+  const crossChecked = totals.totals.withdrawalCount !== null && totals.totals.withdrawalTotal !== null
+    && totals.totals.depositCount !== null && totals.totals.depositTotal !== null;
 
   const lastPrinted = rows[rows.length - 1]!.postBalance.minor;
   if (frame.closingBalance !== null && lastPrinted !== frame.closingBalance) {
@@ -761,7 +765,8 @@ export function extractWithLayout(descriptor: LayoutDescriptor, pages: readonly 
     currency: "THB",
     // The opening is printed in both layouts, so unlike Krungthai it is never derived.
     // The closing is printed only by KBANK.
-    balancesPrinted: frame.closingBalance !== null
+    balancesPrinted: frame.closingBalance !== null,
+    crossChecked
   };
 
   return { ok: true, frame: statementFrame, rows };

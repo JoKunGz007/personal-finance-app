@@ -29,7 +29,9 @@ describe("krungthai frame extraction", () => {
       openingBalance: "1000000",
       closingBalance: "1025970",
       currency: "THB",
-      balancesPrinted: true
+      balancesPrinted: true,
+      // This fixture prints a summary block whose counts and totals agree with its rows.
+      crossChecked: true
     });
   });
 
@@ -290,12 +292,19 @@ describe("krungthai summary cross-check", () => {
   it("accepts a statement whose printed totals agree with the rows read", () => {
     const result = onePage(rows, { totals: agreeing });
     expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    expect(result.frame.crossChecked).toBe(true);
   });
 
-  it("still reads a statement that prints no summary block at all", () => {
+  it("still reads a statement that prints no summary block at all, and says it was not checked", () => {
     // Not every layout prints one, and its absence must not be a failure — it only means the
-    // cross-check is unavailable, the same compromise as `balancesPrinted` (D-026).
-    expect(onePage(rows, { totals: null })).toMatchObject({ ok: true });
+    // cross-check is unavailable, the same compromise as `balancesPrinted` (D-026). What must
+    // not happen is the two outcomes looking identical to whoever confirms the import, which
+    // is what `crossChecked` now distinguishes (D-042).
+    const result = onePage(rows, { totals: null });
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    expect(result.frame.crossChecked).toBe(false);
   });
 
   it.each([

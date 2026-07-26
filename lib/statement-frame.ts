@@ -64,6 +64,14 @@ export type StatementFrame = {
   // False when the statement printed neither balance and both were derived from the
   // rows. The closing cross-check only means something when the value was printed.
   balancesPrinted: boolean;
+  // True only when the statement printed a summary block the reader could read in full and
+  // every per-direction count and total agreed with the rows (D-033).
+  //
+  // A statement that prints no such block, or whose wording the reader does not match, is
+  // accepted with **no** global check at all — nothing would catch a dropped row. That
+  // compromise is deliberate, but it was invisible: a verified import and an unverified one
+  // looked identical at the moment of confirming (D-042). This is what makes them differ.
+  crossChecked: boolean;
 };
 
 export type LayoutResult =

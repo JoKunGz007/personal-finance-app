@@ -213,7 +213,7 @@ function findColumns(lines: TextItem[][]): { columns: Columns; y: number } | nul
 
 // The frame as printed: balances are nullable because a real statement does not print
 // them. extractStatement turns this into a StatementFrame once the rows are known.
-type FrameDraft = Omit<StatementFrame, "openingBalance" | "closingBalance" | "balancesPrinted"> & {
+type FrameDraft = Omit<StatementFrame, "openingBalance" | "closingBalance" | "balancesPrinted" | "crossChecked"> & {
   openingBalance: MinorUnitString | null;
   closingBalance: MinorUnitString | null;
 };
@@ -657,7 +657,11 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
     ...draft,
     openingBalance: draft.openingBalance ?? derivedOpening,
     closingBalance: draft.closingBalance ?? lastPrinted,
-    balancesPrinted
+    balancesPrinted,
+    // Set below, once the summary block has actually been read and agreed with. A statement
+    // printing no such block is accepted with no global check at all, and that has to be
+    // visible rather than implied (D-042).
+    crossChecked: false
   };
 
   // Only meaningful when the statement actually printed a closing balance: comparing a
@@ -680,6 +684,10 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
     if (!summary.ok) return summary;
     const mismatch = verifyTotals(summary.totals, rows, pages.length);
     if (mismatch) return mismatch;
+    // Strict: all four per-direction figures, or this is not a cross-check. `Total Page` is
+    // not counted — a page count confirms nothing about the rows.
+    frame.crossChecked = summary.totals.withdrawalCount !== null && summary.totals.withdrawalTotal !== null
+      && summary.totals.depositCount !== null && summary.totals.depositTotal !== null;
   }
 
   return { ok: true, frame, rows };
