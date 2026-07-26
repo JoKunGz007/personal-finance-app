@@ -98,6 +98,64 @@ describe("privacy guardrails", () => {
     expect(describeLabelGeometry([[{ str: "นายสังเคราะห์ ทดสอบ", x: 40, y: 700 }]])).toEqual([]);
   });
 
+  it("masks a character that decoded to a symbol rather than letting it through", async () => {
+    const { maskShape } = await import("@/lib/krungthai-layout");
+    // A real KBANK statement embeds subset fonts with no usable ToUnicode map, so pdf.js
+    // resolves its Thai glyphs to arbitrary code points — arrows, fractions, brackets.
+    // Those are neither letters nor digits, so the old "keep everything else" rule passed
+    // them through verbatim. Unreadable, but a deterministic remapping of real content.
+    const misdecoded = "⤎x xxd⁄d⏟ ®£¤¢¬⛤⺃";
+    const masked = maskShape(misdecoded);
+    for (const character of "⤎⁄⏟®£¤¢¬⛤⺃") {
+      expect(masked, `mis-decoded glyph survived masking: ${character}`).not.toContain(character);
+    }
+    // Format-bearing punctuation still survives, or the shapes stop being readable.
+    expect(maskShape("01/01/26 09:15")).toBe("dd/dd/dd dd:dd");
+    expect(maskShape("1,234.56")).toBe("d,ddd.dd");
+    expect(maskShape("123-456789-0")).toBe("ddd-dddddd-d");
+    expect(maskShape("TOTAL (Debit)")).toBe("xxxxx (xxxxx)");
+  });
+
+  it("never reports a transaction row, however heading-shaped it looks", async () => {
+    const { describeLabelGeometry } = await import("@/lib/krungthai-layout");
+    // The shape that actually leaked on 2026-07-25. A real SCB statement prints every
+    // transaction as `<code> | DESC : | <counterparty>` — three short digit-free items,
+    // which the old density rule could not tell from a heading. Real merchant names
+    // reached a masked dump as a result.
+    //
+    // Invented stand-ins here, per docs/FIXTURE_POLICY.md; the real ones are not repeated
+    // anywhere in this repository.
+    const heading = [
+      { str: "Date", x: 36, y: 649 }, { str: "Code", x: 91, y: 649 },
+      { str: "Channel", x: 122, y: 649 }, { str: "Description/Note", x: 460, y: 649 }
+    ];
+    // A real row, complete with the date and amounts it necessarily carries. An earlier
+    // version of this test omitted them, which is precisely why it passed against a rule
+    // that did not hold: the fixture was easier to satisfy than the document.
+    const row = (y: number, merchant: string) => [
+      { str: "01/01/26 09:15", x: 30, y }, { str: "SIPI", x: 95, y },
+      { str: "250.00", x: 206, y }, { str: "1,000.00", x: 364, y },
+      { str: "DESC :", x: 394, y }, { str: merchant, x: 418, y }
+    ];
+    const reported = describeLabelGeometry([
+      // The recurring counterparty sits at the same y on both pages — rows are on a fixed
+      // pitch, so position alone cannot tell it from a running header.
+      [...heading, ...row(603, "SYNTHETIC WALLET CO.,LTD."), ...row(579, "WWW.SYNTHETIC.EXAMPLE")],
+      [...heading, ...row(603, "SYNTHETIC WALLET CO.,LTD."), ...row(555, "SYNTHETIC.EXAMPLE/BILL")]
+    ]);
+
+    const flattened = reported.flat().join(" ");
+    expect(flattened).toContain("Description/Note");
+    // Including the one that recurs: a frequent counterparty defeats repetition alone,
+    // which is why the rule is repetition *at the same vertical position*.
+    for (const merchant of ["SYNTHETIC WALLET CO.,LTD.", "WWW.SYNTHETIC.EXAMPLE", "SYNTHETIC.EXAMPLE/BILL", "DESC :"]) {
+      expect(flattened, `counterparty survived the label diagnostic: ${merchant}`).not.toContain(merchant);
+    }
+    // A single page cannot demonstrate repetition, so it reports nothing at all rather
+    // than falling back to the density rule.
+    expect(describeLabelGeometry([[...heading, ...row(603, "SYNTHETIC WALLET CO.,LTD.")]])).toEqual([]);
+  });
+
   it("reports only labels whose value is a number, never ones naming a person", async () => {
     const { describeValueLabels } = await import("@/lib/krungthai-layout");
     const { validStatement } = await import("./fixtures/krungthai-layout-v1");
@@ -222,7 +280,7 @@ describe("privacy guardrails", () => {
     // The harness is the one thing in this repo that opens a real statement. It may write
     // only what the value-free diagnostics produce, so the dump it leaves on disk carries
     // no amount, balance, date, account number, name, or counterparty.
-    expect(harness).toMatch(/await writeFile\(outputPath, dump, "utf8"\)/u);
+    expect(harness).toMatch(/await writeFile\(outputPath, renderDump\(\{[^)]*\}\), "utf8"\)/u);
     const render = /function renderDump\(\{[\s\S]*?\n\}/u.exec(harness)?.[0] ?? "";
     expect(render).toContain("describeStructure(pages)");
     expect(render).toContain("describeLabelGeometry(pages)");
@@ -238,6 +296,37 @@ describe("privacy guardrails", () => {
     const withoutLiterals = harness.replace(/"(?:[^"\\]|\\.)*"/gu, '""').replace(/`(?:[^`\\]|\\.)*`/gu, "``");
     expect(withoutLiterals).not.toMatch(/password\s*=\s*(?:argv|positional|process\.argv)/u);
     expect(harness).toMatch(/password = ""/u);
+
+    // Directory mode reports which document produced which dump, and a statement's file
+    // name routinely carries the account number or the holder's name. Every name that
+    // reaches a dump, stdout or stderr must go through maskName, and maskName through
+    // maskShape.
+    expect(harness).toMatch(/function maskName\(name\)\s*\{[\s\S]*?maskShape\(/u);
+
+    // An allowlist, not a blacklist. A blacklist naming the path variables passes the
+    // moment one is renamed — which is exactly what happened while this was written, so
+    // the guard now fails closed on anything it has not been told is safe.
+    const SAFE = new Set([
+      "maskedName",   // the masked file name — the whole point
+      "outputPath",   // a path this script chose, under masked-dumps/
+      "inputPath",    // the argument the owner typed; echoing it discloses nothing new
+      "message", "argument", "name",   // static text and pdf.js error class names
+      "written", "files", "failures", "line", "opened", "DUMP_DIR"
+    ]);
+    const emitted = [...harness.matchAll(/(?:process\.std(?:out|err)\.write|failures\.push)\(([\s\S]*?)\);/gu)]
+      .map((match) => match[1]!);
+    expect(emitted.length).toBeGreaterThan(0);
+    for (const call of emitted) {
+      for (const interpolation of call.match(/\$\{[\s\S]*?\}/gu) ?? []) {
+        const expression = interpolation.slice(2, -1).trim();
+        const lead = /^([A-Za-z_$][\w$]*)/u.exec(expression)?.[1] ?? "";
+        expect(SAFE.has(lead), `unallowed value in harness output: ${interpolation}`).toBe(true);
+        // `files` and `opened` are allowed for `files.length` and a page count only —
+        // never for the paths in the array or the page text inside the extraction.
+        expect(expression, `path or page text in harness output: ${interpolation}`)
+          .not.toMatch(/files\s*\[|\.pages\b|\bstr\b/u);
+      }
+    }
   });
 
   it("keeps masked dumps out of git", () => {
