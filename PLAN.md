@@ -26,7 +26,7 @@ Current focused verification, re-run 2026-07-26 unless stated:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 154 passed / 6 skipped against the live container. The 6 skips are the unreachable-container reporters, which skip precisely *because* the container was reachable |
+| Vitest | Passed 2026-07-27, 156 passed / 6 skipped against the live container. The 6 skips are the unreachable-container reporters, which skip precisely *because* the container was reachable |
 | pgTAP | Passed, 90/90 with migrations 005–009 (001: 24, 002: 36, 003: 30), re-run 2026-07-26 after a clean reset. Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`); 003 fractional-count and int64-max tests fail pre-006; the SCB import added as test 34 dies with `invalid import contract` against the pre-009 `confirm_import`, and with `fingerprint mismatch` if the CHECK constraints are widened but the fingerprint's bank code is left hard-coded (D-041) |
 | Production build | Passed |
 | Playwright, isolated config | Passed, 14/14 across desktop and mobile — the synthetic review path, four specs putting a generated PDF through the real pdf.js worker (two of them the new SCB and KBANK layouts, D-039), and a guard that a build without the development-sign-in flag renders no such button (D-036). Never reuses a stale server (D-027) |
@@ -97,7 +97,7 @@ The one open **task** blocker — the parser's `headerY` resolution — is fixed
 
    Verified against the real statement on 2026-07-25 by the owner reading page 12: the printed counts sum exactly to the 233 rows the reader found, and the printed totals close the chain from the opening figure derived from the first row to the last row's printed balance. That is the first independent confirmation that the parse is complete and that D-026's derived opening is correct.
 
-   Left undone: whether an import *was* cross-checked is not persisted. `StatementFrame` is hashed into the import digest, so recording it needs a migration and a payload-contract change — until then the ledger cannot distinguish a cross-checked import from an unverified one.
+   Left undone: whether an import *was* cross-checked is not **persisted**. It is now shown at the bind stage (D-042), so the owner can see it before confirming, but the ledger still cannot distinguish a cross-checked batch from an unverified one afterwards. Recording it needs a migration and a payload-contract change: the confirmation digest covers the account, contract version, currency, period, balances and rows, so a new persisted field has to be added on both sides at once.
 
 9. ~~Restore the currency guard to the frame block.~~ **Done** (D-034, supersedes D-025) — confirmed directly against the real statement, which prints `Currency THB` above the grid.
 
@@ -121,13 +121,19 @@ The one open **task** blocker — the parser's `headerY` resolution — is fixed
 
     The descriptor question this task left open is answered by having built it: **descriptors as data, but a hand-written row grammar rather than a column model.** What varies across the three layouts is not parameters of one shape — date and time packing, the number of heading lines, where the summary sits, and how counts are encoded are three different shapes each. The descriptor names the encoding; it does not pretend one fits all.
 
-    **What this does not establish, stated plainly: no real SCB or KBANK statement has been read.** Both readers were developed from masked structural dumps and are proven against invented fixtures, in unit tests and through real pdf.js in a browser. That is exactly the position the Krungthai reader was in before the smoke tests, and it found eleven defects — none of them detectable without a real file. The dumps make a repeat far less likely, because the structure is now known rather than invented, but the difference between "the structure is right" and "the reader reads this document" is precisely what the ten Krungthai reads paid for. One owner-driven browser read per layout is the outstanding check, and it needs the owner present for the password.
+    **Both readers have now met a real document, each on the first attempt (2026-07-27).** One real SCB statement read 94 rows across 5 pages, one calendar month; one real KBANK statement read 55 rows across 2 pages, covering six months. Both reached the account-binding stage with every fail-closed check passing: the row grammar on every row, the balance chain closing row by row, the per-page carry-forward, and the two money sub-columns staying distinct and correctly ordered.
+
+    The KBANK read is verified rather than merely successful. The masked dump of that document covers both its pages in full and contains exactly 55 transaction rows, and its summary block sits where the reader looks — so the D-033 cross-check ran and the bank's own printed counts and per-direction totals agreed with all 55. The row count is confirmed by the document's arithmetic, not only by the reader agreeing with itself. The SCB dump truncates middle pages so its row count cannot be checked the same way, but the page count matches and reading 5 pages proves the heading line repeats on the middle ones, which `docs/SCB_CONTRACT.md` had only inferred.
+
+    Ten owner-driven reads were needed for Krungthai and one each for these. That difference is what reading the masked dumps first bought.
+
+    **What this still does not establish:** neither statement was imported. Binding, the authenticated import path, and reconciliation against real rows remain unexercised on real input, and are gated by § Later authorization gates item 3 below. Both statements print account suffixes no seeded account matches, so binding refuses — correctly.
 
 Tasks 1–11 are complete and verified for statements. Remaining: task 12 (an owner decision), task 13 (receipts, behind an OCR spike).
 
 13. **Receipts, as a separate build.** Deferred 2026-07-25 (D-037) and explicitly not part of task 11. The receipts are JPGs, so the entire reader — column bands, the frame/grid boundary, every masked diagnostic, and the masking harness itself — does not apply, because all of it operates on a pdf.js text layer and an image has none. Reading them needs OCR under mandatory per-field review against the source image. Nothing here starts before one masked receipt dump exists and a CSP spike says tesseract.js actually runs under this policy.
 
-12. **Persist whether an import was cross-checked.** Left open by D-033 and unchanged: the ledger cannot distinguish an import verified against the statement's printed totals from an unverified one. `StatementFrame` is hashed into the import digest, so recording it needs a migration and a payload-contract change. Needs an owner decision on what a missing cross-check should mean for an already-committed import before the migration is designed.
+12. **Persist whether an import was cross-checked.** Left open by D-033. Half of it is closed: the bind stage now names the layout that read the statement and states whether its printed totals confirmed the rows, so the owner sees it at the one moment they can still decline (D-042). The other half stands — nothing is recorded, so a committed batch cannot be distinguished after the fact. Recording it needs a migration and a payload-contract change on both sides of the confirmation digest. **Still blocked on an owner decision:** what should a missing cross-check mean for an import that is already committed — a label carried alongside it, or a gate that refuses the import outright? The append-only rule makes those materially different designs.
 
 ## Later authorization gates
 

@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-07-26 (second pass: the SCB and KBANK readers)
+Last updated: 2026-07-27 (the first real SCB and KBANK reads)
 
 Thin entry point. Project state lives in the maintained docs — do not duplicate it here.
 
@@ -25,10 +25,10 @@ Verified on 2026-07-26 with the project-local Node 24.18.0 runtime and pinned pn
 | Check | Result |
 | --- | --- |
 | ESLint / `tsc --noEmit` / production build | Passed |
-| Vitest, live container | 154 passed, 6 skipped |
+| Vitest, live container | 156 passed, 6 skipped (2026-07-27) |
 | Playwright, isolated config | 14/14 desktop and mobile |
 | Playwright, owner config | 5/5 — binding chooser, refused binding, charset rejection, an SCB import, and an SCB statement refused against a Krungthai account sharing its last four |
-| pgTAP | 90/90 (migrations 001–009), re-run after a clean reset |
+| pgTAP | 90/90 (migrations 001–009) — **last run 2026-07-26**; no SQL has changed since, but re-run before any change that touches it |
 
 **A skipped run is not evidence** — start the stack with `pnpm supabase:start` before trusting a green suite. The 6 skips are the unreachable-container reporters, which skip precisely because the container *was* reachable. pgTAP has not been re-run this round; nothing since has touched SQL, a migration, or database code, but re-run it before any change that does.
 
@@ -36,9 +36,11 @@ Order matters between the two browser suites and Vitest: `public.accounts` is un
 
 ## Next step
 
-**Read one real SCB statement and one real KBANK statement in a browser**, the way Krungthai was read — `PLAN.md` task 11's outstanding half. Both readers are proven against invented fixtures, in unit tests and through real pdf.js, and neither has met the document it was written for. That is exactly where Krungthai stood before its ten owner-driven reads found eleven defects, none of them detectable without a real file. Working from masked dumps makes a repeat far less likely, because the structure is known rather than invented; it does not make it unnecessary. Each read needs the owner present to type the document password once.
+**All three readers have now met a real statement**, and `PLAN.md` task 11 is closed for parsing. SCB read 94 rows across 5 pages and KBANK 55 rows across 2, each on the first attempt on 2026-07-27 — against ten owner-driven reads for Krungthai, which is what working from masked dumps first bought. The KBANK read is independently verified: that document's dump covers both pages in full and holds exactly 55 rows, and the bank's own printed counts and totals agreed with all of them.
 
-Two other things are open, in `PLAN.md`: **task 12**, persisting whether an import was cross-checked, which needs an owner decision before the migration can be designed (D-033); and **task 13**, receipts, behind a CSP spike for tesseract.js (D-037).
+What remains is **an owner decision, not code**: `PLAN.md` task 12 asks whether a missing cross-check should be a label carried with an import or a gate that refuses it. The migration cannot be designed without that answer. Task 13, receipts, is behind a CSP spike for tesseract.js (D-037).
+
+**Do not import a real statement without asking.** Neither of the two that were read was imported, and doing so crosses the standing "invented data only" line — it is gated by `PLAN.md` § Later authorization gates item 3, which requires portable recovery into an empty separately bound project first. Binding refuses today anyway: both statements print account suffixes no seeded account matches.
 
 `lib/krungthai-layout.ts` was left alone apart from carrying its contract version, as the design decision required — and the dumps proved that right rather than merely cautious. Its midpoint column banding could not have been reused: in both new layouts the heading x positions do not bound the data columns, so `lib/statement-layout.ts` reads an ordered row grammar instead. Migrating Krungthai onto it is optional and unstarted; its 48 tests are the safety net if anyone does.
 
@@ -46,7 +48,7 @@ Two other things are open, in `PLAN.md`: **task 12**, persisting whether an impo
 
 Before touching `lib/krungthai-layout.ts`, read D-023 … D-034. The four value-free diagnostics now live in `lib/masked-diagnostics.ts`, which imports nothing on purpose and is re-exported unchanged from the layout module. Before touching those diagnostics, read D-038: they leaked real counterparty names on their first use against a real statement, and the rules that now prevent it are structural for a reason.
 
-Also open, and needing an owner decision before it can be designed: **cross-check provenance is not persisted.** Whether an import was verified against the statement's printed totals is recorded nowhere, so the ledger cannot tell a cross-checked import from an unverified one. `StatementFrame` is hashed into the import digest, so recording it needs a migration and a payload-contract change (D-033).
+Also open, and needing an owner decision before it can be designed: **cross-check provenance is not persisted.** It is now *shown* — the bind stage names the layout that read the statement and says whether its printed totals confirmed the rows (D-042) — but nothing is recorded, so a committed batch still cannot be told apart from an unverified one afterwards. Recording it needs a migration and a payload-contract change on both sides of the confirmation digest, and first an answer to: should a missing cross-check be a label carried with the import, or a gate that refuses it (D-033, `PLAN.md` task 12)?
 
 Two cautions the real-statement reads earned. The unit suite is weaker evidence than it looks: 27 green layout tests never ran pdf.js once, because they feed `extractStatement` fixture arrays — so verify anything browser-shaped with `--config=playwright.isolated.config.ts` (D-027). And diagnosis costs nothing: failures report masked shapes (`dd/dd/dd dd:dd`), and every diagnostic is guarded by a test asserting no value survives it, so an iteration exposes no data.
 

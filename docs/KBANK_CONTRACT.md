@@ -147,11 +147,28 @@ Both amounts are right-aligned in a column of their own, well right of the grid'
 balance column — which is why they cannot double as the money columns' geometric anchor
 the way SCB's do.
 
+## Confirmed against a real statement
+
+On 2026-07-27 the owner read one real KBANK statement in a browser, on the first attempt:
+**55 rows across 2 pages, covering six months**, through to the account-binding stage.
+
+This one is verified rather than merely successful, on two independent grounds. The masked
+dump of that same document (`kbank-02`) contains exactly 55 transaction rows, and because
+it is a two-page statement the dump covers **every page in full** — so that is complete
+coverage, not a sample. And the dump shows its summary block at the top of page one in the
+shape this reader matches, so the D-033 cross-check ran: the bank's own printed counts and
+per-direction totals agreed with all 55 rows. The row count is therefore confirmed by the
+document's own arithmetic, not only by the reader agreeing with itself.
+
+The six-month range is also the first evidence about period length beyond the two dumps.
+It is not evidence about month-to-month stability, which remains untested.
+
 ## Not yet known
 
-- Whether the summary block ever moves to the last page on a longer statement.
+- Whether the summary block ever moves to the last page on a longer statement. The
+  five-page SCB statement says nothing about this; the KBANK statement read was two pages.
 - Whether more than two continuation lines occur.
-- Anything about month-to-month stability: two statements is not evidence, and one of
-  the two is a single page.
+- Month-to-month stability: still two statements plus one real read, all of the same
+  account. Not evidence.
 - Whether a row can ever omit the channel or details column. Neither dump has one, so
   the reader treats both as optional rather than assuming they are always printed.

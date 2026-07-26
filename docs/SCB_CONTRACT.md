@@ -137,13 +137,23 @@ KBANK's, which embeds the count in the label text.
 No closing balance is printed anywhere, so it is derived from the last row as D-026
 does for Krungthai.
 
+## Confirmed against a real statement
+
+On 2026-07-27 the owner read one real SCB statement in a browser, on the first attempt:
+**94 rows across 5 pages, one calendar month**, through to the account-binding stage. Every
+fail-closed check passed on all 94 rows — the row grammar, the balance chain closing row by
+row, the per-page carry-forward, and the two money sub-columns staying distinct and in the
+order the heading names them.
+
+That settles one item this contract previously listed as unknown. **The transaction heading
+line does repeat on the middle pages**: the reader requires it on every page and answers
+`MISSING_COLUMN_ANCHOR` otherwise, so pages two through four must have carried it. It was
+an inference from symmetry before; it is an observation now.
+
 ## Not yet known
 
-- Whether the brought-forward row is printed on the middle pages (see above).
-- Whether the transaction heading line repeats on the middle pages. Page one and the
-  last page carry it, and the frame block above it repeats on every page including the
-  truncated ones, so the reader requires it per page and fails closed — but that is an
-  inference from symmetry, not an observation.
+- Whether the brought-forward row is printed on the middle pages. Still open — the reader
+  accepts a page without one, so reading a five-page statement does not decide it.
 - Whether a statement with no transactions prints the grid at all.
 - Whether amounts above ~1,000,000 keep the same alignment. Right-edge matching is
   insensitive to a value's width, which is part of why it was chosen over banding.
