@@ -139,9 +139,9 @@ Tasks 1–11 are complete and verified for statements. Remaining: task 12 (an ow
 
 Only after every local task above passes:
 
-1. ~~Ask for renewed permission to run one local real-PDF smoke test without logging or retaining values.~~ **Granted 2026-07-25.** One local run only. The password is entered interactively and never logged; no value, screenshot, or derived fixture may be retained or committed; `private-statements/` stays outside automated discovery apart from that single run. Requires the owner present, so it cannot run unattended. Purpose: the fixture geometry is invented (D-015), so this is the only check of parser-vs-reality.
+1. ~~Ask for renewed permission to run local real-PDF smoke tests without logging or retaining values.~~ **Granted 2026-07-25 and discharged for all three layouts.** Twelve runs to date: ten for Krungthai (2026-07-25) and one each for SCB and KBANK (2026-07-27). The password is entered interactively and never logged; no value, screenshot, or derived fixture may be retained or committed. Requires the owner present, so it cannot run unattended. Purpose: the fixture geometry is invented (D-015), so this was the only check of parser-vs-reality — and it now says all three readers parse real documents.
 2. Ask separately before creating hosted Supabase, OAuth, Vercel, or deployment resources.
-3. Test portable recovery into an empty separately bound project before importing real data.
+3. **Test portable recovery into an empty separately bound project before importing real data.** Now the binding gate on the obvious next move: two real statements have been *read* and neither may be *imported* until this passes. `SPEC.md` still holds "committed data remains invented only", and nothing in the 2026-07-27 reads relaxes it.
 
 ## Working constraints
 
