@@ -1,12 +1,12 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
 
 Thin entry point. Project state lives in the maintained docs — do not duplicate it here.
 
-Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-036) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
+Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-038) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
-Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture, and recovery contracts are in `PRODUCT.md`, `DESIGN.md`, and `docs/`. Local setup and the validation order are in `docs/LOCAL_DEV.md`.
+Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture, and recovery contracts are in `PRODUCT.md`, `DESIGN.md`, and `docs/` — including the three per-bank layout contracts, [docs/KRUNGTHAI_CONTRACT.md](docs/KRUNGTHAI_CONTRACT.md), [docs/SCB_CONTRACT.md](docs/SCB_CONTRACT.md) and [docs/KBANK_CONTRACT.md](docs/KBANK_CONTRACT.md). Local setup and the validation order are in `docs/LOCAL_DEV.md`.
 
 ## Where the project stands
 
@@ -14,17 +14,19 @@ No open review blockers and no open parser defect. **A real statement now reads 
 
 The parse is now **independently verified** against the document (D-033): the statement's own printed counts sum to exactly the 233 rows the reader found, and its printed totals close the balance chain onto the last row — the first confirmation that D-026's derived opening is right. That cross-check is enforced in code and fails closed on any disagreement. The 13-month period, the account, and the currency position are all confirmed by the owner.
 
-The app now carries a statement the whole way **in a real browser**, which until 2026-07-25 was only ever proven from tests: a PDF is parsed on-device, bound to a chosen ledger account through the chooser, and confirmed through `/api/v1/imports/confirm` into `confirm_import` under an `aal2` session (D-021, D-022, D-036). Reaching that needed a development sign-in, because the app has no login of its own — the real one is Google OAuth and is still unbuilt, behind the hosted authorization gate. The remaining build work is the other five statement and receipt layouts (task 11).
+The app now carries a statement the whole way **in a real browser**, which until 2026-07-25 was only ever proven from tests: a PDF is parsed on-device, bound to a chosen ledger account through the chooser, and confirmed through `/api/v1/imports/confirm` into `confirm_import` under an `aal2` session (D-021, D-022, D-036). Reaching that needed a development sign-in, because the app has no login of its own — the real one is Google OAuth and is still unbuilt, behind the hosted authorization gate.
 
-Verified on 2026-07-25 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
+**Remaining build work is two statement layouts, SCB and KBANK.** Both are mapped from masked dumps and contracted in `docs/`; neither reader exists. The three receipt formats turned out to be JPGs and left this task entirely — they need OCR and are task 13 (D-037).
 
-| Check | Result | When |
-| --- | --- | --- |
-| ESLint / `tsc --noEmit` / production build | Passed | after D-036 |
-| Vitest, live container | 123 passed, 6 skipped | after D-036 |
-| Playwright, isolated config | 8/8 desktop and mobile | after D-036 |
-| Playwright, owner config | 3/3 — binding chooser, refused binding, charset rejection | after D-036 |
-| pgTAP | 84/84 (migrations 001–008) | earlier; no migration has changed since |
+Verified on 2026-07-26 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
+
+| Check | Result |
+| --- | --- |
+| ESLint / `tsc --noEmit` / production build | Passed |
+| Vitest, live container | 125 passed, 6 skipped |
+| Playwright, isolated config | 10/10 desktop and mobile |
+| Playwright, owner config | 3/3 — binding chooser, refused binding, charset rejection |
+| pgTAP | 84/84 (migrations 001–008) — **last run 2026-07-25**, not re-run since; no SQL has changed |
 
 **A skipped run is not evidence** — start the stack with `pnpm supabase:start` before trusting a green suite. The 6 skips are the unreachable-container reporters, which skip precisely because the container *was* reachable. pgTAP has not been re-run this round; nothing since has touched SQL, a migration, or database code, but re-run it before any change that does.
 
@@ -32,11 +34,15 @@ Order matters between the two browser suites and Vitest: `public.accounts` is un
 
 ## Next step
 
-**Build work — `PLAN.md` task 11, the other five layouts** (SCB, KBANK, three receipt formats). Its tooling and both authorization gates are now in place (D-035): `scripts/mask-statement.mjs` writes a masked structural dump per format to the gitignored `masked-dumps/`, verified end to end against a synthetic PDF but **not yet run against a real statement**. Each format costs one owner-driven invocation — the owner must be present to type the password once — after which the layout is developed offline from the dump. Get a receipt dump before making any design claim about receipts; they may not be a column grid at all, and they are the case where a dump's unmasked label section could most plausibly pick up a merchant or recipient name.
+**Build the SCB and KBANK readers** — `PLAN.md` task 11, and the only build work left. Both layouts are mapped from masked dumps of 12 SCB and 2 KBANK statements and written up in `docs/SCB_CONTRACT.md` and `docs/KBANK_CONTRACT.md`. Read those two before writing any code; each records what differs from Krungthai and what is still unknown.
 
-That is now the only build work left. **Task 10 is closed** (D-036): the owner configured `.env.local`, which turned out to be half the problem — the app had no sign-in at all, so no browser could ever have reached the three remaining paths. A flag-gated development sign-in route now mints the `aal2` session, and `tests/e2e/owner-session.spec.ts` covers all three in a real browser: the binding chooser, an import confirmed into `confirm_import`, a refused non-matching binding, and an out-of-charset statement refused at assembly. Run it with `--config=playwright.owner.config.ts`; any other build renders no sign-in button and its route answers 404. **The real login is still Google OAuth and is still unbuilt**, behind the hosted authorization gate.
+The design decision, already made: build the descriptor-driven reader for **SCB and KBANK only**, and leave `lib/krungthai-layout.ts` alone until it is proven. That reader is the highest-risk proven code in the repo — eleven defects across ten owner-driven reads, one of which did not fail closed — and refactoring it into an abstraction that has never run against a second layout trades working financial code for a design hypothesis. Migrate it afterwards, with its 48 tests as the safety net.
 
-Before touching `lib/krungthai-layout.ts`, read D-023 … D-034. The four value-free diagnostics now live in `lib/masked-diagnostics.ts`, which imports nothing on purpose and is re-exported unchanged from the layout module.
+Five things vary across the three layouts, and most of them are not guessable: date and time packing (own line / one combined run / two runs), the date separator (`/` vs `-`), one money column versus two, where the summary block sits (last page versus **top of page one** for KBANK), and how row counts are encoded (per label / an own `TOTAL ITEMS` line / **inside the label text**). KBANK's heading row also spans **two printed lines**, with the balance column's heading on the upper one — anchor on the main line alone and both the amount and the balance land in one band.
+
+**Task 10 is closed** (D-036). The owner configured `.env.local`, which was half the problem — the app had no sign-in at all, so no browser could ever have reached the last three paths. A flag-gated development sign-in now mints the `aal2` session and `tests/e2e/owner-session.spec.ts` covers all three. Run it with `--config=playwright.owner.config.ts`; any other build renders no sign-in button and its route answers 404. **The real login is still Google OAuth and is still unbuilt**, behind the hosted authorization gate.
+
+Before touching `lib/krungthai-layout.ts`, read D-023 … D-034. The four value-free diagnostics now live in `lib/masked-diagnostics.ts`, which imports nothing on purpose and is re-exported unchanged from the layout module. Before touching those diagnostics, read D-038: they leaked real counterparty names on their first use against a real statement, and the rules that now prevent it are structural for a reason.
 
 Also open, and needing an owner decision before it can be designed: **cross-check provenance is not persisted.** Whether an import was verified against the statement's printed totals is recorded nowhere, so the ledger cannot tell a cross-checked import from an unverified one. `StatementFrame` is hashed into the import digest, so recording it needs a migration and a payload-contract change (D-033).
 

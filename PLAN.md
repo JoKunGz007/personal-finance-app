@@ -12,21 +12,24 @@ That path is now reachable from the app itself rather than only from a test. `GE
 
 The blocker-1 fingerprint follow-up is now closed as well. Migrations `202607240007_fingerprint_functions.sql` and `202607240008_confirm_import_fingerprint_binding.sql` add `private.normalize_source_text` / `private.row_fingerprint` and make `confirm_import` recompute each row's fingerprint and reject a claim that does not match; `lib/statement.ts` constrains source text to the charset that keeps JS and PostgreSQL NFKC in agreement (DECISIONS D-014).
 
-**A real statement now reads end to end.** Ten owner-driven reads on 2026-07-25 took the parser from "no PDF opens at all" to 233 rows across 12 pages reaching the account-binding stage, correcting eleven real defects on the way (D-023 … D-032). Nine of the eleven failed closed; the two that did not were a right-aligned column misfile that happened to fail closed by luck of downstream parsing (D-030) and a 543-year calendar shift that parsed cleanly and would have written 1983 dates into the ledger (D-031). What remains is not parsing but *verification*: no global integrity check confirms the row count, the 13-month period has not been checked against the document, and binding has never run because the app could not reach the local Supabase stack.
+**A real statement now reads end to end.** Ten owner-driven reads on 2026-07-25 took the parser from "no PDF opens at all" to 233 rows across 12 pages reaching the account-binding stage, correcting eleven real defects on the way (D-023 … D-032). Nine of the eleven failed closed; the two that did not were a right-aligned column misfile that happened to fail closed by luck of downstream parsing (D-030) and a 543-year calendar shift that parsed cleanly and would have written 1983 dates into the ledger (D-031). Verification followed: the printed counts and totals now cross-check every import (D-033), and on 2026-07-25 the whole path — chooser, authenticated import, charset rejection — ran in a real browser for the first time (D-036).
+
+**The remaining two statement layouts are mapped and unbuilt.** Masked dumps of 12 SCB and 2 KBANK statements on 2026-07-26 produced `docs/SCB_CONTRACT.md` and `docs/KBANK_CONTRACT.md`. Both decode cleanly; neither reader exists yet.
 
 The local Supabase stack is running on its default Docker network. The most recent clean reset (2026-07-25) applied migrations 001–008 and the synthetic seed and left the project containers healthy. The unrelated older PostgreSQL and pgAdmin containers and the Windows PostgreSQL service were not modified. Several Vitest suites now mutate this database and clean up after themselves; `vitest.config.ts` sets `fileParallelism: false` so they cannot race (GOTCHAS).
 
-Current focused verification:
+Current focused verification, re-run 2026-07-26 unless stated:
 
 | Check | Result |
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 114 passed / 5 skipped (Krungthai geometry and frame, import assembly, JS↔PostgreSQL fingerprint parity, advisory lock contention, 1,200-row recovery chain, authenticated import confirmation, Next.js route handlers; all five skips are unreachable-container reporters and ran green against the live container) |
-| pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006 |
+| Vitest | Passed, 125 passed / 6 skipped against the live container. The 6 skips are the unreachable-container reporters, which skip precisely *because* the container was reachable |
+| pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006. **Last run 2026-07-25 and not re-run since** — no SQL, migration, or database code has changed, but re-run before any change that touches them |
 | Production build | Passed |
-| Playwright | Passed, 8/8 across desktop and mobile — the synthetic review path plus two specs that put a generated PDF through the real pdf.js worker (D-023). Run with `--config=playwright.isolated.config.ts`, which never reuses a stale server (D-027) |
-| Clean database reset | Migrations 001–008 and synthetic seed applied (last run earlier on 2026-07-25; no migration has changed since, and this round's work touched no SQL) |
+| Playwright, isolated config | Passed, 10/10 across desktop and mobile — the synthetic review path, two specs putting a generated PDF through the real pdf.js worker (D-023), and a guard that a build without the development-sign-in flag renders no such button (D-036). Never reuses a stale server (D-027) |
+| Playwright, owner config | Passed, 3/3 — the binding chooser, a refused non-matching binding, and an out-of-charset statement refused at assembly, all in a browser under an `aal2` session (D-036) |
+| Clean database reset | Migrations 001–008 and synthetic seed applied (last run 2026-07-25; no migration has changed since) |
 
 These results used the ignored project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 because the system Node installation remains Node 20. A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
 
@@ -110,9 +113,13 @@ The one open **task** blocker — the parser's `headerY` resolution — is fixed
 
     Verified end to end on the invented fixtures: `tests/fixtures/synthetic-pdf.ts` renders `validStatement` into a real PDF, the harness reads it, and the dump reproduces the column grid, the frame block, the summary block, the `dd/dd/dd` date shape and the right-aligned money bands with no value surviving. **Not yet run against a real statement** — that is one owner-driven invocation per format, and each needs the owner present to type a password once.
 
-    Still open in the approach: layout descriptors as data rather than a hand-written reader per bank. Receipts may not be a column grid at all and need one dump before any design claim; they are also the case where a dump's unmasked label section most plausibly picks up a merchant or recipient name, so read that section before handing a receipt dump on (D-035).
+    **Scope corrected 2026-07-25: the three receipt formats are JPGs, not PDFs**, so they are not in this task at all — see task 13. What remains here is SCB and KBANK, both confirmed PDFs. Each needs one owner-driven `scripts/mask-statement.mjs` run; nothing else is blocked.
+
+    Still open in the approach: layout descriptors as data rather than a hand-written reader per bank. Deliberately not designed yet — one layout cannot say what varies between banks, so the abstraction waits for the SCB dump rather than being guessed from Krungthai alone.
 
 Tasks 1–10 are complete and verified. Task 11 is the remaining build work, and its tooling and authorization gates are now in place — what it needs next is one owner-driven `scripts/mask-statement.mjs` invocation per format.
+
+13. **Receipts, as a separate build.** Deferred 2026-07-25 (D-037) and explicitly not part of task 11. The receipts are JPGs, so the entire reader — column bands, the frame/grid boundary, every masked diagnostic, and the masking harness itself — does not apply, because all of it operates on a pdf.js text layer and an image has none. Reading them needs OCR under mandatory per-field review against the source image. Nothing here starts before one masked receipt dump exists and a CSP spike says tesseract.js actually runs under this policy.
 
 12. **Persist whether an import was cross-checked.** Left open by D-033 and unchanged: the ledger cannot distinguish an import verified against the statement's printed totals from an unverified one. `StatementFrame` is hashed into the import digest, so recording it needs a migration and a payload-contract change. Needs an owner decision on what a missing cross-check should mean for an already-committed import before the migration is designed.
 

@@ -294,6 +294,27 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: authenticate as the seeded synthetic owner (`supabase/seed.sql` sets its password) instead of creating a new user.
 - Verify: `select * from public.ledger_owners` returns exactly one row, and the import e2e signs in as that owner.
 
+## A dense digit-free line is a transaction row as often as it is a heading
+
+- Symptom: a masked dump's label section lists real merchant or counterparty names beside the column headings.
+- Cause: judging "this is a heading" by density. A real SCB statement prints every transaction as `<code> | DESC : | <merchant>` — three short digit-free items, which is exactly the shape a heading row has. Judging by position instead does not fix it: rows sit on a fixed pitch, so the same `y` recurs on every page and a frequent counterparty lands in the same slot twice.
+- Avoid: drop the whole line if any item on it carries a digit. A transaction row always has a date or an amount; a heading row never does. Keep the same-position-across-pages rule as a second filter, not the first (D-038).
+- Verify: `tests/privacy.test.ts` "never reports a transaction row, however heading-shaped it looks" — and note its fixture includes the date and amounts, because an earlier version omitted them and passed against a rule that did not hold.
+
+## Mis-decoded text hides in the character classes a masker leaves alone
+
+- Symptom: a masked dump contains runs like `⤎x xxd⁄d⏟` or `$d=%$d. d+$, dd%/,&&d/d'` instead of `x` and `d`.
+- Cause: a PDF that embeds subset fonts with no usable `ToUnicode` map makes pdf.js resolve glyphs to arbitrary code points, often symbols. A masker that replaces letters and digits and *keeps everything else* passes those through verbatim — a deterministic remapping of real content, undoable by anyone with the font's cmap.
+- Avoid: mask by allowlist. Keep only the punctuation that genuinely carries format (`. , / - :` and friends) and replace everything else with `?` (D-038).
+- Verify: `tests/privacy.test.ts` "masks a character that decoded to a symbol rather than letting it through", which also asserts the format shapes still read as `dd/dd/dd dd:dd` and `d,ddd.dd`.
+
+## A folder of statements may contain something that is not a statement
+
+- Symptom: a layout looks catastrophically unreadable — amounts decoding to punctuation — and the obvious conclusion is that the bank's format cannot be parsed.
+- Cause: the file was not a statement. A KBANK export folder contained a bank-abbreviation glossary whose Thai and Chinese names decode to garbage; it has no transactions at all. The two real statements beside it decode cleanly.
+- Avoid: confirm a file is a statement before drawing conclusions about a format from it — check for the grid, the frame block, and the summary, not just that text came out. Check every file in the folder before concluding, not the first one.
+- Verify: the reader rejects a non-statement on its bank signature; a glossary produces `UNSUPPORTED_LAYOUT` rather than an attempted parse.
+
 ## Plain Node can run this repo's TypeScript, but only a module that imports nothing
 
 - Symptom: `scripts/mask-statement.mjs` dies with `ERR_MODULE_NOT_FOUND` on `@/lib/dates` after an unrelated edit to the diagnostics.

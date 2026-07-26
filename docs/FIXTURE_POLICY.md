@@ -10,7 +10,9 @@ Never copy, redact, perturb, translate, hash, summarize, screenshot, or snapshot
 
 Amended 2026-07-25 (DECISIONS D-035). This is the one exception to the paragraph above, and it is narrow.
 
-An agent may **invoke** `scripts/mask-statement.mjs` against a file under `private-statements/`, and may read the masked dump it writes to `masked-dumps/`. An agent may not open, list, copy, or read a file under `private-statements/` itself.
+An agent may **invoke** `scripts/mask-statement.mjs` against a file *or a directory* under `private-statements/`, and may read the masked dumps it writes to `masked-dumps/`. An agent may not open, list, copy, or read anything under `private-statements/` itself.
+
+**File names are masked too**, which is why directory mode exists. A statement's name routinely carries the account number or the holder's name, so a dump records its source as `xxxx_dddddddddd_dddddd.pdf` — enough to tell dumps apart and to show the naming pattern, carrying no value. Nobody has to type or read a real name, and the no-listing rule holds without costing anyone convenience.
 
 The harness runs on the owner's machine, opens the PDF in its own process, and emits only what the on-device diagnostics already produce — masked shapes (`dd/dd/dd`), coordinates, and digit-free label wordings. No amount, balance, date, or account number can be in a dump: every numeral is destroyed before anything is written. The document password is read from stdin only, never from a chat message, a repo file, an environment variable, or a command-line argument, and is needed once per file.
 

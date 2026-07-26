@@ -32,8 +32,10 @@ The owner config is a second browser suite, for the specs that need a signed-in 
 The masking harness is run on demand, never as part of validation, and needs the owner present to type a document password:
 
 ```powershell
-node scripts/mask-statement.mjs private-statements/<file>.pdf --label <format>
+node scripts/mask-statement.mjs private-statements/<folder> --label <format>
 ```
+
+It takes a directory or a single PDF. For a directory it walks every PDF beneath it, asks for the password **once** and reuses it, re-asking only for a document that one does not open, and writes `<format>-01.md`, `<format>-02.md`, … in sorted order. File names are masked in both the dumps and the console output, so no real name is typed or read (D-035).
 
 ## Docker / Supabase acceptance
 
