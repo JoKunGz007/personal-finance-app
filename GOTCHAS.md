@@ -342,3 +342,38 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: ESM resolves an absolute specifier as a URL, and `D:/…` parses as a `d:` scheme rather than a path. Only relative specifiers and `file://` URLs work.
 - Avoid: write `file:///D:/Projects/…` in the import, or use a relative specifier. `node --experimental-strip-types` reports it the same way whether the target is `.ts` or `.mjs`, so the message does not point at type stripping.
 - Verify: the scratch script that builds a synthetic PDF from the repo fixtures imports them by `file:///` URL and runs.
+
+## A bank's name appears on other banks' statements
+
+- Symptom: every KBANK statement is routed to the SCB reader and fails on a column anchor, or an SCB statement is routed to the Krungthai reader.
+- Cause: identifying a layout by the bank's name on page one. Both real KBANK statements print `Internet/Mobile SCB` as an ordinary channel on transfer rows, because that is what a transfer is. Worse, a masked dump masks every letter, so the name a statement actually prints is not knowable from one — the signature would be a guess that the only available evidence cannot check.
+- Avoid: identify a layout by its **heading anchor set** appearing in full on one line. It is unique per bank, present on every page, and a transaction description cannot forge it (D-039). Krungthai keeps its name signature because it is proven against a real statement, and is tried only after the heading sets fail.
+- Verify: `tests/statement-layout.test.ts` "keeps a KBANK statement whose rows name another bank on the KBANK reader" and "keeps an SCB statement whose rows name Krungthai on the SCB reader".
+
+## Heading x positions do not bound the data columns, except on the layout you wrote them for
+
+- Symptom: a reader ported from one bank to another misfiles most of a row — short descriptions land in the time column, descriptions land under the balance heading — while the heading anchors all match.
+- Cause: assuming a column's heading sits above its data. On Krungthai it does, which is why midpoint banding works there. On SCB the description runs print far left of `Description/Note`, under `Balance/Baht`; on KBANK short descriptions print left of `Descriptions`, inside the time column's band. Nothing requires a bank to align the two.
+- Avoid: for a new layout, read the row as an ordered **grammar** — the runs before the money, the money, the runs after — and identify each field by its kind and position in that sequence. Use geometry only where it carries information nothing else does (D-039). Do not generalize a working reader onto a second layout before seeing the second layout's dump.
+- Verify: `tests/statement-layout.test.ts` "maps the channel, code and DESC text to distinct row fields" and its KBANK counterpart.
+
+## A fixture that supplies its own run widths cannot test right-edge geometry
+
+- Symptom: the unit suite is green on a layout whose money columns are separated by right edge, and the browser reads the same statement with both columns merged — or with a smear that grows with the length of each figure.
+- Cause: `TextItem.width` is optional, so a hand-written fixture asserts the width instead of measuring it. pdf.js reports the *rendered* width. If the fixture assumes a different per-character advance than the PDF generator emits, every right edge lands somewhere else, off by the difference times the character count — so short figures look fine and long ones do not.
+- Avoid: take the fixture's glyph advance from the generator (`SYNTHETIC_GLYPH_ADVANCE` in `tests/fixtures/synthetic-pdf.ts`) rather than choosing one, and put the layout through a real PDF in the browser suite. This is the same gap as D-027: a green unit suite that never ran pdf.js.
+- Verify: `tests/e2e/statement-pdf.spec.ts` reads generated SCB and KBANK PDFs through the real worker; the KBANK fixture places its two money columns twice `COLUMN_EDGE_TOLERANCE` apart and no more, so any drift merges them and the read fails closed.
+
+## A layout has one row date separator, not one date separator
+
+- Symptom: every statement of a layout reports a missing statement period, while its rows parse.
+- Cause: threading the row separator through to the frame. KBANK prints its rows as `dd-dd-dd` and its period as `dd/dd/dddd - dd/dd/dddd`, on the same document.
+- Avoid: match the frame's period on either separator, requiring both of its dates to use the same one, and keep the row separator to rows.
+- Verify: the KBANK fixtures print hyphen rows and a slash period, and `tests/statement-layout.test.ts` reads both.
+
+## A hard-coded literal inside a security-definer function can gate a whole feature silently
+
+- Symptom: a new bank's import fails with `fingerprint mismatch` — a message that names tampering — after every CHECK constraint has been widened and the client is demonstrably correct.
+- Cause: `confirm_import` recomputed each row fingerprint with the literal `'KTB'` while the client hashes the statement's own bank code. The constant was invisible from the outside and produced an error that pointed at the caller.
+- Avoid: when widening an enumerated value, grep the RPC bodies for the old literal, not just the constraints — `grep -n "'KTB'\|krungthai-layout-v1" supabase/migrations/` finds every one. Derive such a value from the row the server already trusts (here, the bound account) rather than restating it (D-041).
+- Verify: the red proof in `supabase/tests/002_security_contracts.sql` — with the constraints widened but the literal left in place, the SCB import dies with `fingerprint mismatch` rather than passing.

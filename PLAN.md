@@ -1,6 +1,6 @@
 # Private Ledger execution plan
 
-Last verified: 2026-07-25
+Last verified: 2026-07-26
 
 ## Current checkpoint
 
@@ -14,7 +14,9 @@ The blocker-1 fingerprint follow-up is now closed as well. Migrations `202607240
 
 **A real statement now reads end to end.** Ten owner-driven reads on 2026-07-25 took the parser from "no PDF opens at all" to 233 rows across 12 pages reaching the account-binding stage, correcting eleven real defects on the way (D-023 … D-032). Nine of the eleven failed closed; the two that did not were a right-aligned column misfile that happened to fail closed by luck of downstream parsing (D-030) and a 543-year calendar shift that parsed cleanly and would have written 1983 dates into the ledger (D-031). Verification followed: the printed counts and totals now cross-check every import (D-033), and on 2026-07-25 the whole path — chooser, authenticated import, charset rejection — ran in a real browser for the first time (D-036).
 
-**The remaining two statement layouts are mapped and unbuilt.** Masked dumps of 12 SCB and 2 KBANK statements on 2026-07-26 produced `docs/SCB_CONTRACT.md` and `docs/KBANK_CONTRACT.md`. Both decode cleanly; neither reader exists yet.
+**All three statement layouts now read.** Masked dumps of 12 SCB and 2 KBANK statements on 2026-07-26 produced `docs/SCB_CONTRACT.md` and `docs/KBANK_CONTRACT.md`, and `lib/statement-layout.ts` reads both. Re-reading the dumps before writing the reader found both contracts wrong about the money columns: each layout prints **two right-aligned sub-columns under one slash-joined heading**, so building either as first written would have read every deposit as a withdrawal (D-039). Direction now comes from the balance chain and is cross-checked against that geometry, failing closed on disagreement. `lib/krungthai-layout.ts` is untouched apart from carrying its contract version, as the design decision required.
+
+Migration `202607260009_multi_bank_layouts.sql` admits the two new banks through `confirm_import` (D-041). Widening the CHECK constraints was not the half that mattered: the RPC recomputed every row fingerprint with a hard-coded `'KTB'`, so an SCB import would have failed with `fingerprint mismatch` no matter how correct the client was. The bank code now comes from the bound account, and a contract version may only be confirmed into an account at the bank that layout reads.
 
 The local Supabase stack is running on its default Docker network. The most recent clean reset (2026-07-25) applied migrations 001–008 and the synthetic seed and left the project containers healthy. The unrelated older PostgreSQL and pgAdmin containers and the Windows PostgreSQL service were not modified. Several Vitest suites now mutate this database and clean up after themselves; `vitest.config.ts` sets `fileParallelism: false` so they cannot race (GOTCHAS).
 
@@ -24,12 +26,12 @@ Current focused verification, re-run 2026-07-26 unless stated:
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed, 125 passed / 6 skipped against the live container. The 6 skips are the unreachable-container reporters, which skip precisely *because* the container was reachable |
-| pgTAP | Passed, 84/84 with migrations 005–008 (001: 24, 002: 30, 003: 30). Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`) with the other 29 passing; 003 fractional-count and int64-max tests fail pre-006. **Last run 2026-07-25 and not re-run since** — no SQL, migration, or database code has changed, but re-run before any change that touches them |
+| Vitest | Passed, 154 passed / 6 skipped against the live container. The 6 skips are the unreachable-container reporters, which skip precisely *because* the container was reachable |
+| pgTAP | Passed, 90/90 with migrations 005–009 (001: 24, 002: 36, 003: 30), re-run 2026-07-26 after a clean reset. Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`); 003 fractional-count and int64-max tests fail pre-006; the SCB import added as test 34 dies with `invalid import contract` against the pre-009 `confirm_import`, and with `fingerprint mismatch` if the CHECK constraints are widened but the fingerprint's bank code is left hard-coded (D-041) |
 | Production build | Passed |
-| Playwright, isolated config | Passed, 10/10 across desktop and mobile — the synthetic review path, two specs putting a generated PDF through the real pdf.js worker (D-023), and a guard that a build without the development-sign-in flag renders no such button (D-036). Never reuses a stale server (D-027) |
-| Playwright, owner config | Passed, 3/3 — the binding chooser, a refused non-matching binding, and an out-of-charset statement refused at assembly, all in a browser under an `aal2` session (D-036) |
-| Clean database reset | Migrations 001–008 and synthetic seed applied (last run 2026-07-25; no migration has changed since) |
+| Playwright, isolated config | Passed, 14/14 across desktop and mobile — the synthetic review path, four specs putting a generated PDF through the real pdf.js worker (two of them the new SCB and KBANK layouts, D-039), and a guard that a build without the development-sign-in flag renders no such button (D-036). Never reuses a stale server (D-027) |
+| Playwright, owner config | Passed, 5/5 — the binding chooser, a refused non-matching binding, an out-of-charset statement refused at assembly (D-036), an SCB statement carried through the chooser into `confirm_import`, and an SCB statement refused when bound to a Krungthai account sharing its last four (D-041) |
+| Clean database reset | Migrations 001–009 and synthetic seed applied, 2026-07-26 |
 
 These results used the ignored project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 because the system Node installation remains Node 20. A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
 
@@ -107,7 +109,7 @@ The one open **task** blocker — the parser's `headerY` resolution — is fixed
 
     The real login remains Google OAuth, unbuilt and behind the hosted authorization gate (`docs/PRODUCT_CHARTER.md`). Nothing in this task built product auth surface.
 
-11. **Extend the reader to the remaining statement and receipt layouts.** Two further statement formats (SCB, KBANK) and three receipt formats are in scope. Most of the eleven defects found on the Krungthai layout were reader-architecture faults rather than bank-specific ones — the worker, the frame/grid boundary, midpoint column assignment, zero money columns and the calendar era all carry over — so the per-format cost should be far below Krungthai's ten reads.
+11. ~~**Extend the reader to the remaining statement and receipt layouts.**~~ **Done for both statement layouts (2026-07-26); receipts moved to task 13.** Two further statement formats (SCB, KBANK) and three receipt formats were in scope. Most of the eleven defects found on the Krungthai layout were reader-architecture faults rather than bank-specific ones — the worker, the frame/grid boundary, midpoint column assignment, zero money columns and the calendar era all carry over — so the per-format cost should be far below Krungthai's ten reads.
 
     **The masking harness is built and its two authorization gates are satisfied** (2026-07-25, D-035): `docs/FIXTURE_POLICY.md` now carries the amendment, and the `private-statements/` grant is recorded with its boundary and its cost. `scripts/mask-statement.mjs` opens one PDF on this machine and writes a masked structural dump to the gitignored `masked-dumps/`, so a layout can be developed offline from one dump instead of one owner-driven read per defect. The four diagnostics moved to `lib/masked-diagnostics.ts`, which imports nothing so the harness can run them under plain Node and so the privacy surface reads in one file; `lib/krungthai-layout.ts` re-exports them, and every existing call site is unchanged.
 
@@ -115,9 +117,13 @@ The one open **task** blocker — the parser's `headerY` resolution — is fixed
 
     **Scope corrected 2026-07-25: the three receipt formats are JPGs, not PDFs**, so they are not in this task at all — see task 13. What remains here is SCB and KBANK, both confirmed PDFs. Each needs one owner-driven `scripts/mask-statement.mjs` run; nothing else is blocked.
 
-    Still open in the approach: layout descriptors as data rather than a hand-written reader per bank. Deliberately not designed yet — one layout cannot say what varies between banks, so the abstraction waits for the SCB dump rather than being guessed from Krungthai alone.
+    **Done 2026-07-26 for both statement layouts.** `lib/statement-layout.ts` reads `scb-layout-v1` and `kbank-layout-v1` from per-layout descriptors; `lib/read-statement.ts` dispatches across all three readers by heading anchor set; migration 009 lets the results reach the ledger (D-039, D-040, D-041). `lib/krungthai-layout.ts` was left alone apart from carrying its contract version, exactly as the design decision required — and re-reading the dumps proved that right, since the heading anchors do not bound the data columns in either new layout and its midpoint banding could not have been reused.
 
-Tasks 1–10 are complete and verified. Task 11 is the remaining build work, and its tooling and authorization gates are now in place — what it needs next is one owner-driven `scripts/mask-statement.mjs` invocation per format.
+    The descriptor question this task left open is answered by having built it: **descriptors as data, but a hand-written row grammar rather than a column model.** What varies across the three layouts is not parameters of one shape — date and time packing, the number of heading lines, where the summary sits, and how counts are encoded are three different shapes each. The descriptor names the encoding; it does not pretend one fits all.
+
+    **What this does not establish, stated plainly: no real SCB or KBANK statement has been read.** Both readers were developed from masked structural dumps and are proven against invented fixtures, in unit tests and through real pdf.js in a browser. That is exactly the position the Krungthai reader was in before the smoke tests, and it found eleven defects — none of them detectable without a real file. The dumps make a repeat far less likely, because the structure is now known rather than invented, but the difference between "the structure is right" and "the reader reads this document" is precisely what the ten Krungthai reads paid for. One owner-driven browser read per layout is the outstanding check, and it needs the owner present for the password.
+
+Tasks 1–11 are complete and verified for statements. Remaining: task 12 (an owner decision), task 13 (receipts, behind an OCR spike).
 
 13. **Receipts, as a separate build.** Deferred 2026-07-25 (D-037) and explicitly not part of task 11. The receipts are JPGs, so the entire reader — column bands, the frame/grid boundary, every masked diagnostic, and the masking harness itself — does not apply, because all of it operates on a pdf.js text layer and an image has none. Reading them needs OCR under mandatory per-field review against the source image. Nothing here starts before one masked receipt dump exists and a CSP spike says tesseract.js actually runs under this policy.
 

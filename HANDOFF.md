@@ -1,10 +1,10 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-07-26
+Last updated: 2026-07-26 (second pass: the SCB and KBANK readers)
 
 Thin entry point. Project state lives in the maintained docs — do not duplicate it here.
 
-Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-038) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
+Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-041) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture, and recovery contracts are in `PRODUCT.md`, `DESIGN.md`, and `docs/` — including the three per-bank layout contracts, [docs/KRUNGTHAI_CONTRACT.md](docs/KRUNGTHAI_CONTRACT.md), [docs/SCB_CONTRACT.md](docs/SCB_CONTRACT.md) and [docs/KBANK_CONTRACT.md](docs/KBANK_CONTRACT.md). Local setup and the validation order are in `docs/LOCAL_DEV.md`.
 
@@ -16,17 +16,19 @@ The parse is now **independently verified** against the document (D-033): the st
 
 The app now carries a statement the whole way **in a real browser**, which until 2026-07-25 was only ever proven from tests: a PDF is parsed on-device, bound to a chosen ledger account through the chooser, and confirmed through `/api/v1/imports/confirm` into `confirm_import` under an `aal2` session (D-021, D-022, D-036). Reaching that needed a development sign-in, because the app has no login of its own — the real one is Google OAuth and is still unbuilt, behind the hosted authorization gate.
 
-**Remaining build work is two statement layouts, SCB and KBANK.** Both are mapped from masked dumps and contracted in `docs/`; neither reader exists. The three receipt formats turned out to be JPGs and left this task entirely — they need OCR and are task 13 (D-037).
+**All three statement layouts now read, and all three reach the ledger.** `lib/statement-layout.ts` reads SCB and KBANK from per-layout descriptors, `lib/read-statement.ts` dispatches by heading anchor set, and migration 009 admits both banks through `confirm_import` (D-039 … D-041). The three receipt formats are JPGs, need OCR, and are task 13 (D-037).
+
+Re-reading the masked dumps before writing the reader found **both layout contracts wrong about the money columns**: each prints two right-aligned sub-columns under one slash-joined heading, so building either as first written would have read every deposit as a withdrawal — a clean parse with an inverted sign, in an append-only ledger. Direction is now taken from the balance chain and cross-checked against that geometry. Read `docs/SCB_CONTRACT.md` and `docs/KBANK_CONTRACT.md` before touching either reader; both were corrected in place.
 
 Verified on 2026-07-26 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
 
 | Check | Result |
 | --- | --- |
 | ESLint / `tsc --noEmit` / production build | Passed |
-| Vitest, live container | 125 passed, 6 skipped |
-| Playwright, isolated config | 10/10 desktop and mobile |
-| Playwright, owner config | 3/3 — binding chooser, refused binding, charset rejection |
-| pgTAP | 84/84 (migrations 001–008) — **last run 2026-07-25**, not re-run since; no SQL has changed |
+| Vitest, live container | 154 passed, 6 skipped |
+| Playwright, isolated config | 14/14 desktop and mobile |
+| Playwright, owner config | 5/5 — binding chooser, refused binding, charset rejection, an SCB import, and an SCB statement refused against a Krungthai account sharing its last four |
+| pgTAP | 90/90 (migrations 001–009), re-run after a clean reset |
 
 **A skipped run is not evidence** — start the stack with `pnpm supabase:start` before trusting a green suite. The 6 skips are the unreachable-container reporters, which skip precisely because the container *was* reachable. pgTAP has not been re-run this round; nothing since has touched SQL, a migration, or database code, but re-run it before any change that does.
 
@@ -34,11 +36,11 @@ Order matters between the two browser suites and Vitest: `public.accounts` is un
 
 ## Next step
 
-**Build the SCB and KBANK readers** — `PLAN.md` task 11, and the only build work left. Both layouts are mapped from masked dumps of 12 SCB and 2 KBANK statements and written up in `docs/SCB_CONTRACT.md` and `docs/KBANK_CONTRACT.md`. Read those two before writing any code; each records what differs from Krungthai and what is still unknown.
+**Read one real SCB statement and one real KBANK statement in a browser**, the way Krungthai was read — `PLAN.md` task 11's outstanding half. Both readers are proven against invented fixtures, in unit tests and through real pdf.js, and neither has met the document it was written for. That is exactly where Krungthai stood before its ten owner-driven reads found eleven defects, none of them detectable without a real file. Working from masked dumps makes a repeat far less likely, because the structure is known rather than invented; it does not make it unnecessary. Each read needs the owner present to type the document password once.
 
-The design decision, already made: build the descriptor-driven reader for **SCB and KBANK only**, and leave `lib/krungthai-layout.ts` alone until it is proven. That reader is the highest-risk proven code in the repo — eleven defects across ten owner-driven reads, one of which did not fail closed — and refactoring it into an abstraction that has never run against a second layout trades working financial code for a design hypothesis. Migrate it afterwards, with its 48 tests as the safety net.
+Two other things are open, in `PLAN.md`: **task 12**, persisting whether an import was cross-checked, which needs an owner decision before the migration can be designed (D-033); and **task 13**, receipts, behind a CSP spike for tesseract.js (D-037).
 
-Five things vary across the three layouts, and most of them are not guessable: date and time packing (own line / one combined run / two runs), the date separator (`/` vs `-`), one money column versus two, where the summary block sits (last page versus **top of page one** for KBANK), and how row counts are encoded (per label / an own `TOTAL ITEMS` line / **inside the label text**). KBANK's heading row also spans **two printed lines**, with the balance column's heading on the upper one — anchor on the main line alone and both the amount and the balance land in one band.
+`lib/krungthai-layout.ts` was left alone apart from carrying its contract version, as the design decision required — and the dumps proved that right rather than merely cautious. Its midpoint column banding could not have been reused: in both new layouts the heading x positions do not bound the data columns, so `lib/statement-layout.ts` reads an ordered row grammar instead. Migrating Krungthai onto it is optional and unstarted; its 48 tests are the safety net if anyone does.
 
 **Task 10 is closed** (D-036). The owner configured `.env.local`, which was half the problem — the app had no sign-in at all, so no browser could ever have reached the last three paths. A flag-gated development sign-in now mints the `aal2` session and `tests/e2e/owner-session.spec.ts` covers all three. Run it with `--config=playwright.owner.config.ts`; any other build renders no sign-in button and its route answers 404. **The real login is still Google OAuth and is still unbuilt**, behind the hosted authorization gate.
 
@@ -58,8 +60,9 @@ Two cautions the real-statement reads earned. The unit suite is weaker evidence 
 
 ## Before you touch anything
 
+- `masked-dumps/` holds 12 SCB and 3 KBANK dumps. They are gitignored working material, not fixtures, and both readers are now built from them — delete them once a real statement of each layout has been read.
 - Run `git status --short`. **Three** config files (`eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml`) are **intentionally uncommitted** — preserve them. `.gitignore` used to be a fourth and is now committed: it had to be, because it is the only thing ignoring `.runtime/` (where the development sign-in writes TOTP secrets) and `masked-dumps/`, and the committed copy ignored neither. A fresh clone would have tracked both.
-- `main` is level with `origin/main` at `a49fad3`, pushed 2026-07-25: the D-035 masking harness, the D-036 development sign-in, and the docs recording them, on top of the D-028…D-034 parser work. Treat commit and push authorization as spent; ask again.
+- `main` was level with `origin/main` at `07c7ab7` when this pass began. The SCB and KBANK readers, migration 009, and these doc updates are **uncommitted**: commit and push authorization is spent, so ask before committing them.
 - Never rewrite a Markdown file through PowerShell `Get-Content`/`Set-Content`. In PowerShell 5.1 the read defaults to ANSI, so every em dash, ellipsis and arrow in these docs comes back as mojibake and is then written out as real UTF-8. It corrupted `HANDOFF.md` once and had to be restored from git. Use the editing tools.
 - `public.ledger_owners` binds exactly one owner and is immutable; a second owner cannot exist without a database reset. Authenticate as the seeded synthetic owner (`supabase/seed.sql` holds its password).
 - Several suites mutate the one local database, so `vitest.config.ts` sets `fileParallelism: false`. Leave it — without it, suites pass alone and fail together.

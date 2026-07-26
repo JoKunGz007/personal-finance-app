@@ -1,12 +1,12 @@
 # Private Ledger specification index
 
-Last reviewed: 2026-07-25
+Last reviewed: 2026-07-26
 
 This file is the stable entry point for project requirements. It summarizes only the cross-cutting contract and links to the detailed specifications that own the exact behavior.
 
 ## Product objective
 
-Private Ledger is a local-first, single-owner application that converts a supported Krungthai statement into a reconciled, reviewable ledger without exposing the PDF, its password, or private financial data.
+Private Ledger is a local-first, single-owner application that converts a supported bank statement — Krungthai, SCB, or KBANK — into a reconciled, reviewable ledger without exposing the PDF, its password, or private financial data. Receipts are images and are a separate build (D-037).
 
 Committed data remains invented only. Hosted Supabase, OAuth setup, Vercel, deployment, commits, and pushes require separate explicit authorization. Local real-statement smoke tests were authorized on 2026-07-25 under stated conditions and were run ten times by the owner, reading a statement end to end; every finding came from on-device masked diagnostics, so no real value entered the repository. Direct access to `private-statements/` was granted the same day under an **invoke, don't read** boundary, and `docs/FIXTURE_POLICY.md` is amended accordingly (D-035) — a masking harness may be run against a statement, and the statement itself may not be read. See `PLAN.md` § Later authorization gates and `HANDOFF.md` § Standing authorizations before acting on any of it.
 
@@ -31,6 +31,8 @@ Detailed contracts:
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/KRUNGTHAI_CONTRACT.md](docs/KRUNGTHAI_CONTRACT.md)
+- [docs/SCB_CONTRACT.md](docs/SCB_CONTRACT.md)
+- [docs/KBANK_CONTRACT.md](docs/KBANK_CONTRACT.md)
 - [docs/FIXTURE_POLICY.md](docs/FIXTURE_POLICY.md)
 - [docs/RECOVERY.md](docs/RECOVERY.md)
 
@@ -44,7 +46,9 @@ Before any real-data or hosted stage:
 4. Backup export, client encryption, acknowledgement, staged restore, and equality must be exercised end to end with canonical int64 boundaries and more than 1,000 rows.
 5. No PDF bytes, passwords, tokens, real values, analytics, service worker caches, or third-party font requests may cross their documented boundary.
 
-Status as of 2026-07-25: gates 1, 2, 4, and 5 pass against synthetic data — re-verified after the account-binding UI and route-wrapper coverage landed (D-021, D-022) — and gate 3 is met for the transaction grid and statement frame by the invented fixtures in `tests/fixtures/krungthai-layout-v1.ts` (DECISIONS D-015, D-016). Gate 3 remains only partly discharged in substance: the fixture geometry was invented rather than measured, so it validates the parser contract without establishing that a real Krungthai layout matches it. The authorized smoke tests are the only check of that. Ten attempts on 2026-07-25 found eleven defects between them (D-023 … D-032), and gate 3 is now **discharged for parsing**: a real statement opens, decodes, matches its bank signature and all seven column headings, states its currency, yields its frame, and parses all 233 of its rows across 12 pages through to the account-binding stage. The date format is confirmed. Gate 3 is now discharged for verification too: the reader cross-checks every import against the statement's own printed counts and totals and fails closed on disagreement (D-033), and on the real statement those counts sum to exactly the rows read while the totals close the balance chain. Still unreached behind a real PDF: binding, the authenticated import path, and the charset rejection path — blocked on local Supabase configuration rather than on the parser. See `PLAN.md` tasks 7 and 10.
+Status as of 2026-07-26 for the two layouts added that day: gate 1 passes with migrations 001–009; gates 2 and 5 pass on the current source; and gate 3 is met for SCB and KBANK by the invented fixtures in `tests/fixtures/statement-layouts.ts`, which are also rendered into real PDFs and read through pdf.js in the browser suite. Gate 3 is **not** discharged in substance for either: no real SCB or KBANK statement has been read, which is the position Krungthai was in before its ten smoke tests found eleven defects. The structure is known from masked dumps rather than invented, which is a materially better starting point, but one owner-driven read per layout remains outstanding. See `PLAN.md` task 11.
+
+Status as of 2026-07-25 for Krungthai: gates 1, 2, 4, and 5 pass against synthetic data — re-verified after the account-binding UI and route-wrapper coverage landed (D-021, D-022) — and gate 3 is met for the transaction grid and statement frame by the invented fixtures in `tests/fixtures/krungthai-layout-v1.ts` (DECISIONS D-015, D-016). Gate 3 remains only partly discharged in substance: the fixture geometry was invented rather than measured, so it validates the parser contract without establishing that a real Krungthai layout matches it. The authorized smoke tests are the only check of that. Ten attempts on 2026-07-25 found eleven defects between them (D-023 … D-032), and gate 3 is now **discharged for parsing**: a real statement opens, decodes, matches its bank signature and all seven column headings, states its currency, yields its frame, and parses all 233 of its rows across 12 pages through to the account-binding stage. The date format is confirmed. Gate 3 is now discharged for verification too: the reader cross-checks every import against the statement's own printed counts and totals and fails closed on disagreement (D-033), and on the real statement those counts sum to exactly the rows read while the totals close the balance chain. Still unreached behind a real PDF: binding, the authenticated import path, and the charset rejection path — blocked on local Supabase configuration rather than on the parser. See `PLAN.md` tasks 7 and 10.
 
 The live checkpoint and remaining work are maintained in [PLAN.md](PLAN.md).
 

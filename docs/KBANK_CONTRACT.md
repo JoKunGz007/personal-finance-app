@@ -1,12 +1,15 @@
 # KBANK statement contract — `kbank-layout-v1`
 
 Derived on 2026-07-26 from masked structural dumps of two real statements, per DECISIONS
-D-035. **No coordinate from those dumps is recorded here** — the reader anchors on
-heading words and resolves x from the document at runtime, so fixture geometry stays
-invented (`docs/FIXTURE_POLICY.md`).
+D-035, and **corrected on 2026-07-26** after the first reading of this contract found it
+silent on the money columns (D-039).
+
+**No coordinate from those dumps is recorded here** — the reader resolves x from the
+document at runtime, so fixture geometry stays invented (`docs/FIXTURE_POLICY.md`).
 
 Only two statements were available, against twelve for SCB, so treat "verified across
-months" as unproven here.
+months" as unproven here. What they do give is 89 transaction rows, every one matching
+the single row grammar below.
 
 ## A glossary is not a statement
 
@@ -22,24 +25,36 @@ Two consequences worth keeping:
 - Mis-decoded text is why `maskShape` now masks to `?` outside an allowlist rather than
   passing symbols through — those glyphs were a substitution cipher of real content.
 
-## Column headings
+## Column headings span three lines, not two
 
-The heading row spans **two printed lines**, and one column's heading sits on the upper
-one. This is the structural fact that no amount of reasoning from Krungthai or SCB would
-have produced:
+An earlier draft said two. It is three, and only the middle one carries a full row of
+headings:
 
-- upper line: a `Date/` fragment, and the balance column's heading
-- main line: `Date` · `Descriptions` · `Withdrawal / Deposit` · `Channel` · `Details`
+- upper: a `Date/` fragment, and the balance column's heading (`Outstanding Balance`)
+- main: `Date` · `Descriptions` · `Withdrawal / Deposit` · `Channel` · `Details`
+- lower: `Trn.Time`, completing the `Date/Trn.Time` heading begun on the upper line, and
+  `(THB)`, completing the balance heading
 
-Anchoring only on the main line gives five anchors for six columns, and the balance
+Anchoring only on the main line gives five anchors for six data columns, and the balance
 column then falls inside the `Withdrawal / Deposit` band — both the amount and the
 balance land in one column and the row is unreadable. The reader must compose the
-heading from both lines.
+heading from all three lines. All three repeat on every page.
+
+## The heading anchors do not bound the data columns
+
+As in SCB, and for the same reason. The date runs begin left of the `Date` heading; the
+description runs begin left of the `Descriptions` heading, under the time column's band.
+Banding between heading anchors misfiles a short description as a time.
+
+What is stable is the **row grammar**: all 89 rows are the same ordered sequence of runs
+— date, time, description, amount, balance, channel, details — and every field is
+identified by its kind and its position in that sequence. Geometry is used for exactly
+one thing, below.
 
 ## Rows
 
 Each transaction is one line plus zero or more continuation lines carrying only the
-details column.
+details or channel column.
 
 Date and time are **two separate runs on the same line** — a third arrangement, after
 Krungthai's time-on-its-own-line and SCB's single combined run.
@@ -47,38 +62,96 @@ Krungthai's time-on-its-own-line and SCB's single combined run.
 The date separator is a **hyphen** (`dd-dd-dd`), not a slash. Any shared date probe must
 take the separator from the layout rather than assuming one.
 
-Money and balance are right-aligned, so D-030's midpoint rule applies.
+**But the frame does not use it.** The period prints as `dd/dd/dddd - dd/dd/dddd`, with
+slashes, on the same document whose rows use hyphens — so a layout has one row separator
+and not one date separator. Threading the row separator through to the frame made every
+KBANK statement report a missing period, which is how this was found.
+
+## Money: one heading, two columns
+
+**`Withdrawal / Deposit` is one printed run over two separately right-aligned columns.**
+The earlier draft listed it as a single anchor among five and said nothing about a split,
+which would have read **every deposit as a withdrawal**. See D-039.
+
+The heading is a single pdf.js run, so it cannot be split into two x positions — unlike
+SCB, whose summary block right-aligns a labelled total on each of the two columns, KBANK
+prints both summary amounts in a third column entirely and offers no geometric hint at
+all. The evidence is the rows themselves:
+
+- Every row carries **exactly one** run in the money region, and those runs right-align
+  into two tight clusters with nothing between them. The two clusters are closer
+  together than SCB's, so the tolerance must be small.
+- The balance chain agrees, and `kbank-03` shows it at its cleanest: a run in the right
+  cluster takes the balance from tens to tens of thousands, and the very next row's run
+  in the left cluster — **the same printed shape** — takes it back to single digits.
+
+Withdrawal is the left cluster and deposit the right, matching the order the heading
+names them in. Both money columns and the balance are right-aligned, so the right edge,
+not the midpoint, is the invariant.
+
+The reader derives direction from the balance delta, requires the two derived directions
+to occupy two distinct right-edge clusters, and fails closed when arithmetic and
+geometry disagree.
+
+## Brought-forward balance
+
+A pseudo-row at the top of the grid, labelled `Beginning Balance` in the description
+position, carrying a date and a balance but **no time and no amount** — the grammar
+distinguishes it from a transaction without needing the label.
+
+It is printed **on every page**, confirmed directly: the two-page statement carries one
+at the top of each. Only page one's is the statement opening; the rest are
+carry-forwards and must be neither imported as rows nor mistaken for a second opening.
+Each one is also a free per-page check against the previous page's last balance.
 
 ## Frame
 
-A labelled block in the upper right, label and value on one line:
+A labelled block in the upper right, label and value on one line, repeating on every
+page:
 
-`Reference Code` · `Account Number` · `Period` · account name · `Beginning Balance` ·
-`Ending Balance`
+`Reference Code` · `Account Number` · `Period` · account name · `Ending Balance`
 
 The account number prints as `ddd-d-ddddd-d` — a different grouping from SCB's
 `ddd-dddddd-d`, so the last-four extraction must not assume a group layout.
 
-The period prints with **four-digit years**, as SCB's does.
+The period prints with **four-digit years** and slash separators, as SCB's does — see the
+note above on why that is not the row separator.
+
+`Ending Balance` is printed on page one only, so unlike SCB and Krungthai the closing
+balance need not be derived and the chain has a printed figure to close onto.
+`Beginning Balance` is **not** in this block, despite appearing in the same masked
+section of the dump — it is the grid's pseudo-row, above.
+
+## Currency
+
+**Not in the frame block**, so D-034's guard as written for Krungthai cannot be
+satisfied. It is printed as `(THB)` on the lower heading line, directly under the balance
+column's heading — attached to the column it denominates. The guard is kept and
+relocated per layout rather than replaced by an assumption (D-040).
 
 ## Summary block
 
 **At the top of page one, not the bottom of the last page** — the opposite of both
-Krungthai and SCB. Two lines:
+Krungthai and SCB, and page one only. Two lines:
 
 - `Total Withdrawal <n> items` — with an amount
 - `Total Deposit <n> items` — with an amount
 
-The count is **embedded inside the label text**, not printed as a separate column.
+The count is **embedded inside the label's own run**, not printed as a separate column,
+so it is read by matching the label pattern rather than by taking the next run.
 Krungthai prints label-then-count-then-amount; SCB prints counts on their own
 `TOTAL ITEMS` line. Three layouts, three encodings of the same fact, and a cross-check
 that assumes any one of them fails closed on the other two.
 
-Beginning and Ending Balance are both printed, so balances need not be derived (D-026).
+Both amounts are right-aligned in a column of their own, well right of the grid's
+balance column — which is why they cannot double as the money columns' geometric anchor
+the way SCB's do.
 
 ## Not yet known
 
 - Whether the summary block ever moves to the last page on a longer statement.
 - Whether more than two continuation lines occur.
-- Whether a currency marker appears anywhere in the frame (D-034).
-- Anything about month-to-month stability: two statements is not evidence.
+- Anything about month-to-month stability: two statements is not evidence, and one of
+  the two is a single page.
+- Whether a row can ever omit the channel or details column. Neither dump has one, so
+  the reader treats both as optional rather than assuming they are always printed.
