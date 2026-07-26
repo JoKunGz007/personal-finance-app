@@ -18,6 +18,7 @@ export type BindingTarget = {
 };
 
 export type AssemblyErrorCode =
+  | "NOT_CROSS_CHECKED"
   | "ACCOUNT_MISMATCH"
   | "BANK_MISMATCH"
   | "CURRENCY_MISMATCH"
@@ -33,6 +34,27 @@ export function assembleImportPayload(
   rows: readonly SourceRowCandidate[],
   target: BindingTarget
 ): AssemblyResult {
+  // Checked before anything about the binding, because it is a property of the statement
+  // rather than of the account: if this fails, no account will do, and saying so first
+  // stops the owner working through the chooser looking for one that fits.
+  //
+  // An import the bank's own arithmetic did not confirm is refused outright (D-043). The
+  // reader still reads such a statement — that is a fact about the document, and the
+  // diagnostics that fix a wording mismatch depend on the parse succeeding — but it may not
+  // reach the ledger. What the balance chain cannot see is exactly what this catches, and
+  // it differs per layout: Krungthai derives its opening from the first row (D-026), so a
+  // dropped *first* row is invisible to reconciliation, and neither Krungthai nor SCB
+  // prints a closing balance, so a dropped *last* row is invisible too. Rows are
+  // append-only; there is no un-importing one.
+  if (!frame.crossChecked) {
+    return {
+      ok: false,
+      code: "NOT_CROSS_CHECKED",
+      message:
+        "This statement printed no summary block the reader could match, so its rows were never checked against " +
+        "the bank's own counts and totals. It will not be imported."
+    };
+  }
   // Checked before the last four, because the last four alone no longer identifies an
   // account: three banks are supported and `public.accounts` is unique on
   // (owner_id, bank_code, last_four), so one owner can hold three accounts ending in the

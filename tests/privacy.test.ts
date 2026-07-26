@@ -46,6 +46,11 @@ describe("privacy guardrails", () => {
     // else derived from `pages` would defeat the check above by renaming a local.
     expect(worker).toMatch(/const labelCandidates = describeLabelGeometry\(pages\);/);
     expect(withoutLiterals).not.toMatch(/labelCandidates\s*:/u);
+    // The successful parse now carries the same diagnostic when the statement's totals
+    // never confirmed its rows (D-043), on identical terms: reduced to a local before the
+    // post, so `pages` never appears inside a postMessage call.
+    expect(worker).toMatch(/const summaryLabels = result\.frame\.crossChecked \? \[\] : describeValueLabels\(pages\);/);
+    expect(withoutLiterals).not.toMatch(/valueLabels\s*:\s*describe/u);
   });
 
   it("keeps every client request same-origin and limited to the import contract", () => {

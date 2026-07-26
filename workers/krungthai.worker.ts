@@ -77,7 +77,21 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
       return;
     }
 
-    workerScope.postMessage({ type: "parsed", frame: result.frame, rows: result.rows, pageCount: document.numPages });
+    // A statement whose printed totals never confirmed its rows parses fine and is then
+    // refused at assembly (D-043). The one thing needed to fix that is the wording of the
+    // summary labels the statement actually prints, so send the candidate label wordings
+    // with the successful parse — otherwise the owner sees a refusal with no way to act on
+    // it, and the diagnostic only exists on the failure path.
+    //
+    // Reduced here, one statement before the post, on the same terms as the error path
+    // below: `pages` must never appear inside a postMessage call. describeValueLabels
+    // reports only digit-free wordings printed left of a number, which is the label/value
+    // shape a summary line uses; tests/privacy.test.ts holds it to that.
+    const summaryLabels = result.frame.crossChecked ? [] : describeValueLabels(pages);
+    workerScope.postMessage({
+      type: "parsed", frame: result.frame, rows: result.rows,
+      pageCount: document.numPages, valueLabels: summaryLabels
+    });
   } catch (error) {
     const name = error instanceof Error ? error.name : "UnknownError";
     const code = name === "PasswordException" ? "WRONG_PASSWORD" : "PDF_PARSE_FAILED";

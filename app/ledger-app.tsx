@@ -22,7 +22,7 @@ const stages: Array<{ id: Stage; label: string }> = [
 type Extracted = { frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number };
 
 type WorkerReply =
-  | { type: "parsed"; frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number }
+  | { type: "parsed"; frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number; valueLabels?: string[] }
   | {
       type: "error"; code: string; reason?: string; detail?: string;
       labelCandidates?: string[][]; valueLabels?: string[]; structure?: string[];
@@ -108,7 +108,9 @@ export function LedgerApp() {
         // next step is an explicit, checked choice by the owner.
         setArtifactDigest(digest);
         setLabelCandidates([]);
-        setValueLabels([]);
+        // Empty unless the statement's totals never confirmed its rows, in which case these
+        // are the candidate summary wordings that would fix it (D-043).
+        setValueLabels(reply.valueLabels ?? []);
         setStructure([]);
         setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
         setStatement(null);
@@ -121,7 +123,9 @@ export function LedgerApp() {
         setStatus(
           `Read ${reply.rows.length} rows across ${reply.pageCount} page(s) as a ${reply.frame.bankCode} statement, ` +
           `for account ending ${reply.frame.accountLastFour}, ${reply.frame.periodStart} to ${reply.frame.periodEnd}. ` +
-          `${reply.frame.crossChecked ? "Cross-checked against the statement's printed totals." : "NOT cross-checked: this statement printed no readable summary block."} ` +
+          `${reply.frame.crossChecked
+            ? "Cross-checked against the statement's printed totals."
+            : "NOT cross-checked: this statement printed no readable summary block, so it cannot be imported."} ` +
           "Nothing has left this device. Choose the ledger account it belongs to."
         );
       } else {
@@ -406,7 +410,7 @@ export function LedgerApp() {
                   <p className="cross-check-note">Cross-checked: the statement&apos;s own printed counts and totals agree with all {extracted.rows.length} rows.</p>
                 ) : (
                   <p className="cross-check-warning" role="alert">
-                    <b>Not cross-checked.</b> This statement printed no summary block the reader could read, so the {extracted.rows.length} rows were not verified against the bank&apos;s own counts and totals. A dropped or misread row would not have been caught. Check it against the document before confirming.
+                    <b>Not cross-checked — this statement will not be imported.</b> It printed no summary block the reader could match, so the {extracted.rows.length} rows were never verified against the bank&apos;s own counts and totals, and a dropped first or last row would not have been caught. If the statement does print totals, the wordings listed below are the candidates the reader saw; the layout needs to learn one of them.
                   </p>
                 )}
               </div>

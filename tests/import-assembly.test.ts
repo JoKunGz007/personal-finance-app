@@ -55,6 +55,23 @@ describe("import payload assembly", () => {
     expect(digest).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it("refuses a statement whose printed totals never confirmed its rows", () => {
+    // The reader reads such a statement — that is a fact about the document — but it may
+    // not reach an append-only ledger (D-043). This is where the refusal lives, rather
+    // than in the reader, so a dozen fixtures that never print totals stay readable.
+    const { frame, rows } = extracted();
+    expect(assembleImportPayload({ ...frame, crossChecked: false }, rows, target))
+      .toMatchObject({ ok: false, code: "NOT_CROSS_CHECKED" });
+  });
+
+  it("names the missing cross-check before anything about the binding", () => {
+    // If this fails, no account will do — so reporting a wrong account first would send
+    // the owner through the chooser looking for one that fits.
+    const { frame, rows } = extracted();
+    expect(assembleImportPayload({ ...frame, crossChecked: false }, rows, { ...target, lastFour: "0001", bankCode: "SCB" }))
+      .toMatchObject({ ok: false, code: "NOT_CROSS_CHECKED" });
+  });
+
   it("refuses an account whose last four does not match the statement", () => {
     const { frame, rows } = extracted();
     expect(assembleImportPayload(frame, rows, { ...target, lastFour: "0001" }))

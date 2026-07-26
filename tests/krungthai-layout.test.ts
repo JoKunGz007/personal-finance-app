@@ -297,10 +297,12 @@ describe("krungthai summary cross-check", () => {
   });
 
   it("still reads a statement that prints no summary block at all, and says it was not checked", () => {
-    // Not every layout prints one, and its absence must not be a failure — it only means the
-    // cross-check is unavailable, the same compromise as `balancesPrinted` (D-026). What must
-    // not happen is the two outcomes looking identical to whoever confirms the import, which
-    // is what `crossChecked` now distinguishes (D-042).
+    // The *reader* still reads it: what a document contains is a fact, and the diagnostics
+    // that would fix a wording mismatch depend on the parse succeeding. What such a
+    // statement may not do is reach the ledger — `assembleImportPayload` refuses it
+    // (D-043), which is asserted in tests/import-assembly.test.ts. Keeping the refusal at
+    // the import boundary rather than in the reader is why this test and a dozen others
+    // that never supply totals still pass.
     const result = onePage(rows, { totals: null });
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) return;
