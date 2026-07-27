@@ -24,6 +24,8 @@ test-results/
 .supabase/
 supabase/.branches/
 supabase/.temp/
+recovery/supabase/.branches/
+recovery/supabase/.temp/
 
 # Impeccable ephemeral state; shared design artifacts remain trackable.
 .impeccable/config.local.json

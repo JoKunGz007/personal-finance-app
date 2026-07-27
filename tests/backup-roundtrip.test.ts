@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { canonicalJson, sha256Hex } from "@/lib/canonical";
+import { canonicalJson } from "@/lib/canonical";
 import { decryptBackup, encryptBackup } from "@/lib/backup";
-import { BACKUP_TABLE_KINDS, backupSnapshotSchema } from "@/lib/backup-contract";
+import { backupSnapshotSchema } from "@/lib/backup-contract";
+import { buildRestorePlan } from "@/lib/restore-plan";
 
 // Full schema-v2 recovery chain over more than 1,000 rows:
 // export -> validate -> encrypt -> decrypt -> stage -> chunk x11 -> commit -> re-export.
@@ -70,44 +70,17 @@ function exportSnapshot(): Snapshot {
   return JSON.parse(line) as Snapshot;
 }
 
-// Mirrors the server's own construction (pg_temp.finalize_restore_fixture in
-// 003_restore_contracts.sql): chunk digests hash {kind, rows}, and the payload
-// digest hashes the whole snapshot.
-async function buildRestore(snapshot: Snapshot) {
-  const chunks = BACKUP_TABLE_KINDS.map((kind, index) => ({
-    index,
-    kind,
-    rows: snapshot.data[kind] ?? [],
-    payload: { kind, rows: snapshot.data[kind] ?? [] }
-  }));
-  const chunkDigests = await Promise.all(chunks.map((chunk) => sha256Hex(canonicalJson(chunk.payload))));
-  const manifest = {
-    payloadDigest: await sha256Hex(canonicalJson(snapshot)),
-    snapshotSequence: snapshot.snapshotSequence,
-    exportedAt: snapshot.exportedAt,
-    tableCounts: snapshot.tableCounts,
-    chunks: chunks.map((chunk) => ({
-      index: chunk.index,
-      kind: chunk.kind,
-      rowCount: chunk.rows.length,
-      sha256: chunkDigests[chunk.index]!
-    }))
-  };
-  return { manifest, chunks, digest: manifest.payloadDigest };
-}
-
 // Runs the whole staged restore in one session: stage, every chunk in order, commit.
+// The request sequence comes from `lib/restore-plan.ts` — the same shipped builder a
+// real recovery uses — so this suite exercises it at 1,200 rows rather than proving a
+// second implementation that only ever runs in tests.
 async function restore(snapshot: Snapshot): Promise<void> {
-  const { manifest, chunks, digest } = await buildRestore(snapshot);
-  const restoreId = randomUUID();
-  const idempotencyKey = randomUUID();
-  const base = { restoreId, idempotencyKey, schemaVersion: 2, digest };
+  const plan = await buildRestorePlan(snapshot);
 
   const statements = [
-    `select public.restore_backup('stage', ${encode({ ...base, manifest })});`,
-    ...chunks.map((chunk) =>
-      `select public.restore_backup('chunk', ${encode({ ...base, chunkIndex: chunk.index, chunkDigest: manifest.chunks[chunk.index]!.sha256, chunk: chunk.payload })});`),
-    `select public.restore_backup('commit', ${encode(base)});`
+    `select public.restore_backup('stage', ${encode(plan.stage)});`,
+    ...plan.chunks.map((chunk) => `select public.restore_backup('chunk', ${encode(chunk)});`),
+    `select public.restore_backup('commit', ${encode(plan.commit)});`
   ];
 
   // restore_backup refuses a non-empty destination, mirroring portable recovery

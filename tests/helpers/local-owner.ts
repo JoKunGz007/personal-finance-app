@@ -15,13 +15,15 @@ export const PUBLISHABLE = "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH";
 export const OWNER_EMAIL = "synthetic.owner@example.invalid";
 export const OWNER_PASSWORD = "local-synthetic-login-disabled";
 
-export function psql(sql: string): { ok: boolean; output: string } {
+// Parameterised by container because the recovery rehearsal drives a second Supabase
+// project as well as this one (tests/recovery-portability.test.ts).
+export function psqlAt(container: string, sql: string): { ok: boolean; output: string } {
   try {
     return {
       ok: true,
       output: execFileSync(
         "docker",
-        ["exec", "-i", CONTAINER, "psql", "-U", "postgres", "-d", "postgres", "-t", "-A", "-v", "ON_ERROR_STOP=1", "-f", "-"],
+        ["exec", "-i", container, "psql", "-U", "postgres", "-d", "postgres", "-t", "-A", "-v", "ON_ERROR_STOP=1", "-f", "-"],
         { input: sql, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }
       )
     };
@@ -31,8 +33,12 @@ export function psql(sql: string): { ok: boolean; output: string } {
   }
 }
 
-export function containerReachable(): boolean {
-  return psql("select 1;").ok;
+export function psql(sql: string): { ok: boolean; output: string } {
+  return psqlAt(CONTAINER, sql);
+}
+
+export function containerReachable(container: string = CONTAINER): boolean {
+  return psqlAt(container, "select 1;").ok;
 }
 
 // RFC 6238 TOTP lives in `lib/dev/totp.ts` and is re-exported here, because the dev
@@ -40,9 +46,9 @@ export function containerReachable(): boolean {
 // at enrollment, so a valid code can be produced without any authenticator app.
 export { totp };
 
-export async function api(path: string, init: RequestInit & { token?: string } = {}) {
-  const { token, ...rest } = init;
-  const response = await fetch(`${API}${path}`, {
+export async function api(path: string, init: RequestInit & { token?: string; base?: string } = {}) {
+  const { token, base, ...rest } = init;
+  const response = await fetch(`${base ?? API}${path}`, {
     ...rest,
     headers: {
       apikey: PUBLISHABLE,
@@ -58,17 +64,21 @@ export async function api(path: string, init: RequestInit & { token?: string } =
 export type OwnerSession = { access_token: string; refresh_token: string };
 
 // Signs in and climbs to aal2 by enrolling and verifying two TOTP factors, which is
-// exactly what private.has_strong_owner_access requires.
-export async function ownerSession(): Promise<OwnerSession> {
+// exactly what private.has_strong_owner_access requires. Parameterised by API base and
+// credentials so the recovery destination — a different project with a different bound
+// owner — reaches aal2 the same way rather than through a second implementation.
+export async function sessionAt(base: string, email: string, password: string): Promise<OwnerSession> {
   const signIn = await api("/auth/v1/token?grant_type=password", {
+    base,
     method: "POST",
-    body: JSON.stringify({ email: OWNER_EMAIL, password: OWNER_PASSWORD })
+    body: JSON.stringify({ email, password })
   });
   if (signIn.status !== 200) throw new Error(`sign-in failed: ${signIn.body}`);
   let session = signIn.json() as OwnerSession;
 
   for (const friendlyName of ["synthetic one", "synthetic two"]) {
     const enrolled = await api("/auth/v1/factors", {
+      base,
       method: "POST",
       token: session.access_token,
       body: JSON.stringify({ factor_type: "totp", friendly_name: friendlyName })
@@ -77,10 +87,11 @@ export async function ownerSession(): Promise<OwnerSession> {
     const factorId = enrolled.json().id as string;
     const secret = enrolled.json().totp.secret as string;
 
-    const challenge = await api(`/auth/v1/factors/${factorId}/challenge`, { method: "POST", token: session.access_token });
+    const challenge = await api(`/auth/v1/factors/${factorId}/challenge`, { base, method: "POST", token: session.access_token });
     if (challenge.status !== 200) throw new Error(`challenge failed: ${challenge.body}`);
 
     const verified = await api(`/auth/v1/factors/${factorId}/verify`, {
+      base,
       method: "POST",
       token: session.access_token,
       body: JSON.stringify({ challenge_id: challenge.json().id, code: totp(secret) })
@@ -89,6 +100,10 @@ export async function ownerSession(): Promise<OwnerSession> {
     session = verified.json() as OwnerSession;
   }
   return session;
+}
+
+export async function ownerSession(): Promise<OwnerSession> {
+  return sessionAt(API, OWNER_EMAIL, OWNER_PASSWORD);
 }
 
 export async function weakOwnerSession(): Promise<OwnerSession> {

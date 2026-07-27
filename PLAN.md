@@ -1,6 +1,6 @@
 # Private Ledger execution plan
 
-Last verified: 2026-07-26
+Last verified: 2026-07-27
 
 ## Current checkpoint
 
@@ -18,15 +18,18 @@ The blocker-1 fingerprint follow-up is now closed as well. Migrations `202607240
 
 Migration `202607260009_multi_bank_layouts.sql` admits the two new banks through `confirm_import` (D-041). Widening the CHECK constraints was not the half that mattered: the RPC recomputed every row fingerprint with a hard-coded `'KTB'`, so an SCB import would have failed with `fingerprint mismatch` no matter how correct the client was. The bank code now comes from the bound account, and a contract version may only be confirmed into an account at the bank that layout reads.
 
+**A backup now restores into a project that never held it** (D-044). A second local Supabase project, `private-ledger-recovery`, runs alongside the primary one bound to a different invented owner; `tests/recovery-portability.test.ts` exports from the primary over HTTP under a real aal2 session, encrypts and decrypts the artifact, and stages, chunks and commits it into the destination under that project's own aal2 session. A second project rather than a second database because the ledger schema depends on `auth` in 24 places and a bare `createdb` has no such schema at all. It found what a same-project round trip structurally cannot: an owner id embedded inside `overlay_revisions.snapshot`, which every column-level check looks past. The restore-request builder moved out of test code into `lib/restore-plan.ts`, because recovery is the one path that must work on a machine that has lost everything else.
+
 The local Supabase stack is running on its default Docker network. The most recent clean reset (2026-07-25) applied migrations 001–008 and the synthetic seed and left the project containers healthy. The unrelated older PostgreSQL and pgAdmin containers and the Windows PostgreSQL service were not modified. Several Vitest suites now mutate this database and clean up after themselves; `vitest.config.ts` sets `fileParallelism: false` so they cannot race (GOTCHAS).
 
-Current focused verification, re-run 2026-07-26 unless stated:
+Current focused verification, re-run 2026-07-27 unless stated:
 
 | Check | Result |
 | --- | --- |
 | ESLint | Passed |
 | TypeScript `tsc --noEmit` | Passed |
-| Vitest | Passed 2026-07-27, 156 passed / 6 skipped against the live container. The 6 skips are the unreachable-container reporters, which skip precisely *because* the container was reachable |
+| Vitest | Passed 2026-07-27, 159 passed / 7 skipped against both live containers. The 7 skips are the unreachable-container reporters, which skip precisely *because* the containers were reachable |
+| Portable recovery | Passed 2026-07-27 — `tests/recovery-portability.test.ts` carries a ledger into the separately bound `private-ledger-recovery` project and back out. Red proof: stripping the owner merge from the destination's `restore_backup` fails the jsonb-rebind assertion alone, while every column-level check still passes (D-044). Needs `node scripts/recovery-destination.mjs up`; it skips otherwise, and a skipped run proves nothing about recovery |
 | pgTAP | Passed, 90/90 with migrations 005–009 (001: 24, 002: 36, 003: 30), re-run 2026-07-26 after a clean reset. Red proofs: 002 test 19 fails pre-005; 002 test 23 fails pre-008 (`caught: no exception`); 003 fractional-count and int64-max tests fail pre-006; the SCB import added as test 34 dies with `invalid import contract` against the pre-009 `confirm_import`, and with `fingerprint mismatch` if the CHECK constraints are widened but the fingerprint's bank code is left hard-coded (D-041) |
 | Production build | Passed |
 | Playwright, isolated config | Passed, 14/14 across desktop and mobile — the synthetic review path, four specs putting a generated PDF through the real pdf.js worker (two of them the new SCB and KBANK layouts, D-039), and a guard that a build without the development-sign-in flag renders no such button (D-036). Never reuses a stale server (D-027) |
@@ -129,7 +132,7 @@ The one open **task** blocker — the parser's `headerY` resolution — is fixed
 
     **What this still does not establish:** neither statement was imported. Binding, the authenticated import path, and reconciliation against real rows remain unexercised on real input, and are gated by § Later authorization gates item 3 below. Both statements print account suffixes no seeded account matches, so binding refuses — correctly.
 
-Tasks 1–11 are complete and verified for statements. Remaining: task 12 (an owner decision), task 13 (receipts, behind an OCR spike).
+Tasks 1–12 are complete and verified for statements. Remaining: task 13 (receipts, behind an OCR spike) and task 14 (a recovery surface a person can drive).
 
 13. **Receipts, as a separate build.** Deferred 2026-07-25 (D-037) and explicitly not part of task 11. The receipts are JPGs, so the entire reader — column bands, the frame/grid boundary, every masked diagnostic, and the masking harness itself — does not apply, because all of it operates on a pdf.js text layer and an image has none. Reading them needs OCR under mandatory per-field review against the source image. Nothing here starts before one masked receipt dump exists and a CSP spike says tesseract.js actually runs under this policy.
 
@@ -139,13 +142,19 @@ Tasks 1–11 are complete and verified for statements. Remaining: task 12 (an ow
 
     Left for the day a real statement is ever refused: an explicit recorded override. Designing it now would mean designing for a document nobody has seen. If it is built, D-043 records the shape it should take — the printed totals travel in the payload and `confirm_import` re-verifies them, so the flag is a fact the database established rather than a caller's attestation.
 
+14. **A recovery surface a person can drive.** Opened 2026-07-27 by the portable-recovery rehearsal (D-044), which proved the contract portable and in doing so showed what is missing around it. The app has no restore surface at all, and its only export button produces the `.pldemo` synthetic preview, which is explicitly non-restorable — so the real export at `GET /api/v1/backups/export` has no caller, and a genuine recovery is driven from code. `lib/restore-plan.ts` now makes that possible without reimplementing the manifest, which is the difference between "hard" and "not realistic", but it is not the same as a person being able to recover their ledger.
+
+    Not started, and deliberately unscoped here: whether the answer is a restore screen, an operator script, or a documented sequence against the existing route is a product decision. The rehearsal drives PostgREST directly, so `app/api/v1/backups/restores/[action]/route.ts` — sixteen lines of zod boundary and session gate — remains covered only by the unit suite.
+
 ## Later authorization gates
 
 Only after every local task above passes:
 
 1. ~~Ask for renewed permission to run local real-PDF smoke tests without logging or retaining values.~~ **Granted 2026-07-25 and discharged for all three layouts.** Twelve runs to date: ten for Krungthai (2026-07-25) and one each for SCB and KBANK (2026-07-27). The password is entered interactively and never logged; no value, screenshot, or derived fixture may be retained or committed. Requires the owner present, so it cannot run unattended. Purpose: the fixture geometry is invented (D-015), so this was the only check of parser-vs-reality — and it now says all three readers parse real documents.
 2. Ask separately before creating hosted Supabase, OAuth, Vercel, or deployment resources.
-3. **Test portable recovery into an empty separately bound project before importing real data.** Now the binding gate on the obvious next move: two real statements have been *read* and neither may be *imported* until this passes. `SPEC.md` still holds "committed data remains invented only", and nothing in the 2026-07-27 reads relaxes it.
+3. ~~**Test portable recovery into an empty separately bound project before importing real data.**~~ **Done locally 2026-07-27** (D-044). `tests/recovery-portability.test.ts` restores a ledger into `private-ledger-recovery` — a second project bound to a different owner, which has never seen the source's auth users — over HTTP under real aal2 sessions on both sides, and asserts every table arrived intact, that the source owner survives nowhere including inside jsonb, and that a second recovery into the now-populated destination is refused. `lib/restore-plan.ts` makes that sequence buildable outside a test.
+
+    **This does not by itself authorize importing a real statement.** `SPEC.md` still holds "committed data remains invented only", and that is the owner's decision to change, not a consequence of this gate passing. Three things this gate's original wording implied are still absent: there is no restore surface in the app and its only export button produces the non-restorable `.pldemo` preview, so a recovery today is driven by code rather than by a person; the rehearsal drives PostgREST directly, so the Next.js restore route is not exercised by it; and nothing hosted has been rehearsed. Binding would refuse both statements read on 2026-07-27 anyway — neither prints an account suffix a seeded account matches.
 
 ## Working constraints
 

@@ -1,0 +1,63 @@
+# Recovery-rehearsal destination: an empty, separately bound Supabase project.
+#
+# It exists so a backup can be restored into a project that never held the source's
+# data and never knew its owner. That is the one thing the in-database round-trip
+# cannot test: in the source project the source's `auth.users` rows are still present,
+# so a restore that failed to remap an actor column would still satisfy its foreign
+# keys. Here they are absent, and it would not.
+#
+# Deliberately not a copy of `supabase/config.toml`:
+#   * different project_id, so the CLI gives it its own containers and volumes;
+#   * ports in the 5433x band, so both stacks can run at once;
+#   * no seeding at start — `public.bind_ledger_owner` does not exist until the
+#     migrations are applied, so `scripts/recovery-destination.mjs` does both in order;
+#   * only the services a restore actually needs, which also keeps it off the primary
+#     stack's default ports for studio, storage, realtime and inbucket.
+project_id = "private-ledger-recovery"
+
+[api]
+enabled = true
+port = 54331
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54332
+shadow_port = 54330
+major_version = 17
+
+[db.seed]
+enabled = false
+
+[studio]
+enabled = false
+
+[storage]
+enabled = false
+
+[realtime]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[analytics]
+enabled = false
+
+# Matched to the primary project, because the destination has to satisfy the same
+# owner gate: private.has_strong_owner_access requires aal2 with two verified factors,
+# and it never inspects the auth provider (D-020).
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = []
+enable_signup = false
+minimum_password_length = 12
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true

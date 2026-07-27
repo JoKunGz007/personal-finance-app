@@ -29,6 +29,15 @@ Use the isolated config rather than `pnpm test:e2e`: the default one reuses a se
 
 The owner config is a second browser suite, for the specs that need a signed-in owner — the binding chooser, the authenticated import path, and the charset rejection path. It builds with `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=1`, which is what makes the development sign-in exist at all (D-036); no other build has it. Both browser suites and `pnpm test` share one database and one owner, and all three want an account ending 7890, so each cleans up after itself — see GOTCHAS if you meet a `accounts_owner_id_bank_code_last_four_key` violation.
 
+`tests/recovery-portability.test.ts` skips unless the second Supabase project is also running, and a skipped run proves nothing about recovery. Start it first, and stop it afterwards — it is disposable by design:
+
+```powershell
+node scripts/recovery-destination.mjs up
+node scripts/recovery-destination.mjs down
+```
+
+See `docs/RECOVERY.md` § Portable recovery rehearsal for what it does and does not establish.
+
 The masking harness is run on demand, never as part of validation, and needs the owner present to type a document password:
 
 ```powershell

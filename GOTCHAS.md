@@ -377,3 +377,24 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: `confirm_import` recomputed each row fingerprint with the literal `'KTB'` while the client hashes the statement's own bank code. The constant was invisible from the outside and produced an error that pointed at the caller.
 - Avoid: when widening an enumerated value, grep the RPC bodies for the old literal, not just the constraints — `grep -n "'KTB'\|krungthai-layout-v1" supabase/migrations/` finds every one. Derive such a value from the row the server already trusts (here, the bound account) rather than restating it (D-041).
 - Verify: the red proof in `supabase/tests/002_security_contracts.sql` — with the constraints widened but the literal left in place, the SCB import dies with `fingerprint mismatch` rather than passing.
+
+## An id remapped in every column can still survive inside jsonb
+
+- Symptom: a restore into a project bound to a different owner passes every ownership check — no row anywhere carries the previous owner in `owner_id`, `actor_id` or `changed_by` — and that owner's uuid is still in the database.
+- Cause: `overlay_revisions.snapshot` is `to_jsonb` of the whole overlay row, so it embeds `owner_id` as data. Foreign keys, RLS and column-level assertions all look past it. `restore_backup` merges `jsonb_build_object('owner_id', v_owner)` over the snapshot precisely to rebind it.
+- Avoid: when checking a remap, check the jsonb payloads as text as well as the columns, and build the fixture the way the product builds the row — a hand-written snapshot that embeds no owner id cannot fail this test, which is how the first version of it passed for the wrong reason.
+- Verify: `tests/recovery-portability.test.ts` asserts no `overlay_revisions.snapshot` mentions the source owner. Red proof: strip the merge from the destination's `restore_backup` and that one assertion fails while every column-level check still passes.
+
+## `supabase db push --db-url` cannot reach a local container
+
+- Symptom: `failed to connect to postgres: tls error (server refused TLS connection)` against a database that psql connects to happily, and adding `?sslmode=disable` changes nothing.
+- Cause: given `--db-url` the CLI treats the target as a remote project and requires TLS, ignoring the URL's sslmode. Its `--local` flag is not an alternative: it pushes the *workdir's* migrations to the *workdir's* database, which for a second project whose migrations directory is deliberately empty is nothing at all.
+- Avoid: apply the migration files to a second local project directly, in filename order, and record each in `supabase_migrations.schema_migrations` — which the CLI creates during `db reset`/`db push`, so a stack started with no migrations does not have it. Each file opens its own transaction, so feed them verbatim rather than wrapping them, or psql warns `there is already a transaction in progress` and the history insert lands outside the file's commit.
+- Verify: `node scripts/recovery-destination.mjs up` reports nine migrations applied, and `status` shows the owner bound and an empty ledger.
+
+## A leftover TOTP factor makes a later sign-in unable to reach aal2
+
+- Symptom: an authenticated suite fails at enrollment with `403 insufficient_aal`, "AAL2 required to enroll a new factor", on an owner whose password is correct.
+- Cause: GoTrue refuses to enroll a factor at aal1 once the user has a verified one. `tests/backup-roundtrip.test.ts` inserts two factors directly and never removes them, so any suite that afterwards tries to climb to aal2 by enrolling cannot.
+- Avoid: delete `auth.mfa_factors` for the owner before signing in, not only in teardown — teardown does not run for a suite that was never reached.
+- Verify: the failure reproduces by running `tests/backup-roundtrip.test.ts` and then any suite that enrolls — that is how it was found. `tests/recovery-portability.test.ts` clears factors on both projects before signing in and again in teardown.
