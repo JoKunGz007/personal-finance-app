@@ -392,6 +392,20 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: apply the migration files to a second local project directly, in filename order, and record each in `supabase_migrations.schema_migrations` — which the CLI creates during `db reset`/`db push`, so a stack started with no migrations does not have it. Each file opens its own transaction, so feed them verbatim rather than wrapping them, or psql warns `there is already a transaction in progress` and the history insert lands outside the file's commit.
 - Verify: `node scripts/recovery-destination.mjs up` reports nine migrations applied, and `status` shows the owner bound and an empty ledger.
 
+## A bare tag locator is a contract only while the page holds one of that tag
+
+- Symptom: every browser spec in a suite fails at once with `strict mode violation: locator('input[type="file"]') resolved to 2 elements`, after a change that touched none of them.
+- Cause: the specs located the statement file input and the account chooser by tag. Adding a restore file input and an account-type select — both on unrelated parts of the page — made each selector ambiguous everywhere.
+- Avoid: give form controls a `name` and locate by it (`statement-pdf`, `ledger-account`, `restore-file`, `restore-password`, `ledger-backup-password`, `new-account-label`, `new-account-type`). Treat a bare tag locator as a latent failure whenever a page is about to gain a second control of that kind.
+- Verify: the owner suite passes 8/8 with two file inputs and two selects rendered on the same page.
+
+## A wiped ledger and a wiped session look the same from a failing restore
+
+- Symptom: a browser test that empties the ledger and then restores it fails with `strong owner access required`, though the page is still signed in and the JWT still claims `aal2`.
+- Cause: reaching for `resetOwnerImportSurface` to empty the ledger. It also deletes the owner's `auth.mfa_factors`, and `private.has_strong_owner_access` counts verified factors in the database rather than trusting the token — so the session the restore needs is gone with the rows.
+- Avoid: for a mid-test wipe, delete the ledger tables directly under `session_replication_role = replica` and leave `auth` alone. Keep `resetOwnerImportSurface` for setup and teardown, where dropping the factors is harmless.
+- Verify: `tests/e2e/owner-session.spec.ts` "backs up a confirmed ledger and restores it after the ledger is destroyed" restores under the same session that took the backup.
+
 ## A leftover TOTP factor makes a later sign-in unable to reach aal2
 
 - Symptom: an authenticated suite fails at enrollment with `403 insufficient_aal`, "AAL2 required to enroll a new factor", on an owner whose password is correct.

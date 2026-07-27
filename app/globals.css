@@ -112,6 +112,18 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .account-create > p { color: var(--muted); font-size: 13px; line-height: 1.55; max-width: 70ch; }
 .account-create .binding-controls { margin: 16px 0 0; }
 .account-create .warning { margin-left: 0; }
+
+/* Recovery reads as infrastructure rather than as part of the import flow, because the
+   day it is needed there is no import in progress. */
+.recovery-band { padding: 46px 0 54px; border-top: 1px solid var(--line); }
+.recovery-band .bench-heading p { max-width: 78ch; }
+.recovery-grid { margin: 28px 0 0 167px; display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: 24px; align-items: start; }
+.recovery-half { display: grid; gap: 12px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); }
+.recovery-half h3 { font-size: 15px; }
+.recovery-half > p { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.recovery-half .account-control input[type="file"] { height: auto; padding: 12px 14px; font-size: 13px; }
+.recovery-half button { justify-self: start; }
+.recovery-band .warning { margin: 22px 0 0 167px; }
 .primary-button:disabled, .secondary-button:disabled, .account-control select:disabled { opacity: .5; cursor: not-allowed; }
 .primary-button:disabled:hover { border-color: var(--blue); background: var(--blue); }
 .synthetic-badge.bound { color: var(--blue); border-color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
@@ -195,6 +207,8 @@ footer p { margin: 0; }
   .binding-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .binding-bench .warning { margin-left: 0; }
   .account-create { margin-left: 0; }
+  .recovery-grid { margin-left: 0; grid-template-columns: 1fr; }
+  .recovery-band .warning { margin-left: 0; }
   .label-diagnostic { margin-left: 0; }
   .status-line { margin-left: 0; }
   .or-rule { display: none; }

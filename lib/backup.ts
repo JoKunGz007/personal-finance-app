@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { canonicalJson } from "@/lib/canonical";
 
 const ITERATIONS = 600_000;
@@ -17,6 +18,22 @@ export type EncryptedBackup = {
   nonce: string;
   ciphertext: string;
 };
+
+// A restore starts by being handed a file. Checking its shape first means "this is not a
+// Private Ledger backup" is answered as such, rather than surfacing as a decryption
+// failure that reads like a wrong password — the one error a person recovering a ledger
+// least wants to misdiagnose.
+export const encryptedBackupSchema = z.object({
+  header: z.object({
+    envelopeVersion: z.literal(1),
+    kdf: z.literal("PBKDF2-HMAC-SHA-256"),
+    iterations: z.literal(600000),
+    cipher: z.literal("AES-256-GCM")
+  }).strict(),
+  salt: z.string().min(1),
+  nonce: z.string().min(1),
+  ciphertext: z.string().min(1)
+}).strict();
 
 const HEADER: BackupHeader = Object.freeze({
   envelopeVersion: 1,

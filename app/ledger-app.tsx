@@ -2,7 +2,9 @@
 
 import { useMemo, useRef, useState } from "react";
 import { accountListSchema, createAccountSchema, ledgerAccountSchema, type LedgerAccount } from "@/lib/accounts";
-import { encryptBackup } from "@/lib/backup";
+import { decryptBackup, encryptBackup, encryptedBackupSchema } from "@/lib/backup";
+import { BACKUP_TABLE_KINDS, backupSnapshotSchema } from "@/lib/backup-contract";
+import { buildRestorePlan } from "@/lib/restore-plan";
 import { sha256HexBytes } from "@/lib/canonical";
 import { assembleImportPayload } from "@/lib/import-assembly";
 import type { StatementFrame } from "@/lib/statement-frame";
@@ -35,6 +37,24 @@ function stageIndex(stage: Stage) {
   return stages.findIndex((item) => item.id === stage);
 }
 
+// Every route answers a failure as { error }. Reading it back rather than showing a
+// status code matters most on the recovery path, where the server's own wording is the
+// only guidance a person has.
+function readError(body: unknown, fallback: string): string {
+  return typeof body === "object" && body !== null && "error" in body
+    ? String((body as { error: unknown }).error)
+    : fallback;
+}
+
+function downloadFile(contents: string, name: string, type: string) {
+  const url = URL.createObjectURL(new Blob([contents], { type }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export function LedgerApp() {
   const [stage, setStage] = useState<Stage>("select");
   const [file, setFile] = useState<File | null>(null);
@@ -58,6 +78,12 @@ export function LedgerApp() {
   const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
   const [backupPassword, setBackupPassword] = useState("");
   const [backupStale, setBackupStale] = useState(false);
+  const [ledgerBackupPassword, setLedgerBackupPassword] = useState("");
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restorePassword, setRestorePassword] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryNote, setRecoveryNote] = useState<string | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
 
   const reconciliation = useMemo(
@@ -314,17 +340,112 @@ export function LedgerApp() {
         statement,
         overlays: rowCategories
       }, backupPassword);
-      const blob = new Blob([JSON.stringify(envelope)], { type: "application/vnd.private-ledger.demo+json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "private-ledger-synthetic.pldemo";
-      anchor.click();
-      URL.revokeObjectURL(url);
+      downloadFile(JSON.stringify(envelope), "private-ledger-synthetic.pldemo", "application/vnd.private-ledger.demo+json");
       setBackupPassword("");
       setStatus("Encrypted synthetic preview downloaded. It is not a restorable ledger backup.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Backup encryption failed.");
+    }
+  }
+
+  // The real ledger backup, as distinct from the `.pldemo` preview above it: the whole
+  // owner snapshot, encrypted in this browser with a password the server never sees.
+  //
+  // Custody is acknowledged only after the file has been handed to the download flow, and
+  // the database marks the backup current only if the ledger has not moved since the
+  // snapshot was taken — so "backed up" means an artifact exists, not that an export ran.
+  async function downloadLedgerBackup() {
+    setRecoveryError(null);
+    setRecoveryNote(null);
+    setRecoveryBusy(true);
+    try {
+      const response = await fetch("/api/v1/backups/export", { cache: "no-store" });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(readError(body, "The backup could not be exported."));
+
+      const exported = body as { digest?: unknown; payload?: unknown };
+      const snapshot = backupSnapshotSchema.safeParse(exported.payload);
+      if (!snapshot.success) throw new Error("The exported snapshot did not match its contract, so it was not written to a file.");
+
+      const envelope = await encryptBackup(snapshot.data, ledgerBackupPassword);
+      downloadFile(
+        JSON.stringify(envelope),
+        `private-ledger-backup-${snapshot.data.exportedAt.slice(0, 10)}.plbak`,
+        "application/vnd.private-ledger.backup+json"
+      );
+
+      const acknowledged = await fetch("/api/v1/backups/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ digest: String(exported.digest), snapshotSequence: snapshot.data.snapshotSequence })
+      });
+      setLedgerBackupPassword("");
+      if (!acknowledged.ok) {
+        // The file is on disk either way. What failed is the record of custody, and
+        // saying so is more useful than reporting a failed backup.
+        setRecoveryNote(`Backup written, but custody was not recorded: ${readError(await acknowledged.json().catch(() => null), "the ledger changed while the file was being written.")} Export again to clear the staleness flag.`);
+        return;
+      }
+      setBackupStale(false);
+      const counted = Object.values(snapshot.data.tableCounts).reduce((sum, count) => sum + count, 0);
+      setRecoveryNote(`Encrypted backup written and custody recorded: ${counted} rows across ${BACKUP_TABLE_KINDS.length} tables. Keep the file and its password apart.`);
+    } catch (error) {
+      setRecoveryError(error instanceof Error ? error.message : "The backup could not be written.");
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
+  // Recovery: decrypt the artifact here, build the request sequence the server accepts,
+  // and send it. `lib/restore-plan.ts` is what makes this a page rather than a project —
+  // the manifest binds eleven chunk digests, an aggregate payload digest, the snapshot
+  // sequence and per-table counts, all recomputed server-side.
+  //
+  // The destination must be an empty ledger, which is the point rather than a limitation:
+  // a restore rebinds every row to whoever is signed in, so allowing it over live data
+  // would be an overwrite wearing a recovery's clothes.
+  async function restoreLedgerBackup() {
+    setRecoveryError(null);
+    setRecoveryNote(null);
+    setRecoveryBusy(true);
+    try {
+      if (!restoreFile) throw new Error("Choose a .plbak backup file first.");
+      const envelope = encryptedBackupSchema.safeParse(JSON.parse(await restoreFile.text()) as unknown);
+      if (!envelope.success) throw new Error("That file is not a Private Ledger backup.");
+
+      let snapshot: unknown;
+      try {
+        snapshot = await decryptBackup(envelope.data, restorePassword);
+      } catch {
+        // Distinguish the two failures a person actually hits. Both surface from WebCrypto
+        // as the same opaque error, and "wrong password" is the recoverable one.
+        throw new Error("The backup could not be decrypted. Check the password; if it is right, the file has been altered.");
+      }
+
+      const plan = await buildRestorePlan(snapshot);
+      const steps: [string, unknown][] = [
+        ["stage", plan.stage],
+        ...plan.chunks.map((chunk) => ["chunk", chunk] as [string, unknown]),
+        ["commit", plan.commit]
+      ];
+      for (const [action, request] of steps) {
+        const response = await fetch(`/api/v1/backups/restores/${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request)
+        });
+        if (!response.ok) {
+          throw new Error(readError(await response.json().catch(() => null), `The restore failed at the ${action} step.`));
+        }
+      }
+      setRestorePassword("");
+      setRestoreFile(null);
+      setBackupStale(true);
+      setRecoveryNote("Ledger restored. Every row is now bound to the signed-in owner, and the restored ledger is marked backup-stale.");
+    } catch (error) {
+      setRecoveryError(error instanceof Error ? error.message : "The ledger could not be restored.");
+    } finally {
+      setRecoveryBusy(false);
     }
   }
 
@@ -371,7 +492,7 @@ export function LedgerApp() {
           <div className="import-controls">
             <label className="file-control">
               <span>Statement PDF</span>
-              <input type="file" accept="application/pdf,.pdf" onChange={(event) => {
+              <input type="file" name="statement-pdf" accept="application/pdf,.pdf" onChange={(event) => {
                 const nextFile = event.target.files?.[0] ?? null;
                 setFile(nextFile);
                 setStage(nextFile ? "unlock" : "select");
@@ -469,6 +590,7 @@ export function LedgerApp() {
               <label className="account-control">
                 <span>Ledger account</span>
                 <select
+                  name="ledger-account"
                   value={chosenAccountId}
                   disabled={!accounts || accounts.length === 0}
                   onChange={(event) => { setChosenAccountId(event.target.value); setBindingError(null); }}
@@ -606,6 +728,77 @@ export function LedgerApp() {
             </div>
           </section>
         ) : null}
+        {/* The real recovery surface, and deliberately not tied to a parsed statement:
+            the moment a person needs it is the moment they have no statement in hand and
+            possibly no other copy of the ledger. Both halves run in this browser — the
+            snapshot is encrypted here and decrypted here, and the password never leaves. */}
+        <section className="recovery-band" aria-labelledby="recovery-title">
+          <div className="bench-heading">
+            <p className="section-index">Recovery / 04</p>
+            <div>
+              <h2 id="recovery-title">Back up and restore the ledger</h2>
+              <p>
+                This is the real ledger backup, not the synthetic preview: the whole owner snapshot, encrypted in this browser under a password the server never receives.
+                Keep the file and the password apart — either one alone is useless, and losing both makes the ledger unrecoverable.
+              </p>
+            </div>
+          </div>
+
+          <div className="recovery-grid">
+            <div className="recovery-half">
+              <h3>Export an encrypted backup</h3>
+              <p>Custody is recorded only after the file is written, and only if the ledger has not changed since the snapshot was taken.</p>
+              <label className="account-control">
+                <span>Backup password</span>
+                <input
+                  type="password"
+                  name="ledger-backup-password"
+                  minLength={12}
+                  autoComplete="new-password"
+                  value={ledgerBackupPassword}
+                  placeholder="At least 12 characters…"
+                  onChange={(event) => setLedgerBackupPassword(event.target.value)}
+                />
+              </label>
+              <button type="button" className="secondary-button" disabled={recoveryBusy || ledgerBackupPassword.length < 12} onClick={downloadLedgerBackup}>
+                Export encrypted backup
+              </button>
+            </div>
+
+            <div className="recovery-half">
+              <h3>Restore from a backup</h3>
+              <p>
+                Restoring rebinds every row to the signed-in owner, so it requires an <b>empty ledger</b> and is refused otherwise.
+                That is what makes it a recovery into a fresh installation rather than an overwrite of a live one.
+              </p>
+              <label className="account-control">
+                <span>Backup file</span>
+                <input
+                  type="file"
+                  name="restore-file"
+                  accept=".plbak,application/json"
+                  onChange={(event) => { setRestoreFile(event.target.files?.[0] ?? null); setRecoveryError(null); }}
+                />
+              </label>
+              <label className="account-control">
+                <span>Backup password</span>
+                <input
+                  type="password"
+                  name="restore-password"
+                  autoComplete="off"
+                  value={restorePassword}
+                  onChange={(event) => setRestorePassword(event.target.value)}
+                />
+              </label>
+              <button type="button" className="secondary-button" disabled={recoveryBusy || !restoreFile || restorePassword === ""} onClick={restoreLedgerBackup}>
+                Restore this ledger
+              </button>
+            </div>
+          </div>
+
+          {recoveryNote ? <div className="warning" role="status"><strong>Recovery</strong><span>{recoveryNote}</span></div> : null}
+          {recoveryError ? <div className="warning error" role="alert"><strong>Recovery failed</strong><span>{recoveryError}</span></div> : null}
+        </section>
       </main>
 
       <footer><span>Private Ledger</span><p>No analytics · no session replay · no financial response caching</p></footer>

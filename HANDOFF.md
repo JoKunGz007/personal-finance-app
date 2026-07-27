@@ -24,6 +24,8 @@ Re-reading the masked dumps before writing the reader found **both layout contra
 
 **The app can create the account a statement needs** (D-045, migration 010). This, not recovery, was what actually stood between the project and a real import: every account came from the seed, `public.accounts` grants `authenticated` select only, and both real statements printed suffixes no seeded account carried — so a statement could be read, cross-checked and bound to nothing. `public.mutate_account` is the single write path, and the bind stage offers the form exactly when nothing matches. Create and relabel only; relabel has no route or UI yet, on purpose (`PLAN.md` task 15).
 
+**And it can back itself up and restore itself** (D-046). § Recovery / 04 exports a real encrypted `.plbak` — custody acknowledged only after the file is written, and only if the ledger has not moved — and restores one into an empty ledger. Read `docs/RECOVERY.md` § Recovery from the app before changing either half.
+
 Verified on 2026-07-27 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
 
 | Check | Result |
@@ -31,8 +33,8 @@ Verified on 2026-07-27 with the project-local Node 24.18.0 runtime and pinned pn
 | ESLint / `tsc --noEmit` / production build | Passed |
 | Vitest, both live containers | 164 passed, 7 skipped (2026-07-27) |
 | Playwright, isolated config | 14/14 desktop and mobile |
-| Playwright, owner config | 6/6 — binding chooser, refused binding, charset rejection, an SCB import, an SCB statement refused against a Krungthai account sharing its last four, and an account created from the bind stage |
-| Portable recovery | Passed — a ledger carried into the separately bound `private-ledger-recovery` project and back out. Skips unless `node scripts/recovery-destination.mjs up` has run |
+| Playwright, owner config | 8/8 — binding chooser, refused binding, charset rejection, an SCB import, an SCB statement refused against a Krungthai account sharing its last four, an account created from the bind stage, and a ledger backed up, destroyed and restored from the app |
+| Portable recovery | Passed — a ledger carried into the separately bound `private-ledger-recovery` project and back out. **Skips unless `node scripts/recovery-destination.mjs up` has run, and the Vitest totals look identical either way** — the skip trades one pass for one skip. Check this row, not the count |
 | pgTAP | 104/104 (migrations 001–010), re-run 2026-07-27 after a clean reset |
 
 **A skipped run is not evidence** — start the stack with `pnpm supabase:start` before trusting a green suite. The 7 skips are the unreachable-container reporters, which skip precisely because the containers *were* reachable.
@@ -45,9 +47,9 @@ Order matters between the two browser suites and Vitest: `public.accounts` is un
 
 Task 12 is closed (D-043, below), and so is the recovery gate that followed it: portable recovery into an empty separately bound project passes locally (D-044, § Later authorization gates item 3).
 
-Account creation followed it (D-045, task 15) and was the more consequential of the two: the recovery gate looked like the last obstacle to a real import and was not, because the app had no way to produce an account either real statement could bind to.
+Account creation followed it (D-045, task 15) and was the more consequential of the two: the recovery gate looked like the last obstacle to a real import and was not, because the app had no way to produce an account either real statement could bind to. Then the recovery surface itself (D-046, task 14) — the app now exports a real encrypted `.plbak` and restores one, proven by a browser test that destroys the ledger between the two halves.
 
-Two things are open. **Task 14, a recovery surface a person can drive** — the contract is portable, but the app has no restore screen and its only export button produces the non-restorable `.pldemo` preview, so a real recovery is driven from code via `lib/restore-plan.ts`. **Task 13, receipts**, is behind a CSP spike for whether tesseract.js runs under this policy at all (D-037). Neither blocks the other.
+**Task 13, receipts, is the only open build task**, behind a CSP spike for whether tesseract.js runs under this policy at all (D-037). Nothing there starts before one masked receipt dump exists — and note that `masked-dumps/` was deleted on 2026-07-27, having served its purpose for the statement layouts, so a receipt dump means a fresh owner-driven run of the harness.
 
 Whether to import a real statement is now the owner's question to answer rather than a gate to pass. Nothing here makes it advisable on its own: no hosted recovery has been rehearsed, and `SPEC.md` still holds "committed data remains invented only".
 
@@ -73,7 +75,7 @@ Two cautions the real-statement reads earned. The unit suite is weaker evidence 
 
 ## Before you touch anything
 
-- `masked-dumps/` holds 12 SCB and 3 KBANK dumps. They are gitignored working material, not fixtures, and both readers are now built from them — delete them once a real statement of each layout has been read.
+- `masked-dumps/` **was deleted on 2026-07-27**, having served its purpose: both readers are built from those dumps and both have since met a real statement. Task 13 (receipts) needs a fresh owner-driven run of `scripts/mask-statement.mjs`; there is nothing left to read.
 - Run `git status --short`. **Three** config files (`eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml`) are **intentionally uncommitted** — preserve them. `.gitignore` used to be a fourth and is now committed: it had to be, because it is the only thing ignoring `.runtime/` (where the development sign-in writes TOTP secrets) and `masked-dumps/`, and the committed copy ignored neither. A fresh clone would have tracked both.
 - `main` was level with `origin/main` at the end of 2026-07-27, carrying the portable-recovery work of D-044 and the account creation of D-045. Run `git status --short` and `git log --oneline -3` rather than trusting this line — it is a snapshot. Apart from the three config files above, the tree was clean. Treat commit and push authorization as spent; ask again.
 - The recovery destination is a **second Supabase project** and may be left stopped. `node scripts/recovery-destination.mjs up` starts and migrates it; `down` stops it and discards its data. It uses ports 5433x, so it does not collide with the primary stack, and `tests/recovery-portability.test.ts` skips without it.

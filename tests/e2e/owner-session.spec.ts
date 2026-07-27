@@ -24,6 +24,9 @@ const SCB_ACCOUNT = "cccccccc-0000-4000-8000-000000000023";
 const TEST_ACCOUNTS = [MATCHING_ACCOUNT, MISMATCHED_ACCOUNT, SCB_ACCOUNT];
 const PASSWORD_FIELD = 'input[name="statement-unlock-code"]';
 const UNLOCK_CODE = "synthetic-unlock-not-a-real-password";
+// Invented, and only ever used against synthetic rows in a local container. The backup
+// envelope requires at least twelve characters (lib/backup.ts).
+const BACKUP_PASSWORD = "synthetic-recovery-rehearsal-2026";
 
 const reachable = containerReachable();
 test.skip(!reachable, "The local Supabase container is unreachable; run `pnpm supabase:start`.");
@@ -91,7 +94,7 @@ async function signIn(page: import("@playwright/test").Page) {
 }
 
 async function readStatement(page: import("@playwright/test").Page, pdf: Uint8Array) {
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.locator('input[name="statement-pdf"]').setInputFiles({
     name: "synthetic-statement.pdf",
     mimeType: "application/pdf",
     buffer: Buffer.from(pdf)
@@ -110,7 +113,7 @@ test("binds a statement through the chooser and confirms the import", async ({ p
   await expect(page.getByRole("button", { name: "Bind statement to this account" })).toBeDisabled();
   await page.getByRole("button", { name: "Load ledger accounts" }).click();
 
-  const chooser = page.locator("select");
+  const chooser = page.locator('select[name="ledger-account"]');
   await expect(chooser.locator("option")).toHaveCount(expectedOptionCount(), { timeout: 15_000 });
   await chooser.selectOption(MATCHING_ACCOUNT);
   await page.getByRole("button", { name: "Bind statement to this account" }).click();
@@ -168,12 +171,101 @@ test("creates the account a statement needs, from the bind stage", async ({ page
   await expect(page.getByRole("status")).toContainText("Bound to Browser created KBANK");
 });
 
+// Recovery driven entirely from the app, which until now it could not be: the export
+// button produced a `.pldemo` preview that is explicitly not restorable, and there was no
+// restore surface at all, so a real recovery meant writing code (PLAN task 14).
+//
+// Import, back up, destroy the ledger, restore it. Wiping between the two halves is what
+// makes this a recovery rather than a round trip against data that never left.
+test("backs up a confirmed ledger and restores it after the ledger is destroyed", async ({ page }) => {
+  const owner = ownerId();
+
+  await signIn(page);
+  await readStatement(page, buildStatementPdf(validStatement));
+  await page.getByRole("button", { name: "Load ledger accounts" }).click();
+  const chooser = page.locator('select[name="ledger-account"]');
+  await expect(chooser.locator("option")).toHaveCount(expectedOptionCount(), { timeout: 15_000 });
+  await chooser.selectOption(MATCHING_ACCOUNT);
+  await page.getByRole("button", { name: "Bind statement to this account" }).click();
+  await expect(page.getByRole("status")).toContainText("Bound to Browser synthetic");
+  await page.getByRole("button", { name: "Confirm import" }).click();
+  // Asserted positively. `not.toContainText` passes while the import is still in flight,
+  // which reports a failure several assertions later and in the wrong place.
+  await expect(page.getByRole("status")).toContainText("Confirmed 4 rows", { timeout: 30_000 });
+  expect(psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`).output.trim()).toBe("4");
+
+  // Export. The download is the artifact — there is no server-side copy, by design.
+  await page.locator('input[name="ledger-backup-password"]').fill(BACKUP_PASSWORD);
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export encrypted backup" }).click();
+  const download = await downloading;
+  const artifact = await download.path();
+  expect(artifact, "the backup must have been written to a file").toBeTruthy();
+  await expect(page.getByText(/Encrypted backup written and custody recorded/u)).toBeVisible({ timeout: 30_000 });
+
+  // Destroy the ledger. Deliberately not resetOwnerImportSurface: that also removes the
+  // owner's TOTP factors, which would drop the very session the restore needs.
+  const wiped = psql(`
+    begin;
+    set local session_replication_role = replica;
+    delete from public.restore_chunks; delete from public.restore_runs;
+    delete from public.overlay_revisions; delete from public.transaction_overlays;
+    delete from public.import_batch_rows; delete from public.source_components;
+    delete from public.source_transactions; delete from public.audit_events;
+    delete from public.import_batches; delete from public.import_artifacts;
+    delete from public.categories; delete from public.accounts;
+    set local session_replication_role = origin;
+    commit;
+  `);
+  expect(wiped.ok, `wipe failed: ${wiped.output}`).toBe(true);
+  expect(psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`).output.trim()).toBe("0");
+
+  // Restore, from the file and the password alone.
+  await page.locator('input[name="restore-file"]').setInputFiles(artifact!);
+  await page.locator('input[name="restore-password"]').fill(BACKUP_PASSWORD);
+  await page.getByRole("button", { name: "Restore this ledger" }).click();
+  await expect(page.getByText(/Ledger restored/u)).toBeVisible({ timeout: 60_000 });
+
+  // Assert against the database. Every row, its account, and its provenance must be back.
+  expect(psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`).output.trim(), "all four rows must return").toBe("4");
+  expect(psql(`select count(*) from public.import_batches where owner_id = '${owner}';`).output.trim(), "the batch must return").toBe("1");
+  expect(psql(`select label from public.accounts where id = '${MATCHING_ACCOUNT}';`).output.trim(), "the bound account must return").toBe("Browser synthetic");
+});
+
+test("refuses a restore into a ledger that still holds rows", async ({ page }) => {
+  // The check that makes a restore a recovery rather than an overwrite. It is enforced at
+  // commit, after all eleven chunks are accepted, so the failure arrives at the end.
+  await signIn(page);
+  await readStatement(page, buildStatementPdf(validStatement));
+  await page.getByRole("button", { name: "Load ledger accounts" }).click();
+  const chooser = page.locator('select[name="ledger-account"]');
+  await expect(chooser.locator("option")).toHaveCount(expectedOptionCount(), { timeout: 15_000 });
+  await chooser.selectOption(MATCHING_ACCOUNT);
+  await page.getByRole("button", { name: "Bind statement to this account" }).click();
+  await expect(page.getByRole("status")).toContainText("Bound to Browser synthetic");
+  await page.getByRole("button", { name: "Confirm import" }).click();
+  // Asserted positively. `not.toContainText` passes while the import is still in flight,
+  // which reports a failure several assertions later and in the wrong place.
+  await expect(page.getByRole("status")).toContainText("Confirmed 4 rows", { timeout: 30_000 });
+
+  await page.locator('input[name="ledger-backup-password"]').fill(BACKUP_PASSWORD);
+  const downloading = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export encrypted backup" }).click();
+  const artifact = await (await downloading).path();
+
+  // No wipe this time: the ledger it came from is still populated.
+  await page.locator('input[name="restore-file"]').setInputFiles(artifact!);
+  await page.locator('input[name="restore-password"]').fill(BACKUP_PASSWORD);
+  await page.getByRole("button", { name: "Restore this ledger" }).click();
+  await expect(page.getByText(/Restore requires an empty destination ledger/u)).toBeVisible({ timeout: 60_000 });
+});
+
 test("refuses to bind a statement to an account it does not match", async ({ page }) => {
   await signIn(page);
   await readStatement(page, buildStatementPdf(validStatement));
 
   await page.getByRole("button", { name: "Load ledger accounts" }).click();
-  const chooser = page.locator("select");
+  const chooser = page.locator('select[name="ledger-account"]');
   await expect(chooser.locator("option")).toHaveCount(expectedOptionCount(), { timeout: 15_000 });
   // Ending 1357, while the statement prints 7890. A plausible-but-wrong binding is the
   // worst failure this ledger has, so it must be refused rather than reconciled.
@@ -206,7 +298,7 @@ test("rejects a statement carrying a character outside the import charset", asyn
   await readStatement(page, outOfCharset);
 
   await page.getByRole("button", { name: "Load ledger accounts" }).click();
-  const chooser = page.locator("select");
+  const chooser = page.locator('select[name="ledger-account"]');
   await expect(chooser.locator("option")).toHaveCount(expectedOptionCount(), { timeout: 15_000 });
   await chooser.selectOption(MATCHING_ACCOUNT);
   await page.getByRole("button", { name: "Bind statement to this account" }).click();
@@ -235,7 +327,7 @@ test("carries an SCB statement through the chooser into confirm_import", async (
   await readStatement(page, buildStatementPdf(scbStatement));
 
   await page.getByRole("button", { name: "Load ledger accounts" }).click();
-  const chooser = page.locator("select");
+  const chooser = page.locator('select[name="ledger-account"]');
   await expect(chooser.locator("option")).toHaveCount(expectedOptionCount(), { timeout: 15_000 });
   await chooser.selectOption(SCB_ACCOUNT);
   await page.getByRole("button", { name: "Bind statement to this account" }).click();
@@ -265,7 +357,7 @@ test("refuses an SCB statement bound to a Krungthai account with the same last f
   await readStatement(page, buildStatementPdf(scbStatement));
 
   await page.getByRole("button", { name: "Load ledger accounts" }).click();
-  const chooser = page.locator("select");
+  const chooser = page.locator('select[name="ledger-account"]');
   await expect(chooser.locator("option")).toHaveCount(expectedOptionCount(), { timeout: 15_000 });
   await chooser.selectOption(MATCHING_ACCOUNT);
   await page.getByRole("button", { name: "Bind statement to this account" }).click();

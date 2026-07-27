@@ -28,9 +28,19 @@ node scripts/recovery-destination.mjs down    # stop it and discard its data
 
 The rehearsal exports over HTTP from the primary project under a real aal2 session, encrypts and decrypts the artifact, builds the request sequence with `lib/restore-plan.ts`, and stages, chunks and commits it into the destination under that project's own aal2 session. It then asserts that every table arrived intact, that the source owner survives nowhere — including inside the jsonb an overlay revision embeds — and that a second recovery into the now-populated destination is refused for being non-empty.
 
-**Use `lib/restore-plan.ts` to build a real restore.** It produces the exact stage/chunk/commit sequence `public.restore_backup` accepts. The manifest binds eleven chunk digests, an aggregate payload digest, the snapshot sequence and per-table counts, all recomputed server-side; reconstructing that by hand during an actual recovery is not realistic.
+**Use `lib/restore-plan.ts` to build a restore outside the app.** It produces the exact stage/chunk/commit sequence `public.restore_backup` accepts. The manifest binds eleven chunk digests, an aggregate payload digest, the snapshot sequence and per-table counts, all recomputed server-side; reconstructing that by hand is not realistic.
 
-What this does not yet cover: there is no restore surface in the app, so a recovery today is driven by calling `POST /api/v1/backups/restores/[action]` (or the RPC) with a plan built by that module. The rehearsal drives PostgREST directly rather than through the Next.js route, and nothing hosted has been tested at all.
+What this rehearsal does not cover: it drives PostgREST directly rather than the Next.js route or the app, and nothing hosted has been tested at all.
+
+## Recovery from the app
+
+The app itself can now take a real backup and restore one — § Recovery / 04 on the page, available to a signed-in owner whether or not a statement is open.
+
+**Export** fetches `GET /api/v1/backups/export`, encrypts the snapshot in the browser under a password the server never receives, writes a `.plbak` file, and only then acknowledges custody through `POST /api/v1/backups/export`. The database marks the backup current only if the ledger has not moved since the snapshot was taken, so a file that was written while an import landed leaves the ledger backup-stale and says so.
+
+**Restore** takes the `.plbak` file and its password, decrypts in the browser, builds the request sequence with `lib/restore-plan.ts`, and sends stage, eleven chunks and commit to `POST /api/v1/backups/restores/[action]`. It requires an **empty ledger** and is refused otherwise, at commit, after every chunk has been accepted — that is what makes it a recovery into a fresh installation rather than an overwrite of a live one.
+
+Keep the file and its password apart, and note what the pair means: either alone is useless, and losing both makes the ledger unrecoverable. The `.pldemo` preview offered beside a parsed synthetic statement is a different artifact entirely and is not restorable.
 
 ## Hosted recovery rehearsal
 
