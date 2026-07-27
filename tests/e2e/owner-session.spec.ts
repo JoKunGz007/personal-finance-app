@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { validStatement } from "../fixtures/krungthai-layout-v1";
-import { scbStatement } from "../fixtures/statement-layouts";
+import { kbankStatement, scbStatement } from "../fixtures/statement-layouts";
 import { buildStatementPdf } from "../fixtures/synthetic-pdf";
 import { containerReachable, ownerId, psql, resetOwnerImportSurface } from "../helpers/local-owner";
 
@@ -46,6 +46,10 @@ test.beforeEach(() => {
     on conflict (id) do nothing;
   `);
   expect(setup.ok, `account setup failed: ${setup.output}`).toBe(true);
+  // The account-creation spec makes a KBANK account ending 7890 through the UI. Removing
+  // it here rather than only at the end keeps that spec starting from the dead end it is
+  // about, however a previous run ended.
+  psql(`delete from public.accounts where owner_id = '${owner}' and bank_code = 'KBANK' and last_four = '7890';`);
 });
 
 // The chooser lists every account the owner holds, and the seed now creates one per
@@ -63,7 +67,9 @@ function expectedOptionCount(): number {
 // ending 7890 for this same owner — so accounts left behind here fail those suites at
 // setup, with an error that points at them rather than at this file.
 test.afterAll(() => {
-  const cleaned = resetOwnerImportSurface(ownerId(), TEST_ACCOUNTS);
+  const owner = ownerId();
+  psql(`delete from public.accounts where owner_id = '${owner}' and bank_code = 'KBANK' and last_four = '7890';`);
+  const cleaned = resetOwnerImportSurface(owner, TEST_ACCOUNTS);
   expect(cleaned.ok, `teardown failed: ${cleaned.output}`).toBe(true);
 });
 
@@ -123,6 +129,43 @@ test("binds a statement through the chooser and confirms the import", async ({ p
   expect(batches.output.trim(), "the import must have landed").toBe("1");
   const rows = psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`);
   expect(rows.output.trim(), "all four synthetic rows must have landed").toBe("4");
+});
+
+// The dead end this closes was real: every account came from the seed, so a statement
+// printing a suffix none of them carried could be read, cross-checked, and then bound to
+// nothing at all. The seeded KBANK account ends 4242; this statement prints 7890.
+test("creates the account a statement needs, from the bind stage", async ({ page }) => {
+  await signIn(page);
+  await readStatement(page, buildStatementPdf(kbankStatement));
+
+  await page.getByRole("button", { name: "Load ledger accounts" }).click();
+
+  const create = page.getByRole("button", { name: /Create KBANK account/u });
+  await expect(create).toBeVisible({ timeout: 15_000 });
+  // Offered, but not before the account has a name.
+  await expect(create).toBeDisabled();
+
+  await page.locator('input[name="new-account-label"]').fill("Browser created KBANK");
+  await expect(create).toBeEnabled();
+  await create.click();
+
+  await expect(page.getByRole("status")).toContainText("Created Browser created KBANK", { timeout: 30_000 });
+
+  // Assert against the database, not the UI's account of itself. The audit row is the
+  // evidence this went through public.mutate_account rather than a direct insert —
+  // `authenticated` has no insert grant, and pgTAP holds it that way.
+  const owner = ownerId();
+  const created = psql(`select label, account_type from public.accounts
+    where owner_id = '${owner}' and bank_code = 'KBANK' and last_four = '7890';`);
+  expect(created.output.trim(), "the account must exist at the bank and suffix the statement printed").toBe("Browser created KBANK|savings");
+  const audited = psql(`select count(*) from public.audit_events
+    where owner_id = '${owner}' and event_type = 'account.create';`);
+  expect(audited.output.trim(), "creating an account must be audited").toBe("1");
+
+  // And the new account is already selected, so the statement binds without a second
+  // trip through the chooser — which is the whole point of offering it here.
+  await page.getByRole("button", { name: "Bind statement to this account" }).click();
+  await expect(page.getByRole("status")).toContainText("Bound to Browser created KBANK");
 });
 
 test("refuses to bind a statement to an account it does not match", async ({ page }) => {

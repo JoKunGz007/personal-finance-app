@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(24);
+select plan(28);
 
 select has_table('public', 'source_transactions', 'source transaction table exists');
 select has_table('public', 'source_components', 'source component table exists');
@@ -53,6 +53,14 @@ select ok(
 );
 select ok(not has_table_privilege('authenticated', 'public.categories', 'INSERT'), 'categories cannot be inserted directly');
 select ok(not has_table_privilege('authenticated', 'public.categories', 'UPDATE'), 'categories cannot be updated directly');
+
+-- The account write path is `public.mutate_account` and nothing else. If these ever pass
+-- by grant rather than by RPC, the strong-access gate, the audit row and the mutation
+-- sequence bump all become optional — a caller could create an account without any of them.
+select has_function('public', 'mutate_account', array['text','uuid','text','text','text','text'], 'audited account mutation RPC exists');
+select ok(not has_table_privilege('authenticated', 'public.accounts', 'INSERT'), 'accounts cannot be inserted directly');
+select ok(not has_table_privilege('authenticated', 'public.accounts', 'UPDATE'), 'accounts cannot be updated directly');
+select ok(not has_table_privilege('authenticated', 'public.accounts', 'DELETE'), 'accounts cannot be deleted directly');
 select is(private.canonical_jsonb('{"z":1,"a":{"y":true,"x":"v"}}'::jsonb), '{"a":{"x":"v","y":true},"z":1}', 'database canonical JSON matches TypeScript ordering');
 
 select * from finish();

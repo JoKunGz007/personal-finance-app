@@ -103,8 +103,15 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .binding-controls { margin: 26px 0 0 167px; display: grid; grid-template-columns: auto minmax(260px, 1fr) auto; align-items: end; gap: 12px; }
 .account-control { display: grid; gap: 7px; }
 .account-control > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
-.account-control select { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-weight: 400; }
+.account-control select, .account-control input { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-weight: 400; }
 .binding-bench .warning { margin-left: 167px; }
+
+/* The way out of a dead end, so it reads as an offer rather than as another control:
+   dashed, set apart, and shown only when no account could accept the statement. */
+.account-create { margin: 24px 0 0 167px; padding: 18px 20px 20px; border: 1px dashed var(--line); border-radius: var(--radius); background: color-mix(in srgb, var(--blue) 4%, var(--paper)); }
+.account-create > p { color: var(--muted); font-size: 13px; line-height: 1.55; max-width: 70ch; }
+.account-create .binding-controls { margin: 16px 0 0; }
+.account-create .warning { margin-left: 0; }
 .primary-button:disabled, .secondary-button:disabled, .account-control select:disabled { opacity: .5; cursor: not-allowed; }
 .primary-button:disabled:hover { border-color: var(--blue); background: var(--blue); }
 .synthetic-badge.bound { color: var(--blue); border-color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
@@ -187,6 +194,7 @@ footer p { margin: 0; }
   .import-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .binding-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .binding-bench .warning { margin-left: 0; }
+  .account-create { margin-left: 0; }
   .label-diagnostic { margin-left: 0; }
   .status-line { margin-left: 0; }
   .or-rule { display: none; }

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { confirmationDigest, rowFingerprint } from "@/lib/canonical";
-import { accountListSchema } from "@/lib/accounts";
+import { accountListSchema, ledgerAccountSchema } from "@/lib/accounts";
 import { assembleImportPayload } from "@/lib/import-assembly";
 import { extractStatement } from "@/lib/krungthai-layout";
 import type { ImportPayload } from "@/lib/statement";
@@ -18,6 +18,10 @@ import {
 // are invoked with a real cookie jar holding a real aal2 session.
 const ACCOUNT_ID = "cccccccc-0000-4000-8000-000000000011";
 const OTHER_ACCOUNT_ID = "cccccccc-0000-4000-8000-000000000012";
+// Accounts this suite creates through the route. Their ids come from the database, so
+// they are collected as they are made and torn down with the rest.
+const CREATED_LAST_FOUR = "3344";
+const created: string[] = [];
 
 const reachable = containerReachable();
 
@@ -107,7 +111,7 @@ describe.skipIf(!reachable)("import and accounts route handlers", () => {
 
   afterAll(() => {
     vi.unstubAllEnvs();
-    resetOwnerImportSurface(owner, [ACCOUNT_ID, OTHER_ACCOUNT_ID]);
+    resetOwnerImportSurface(owner, [ACCOUNT_ID, OTHER_ACCOUNT_ID, ...created]);
   });
 
   describe("GET /api/v1/accounts", () => {
@@ -132,6 +136,83 @@ describe.skipIf(!reachable)("import and accounts route handlers", () => {
         ["account_type", "bank_code", "currency", "id", "label", "last_four", "timezone"]
       );
     });
+  });
+
+  // Account creation is the only write path onto `public.accounts`: `authenticated` holds
+  // select alone, and pgTAP asserts that the insert grant stays absent, so this route and
+  // `public.mutate_account` are between the owner and an unbindable statement.
+  describe("POST /api/v1/accounts", () => {
+    function createRequest(body: unknown) {
+      return new Request("http://localhost/api/v1/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: typeof body === "string" ? body : JSON.stringify(body)
+      });
+    }
+
+    it("creates an account and returns it in the published shape", async () => {
+      const { POST, GET } = await import("@/app/api/v1/accounts/route");
+      const response = await POST(createRequest({
+        bank_code: "SCB", label: "Route created savings", account_type: "savings", last_four: CREATED_LAST_FOUR
+      }));
+      expect(response.status).toBe(201);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+
+      const account = ledgerAccountSchema.safeParse((await response.json()).account);
+      expect(account.success, account.success ? "" : JSON.stringify(account.error.flatten())).toBe(true);
+      if (!account.success) return;
+      created.push(account.data.id);
+
+      // Neither currency nor timezone is sent by the caller; the RPC supplies both, and
+      // the strict schema above would reject anything wider coming back.
+      expect(account.data.currency).toBe("THB");
+      expect(account.data.timezone).toBe("Asia/Bangkok");
+
+      const listed = accountListSchema.safeParse(await (await GET()).json());
+      expect(listed.success && listed.data.accounts.some((item) => item.id === account.data.id)).toBe(true);
+    }, 30_000);
+
+    it("records the creation as an audit event and advances the mutation sequence", async () => {
+      // Both are the RPC's doing rather than the route's, and both are what a direct
+      // insert would have skipped — so the route is only worth trusting if they landed.
+      const audited = psql(`select count(*) from public.audit_events
+        where owner_id = '${owner}' and event_type = 'account.create' and entity_id = '${created[0]}';`);
+      expect(audited.ok && audited.output.trim()).toBe("1");
+    }, 30_000);
+
+    it("refuses a second account at the same bank ending in the same digits", async () => {
+      const { POST } = await import("@/app/api/v1/accounts/route");
+      // ACCOUNT_ID is already KTB •••• 7890.
+      const response = await POST(createRequest({
+        bank_code: "KTB", label: "Duplicate", account_type: "current", last_four: "7890"
+      }));
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toMatch(/already ends in those digits/u);
+    }, 30_000);
+
+    it("allows the same digits at a different bank", async () => {
+      // The unique key is (owner_id, bank_code, last_four) precisely so this works: one
+      // owner may hold accounts ending in the same four digits at different banks (D-041).
+      const { POST } = await import("@/app/api/v1/accounts/route");
+      const response = await POST(createRequest({
+        bank_code: "KBANK", label: "Same digits elsewhere", account_type: "savings", last_four: "7890"
+      }));
+      expect(response.status).toBe(201);
+      created.push(ledgerAccountSchema.parse((await response.json()).account).id);
+    }, 30_000);
+
+    it("rejects a malformed account before it reaches the database", async () => {
+      const { POST } = await import("@/app/api/v1/accounts/route");
+      for (const body of [
+        { bank_code: "HSBC", label: "Unsupported", account_type: "savings", last_four: "1111" },
+        { bank_code: "SCB", label: "Short digits", account_type: "savings", last_four: "12" },
+        { bank_code: "SCB", label: "", account_type: "savings", last_four: "1111" },
+        { bank_code: "SCB", label: "Extra field", account_type: "savings", last_four: "1111", currency: "USD" }
+      ]) {
+        const response = await POST(createRequest(body));
+        expect(response.status, JSON.stringify(body)).toBe(422);
+      }
+    }, 30_000);
   });
 
   describe("POST /api/v1/imports/confirm", () => {

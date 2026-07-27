@@ -26,8 +26,9 @@ values (
 ) on conflict (id) do nothing;
 
 -- One account per supported layout, so an SCB or KBANK statement has somewhere to bind.
--- There is no account-creation surface in the app (D-041), so without these the two new
--- readers cannot be exercised end to end. All three share a last four, which the unique
+-- The app can now create accounts itself (D-045, migration 010), so these are no longer
+-- the only way one can exist — but the suites bind against them, so they stay. All three
+-- share a last four, which the unique
 -- constraint allows because it is on (owner_id, bank_code, last_four) — and having them
 -- share it is deliberate, since it proves the bind step distinguishes accounts by bank
 -- and not by digits alone.

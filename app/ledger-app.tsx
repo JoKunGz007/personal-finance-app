@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
+import { accountListSchema, createAccountSchema, ledgerAccountSchema, type LedgerAccount } from "@/lib/accounts";
 import { encryptBackup } from "@/lib/backup";
 import { sha256HexBytes } from "@/lib/canonical";
 import { assembleImportPayload } from "@/lib/import-assembly";
@@ -48,6 +48,9 @@ export function LedgerApp() {
   const [boundAccount, setBoundAccount] = useState<LedgerAccount | null>(null);
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const [bindingError, setBindingError] = useState<string | null>(null);
+  const [newAccountLabel, setNewAccountLabel] = useState("");
+  const [newAccountType, setNewAccountType] = useState<"savings" | "current">("savings");
+  const [createAccountError, setCreateAccountError] = useState<string | null>(null);
   const [labelCandidates, setLabelCandidates] = useState<string[][]>([]);
   const [valueLabels, setValueLabels] = useState<string[]>([]);
   const [structure, setStructure] = useState<string[]>([]);
@@ -189,6 +192,52 @@ export function LedgerApp() {
     setStatus(parsed.data.accounts.length === 0
       ? "No ledger accounts exist yet. One must be created before a statement can be bound."
       : `${parsed.data.accounts.length} ledger account(s) available. Binding is checked against the printed account and currency.`);
+  }
+
+  // Creating an account is the way out of a real dead end. A statement prints an account
+  // suffix, and until now nothing in the app could produce an account carrying it — every
+  // account came from the seed (D-041) — so a statement matching none of them could be
+  // read, cross-checked and then bound to nothing.
+  //
+  // The bank code and last four are taken from the statement rather than typed. Binding
+  // checks both, so any other value would create an account this statement still could
+  // not bind to, which is a worse dead end than the one it is meant to end.
+  async function createAccount() {
+    if (!extracted) return;
+    setCreateAccountError(null);
+    const parsed = createAccountSchema.safeParse({
+      bank_code: extracted.frame.bankCode,
+      label: newAccountLabel,
+      account_type: newAccountType,
+      last_four: extracted.frame.accountLastFour
+    });
+    if (!parsed.success) {
+      setCreateAccountError("Give the account a name between 1 and 120 characters.");
+      return;
+    }
+
+    const response = await fetch("/api/v1/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(parsed.data)
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      setCreateAccountError(typeof body === "object" && body !== null && "error" in body
+        ? String((body as { error: unknown }).error)
+        : "Account could not be created.");
+      return;
+    }
+
+    const created = ledgerAccountSchema.safeParse((body as { account?: unknown } | null)?.account);
+    setNewAccountLabel("");
+    await loadAccounts();
+    if (created.success) {
+      setChosenAccountId(created.data.id);
+      // An account is one of the tables a backup carries, so the last one is now stale.
+      setBackupStale(true);
+      setStatus(`Created ${created.data.label} •••• ${created.data.last_four}. The backup is now stale.`);
+    }
   }
 
   // Binding is a user decision, and assembleImportPayload refuses to act on it
@@ -433,6 +482,44 @@ export function LedgerApp() {
               <button className="primary-button" type="button" disabled={chosenAccountId === ""} onClick={bindStatement}>Bind statement to this account</button>
             </div>
             {bindingError ? <div className="warning error" role="alert"><strong>Binding refused</strong><span>{bindingError}</span></div> : null}
+
+            {/* Offered only once the accounts are loaded and none of them could possibly
+                accept this statement. Binding matches on bank and last four together, so
+                that pair is what decides whether this is a dead end — not the count of
+                accounts, and not the digits alone, since one owner may hold accounts
+                ending in the same four digits at different banks (D-041). */}
+            {accounts && !accounts.some((item) => item.bank_code === extracted.frame.bankCode && item.last_four === extracted.frame.accountLastFour) ? (
+              <div className="account-create">
+                <p>
+                  No <b>{extracted.frame.bankCode}</b> account ends in <b>{extracted.frame.accountLastFour}</b>, so there is nothing this statement can bind to yet.
+                  Create one — the bank and the last four digits come from the statement itself, because binding checks both.
+                </p>
+                <div className="binding-controls">
+                  <label className="account-control">
+                    <span>Account name</span>
+                    <input
+                      type="text"
+                      name="new-account-label"
+                      maxLength={120}
+                      value={newAccountLabel}
+                      placeholder="Everyday current account"
+                      onChange={(event) => { setNewAccountLabel(event.target.value); setCreateAccountError(null); }}
+                    />
+                  </label>
+                  <label className="account-control">
+                    <span>Account type</span>
+                    <select name="new-account-type" value={newAccountType} onChange={(event) => setNewAccountType(event.target.value === "current" ? "current" : "savings")}>
+                      <option value="savings">savings</option>
+                      <option value="current">current</option>
+                    </select>
+                  </label>
+                  <button className="secondary-button" type="button" disabled={newAccountLabel.trim() === ""} onClick={createAccount}>
+                    Create {extracted.frame.bankCode} account •••• {extracted.frame.accountLastFour}
+                  </button>
+                </div>
+                {createAccountError ? <div className="warning error" role="alert"><strong>Not created</strong><span>{createAccountError}</span></div> : null}
+              </div>
+            ) : null}
           </section>
         ) : null}
 

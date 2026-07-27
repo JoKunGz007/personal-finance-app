@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(46);
 
 -- Canonical signed-int64 text boundaries.
 select ok(private.is_canonical_int64_text('-9223372036854775808'), 'signed int64 minimum is canonical');
@@ -368,6 +368,90 @@ select throws_ok(
   'P0001',
   'contract version does not match account bank',
   'an SCB statement cannot be confirmed into a Krungthai account'
+);
+
+-- Account creation (migration 010). Until it existed, every account came from the seed,
+-- so a real statement whose printed suffix matched nothing could not be imported at all.
+create temporary table account_sequence_before as
+  select sequence from public.mutation_sequences where owner_id = '11111111-1111-4111-8111-111111111111';
+
+select lives_ok(
+  $$select public.mutate_account('create', null, 'KTB', 'Synthetic second current', 'current', '9911')$$,
+  'the owner creates an account'
+);
+
+select is(
+  (select account_type from public.accounts
+    where owner_id = '11111111-1111-4111-8111-111111111111' and bank_code = 'KTB' and last_four = '9911'),
+  'current',
+  'the created account is stored as given'
+);
+
+select is(
+  (select count(*)::integer from public.audit_events
+    where owner_id = '11111111-1111-4111-8111-111111111111' and event_type = 'account.create'),
+  1,
+  'creating an account writes exactly one audit event'
+);
+
+-- An account is one of the eleven tables a backup carries, so creating one must make the
+-- last backup stale. The sequence bump is what says so.
+select is(
+  (select sequence from public.mutation_sequences where owner_id = '11111111-1111-4111-8111-111111111111'),
+  (select sequence from account_sequence_before) + 1,
+  'creating an account advances the mutation sequence'
+);
+
+select throws_ok(
+  $$select public.mutate_account('create', null, 'KTB', 'Duplicate', 'current', '9911')$$,
+  'P0001',
+  'account already exists',
+  'the same bank and last four cannot be created twice'
+);
+
+-- The unique key is (owner_id, bank_code, last_four) precisely so this is allowed: one
+-- owner may hold accounts ending in the same digits at different banks (D-041).
+select lives_ok(
+  $$select public.mutate_account('create', null, 'SCB', 'Synthetic second savings', 'savings', '9911')$$,
+  'the same last four at another bank is a different account'
+);
+
+-- The bank list lives in the table CHECK and nowhere else, so that adding a fourth bank
+-- stays a one-line change. Migration 009 exists because a literal was restated in an RPC.
+select throws_ok(
+  $$select public.mutate_account('create', null, 'HSBC', 'Unsupported bank', 'savings', '9912')$$,
+  'P0001',
+  'invalid account',
+  'an unsupported bank code is refused by the constraint, not by a restated list'
+);
+
+select lives_ok(
+  $$select public.mutate_account('relabel',
+      (select id from public.accounts where owner_id = '11111111-1111-4111-8111-111111111111'
+        and bank_code = 'KTB' and last_four = '9911'),
+      null, 'Renamed current', null, null)$$,
+  'the owner relabels an account'
+);
+
+-- Identity is refused rather than ignored: a caller that sends bank_code believes it is
+-- changing it, and every stored fingerprint was computed from the one it has.
+select throws_ok(
+  $$select public.mutate_account('relabel',
+      (select id from public.accounts where owner_id = '11111111-1111-4111-8111-111111111111'
+        and bank_code = 'KTB' and last_four = '9911'),
+      'SCB', 'Rebanked', null, null)$$,
+  'P0001',
+  'account identity cannot be changed',
+  'an account cannot be moved to another bank by relabelling it'
+);
+
+select set_config('request.jwt.claims',
+  '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","aal":"aal1"}', true);
+select throws_ok(
+  $$select public.mutate_account('create', null, 'KTB', 'Weak session', 'current', '9913')$$,
+  'P0001',
+  'strong owner access required',
+  'a single-factor session cannot create an account'
 );
 
 select * from finish();

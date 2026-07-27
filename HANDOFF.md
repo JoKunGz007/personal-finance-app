@@ -1,10 +1,10 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-07-27 (portable recovery into a separately bound project)
+Last updated: 2026-07-27 (portable recovery, then account creation)
 
 Thin entry point. Project state lives in the maintained docs — do not duplicate it here.
 
-Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-044) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
+Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-045) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture, and recovery contracts are in `PRODUCT.md`, `DESIGN.md`, and `docs/` — including the three per-bank layout contracts, [docs/KRUNGTHAI_CONTRACT.md](docs/KRUNGTHAI_CONTRACT.md), [docs/SCB_CONTRACT.md](docs/SCB_CONTRACT.md) and [docs/KBANK_CONTRACT.md](docs/KBANK_CONTRACT.md). Local setup and the validation order are in `docs/LOCAL_DEV.md`.
 
@@ -22,18 +22,20 @@ Re-reading the masked dumps before writing the reader found **both layout contra
 
 **A backup now restores into a project that never held it** (D-044). A second local Supabase project, `private-ledger-recovery`, bound to a different invented owner, receives a ledger exported from the primary one — over HTTP under real aal2 sessions on both sides — and every owner and actor identity is rebound, including one embedded inside `overlay_revisions.snapshot` where no column-level check reaches. That discharges `PLAN.md` § Later authorization gates item 3 locally. It does not authorize importing real data, which stays the owner's decision; and the app still has no restore surface a person can drive (`PLAN.md` task 14). Bring the destination up with `node scripts/recovery-destination.mjs up`, and read `docs/RECOVERY.md` § Portable recovery rehearsal.
 
+**The app can create the account a statement needs** (D-045, migration 010). This, not recovery, was what actually stood between the project and a real import: every account came from the seed, `public.accounts` grants `authenticated` select only, and both real statements printed suffixes no seeded account carried — so a statement could be read, cross-checked and bound to nothing. `public.mutate_account` is the single write path, and the bind stage offers the form exactly when nothing matches. Create and relabel only; relabel has no route or UI yet, on purpose (`PLAN.md` task 15).
+
 Verified on 2026-07-27 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
 
 | Check | Result |
 | --- | --- |
 | ESLint / `tsc --noEmit` / production build | Passed |
-| Vitest, both live containers | 159 passed, 7 skipped (2026-07-27) |
+| Vitest, both live containers | 164 passed, 7 skipped (2026-07-27) |
 | Playwright, isolated config | 14/14 desktop and mobile |
-| Playwright, owner config | 5/5 — binding chooser, refused binding, charset rejection, an SCB import, and an SCB statement refused against a Krungthai account sharing its last four |
+| Playwright, owner config | 6/6 — binding chooser, refused binding, charset rejection, an SCB import, an SCB statement refused against a Krungthai account sharing its last four, and an account created from the bind stage |
 | Portable recovery | Passed — a ledger carried into the separately bound `private-ledger-recovery` project and back out. Skips unless `node scripts/recovery-destination.mjs up` has run |
-| pgTAP | 90/90 (migrations 001–009) — **last run 2026-07-26**; no SQL has changed since, but re-run before any change that touches it |
+| pgTAP | 104/104 (migrations 001–010), re-run 2026-07-27 after a clean reset |
 
-**A skipped run is not evidence** — start the stack with `pnpm supabase:start` before trusting a green suite. The 6 skips are the unreachable-container reporters, which skip precisely because the container *was* reachable. pgTAP has not been re-run this round; nothing since has touched SQL, a migration, or database code, but re-run it before any change that does.
+**A skipped run is not evidence** — start the stack with `pnpm supabase:start` before trusting a green suite. The 7 skips are the unreachable-container reporters, which skip precisely because the containers *were* reachable.
 
 Order matters between the two browser suites and Vitest: `public.accounts` is unique on (owner_id, bank_code, last_four) and they all want an account ending 7890 for the one owner, so a suite that leaves accounts behind breaks the next one (GOTCHAS). Both clean up in teardown now.
 
@@ -43,11 +45,13 @@ Order matters between the two browser suites and Vitest: `public.accounts` is un
 
 Task 12 is closed (D-043, below), and so is the recovery gate that followed it: portable recovery into an empty separately bound project passes locally (D-044, § Later authorization gates item 3).
 
+Account creation followed it (D-045, task 15) and was the more consequential of the two: the recovery gate looked like the last obstacle to a real import and was not, because the app had no way to produce an account either real statement could bind to.
+
 Two things are open. **Task 14, a recovery surface a person can drive** — the contract is portable, but the app has no restore screen and its only export button produces the non-restorable `.pldemo` preview, so a real recovery is driven from code via `lib/restore-plan.ts`. **Task 13, receipts**, is behind a CSP spike for whether tesseract.js runs under this policy at all (D-037). Neither blocks the other.
 
-The question the recovery gate was standing in front of — whether to import a real statement — is now the owner's to answer rather than a gate to pass. Nothing about D-044 makes it advisable on its own: no hosted recovery has been rehearsed, and `SPEC.md` still holds "committed data remains invented only".
+Whether to import a real statement is now the owner's question to answer rather than a gate to pass. Nothing here makes it advisable on its own: no hosted recovery has been rehearsed, and `SPEC.md` still holds "committed data remains invented only".
 
-**Do not import a real statement without asking.** Neither of the two that were read was imported, and doing so crosses the standing "invented data only" line in `SPEC.md`. The recovery gate that used to stand in front of it now passes (D-044), so what remains is an explicit owner decision rather than an unmet condition — treat the gate's passing as removing an obstacle, not as granting permission. Binding refuses today anyway: both statements print account suffixes no seeded account matches.
+**Do not import a real statement without asking.** Neither of the two that were read was imported, and doing so crosses the standing "invented data only" line in `SPEC.md`. Two things have changed about this, and both cut the same way: the recovery gate that stood in front of it now passes (D-044), and the practical obstacle is gone too — **binding no longer refuses by default**, because the bind stage can now create the account a statement needs (D-045). What remains is an explicit owner decision and nothing else. Treat both changes as removing obstacles, not as granting permission.
 
 `lib/krungthai-layout.ts` was left alone apart from carrying its contract version, as the design decision required — and the dumps proved that right rather than merely cautious. Its midpoint column banding could not have been reused: in both new layouts the heading x positions do not bound the data columns, so `lib/statement-layout.ts` reads an ordered row grammar instead. Migrating Krungthai onto it is optional and unstarted; its 48 tests are the safety net if anyone does.
 
@@ -71,7 +75,7 @@ Two cautions the real-statement reads earned. The unit suite is weaker evidence 
 
 - `masked-dumps/` holds 12 SCB and 3 KBANK dumps. They are gitignored working material, not fixtures, and both readers are now built from them — delete them once a real statement of each layout has been read.
 - Run `git status --short`. **Three** config files (`eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml`) are **intentionally uncommitted** — preserve them. `.gitignore` used to be a fourth and is now committed: it had to be, because it is the only thing ignoring `.runtime/` (where the development sign-in writes TOTP secrets) and `masked-dumps/`, and the committed copy ignored neither. A fresh clone would have tracked both.
-- `main` is **one commit ahead of `origin/main`**: `db87117`, the portable-recovery work of D-044, committed 2026-07-27 and **not pushed**. `origin/main` is at `c6a668f`. Push authorization was not given with the commit — ask before pushing.
+- `main` is level with `origin/main` at `176a4cb`, pushed 2026-07-27: the portable-recovery work of D-044. The account-creation work of D-045 sits on top of it, uncommitted. Treat commit and push authorization as spent; ask again.
 - The recovery destination is a **second Supabase project** and may be left stopped. `node scripts/recovery-destination.mjs up` starts and migrates it; `down` stops it and discards its data. It uses ports 5433x, so it does not collide with the primary stack, and `tests/recovery-portability.test.ts` skips without it.
 - Never rewrite a Markdown file through PowerShell `Get-Content`/`Set-Content`. In PowerShell 5.1 the read defaults to ANSI, so every em dash, ellipsis and arrow in these docs comes back as mojibake and is then written out as real UTF-8. It corrupted `HANDOFF.md` once and had to be restored from git. Use the editing tools.
 - `public.ledger_owners` binds exactly one owner and is immutable; a second owner cannot exist without a database reset. Authenticate as the seeded synthetic owner (`supabase/seed.sql` holds its password).
