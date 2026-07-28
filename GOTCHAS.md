@@ -1,6 +1,6 @@
 # Private Ledger gotchas
 
-Last reviewed: 2026-07-25
+Last reviewed: 2026-07-29
 
 Record only repeatable, non-obvious traps. Each item states the symptom, cause, prevention, and verification.
 
@@ -482,3 +482,17 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: the QR occupies only 0.17–0.26 of image width on a screenshot 1,000–1,300 px wide, which puts the module size near the decoder's limit once JPEG compression has been applied. `detect()` still finds the finder pattern, so "no QR present" and "QR present but unreadable" are different failures that look identical to a caller checking only the payload.
 - Avoid: on an empty payload, retry at 2x cubic upscale before concluding anything. Three of the 23 sample slips need it and all three then decode (D-053). Distinguish the two cases with `detect()` rather than inferring absence.
 - Verify: `detect()` returning `True` while `detectAndDecode()` returns `""` is the signature of the recoverable case; the same image at `fx=2, fy=2` returns a 64-character payload.
+
+## A cross-checked statement can still fail the balance chain
+
+- Symptom: a statement reads cleanly, reports `crossChecked` true, and is then refused at `assembleImportPayload` with `BALANCE_RECONCILIATION_FAILED` — "Unexplained balance gaps block confirmation."
+- Cause: the two checks are independent and answer different questions. D-033's cross-check compares the reader's per-direction counts and totals against the summary block the statement prints, which a dropped *component* need not disturb if the row still exists and the totals still sum. `reconcileRows` walks row by row asserting `previous + movement == printed balance`, which a dropped component breaks immediately. A statement can satisfy the aggregate and fail the sequence.
+- Avoid: read `crossChecked` as "the bank's own totals agree", not as "this statement will import". Check blockers separately before assuming a document is importable — `reconcileRows(frame.openingBalance, rows).blockers` answers it without writing anything.
+- Verify: `KRUNGTHAI-01` on 2026-07-29 — cross-checked true, 3 blockers among 233 rows, all on page 10 (D-054). Every other statement in that batch had zero blockers, so this is a property of one document rather than of the check.
+
+## Creating a ledger account before the import is proven leaves one that cannot be removed
+
+- Symptom: an account with zero rows sits in the ledger permanently, showing up in the transactions view's `Imported accounts: N of M` line as a gap that never closes.
+- Cause: the natural order — create the account, then import into it — writes the account first and only then discovers the import is refused. `public.accounts` has no delete path *by design*, because `source_transactions.account_id` references it, so there is no undoing it.
+- Avoid: assemble first. `assembleImportPayload` performs the binding checks and the reconciliation, so a statement that will be refused is known **before** anything is written. Create the account only once assembly returns ok.
+- Verify: happened on 2026-07-29 with the Krungthai statement (D-054). The empty account is still there and will be until the statement imports.
