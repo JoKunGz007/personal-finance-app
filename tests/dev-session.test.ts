@@ -109,7 +109,10 @@ describe.skipIf(!reachable)("development sign-in against the live stack", () => 
     // gets exercised rather than the re-challenge path.
     jar.clear();
     psql(`delete from auth.mfa_factors where user_id = '${ownerId()}';`);
-    try { unlinkSync(".runtime/dev-mfa.json"); } catch { /* absent is the normal case */ }
+    // Per-project store: this suite drives the route against the test project, so it
+    // clears only that project's secrets. It must not touch live's — overwriting one
+    // shared file is exactly what used to lock the live app out after every run.
+    try { unlinkSync(".runtime/dev-mfa-private-ledger-local.json"); } catch { /* absent is the normal case */ }
 
     const { POST } = await import("@/app/api/v1/dev/session/route");
     const response = await POST(

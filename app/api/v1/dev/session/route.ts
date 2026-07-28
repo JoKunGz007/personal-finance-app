@@ -49,13 +49,36 @@ const REQUIRED_FACTORS = 2;
 // runtime directory to survive a restart. Plaintext TOTP secrets on disk would be
 // indefensible in production; here they belong to a synthetic owner on a loopback stack
 // and never leave the machine.
-const SECRET_STORE = ".runtime/dev-mfa.json";
-
+//
+// **One store per project.** A single shared file was the cause of a recurring
+// lock-out: `tests/dev-session.test.ts` drives this route against the test project on
+// every `pnpm test`, overwriting the file, so the factors already enrolled in live
+// then had secrets nobody held and the next live sign-in failed with the 409 below.
+// Clearing `auth.mfa_factors` fixed it until the next suite run. Keying the store by
+// project removes the collision instead of rehearsing the remedy (GOTCHAS).
 type StoredFactor = { factorId: string; secret: string };
 
-async function loadFactors(): Promise<StoredFactor[]> {
+const PROJECTS: Record<string, string> = {
+  "54321": "private-ledger-local",
+  "54331": "private-ledger-recovery",
+  "54341": "private-ledger-live"
+};
+
+function portOf(url: string): string {
+  try { return new URL(url).port; } catch { return ""; }
+}
+
+function projectFor(url: string): string | null {
+  return PROJECTS[portOf(url)] ?? null;
+}
+
+function storeFor(url: string): string {
+  return `.runtime/dev-mfa-${projectFor(url) ?? `port-${portOf(url) || "unknown"}`}.json`;
+}
+
+async function loadFactors(store: string): Promise<StoredFactor[]> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(SECRET_STORE, "utf8"));
+    const parsed: unknown = JSON.parse(await readFile(store, "utf8"));
     if (!Array.isArray(parsed)) return [];
     return parsed.filter((entry): entry is StoredFactor =>
       typeof entry === "object" && entry !== null
@@ -66,9 +89,9 @@ async function loadFactors(): Promise<StoredFactor[]> {
   }
 }
 
-async function saveFactors(factors: readonly StoredFactor[]): Promise<void> {
-  await mkdir(dirname(SECRET_STORE), { recursive: true });
-  await writeFile(SECRET_STORE, JSON.stringify(factors, null, 2), "utf8");
+async function saveFactors(store: string, factors: readonly StoredFactor[]): Promise<void> {
+  await mkdir(dirname(store), { recursive: true });
+  await writeFile(store, JSON.stringify(factors, null, 2), "utf8");
 }
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
@@ -86,6 +109,19 @@ function urlIsLoopback(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+// The stale-factor remedy below used to name the test container unconditionally,
+// which since D-048 has been the wrong database whenever `.env.local` aims the app at
+// live — the command then clears nothing and the failure looks unfixable. Derive the
+// container from the URL this process is actually configured against, so the hint
+// names the database the factors are really in (GOTCHAS).
+//
+// An unrecognised port means a stack this mapping does not know about. Naming a
+// container that may not exist would be worse than admitting the gap.
+function containerFor(url: string): string {
+  const project = projectFor(url);
+  return project ? `supabase_db_${project}` : `the Supabase database serving ${url}`;
 }
 
 const notFound = () => new Response("Not Found", { status: 404, headers: { "Cache-Control": "no-store" } });
@@ -121,7 +157,8 @@ export async function POST(request: Request) {
     return routeError(`Sign-in failed: ${signIn.error.message}. Is the local stack up and seeded (\`pnpm supabase:start\`)?`, 502);
   }
 
-  const stored = await loadFactors();
+  const store = storeFor(url);
+  const stored = await loadFactors(store);
   const listed = await supabase.auth.mfa.listFactors();
   if (listed.error) return routeError(`Could not list MFA factors: ${listed.error.message}`, 502);
   const verified = listed.data.totp.filter((factor) => factor.status === "verified");
@@ -147,7 +184,7 @@ export async function POST(request: Request) {
     if (!usable) {
       return routeError(
         "Two factors are already enrolled but their secrets are unknown, so no code can be produced. "
-        + "Clear them and retry: docker exec -i supabase_db_private-ledger-local psql -U postgres -d postgres "
+        + `Clear them and retry: docker exec -i ${containerFor(url)} psql -U postgres -d postgres `
         + "-c \"delete from auth.mfa_factors;\"",
         409
       );
@@ -156,7 +193,7 @@ export async function POST(request: Request) {
     if (check.error) return routeError(`Factor verification failed: ${check.error.message}`, 502);
   }
 
-  await saveFactors([...known].map(([factorId, secret]) => ({ factorId, secret })));
+  await saveFactors(store, [...known].map(([factorId, secret]) => ({ factorId, secret })));
 
   // Report what the owner gate will actually see, rather than assuming the climb worked.
   const [assurance, factorsNow] = await Promise.all([

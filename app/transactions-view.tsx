@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { formatThb } from "@/lib/money";
 import {
+  combinedBalanceByTransaction,
   compareTransactions,
   matchesQuery,
   movementMinor,
@@ -14,6 +15,7 @@ import {
 import { readError } from "@/lib/wire";
 
 const ALL_ACCOUNTS = "all";
+type Order = "newest" | "oldest";
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
@@ -25,14 +27,15 @@ function formatDate(date: string) {
  * endpoints that already exist and adds no route, RPC or migration.
  *
  * Nothing loads until asked. Every other read surface in this app is driven by an
- * explicit action, and this one now reaches real financial records, so a section
- * that fetched the whole ledger on page load would be the one place that stopped
- * being deliberate about it.
+ * explicit action, and this one reaches real financial records, so a section that
+ * fetched the whole ledger on page load would be the one place that stopped being
+ * deliberate about it.
  */
 export function TransactionsView() {
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
   const [transactions, setTransactions] = useState<AccountTransaction[] | null>(null);
   const [selected, setSelected] = useState<string>(ALL_ACCOUNTS);
+  const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,21 +45,34 @@ export function TransactionsView() {
     [accounts]
   );
 
+  // The account scope, before any text filter. Balances are derived from this rather
+  // than from `visible`, because a running total of whatever a search matched would
+  // not be a balance.
+  const scope = useMemo(
+    () => (transactions ?? []).filter((transaction) => selected === ALL_ACCOUNTS || transaction.account_id === selected),
+    [transactions, selected]
+  );
+
+  const combined = useMemo(() => combinedBalanceByTransaction(scope), [scope]);
+
   const visible = useMemo(() => {
-    if (!transactions) return [];
-    return transactions
-      .filter((transaction) => selected === ALL_ACCOUNTS || transaction.account_id === selected)
-      .filter((transaction) => matchesQuery(transaction, query))
-      .sort(compareTransactions);
-  }, [transactions, selected, query]);
+    const sorted = scope.filter((transaction) => matchesQuery(transaction, query)).sort(compareTransactions);
+    if (order === "oldest") sorted.reverse();
+    return sorted;
+  }, [scope, query, order]);
 
   const totals = useMemo(() => summarize(visible), [visible]);
 
-  // The printed balance is a fact about one account's statement chain, so a merged
-  // list would show it stepping between unrelated running balances. Showing the
-  // column only for a single account is the honest option; the alternative is a
-  // number that looks like a ledger balance and is not one.
-  const showBalance = selected !== ALL_ACCOUNTS;
+  const showCombined = selected === ALL_ACCOUNTS;
+
+  // An account with no imported rows has no derivable balance, so the combined figure
+  // cannot speak for it. Stated as a plain status of what *is* imported rather than a
+  // warning about what is not: on this ledger most accounts are empty most of the
+  // time, so a banner would fire on nearly every load and be read as noise.
+  const importedAccounts = useMemo(() => {
+    const withRows = new Set(scope.map((transaction) => transaction.account_id));
+    return (accounts ?? []).filter((account) => withRows.has(account.id));
+  }, [scope, accounts]);
 
   async function load() {
     setBusy(true);
@@ -111,7 +127,7 @@ export function TransactionsView() {
         <div>
           <h2 id="ledger-title">Confirmed transactions</h2>
           <p>
-            Everything already committed to the ledger, newest first. Source facts are immutable here —
+            Everything already committed to the ledger. Source facts are immutable here —
             this view reads them and never writes.
           </p>
         </div>
@@ -132,6 +148,13 @@ export function TransactionsView() {
                     {account.label} ···· {account.last_four}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="account-control">
+              <span>Order</span>
+              <select value={order} onChange={(event) => setOrder(event.target.value as Order)}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
               </select>
             </label>
             <label className="account-control">
@@ -164,6 +187,18 @@ export function TransactionsView() {
             <div><dt>Net movement</dt><dd>{formatThb(totals.net)}</dd></div>
           </dl>
 
+          {showCombined && accounts ? (
+            <p className="ledger-status">
+              <b>Imported accounts: {importedAccounts.length} of {accounts.length}</b>
+              {importedAccounts.length > 0
+                ? ` · ${importedAccounts.map((account) => `${account.label} ···· ${account.last_four}`).join(" · ")}`
+                : null}
+              {importedAccounts.length < accounts.length
+                ? " · the all-accounts balance covers these only, since an account with no rows has no balance to derive"
+                : null}
+            </p>
+          ) : null}
+
           {visible.length === 0 ? (
             <p className="ledger-empty" role="status">
               {transactions.length === 0
@@ -172,14 +207,15 @@ export function TransactionsView() {
             </p>
           ) : (
             <div className="table-scroll">
-              <table>
+              <table className={showCombined ? "ledger-table merged" : "ledger-table"}>
                 <thead>
                   <tr>
                     <th>Date</th>
                     <th>Source description</th>
-                    <th>{showBalance ? "Reference" : "Account"}</th>
+                    <th>{showCombined ? "Account" : "Reference"}</th>
                     <th className="numeric">Movement</th>
-                    {showBalance ? <th className="numeric">Balance</th> : null}
+                    <th className="numeric">{showCombined ? "Account balance" : "Balance"}</th>
+                    {showCombined ? <th className="numeric">All accounts</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -199,16 +235,21 @@ export function TransactionsView() {
                           {overlay?.counterparty ? <em>{overlay.counterparty}</em> : null}
                           {transaction.source_components.length > 1 ? <em>2 components</em> : null}
                         </td>
-                        <td data-label={showBalance ? "Reference" : "Account"}>
-                          {showBalance
-                            ? <span>{transaction.reference ?? "Not printed"}</span>
-                            : <span>{account ? `${account.label} ···· ${account.last_four}` : "Unknown account"}</span>}
+                        <td data-label={showCombined ? "Account" : "Reference"}>
+                          {showCombined
+                            ? <span>{account ? `${account.label} ···· ${account.last_four}` : "Unknown account"}</span>
+                            : <span>{transaction.reference ?? "Not printed"}</span>}
                         </td>
                         <td data-label="Movement" className={`numeric ${BigInt(movement) > 0n ? "positive" : ""}`}>
                           {BigInt(movement) > 0n ? "+" : ""}{formatThb(movement)}
                         </td>
-                        {showBalance ? (
-                          <td data-label="Balance" className="numeric">{formatThb(transaction.post_balance_minor)}</td>
+                        <td data-label={showCombined ? "Account balance" : "Balance"} className="numeric">
+                          {formatThb(transaction.post_balance_minor)}
+                        </td>
+                        {showCombined ? (
+                          <td data-label="All accounts" className="numeric combined-balance">
+                            {formatThb(combined.get(transaction.id) ?? transaction.post_balance_minor)}
+                          </td>
                         ) : null}
                       </tr>
                     );

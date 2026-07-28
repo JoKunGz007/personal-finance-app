@@ -125,6 +125,52 @@ export function compareTransactions(a: LedgerTransaction, b: LedgerTransaction):
 }
 
 /**
+ * The balance across every account in scope, after each row.
+ *
+ * A merged list needs a total that means something at each row, and it is exactly
+ * determined: an account's balance before its first imported row is that row's
+ * printed balance minus its own movement, so every account has a known balance at
+ * every point, including dates before its statement begins. Walking the merged list
+ * oldest-first and replacing one account's balance at a time gives the combined
+ * figure after each row.
+ *
+ * Keyed by transaction id, which is a primary key, so the map is total.
+ *
+ * Pass the whole account scope, never a text-filtered subset: the combined balance
+ * is a fact about the ledger at that row, not about the rows a search happened to
+ * match. Filtering first would produce a running total of an arbitrary selection.
+ *
+ * An account holding no transactions at all contributes nothing and cannot: there is
+ * no row to derive an opening from. The caller is expected to say how many accounts
+ * are in that state rather than let the total quietly stand for all of them.
+ */
+export function combinedBalanceByTransaction(
+  transactions: readonly AccountTransaction[]
+): Map<string, MinorUnitString> {
+  const byAccount = new Map<string, AccountTransaction[]>();
+  for (const transaction of transactions) {
+    const rows = byAccount.get(transaction.account_id);
+    if (rows) rows.push(transaction);
+    else byAccount.set(transaction.account_id, [transaction]);
+  }
+
+  const balances = new Map<string, bigint>();
+  for (const [accountId, rows] of byAccount) {
+    const first = [...rows].sort((a, b) => -compareTransactions(a, b))[0]!;
+    balances.set(accountId, BigInt(first.post_balance_minor) - BigInt(movementMinor(first)));
+  }
+
+  const combined = new Map<string, MinorUnitString>();
+  for (const row of [...transactions].sort((a, b) => -compareTransactions(a, b))) {
+    balances.set(row.account_id, BigInt(row.post_balance_minor));
+    let total = 0n;
+    for (const balance of balances.values()) total += balance;
+    combined.set(row.id, total.toString() as MinorUnitString);
+  }
+  return combined;
+}
+
+/**
  * Client-side text filter. Per-account server-side filtering does not exist and is
  * not worth adding at this scale (PLAN task 17); this searches the fields a person
  * would recognise a row by, and deliberately not the fingerprint or any id.

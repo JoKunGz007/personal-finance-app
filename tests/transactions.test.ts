@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  combinedBalanceByTransaction,
   compareTransactions,
   matchesQuery,
   movementMinor,
   summarize,
   transactionListSchema,
+  type AccountTransaction,
   type LedgerTransaction
 } from "@/lib/transactions";
 
@@ -116,6 +118,64 @@ describe("merged ordering mirrors the RPC", () => {
     const a = transaction({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
     const b = transaction({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
     expect([b, a].sort(compareTransactions)).toEqual([a, b]);
+  });
+});
+
+describe("combined balance across accounts", () => {
+  const A = "aaaaaaaa-0000-4000-8000-000000000001";
+  const B = "bbbbbbbb-0000-4000-8000-000000000002";
+
+  function row(id: string, accountId: string, date: string, post: string, movement: string): AccountTransaction {
+    const kind = BigInt(movement) > 0n ? "deposit" as const : "withdrawal" as const;
+    return {
+      ...transaction({ id, source_date: date, post_balance_minor: post }),
+      account_id: accountId,
+      source_components: [{ id: `${id.slice(0, 8)}-1111-4111-8111-111111111111`, kind, amount_minor: movement, currency: "THB" }]
+    };
+  }
+
+  // Account B's first imported row is dated after A's first, so at A's first row B has
+  // no row yet — but its balance then is derivable as 5000 - 500 = 4500. A total that
+  // ignored it would understate every early row.
+  const ledger = [
+    row("11111111-0000-4000-8000-000000000001", A, "2026-06-01", "1000", "1000"),
+    row("22222222-0000-4000-8000-000000000002", B, "2026-06-02", "5000", "500"),
+    row("33333333-0000-4000-8000-000000000003", A, "2026-06-03", "800", "-200")
+  ];
+
+  it("includes an account's derived balance from before its first imported row", () => {
+    const combined = combinedBalanceByTransaction(ledger);
+    expect(combined.get("11111111-0000-4000-8000-000000000001")).toBe("5500");
+  });
+
+  it("tracks each account's latest balance as the merged list advances", () => {
+    const combined = combinedBalanceByTransaction(ledger);
+    expect(combined.get("22222222-0000-4000-8000-000000000002")).toBe("6000");
+    expect(combined.get("33333333-0000-4000-8000-000000000003")).toBe("5800");
+  });
+
+  it("ends on the sum of every account's latest printed balance", () => {
+    const combined = combinedBalanceByTransaction(ledger);
+    expect(combined.get("33333333-0000-4000-8000-000000000003")).toBe((800n + 5000n).toString());
+  });
+
+  it("is independent of the order it is handed the rows", () => {
+    const shuffled = [ledger[2]!, ledger[0]!, ledger[1]!];
+    expect(combinedBalanceByTransaction(shuffled)).toEqual(combinedBalanceByTransaction(ledger));
+  });
+
+  it("covers every row, so the map is total", () => {
+    const combined = combinedBalanceByTransaction(ledger);
+    expect([...combined.keys()].sort()).toEqual(ledger.map((r) => r.id).sort());
+  });
+
+  it("handles a single account by returning its own printed balances", () => {
+    const combined = combinedBalanceByTransaction([ledger[0]!, ledger[2]!]);
+    expect(combined.get("33333333-0000-4000-8000-000000000003")).toBe("800");
+  });
+
+  it("returns an empty map for an empty ledger rather than failing", () => {
+    expect(combinedBalanceByTransaction([]).size).toBe(0);
   });
 });
 

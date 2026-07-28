@@ -184,10 +184,22 @@ footer span { color: var(--navy); font-weight: 600; }
 footer p { margin: 0; }
 
 .ledger-band { margin-bottom: 70px; }
-.ledger-controls { margin: 22px 0 0 167px; display: grid; grid-template-columns: auto minmax(220px, 300px) minmax(220px, 1fr); align-items: end; gap: 14px; }
+.ledger-controls { margin: 22px 0 0 167px; display: grid; grid-template-columns: auto minmax(200px, 260px) minmax(140px, 170px) minmax(200px, 1fr); align-items: end; gap: 14px; }
+/* The shared nth-child widths assume the import review table. This one carries a
+   sixth money column in merged mode, which that rule would squeeze to 70px. */
+.ledger-table { min-width: 1020px; }
+.ledger-table th:nth-child(1) { width: 115px; }
+.ledger-table th:nth-child(2) { width: 28%; }
+.ledger-table th:nth-child(3) { width: 190px; }
+.ledger-table th:nth-child(4), .ledger-table th:nth-child(5) { width: 145px; }
+.ledger-table.merged { min-width: 1140px; }
+.ledger-table.merged th:nth-child(6) { width: 160px; }
+.combined-balance { color: var(--muted); }
 .ledger-controls .secondary-button { height: 47px; }
 .ledger-strip { grid-template-columns: repeat(4, 1fr); }
 .ledger-empty { margin: 26px 0 0; padding: 22px; color: var(--muted); border: 1px solid var(--line); background: var(--mist); }
+.ledger-status { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.ledger-status b { color: var(--navy); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .07em; }
 
 .detail-dialog { width: min(680px, calc(100% - 32px)); max-height: calc(100vh - 48px); padding: 0; color: var(--navy); border: 1px solid var(--navy); border-radius: var(--radius); background: var(--paper); }
 .detail-dialog::backdrop { background: color-mix(in srgb, var(--navy) 65%, transparent); }
@@ -219,6 +231,7 @@ footer p { margin: 0; }
   .status-line { margin-left: 0; }
   .or-rule { display: none; }
   .ledger-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
+  .ledger-controls > button { grid-column: 1 / -1; }
   .statement-strip { grid-template-columns: repeat(3, 1fr); }
   .ledger-strip { grid-template-columns: repeat(2, 1fr); }
   .ledger-strip div:nth-child(3) { border-left: 0; }
