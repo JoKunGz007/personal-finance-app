@@ -34,7 +34,9 @@ Re-reading the masked dumps before writing the reader found **both layout contra
 
 **And it can back itself up and restore itself** (D-046). § Recovery / 04 exports a real encrypted `.plbak` — custody acknowledged only after the file is written, and only if the ledger has not moved — and restores one into an empty ledger. Read `docs/RECOVERY.md` § Recovery from the app before changing either half.
 
-Verified on 2026-07-27 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`):
+Verified on 2026-07-27 with the project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 (system Node is 20 — see `docs/LOCAL_DEV.md`).
+
+**These results are historical, and cannot currently be reproduced.** Since 2026-07-28 the test project holds real rows, so `assertOnlyDisposableLedgerData` refuses every destructive suite (D-047) — that is the guard working, not a regression, and it is not to be silenced with `ALLOW_DESTRUCTIVE_TESTS=1`. A green run becomes available again once the real rows move to `private-ledger-live` and the test project is cleared (D-048). Re-run the table then; until then treat every row below as evidence about the code as it stood on 2026-07-27.
 
 | Check | Result |
 | --- | --- |
