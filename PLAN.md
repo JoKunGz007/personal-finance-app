@@ -42,7 +42,9 @@ Current focused verification, **re-run in full on 2026-07-28** immediately after
 
 These results used the ignored project-local Node 24.18.0 runtime and pinned pnpm 11.17.0 because the system Node installation remains Node 20. A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
 
-Python 3.14.6 and PyYAML 6.0.3 are installed for local Codex skill scaffolding and validation. The project-local `$sync-continuity` skill under `.agents/skills/sync-continuity` passes the official skill validator and a read-only forward audit.
+Python 3.14.6 and PyYAML 6.0.3 are installed for local Codex skill scaffolding and validation. The project-local `$sync-continuity` skill under `.agents/skills/sync-continuity` passed the official skill validator and a read-only forward audit when it was written (2026-07-24). **Treat that pass as dated, not current:** both copies of the skill were amended on 2026-07-28 (D-052), and the validator could not be located to re-run — nothing under `.agents/`, and no matching Python package installed. The amendment changed body text only, leaving frontmatter and document structure untouched.
+
+**Continuity maintenance, 2026-07-28 (D-052).** `HANDOFF.md` was trimmed from 102 lines / 3,363 words to 39 lines, having drifted into a duplicate of this file across 20 commits at roughly +100 words each. The `sync-continuity` skill was amended in both copies so the rule it already carried is testable at the moment of an edit rather than only against the finished file, and a validation step for orphaned content was added. That step immediately found one: a `GOTCHAS.md` cross-reference to a `Get-Content`/`Set-Content` mojibake entry that had never been written, whose only copy was the `HANDOFF.md` line about to be cut. It is now a `GOTCHAS.md` entry. Four stale claims in `SPEC.md` were corrected in the same pass — one of them a direct self-contradiction about whether a real statement had been imported.
 
 ## Current review blockers
 

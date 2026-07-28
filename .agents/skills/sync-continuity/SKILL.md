@@ -44,7 +44,7 @@ Update only affected files:
 - `PLAN.md`: verified checkpoint, exact test results, completed work, remaining tasks, blockers, and authorization gates. Remove work only when evidence proves completion.
 - `DECISIONS.md`: append durable decisions with date, status, decision, rationale, consequences when relevant, and evidence paths. Do not rewrite history. Supersede an older entry with a new entry that references it.
 - `GOTCHAS.md`: add repeatable, non-obvious traps using symptom, cause, avoidance, and verification. Do not add one-off noise or generic advice.
-- `HANDOFF.md`: keep it as a thin index plus a short current headline. Never recreate a long duplicate snapshot.
+- `HANDOFF.md`: a thin index, a short current headline, and only facts that are both mutable and homeless — state that changes (authorizations granted or spent, what is uncommitted or unpushed, machine-specific hazards) and that no other maintained document can hold, because `DECISIONS.md` is append-only and `PLAN.md` owns project state. Per edit, ask whether the fact has a home elsewhere; if it does, put it there and link. A fact true in both files is a defect in this one, not redundancy.
 - `README.md` and `AGENTS.md`: update only if the continuity entry points or maintenance rules changed.
 
 Use the repository's current date. Distinguish "implemented," "applied locally," "tested," and "accepted"; they are not interchangeable.
@@ -75,6 +75,7 @@ Before finishing:
 3. Search only the exact continuity files for credential-like strings. Never scan directories recursively or open `.env*`, ignored private paths, generated output, dependency trees, logs, or credential stores. Report only the affected continuity filename and line number; do not print a matched secret value.
 4. Run `git diff --check` for tracked edits and inspect `git status --short` for untracked files.
 5. Re-read changed sections and confirm every completion/test claim has evidence.
+6. If content was moved or removed, confirm nothing was orphaned: every cross-reference to a moved section still resolves, and each removed fact exists in its new home.
 
 Report:
 

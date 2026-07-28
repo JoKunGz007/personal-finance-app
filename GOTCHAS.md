@@ -444,6 +444,13 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: pin `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION` to `"0"` — **not** `""`. On Windows, `$env:VAR = ""` deletes the variable rather than blanking it, so `.env.local` wins and the failure persists, which reads misleadingly like the pin not working.
 - Verify: 12/14 with the flag inherited, 14/14 with it pinned to `"0"`, no code change between the two runs.
 
+## `Get-Content`/`Set-Content` mangles every em dash in a Markdown file
+
+- Symptom: a continuity doc rewritten through PowerShell comes back with `â€"` wherever an em dash, ellipsis or arrow was. `HANDOFF.md` was corrupted this way once and had to be restored from git.
+- Cause: in PowerShell 5.1 `Get-Content` defaults to the system ANSI codepage, so a UTF-8 multi-byte character is decoded as separate bytes; `Set-Content` then writes those wrong characters out as valid UTF-8. The damage is permanent and invisible to a re-read, because the file is now genuinely the mojibake.
+- Avoid: never round-trip a Markdown file through PowerShell. Use the editing tools, and give `git commit -F` a message file written by the `Write` tool.
+- Verify: `git diff` after such a rewrite marks every line containing punctuation as changed, not only the lines that were edited.
+
 ## PowerShell prepends a UTF-8 BOM when piping into a native command
 
 - Symptom: a password piped into a Node script is rejected although it is correct, and the rejection is indistinguishable from a genuinely wrong one. Found while proving an offline backup-password checker: the *correct* password failed, with the derivation completing suspiciously fast.
