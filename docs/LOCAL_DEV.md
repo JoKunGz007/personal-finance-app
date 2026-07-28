@@ -29,7 +29,25 @@ Use the isolated config rather than `pnpm test:e2e`: the default one reuses a se
 
 The owner config is a second browser suite, for the specs that need a signed-in owner — the binding chooser, the authenticated import path, and the charset rejection path. It builds with `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=1`, which is what makes the development sign-in exist at all (D-036); no other build has it. Both browser suites and `pnpm test` share one database and one owner, and all three want an account ending 7890, so each cleans up after itself — see GOTCHAS if you meet a `accounts_owner_id_bank_code_last_four_key` violation.
 
-`tests/recovery-portability.test.ts` skips unless the second Supabase project is also running, and a skipped run proves nothing about recovery. Start it first, and stop it afterwards — it is disposable by design:
+## Three Supabase projects, and which is which
+
+| Project | Ports | Holds | `down` |
+| --- | --- | --- | --- |
+| `private-ledger-local` | 5432x | Synthetic seed only. **Every suite, seed and pgTAP fixture targets this.** Disposable | `pnpm supabase:stop` |
+| `private-ledger-recovery` | 5433x | Nothing; a destination for proving a backup restores | discards its data |
+| `private-ledger-live` | 5434x | **Real financial records** (D-048). Studio on 54343 | preserves its data |
+
+```powershell
+node scripts/live-ledger.mjs up      # start / migrate / bind
+node scripts/live-ledger.mjs status  # what is actually in there
+node scripts/live-ledger.mjs down    # stop, data preserved
+```
+
+Point the app at the live ledger by setting `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54341` in `.env.local`. The browser suites pin the test project explicitly, so a `.env.local` aimed at the live ledger cannot drag them onto real data.
+
+**Never run the suites against the live ledger.** The wipes in `tests/helpers/local-owner.ts` are owner-scoped, not test-scoped, so they delete every row the owner has. `assertOnlyDisposableLedgerData` refuses when it finds an account neither the seed nor the suite created; `pnpm supabase:reset` cannot be guarded at all.
+
+`tests/recovery-portability.test.ts` skips unless the recovery project is also running, and a skipped run proves nothing about recovery. Start it first, and stop it afterwards — it is disposable by design:
 
 ```powershell
 node scripts/recovery-destination.mjs up

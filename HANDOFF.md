@@ -12,7 +12,9 @@ Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser
 
 **The local ledger holds real financial records** as of 2026-07-28 (D-047): one real KBANK statement, 55 rows, cross-checked, imported through the app. It was backed up and the backup was *proven* — the ledger was destroyed and restored from the encrypted file, all 175 rows returning.
 
-`pnpm test`, both Playwright configs and `pnpm supabase:reset` all delete that data. The first three now refuse via `assertOnlyDisposableLedgerData`; `supabase:reset` cannot be guarded. **Back up through Recovery / 04 first, and do not set `ALLOW_DESTRUCTIVE_TESTS=1` merely to get a green run** — with real data present, a fully green suite and a populated real ledger cannot both be had on this database until the real ledger is separated from the test one (chosen, unbuilt).
+`pnpm test`, both Playwright configs and `pnpm supabase:reset` all delete that data. The first three now refuse via `assertOnlyDisposableLedgerData`; `supabase:reset` cannot be guarded. **Back up through Recovery / 04 first, and never set `ALLOW_DESTRUCTIVE_TESTS=1` merely to get a green run.**
+
+**The fix is built and half-applied** (D-048). There are now three local Supabase projects — `private-ledger-local` (5432x, synthetic, disposable, what every suite targets), `private-ledger-recovery` (5433x, disposable rehearsal destination) and `private-ledger-live` (5434x, real records, Studio on 54343). See `docs/LOCAL_DEV.md`. **The real rows have not moved yet**: that needs `.env.local` pointed at `http://127.0.0.1:54341` and the backup restored into the empty live project. Until then the test project still holds them and the suites still refuse — correctly.
 
 ## Where the project stands
 

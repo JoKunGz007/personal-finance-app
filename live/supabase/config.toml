@@ -1,0 +1,66 @@
+# The live ledger: the Supabase project that holds real financial records.
+#
+# It exists because `pnpm test` deletes every row the owner has — the wipes in
+# `tests/helpers/local-owner.ts` are owner-scoped, not test-scoped — and on 2026-07-28 a
+# real statement was imported into `private-ledger-local`, which made a routine test run a
+# destructive act (D-047). A guard now refuses those wipes, but a guard is a fence around
+# a hazard; this removes the hazard. `private-ledger-local` goes back to being disposable
+# and is what every suite, seed and pgTAP fixture targets. Real data lives here and
+# nowhere else (D-048).
+#
+# Ports are in the 5434x band so all three projects can run at once: the test project on
+# 5432x, the recovery destination on 5433x, this on 5434x.
+#
+# Studio is enabled here and nowhere else. A real ledger is worth being able to look at,
+# and this is the only project where "look at the data" is a legitimate thing to want.
+project_id = "private-ledger-live"
+
+[api]
+enabled = true
+port = 54341
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54342
+shadow_port = 54340
+major_version = 17
+
+# Seeded by `scripts/live-ledger.mjs` after the migrations, because
+# `public.bind_ledger_owner` does not exist until they have run.
+[db.seed]
+enabled = false
+
+[studio]
+enabled = true
+port = 54343
+
+[storage]
+enabled = false
+
+[realtime]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[analytics]
+enabled = false
+
+# Matched to the primary project: the owner gate requires aal2 with two verified factors
+# and never inspects the auth provider (D-020), so a local password identity satisfies it
+# exactly as a Google one would.
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+enable_signup = false
+minimum_password_length = 12
+
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true

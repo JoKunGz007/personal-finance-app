@@ -30,7 +30,17 @@ export default defineConfig({
     url: `http://127.0.0.1:${PORT}`,
     reuseExistingServer: false,
     timeout: 180_000,
-    env: { NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "1" }
+    // The Supabase target is pinned, not inherited. `next start` loads `.env.local`, and
+    // once that file points at the live ledger (D-048) an unpinned browser suite would
+    // run its wipes against real financial records. These values are the local CLI's
+    // fixed defaults for the test project, so pinning them costs nothing and removes the
+    // one path by which a configuration change could aim the suite at real data.
+    env: {
+      NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "1",
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH",
+      OWNER_GOOGLE_EMAIL: "synthetic.owner@example.invalid"
+    }
   },
   projects: [{ name: "desktop", use: { ...devices["Desktop Chrome"] } }]
 });
