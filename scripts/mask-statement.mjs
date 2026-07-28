@@ -129,7 +129,10 @@ async function readPassword(prompt) {
       process.stdin.on("data", (chunk) => { buffer += chunk; });
       process.stdin.on("end", () => resolvePiped(buffer));
     });
-    return piped.split(/\r?\n/u)[0] ?? "";
+    // PowerShell prepends a UTF-8 BOM when it pipes to a native command, so a piped
+    // password arrives as "﻿…" and fails against a document that would have
+    // opened. Stripping it is the difference between "wrong password" and correct.
+    return (piped.split(/\r?\n/u)[0] ?? "").replace(/^﻿/u, "");
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });

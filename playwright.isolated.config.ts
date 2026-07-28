@@ -24,7 +24,23 @@ export default defineConfig({
   webServer: {
     command: `pnpm build && pnpm exec next start --port ${PORT}`,
     url: `http://127.0.0.1:${PORT}`,
-    reuseExistingServer: false
+    reuseExistingServer: false,
+    // Pinned, not inherited, for the same reason `playwright.owner.config.ts` pins —
+    // and this config needed it just as badly. `NEXT_PUBLIC_*` are inlined by the
+    // `pnpm build` above, and since D-048 `.env.local` points at `private-ledger-live`,
+    // so without these four an ordinary browser run builds against real financial
+    // records. These are the local CLI's fixed defaults for the test project.
+    //
+    // The flag is pinned to "0" deliberately: `ledger.spec.ts` asserts that a build
+    // which did not opt in renders no development sign-in, and `.env.local` now sets
+    // it to 1 permanently for manual use. Inherited, that test fails on a false
+    // premise rather than on a defect (GOTCHAS).
+    env: {
+      NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "0",
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH",
+      OWNER_GOOGLE_EMAIL: "synthetic.owner@example.invalid"
+    }
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

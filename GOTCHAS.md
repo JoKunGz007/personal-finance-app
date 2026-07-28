@@ -419,3 +419,41 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: GoTrue refuses to enroll a factor at aal1 once the user has a verified one. `tests/backup-roundtrip.test.ts` inserts two factors directly and never removes them, so any suite that afterwards tries to climb to aal2 by enrolling cannot.
 - Avoid: delete `auth.mfa_factors` for the owner before signing in, not only in teardown — teardown does not run for a suite that was never reached.
 - Verify: the failure reproduces by running `tests/backup-roundtrip.test.ts` and then any suite that enrolls — that is how it was found. `tests/recovery-portability.test.ts` clears factors on both projects before signing in and again in teardown.
+- **Its remedy message names the wrong database since D-048.** The hint reads `docker exec -i supabase_db_private-ledger-local …`, hardcoded to the test project. Once `.env.local` points at `private-ledger-live`, the stale factors are in **live** and that command clears nothing — on 2026-07-28 test held 0 factors and live held 2. Substitute `supabase_db_private-ledger-live` when the app is aimed there. Deleting them is safe: `auth.mfa_factors` is not among the eleven backed-up tables, and the development sign-in re-enrols on the next attempt.
+- A second route into it, also seen 2026-07-28: the owner Playwright suite signs in against the **test** project and rewrites `.runtime/dev-mfa.json`, so afterwards the secrets on disk no longer match the factors sitting in live. Running the browser gate and then driving the live app by hand reproduces it.
+
+## Running a browser suite leaves `.next` aimed at whatever that suite pinned
+
+- Symptom: after a Playwright run, `pnpm start` serves an app talking to the **test** project. The real ledger appears empty — three seeded accounts, no transactions — and an export taken then would be a backup of the seed rather than of anything real.
+- Cause: every browser config's `webServer.command` begins with `pnpm build`, and `NEXT_PUBLIC_*` are inlined at build time. `playwright.owner.config.ts` pins `54321`, and shell pins used for the other configs do the same, so the last build left in `.next` is whichever the suite wanted — not what `.env.local` says.
+- Avoid: **rebuild before driving the app by hand after any suite run.** `pnpm build` with a clean shell picks `.env.local` back up. Confirm rather than assume: `.next/server/chunks` should contain the port you expect and not the other one.
+- Verify: after the 2026-07-28 gate, `.next/server` contained `54321` in two chunks and `54341` in none, despite `.env.local` pointing at `54341`.
+
+## Only the owner Playwright config pins its Supabase target; the other two inherit `.env.local`
+
+- Symptom: after `.env.local` was pointed at the live ledger (D-048), a browser suite builds and runs against **real financial records**. Nothing announces it, because the app behaves identically.
+- Cause: `NEXT_PUBLIC_*` are inlined at build time, and both `playwright.isolated.config.ts` and `playwright.config.ts` run `pnpm build` with no `webServer.env`. Only `playwright.owner.config.ts` pins. Its comment claims pinning "removes the one path by which a configuration change could aim the suite at real data" — true of that config alone, and worth reading as scoped rather than general.
+- Avoid: **fixed 2026-07-28** — both now carry `webServer.env` (PLAN task 16). The isolated config pins all four variables, the default config the three database ones. The database-level wipes in `tests/helpers/local-owner.ts` hardcode the test container and were safe either way; it is the *browser* half that follows the build.
+- **Still open:** `playwright.config.ts` is intentionally uncommitted, so its pin is local to this machine and a fresh clone gets the unpinned file. Check it before running that config on a new checkout.
+- Verify: the isolated suite passes 14/14 in a shell with no pins set, where it read 12/14 before; live's account-id, transaction-id and fingerprint digests were unchanged by the run. That comparison, not the passing count, is what shows the target was right.
+
+## The isolated suite's "no dev sign-in" test fails once `.env.local` opts in
+
+- Symptom: `ledger.spec.ts` "offers no development sign-in in a build that did not opt into one" fails on desktop and mobile, 12/14 instead of 14/14, against code that did not change.
+- Cause: D-048's migration requires `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=1` in `.env.local` permanently, and `playwright.isolated.config.ts` does not pin it, so the build *does* opt in and the test's premise is false. The same shape as D-047: a milestone changed the environment and an existing command silently became wrong.
+- Avoid: pin `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION` to `"0"` — **not** `""`. On Windows, `$env:VAR = ""` deletes the variable rather than blanking it, so `.env.local` wins and the failure persists, which reads misleadingly like the pin not working.
+- Verify: 12/14 with the flag inherited, 14/14 with it pinned to `"0"`, no code change between the two runs.
+
+## PowerShell prepends a UTF-8 BOM when piping into a native command
+
+- Symptom: a password piped into a Node script is rejected although it is correct, and the rejection is indistinguishable from a genuinely wrong one. Found while proving an offline backup-password checker: the *correct* password failed, with the derivation completing suspiciously fast.
+- Cause: `"secret" | node script.mjs` sends `EF BB BF` before the text. Verified directly — the received bytes are `239,187,191,97,98,99,13,10` for `"abc"`, so the script reads `"﻿secret"`. The same hazard as the `Get-Content`/`Set-Content` mojibake entry, in the opposite direction: PowerShell adding bytes rather than mangling them.
+- Avoid: strip a leading `﻿` in any stdin password reader. `scripts/mask-statement.mjs` did not and does now — its header documents piping as supported, so a piped statement password would silently have failed against a document that would have opened. Better still, type the password rather than piping it; nothing then reaches the shell history.
+- Verify: a Node harness that spawns the script and writes to its stdin directly passes where the PowerShell pipe fails — driving stdin from Node bypasses the encoding entirely and is the reliable way to test these.
+
+## A wrong backup password and a corrupted backup file report identically
+
+- Symptom: Recovery / 04 reports "The backup could not be decrypted. Check the password; if it is right, the file has been altered", and there is no way to tell from the app which of the two it is.
+- Cause: AES-256-GCM authenticates ciphertext and key together, so a wrong PBKDF2 key and a tampered ciphertext both surface as one auth-tag failure. The hedged wording is honest rather than evasive.
+- Avoid: diagnose the envelope separately before suspecting the file. `lib/backup.ts` wraps the ciphertext in plain JSON — header, base64 salt and nonce — and corruption from a move, a sync client or a re-encode breaks *that* long before it reaches the cipher. If the JSON parses, the header matches exactly, the salt is 16 bytes and the nonce is 12, the file is intact and the password is the remaining explanation. This reads no plaintext and needs no password.
+- Verify: done on the real 2026-07-28 backup after a failed restore — 14,784 bytes, envelope structurally perfect, so the file was exonerated without anyone typing a password. Moving a file between volumes copies its bytes; it cannot change them.
