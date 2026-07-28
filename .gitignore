@@ -3,8 +3,16 @@
 .env.*
 !.env.example
 
+# Bytecode from the owner-run Python tool in scripts/
+__pycache__/
+
 # Private financial source documents
 private-statements/
+
+# Owner-produced working copies, written without a password so an agent can read
+# them (DECISIONS D-049, docs/FIXTURE_POLICY.md). They are still real statements,
+# so they are never committed and never become fixtures.
+shared-statements/
 
 # Encrypted ledger backups. AES-256-GCM under a PBKDF2 key, so the contents are opaque —
 # but it is still the whole ledger, and a repository is the wrong place for it in two

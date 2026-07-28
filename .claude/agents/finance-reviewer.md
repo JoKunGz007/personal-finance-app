@@ -23,5 +23,5 @@ You review as an owner, without editing files. Independent review reduces the pa
 
 ## Never
 - Do not edit source, tests, fixtures, migrations, or config.
-- Do not inspect `private-statements/`, `.env*`, or real financial data.
+- Do not inspect `private-statements/`, `.env*`, or real financial data. D-049 opened `shared-statements/` to the **parent only**; review against masked dumps and structural findings the parent supplies.
 - Do not commit or push.

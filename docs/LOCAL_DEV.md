@@ -64,6 +64,22 @@ node scripts/mask-statement.mjs private-statements/<folder> --label <format>
 
 It takes a directory or a single PDF. For a directory it walks every PDF beneath it, asks for the password **once** and reuses it, re-asking only for a document that one does not open, and writes `<format>-01.md`, `<format>-02.md`, … in sorted order. File names are masked in both the dumps and the console output, so no real name is typed or read (D-035).
 
+### Sharing a statement with an agent
+
+Masked dumps come first; reach for this only when a dump has proven insufficient. `scripts/repassword-pdfs.py` re-encrypts statements under a disposable password so the originals' identity-grade one never leaves the owner's hands (D-049). It is a Python tool — `pip install pikepdf`, using system Python rather than the project's Node runtime, and it is not a project dependency.
+
+```powershell
+python scripts/repassword-pdfs.py self-test
+python scripts/repassword-pdfs.py archive --src private-statements --yes-rewrite-originals
+python scripts/repassword-pdfs.py copy --src private-statements --dest shared-statements --decrypt
+```
+
+The order is the point. `archive` runs **first** and rotates the owner's own files in place, off the bank's date-of-birth-and-citizen-ID password and onto one he chooses; it writes and verifies a replacement before `os.replace` touches anything. `copy` then writes plain, password-free copies for an agent to read, leaving the originals untouched. Encrypting those copies would protect nothing, since the agent would need the password to read them — the exposure that mattered was closed by the first command, not the second.
+
+KBANK and SCB share one password and Krungthai uses another, so the `archive` step is run **twice**, once per bank password, both times onto the same new one — which collapses two passwords into one and makes the later `copy` a single run. A run reports the files its password did not open and leaves them completely alone, so nothing needs sorting by bank.
+
+Passwords are typed at a hidden prompt and are never arguments, environment variables or files. `--dry-run` previews either mode, `--generate` invents a new password (rejected with `--decrypt`, which has none to invent), and `self-test` proves rotation, decryption and archive replacement on generated PDFs without touching a real statement.
+
 ## Docker / Supabase acceptance
 
 Docker acceptance uses only the `private-ledger-local` Supabase project on `supabase_network_private-ledger-local` (its default Docker network — see `DECISIONS.md` D-008, D-009). Do not modify the older PostgreSQL/pgAdmin containers or the Windows PostgreSQL service.

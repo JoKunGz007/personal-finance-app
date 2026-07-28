@@ -32,7 +32,7 @@ pnpm build
 pnpm test:e2e
 ```
 
-The browser tests use invented transaction data from `lib/synthetic.ts`. `private-statements/` is ignored and must never be used as a fixture source.
+The browser tests use invented transaction data from `lib/synthetic.ts`. `private-statements/` and `shared-statements/` are both ignored, and neither may ever be used as a fixture source — see `docs/FIXTURE_POLICY.md`.
 
 No hosted Supabase project, Vercel project, deployment, commit, or push is part of the local stage. Hosted work begins only after a clean `supabase db reset` and all local acceptance checks pass.
 

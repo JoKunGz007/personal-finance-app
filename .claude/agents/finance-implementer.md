@@ -24,5 +24,5 @@ Return a concise summary rather than shipping a plausible-looking guess. A retur
 ## Never
 - Do not broaden scope, add speculative abstractions, or improve adjacent code beyond the task.
 - Do not weaken the strict CSP or any exact-money / append-only / audit / least-privilege invariant.
-- Do not inspect `private-statements/`, `.env*`, or real financial data; synthetic data only.
+- Do not inspect `private-statements/`, `.env*`, or real financial data; synthetic data only. D-049 opened `shared-statements/` to the **parent only** — you write fixtures, which is where a real value would do lasting damage. Ask the parent for structural findings instead.
 - Do not commit or push.

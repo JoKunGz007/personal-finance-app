@@ -25,3 +25,24 @@ A dump is **not a fixture**. It describes a real document, so:
 - A dump is working material for one layout, deleted once that layout reads.
 
 Once folder access exists, "no values reach the agent" rests on this policy rather than on structure. Treat any direct read of `private-statements/` as a policy breach to report, not a shortcut to take.
+
+## Shared working copies
+
+Amended 2026-07-28 (DECISIONS D-049). The owner has granted agents read access to real statements, under one condition and in one place.
+
+`private-statements/` **is unchanged and remains closed.** Its files are the originals, and their password is derived from the owner's date of birth and citizen ID — identity-grade, non-rotatable, and worth more than the documents it protects. Nothing here reopens it.
+
+What is open is `shared-statements/`: copies produced by `scripts/repassword-pdfs.py copy --decrypt`. An agent may read those files directly. The directory is gitignored.
+
+The copies carry **no password at all**, and that is deliberate rather than a lapse. The protection happened upstream: the owner first rotated his own archive off the bank password with `archive` mode, so no file anywhere still opens with his date of birth and citizen ID. Encrypting the shared copies on top of that would have protected nothing from the agent — it would have to be handed the password to read them — while adding a decryption step to every read. The password that mattered is already gone; what is left is the document, which is what the owner agreed to share.
+
+The owner's reasoning, recorded because a later reader will otherwise assume it was an oversight: the line items on a bank statement are not sensitive to him, and the header — name, account number, branch — is exposure he has explicitly accepted. That acceptance is his to give. It is also *specific*: it covers statement contents, not passwords, keys, `.env*`, backups, or the citizen ID itself.
+
+**Masked dumps stay the first resort.** They are cheaper in every sense, and most reader work needs structure rather than values. Reach for a shared copy when a dump has actually proven insufficient — a layout that will not parse, a discrepancy that only the rendered page explains — not by default because it is now permitted.
+
+Two rules survive this amendment intact, and they are the ones that matter:
+
+- **No real value becomes a fixture, ever.** Reading a statement changes what an agent may *look at*; it changes nothing about what may be *written down*. Fixture geometry, wordings, amounts and dates stay invented. Do not transcribe, redact, perturb or round a value out of a shared copy into a test, a doc, or a commit. This is the rule the whole policy exists to protect, and widening read access makes it easier to break by accident.
+- **Nothing from a shared copy is committed**, quoted into a continuity doc, or pasted into a transcript beyond what the work requires. Structural counts — rows, pages, columns — remain reportable. Amounts, balances, counterparties, account numbers and names do not.
+
+Screenshots deserve their own line, because they defeat every one of these rules at once and are easy to reach for. Do not screenshot a rendered statement, and do not screenshot the app's review table, which shows descriptions and amounts.

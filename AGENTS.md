@@ -30,7 +30,7 @@ Use subagents selectively. The parent owns decomposition, integration, final dec
 - Read `SPEC.md`, `PLAN.md`, `DECISIONS.md`, and `GOTCHAS.md` before substantive work.
 - Update affected continuity docs often and before each final response; use `$sync-continuity` after substantive changes.
 - Keep `CLAUDE.md` and `HANDOFF.md` as lean entry points to the maintained docs.
-- Keep entries concise, evidence-based, and linked to source. Never include credentials, PII, or real financial data, and never inspect `private-statements/`.
+- Keep entries concise, evidence-based, and linked to source. Never include credentials, PII, or real financial data, and never inspect `private-statements/`. Real statements are readable only as `shared-statements/` copies (D-049), and reading one never licenses writing a real value into a fixture, doc or commit.
 
 ## Codex only
 
