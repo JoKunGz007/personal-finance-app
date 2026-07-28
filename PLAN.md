@@ -168,6 +168,8 @@ Only after every local task above passes:
 
 ## Working constraints
 
+- **The local ledger holds real financial records as of 2026-07-28** (D-047). Treat every destructive command as operating on real data: `pnpm test`, both Playwright configs and `pnpm supabase:reset` all delete it. The first three now refuse through `assertOnlyDisposableLedgerData`; the reset cannot be guarded. Back up through Recovery / 04 before any of them, and never silence the guard with `ALLOW_DESTRUCTIVE_TESTS=1` to get a green run.
+- Separating the real ledger from the one the tests own is **chosen but unbuilt**. Until it exists, a full green suite run and a populated real ledger cannot both be had on this database.
 - Do not inspect `private-statements/`.
 - Do not commit, push, deploy, or create hosted resources without explicit authorization.
 - Do not request the Windows PostgreSQL password until a separately approved backup/recovery task actually needs it.

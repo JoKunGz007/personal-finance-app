@@ -4,6 +4,7 @@ import { canonicalJson } from "@/lib/canonical";
 import { decryptBackup, encryptBackup } from "@/lib/backup";
 import { backupSnapshotSchema } from "@/lib/backup-contract";
 import { buildRestorePlan } from "@/lib/restore-plan";
+import { assertOnlyDisposableLedgerData } from "./helpers/local-owner";
 
 // Full schema-v2 recovery chain over more than 1,000 rows:
 // export -> validate -> encrypt -> decrypt -> stage -> chunk x11 -> commit -> re-export.
@@ -146,6 +147,12 @@ commit;`);
 
 describe.skipIf(!reachable)(`schema-v2 recovery chain over ${ROW_COUNT} rows`, () => {
   it("survives export, encryption, staged chunked restore, and re-export", async () => {
+    // This suite is non-destructive by design — it exports what it finds and restores it
+    // at the end — but `WIPE` above deletes every row unscoped, so a crash between the two
+    // loses whatever was there. That is a fair bet against seed data and a bad one against
+    // a real import, which is what the guard distinguishes.
+    assertOnlyDisposableLedgerData(["dddddddd-0000-4000-8000-000000000001"]);
+
     // Preserve whatever the database currently holds so the run is non-destructive.
     const original = exportSnapshot();
 

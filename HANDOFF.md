@@ -1,12 +1,18 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-07-27 (portable recovery, then account creation)
+Last updated: 2026-07-28 (the first real import, and the guard it forced)
 
 Thin entry point. Project state lives in the maintained docs — do not duplicate it here.
 
 Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-045) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture, and recovery contracts are in `PRODUCT.md`, `DESIGN.md`, and `docs/` — including the three per-bank layout contracts, [docs/KRUNGTHAI_CONTRACT.md](docs/KRUNGTHAI_CONTRACT.md), [docs/SCB_CONTRACT.md](docs/SCB_CONTRACT.md) and [docs/KBANK_CONTRACT.md](docs/KBANK_CONTRACT.md). Local setup and the validation order are in `docs/LOCAL_DEV.md`.
+
+## Read this before running anything destructive
+
+**The local ledger holds real financial records** as of 2026-07-28 (D-047): one real KBANK statement, 55 rows, cross-checked, imported through the app. It was backed up and the backup was *proven* — the ledger was destroyed and restored from the encrypted file, all 175 rows returning.
+
+`pnpm test`, both Playwright configs and `pnpm supabase:reset` all delete that data. The first three now refuse via `assertOnlyDisposableLedgerData`; `supabase:reset` cannot be guarded. **Back up through Recovery / 04 first, and do not set `ALLOW_DESTRUCTIVE_TESTS=1` merely to get a green run** — with real data present, a fully green suite and a populated real ledger cannot both be had on this database until the real ledger is separated from the test one (chosen, unbuilt).
 
 ## Where the project stands
 

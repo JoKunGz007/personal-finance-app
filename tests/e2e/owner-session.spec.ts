@@ -36,6 +36,10 @@ test.skip(!reachable, "The local Supabase container is unreachable; run `pnpm su
 test.beforeEach(() => {
   const owner = ownerId();
   expect(owner, "the seeded owner must exist").toMatch(/^[0-9a-f-]{36}$/);
+  // Before the reset, not after: the account-creation spec makes a KBANK account through
+  // the UI with a database-assigned id, so one left by a previous run is an account the
+  // reset's guard cannot recognise and would refuse to proceed past.
+  psql(`delete from public.accounts where owner_id = '${owner}' and bank_code = 'KBANK' and last_four = '7890';`);
   const cleaned = resetOwnerImportSurface(owner, TEST_ACCOUNTS);
   expect(cleaned.ok, `cleanup failed: ${cleaned.output}`).toBe(true);
   // Both synthetic statements print account ending 7890; the seeded accounts end 4242, so
@@ -49,10 +53,6 @@ test.beforeEach(() => {
     on conflict (id) do nothing;
   `);
   expect(setup.ok, `account setup failed: ${setup.output}`).toBe(true);
-  // The account-creation spec makes a KBANK account ending 7890 through the UI. Removing
-  // it here rather than only at the end keeps that spec starting from the dead end it is
-  // about, however a previous run ended.
-  psql(`delete from public.accounts where owner_id = '${owner}' and bank_code = 'KBANK' and last_four = '7890';`);
 });
 
 // The chooser lists every account the owner holds, and the seed now creates one per

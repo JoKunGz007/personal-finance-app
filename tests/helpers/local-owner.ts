@@ -120,8 +120,47 @@ export function ownerId(): string {
   return lookup.output.trim().split("\n")[0]!.trim();
 }
 
+// Accounts that exist because `supabase/seed.sql` put them there. Everything else in
+// `public.accounts` was created by a suite (which passes its own ids in) or by a person.
+const SEEDED_ACCOUNT_IDS = [
+  "11111111-2222-4333-8444-555555555555",
+  "11111111-2222-4333-8444-555555555556",
+  "11111111-2222-4333-8444-555555555557"
+] as const;
+
+// The escape hatch, and it is deliberately awkward to reach for.
+const OVERRIDE = "ALLOW_DESTRUCTIVE_TESTS";
+
+// Refuses to run the wipe below against a ledger holding accounts nobody recognises.
+//
+// This exists because the deletes are owner-scoped rather than test-scoped: they remove
+// *every* transaction, batch, artifact and audit row the owner has, not only the ones a
+// suite created. That was harmless while the database held nothing but the seed, and
+// stopped being harmless the moment a real statement was imported into it — at which
+// point `pnpm test` silently became a command that destroys real financial records.
+//
+// An unrecognised account is the signal, because suites always know their own account ids
+// and the seed's are fixed. A leftover account from a crashed run trips this too, which is
+// correct: something is in the database that no test is entitled to delete.
+export function assertOnlyDisposableLedgerData(recognizedAccountIds: readonly string[]): void {
+  if (process.env[OVERRIDE] === "1") return;
+  const known = [...SEEDED_ACCOUNT_IDS, ...recognizedAccountIds].map((id) => `'${id}'`).join(",");
+  const found = psql(`select count(*) from public.accounts where id not in (${known});`);
+  if (!found.ok) throw new Error(`could not check the ledger before wiping it: ${found.output}`);
+  if (Number(found.output.trim()) === 0) return;
+
+  throw new Error(
+    `Refusing to wipe the ledger: ${found.output.trim()} account(s) in public.accounts were created by neither the seed nor this suite.\n` +
+    "These deletes are owner-scoped, so running them would remove every transaction, batch and audit row this owner has — including any real import.\n" +
+    `Take a backup first (Recovery / 04 in the app), then set ${OVERRIDE}=1 for this run if the data really is disposable.`
+  );
+}
+
 // Removes every trace a suite may have left in this owner's import surface, plus the
 // TOTP factors enrolled to reach aal2, so runs are repeatable.
+//
+// Guarded: see assertOnlyDisposableLedgerData above. The accounts passed in are treated as
+// recognised, since a caller naming an account to delete is a caller that knows about it.
 //
 // Audit rows are append-only in product code, so they are cleared here through
 // `session_replication_role = replica` — the same escape hatch the backup round-trip
@@ -131,6 +170,7 @@ export function ownerId(): string {
 // sitting at or below an existing id, and the next real import fails on
 // `audit_events_pkey` for reasons that have nothing to do with the test. See GOTCHAS.
 export function resetOwnerImportSurface(owner: string, accountIds: readonly string[]): { ok: boolean; output: string } {
+  assertOnlyDisposableLedgerData(accountIds);
   const accounts = accountIds.map((id) => `'${id}'`).join(",");
   return psql(`
     set session_replication_role = replica;

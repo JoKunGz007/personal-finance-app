@@ -5,7 +5,7 @@ import { backupSnapshotSchema, BACKUP_TABLE_KINDS } from "@/lib/backup-contract"
 import { buildRestorePlan } from "@/lib/restore-plan";
 import {
   API, CONTAINER, OWNER_EMAIL, OWNER_PASSWORD,
-  api, containerReachable, psql, psqlAt, sessionAt, type OwnerSession
+  api, assertOnlyDisposableLedgerData, containerReachable, psql, psqlAt, sessionAt, type OwnerSession
 } from "./helpers/local-owner";
 
 // Portable recovery into an empty, separately bound project — PLAN.md § Later
@@ -185,6 +185,11 @@ function sourceOwnerTraces(): number {
 
 describe.skipIf(!ready)("portable recovery into an empty separately bound project", () => {
   it("carries a ledger across projects and rebinds every owner and actor", async () => {
+    // This suite exports the *whole* source ledger and restores it into the destination
+    // project, so an unrecognised account here would be copied into a second database as
+    // well as read. Both are local, but a real ledger should not spread by running a test.
+    assertOnlyDisposableLedgerData([ID(1)]);
+
     clearFactors(CONTAINER, SOURCE_OWNER);
     clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
     const sourceSession = await sessionAt(API, OWNER_EMAIL, OWNER_PASSWORD);

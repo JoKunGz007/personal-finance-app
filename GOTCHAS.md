@@ -392,6 +392,13 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: apply the migration files to a second local project directly, in filename order, and record each in `supabase_migrations.schema_migrations` — which the CLI creates during `db reset`/`db push`, so a stack started with no migrations does not have it. Each file opens its own transaction, so feed them verbatim rather than wrapping them, or psql warns `there is already a transaction in progress` and the history insert lands outside the file's commit.
 - Verify: `node scripts/recovery-destination.mjs up` reports nine migrations applied, and `status` shows the owner bound and an empty ledger.
 
+## `pnpm test` deletes every row the owner has, not just the test's own
+
+- Symptom: a ledger holding a real import is empty after a routine test run, or a suite aborts with "Refusing to wipe the ledger: N account(s) … created by neither the seed nor this suite".
+- Cause: `resetOwnerImportSurface` deletes `source_transactions`, `source_components`, `import_batch_rows`, `import_batches`, `import_artifacts` and `audit_events` **scoped to the owner**, not to the suite — and there is one owner. `tests/backup-roundtrip.test.ts` goes further and deletes every row unscoped between its export and its restore. Harmless against a seed; destructive against anything real.
+- Avoid: the abort is the guard (`assertOnlyDisposableLedgerData`) doing its job — do not reach for `ALLOW_DESTRUCTIVE_TESTS=1` to make it quiet. Take a backup through Recovery / 04 first, and only then decide the data is disposable. Note `pnpm supabase:reset` is the Supabase CLI and cannot be guarded at all.
+- Verify: with a real account present, `pnpm exec vitest run tests/backup-roundtrip.test.ts` fails with the refusal instead of wiping; with that account passed in as recognised, the same check counts zero.
+
 ## A bare tag locator is a contract only while the page holds one of that tag
 
 - Symptom: every browser spec in a suite fails at once with `strict mode violation: locator('input[type="file"]') resolved to 2 elements`, after a change that touched none of them.
