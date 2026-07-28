@@ -136,7 +136,18 @@ The one open **task** blocker — the parser's `headerY` resolution — is fixed
 
     **What this still does not establish:** neither statement was imported. Binding, the authenticated import path, and reconciliation against real rows remain unexercised on real input, and are gated by § Later authorization gates item 3 below. Both statements print account suffixes no seeded account matches, so binding refuses — correctly.
 
-Tasks 1–12, 14 and 15 are complete and verified for statements. Remaining: task 13 (receipts, behind an OCR spike) and task 16 (pinning the two unpinned browser configs, found 2026-07-28).
+Tasks 1–12, 14, 15 and 16 are complete and verified for statements. Remaining build work, in the order settled 2026-07-28 (D-050, D-051):
+
+17. **Transactions view.** Front-end only — `list_account_transactions` already returns date, label, description, reference, branch, exact-text balance, components, provenance and overlays, sorted newest-first, and `GET /api/v1/accounts/[id]/transactions` already serves it authenticated and `no-store`. No migration, no new RPC, no new route. It is per-account with no pagination or server-side filtering, so an all-accounts view means one call each merged in the browser and filtering client-side; fine at this scale, revisit past tens of thousands of rows. Money stays exact text and never becomes a float. Local-first, and first because it exposes data problems while the ledger is 55 rows rather than thousands.
+18. **Import the remaining statements.** 15 read cleanly; one is in the ledger. Needs the owner present. Back up after each batch.
+19. **Google OAuth + hosted Supabase + Vercel, as one move** (D-051), including the identity restore and a real security review. OAuth gates hosting because the development sign-in refuses non-loopback requests.
+20. **Slip capture via share-to-app** (D-050): QR for identity, owner confirms the amount, categorise. No OCR yet.
+21. **OCR pre-fill** into that same form, region-targeted per bank layout with a digit whitelist, never auto-confirming.
+22. **Statement reconciliation** against captured slips, plus manual entry for cash.
+
+Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slips; paper receipts from cash purchases are entered by hand rather than read.
+
+13. **Receipts, as a separate build** — see tasks 20–22, which supersede the OCR-first framing below. The CSP question it was blocked on is answered: `next.config.ts` already allows `'wasm-unsafe-eval'` and `worker-src blob:`, which is what tesseract.js needs, provided its worker, core and language files are bundled locally rather than fetched from a CDN.
 
 16. ~~**Pin the Supabase target in `playwright.isolated.config.ts` and `playwright.config.ts`.**~~ **Closed 2026-07-28.** Found while re-running the gate after the D-048 migration: `NEXT_PUBLIC_*` are inlined at build time and both configs ran `pnpm build` with no `webServer.env`, so once `.env.local` aimed at `private-ledger-live` either one built a browser suite against real financial records. Only `playwright.owner.config.ts` pinned — its comment about removing "the one path by which a configuration change could aim the suite at real data" was true of itself alone.
 

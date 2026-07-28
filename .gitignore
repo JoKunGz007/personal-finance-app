@@ -9,6 +9,11 @@ __pycache__/
 # Private financial source documents
 private-statements/
 
+# Real transfer slips and receipts used to size the OCR work. Images, so no masking
+# harness reaches them and nothing here can be made value-free — treat as raw private
+# data and never commit one (docs/FIXTURE_POLICY.md).
+receipts_sample/
+
 # Owner-produced working copies, written without a password so an agent can read
 # them (DECISIONS D-049, docs/FIXTURE_POLICY.md). They are still real statements,
 # so they are never committed and never become fixtures.
