@@ -4,7 +4,7 @@ Last updated: 2026-07-28 — trimmed back to a thin entry point and synced; `mai
 
 Thin entry point. It carries only what is **mutable and current**: live authorizations, the destructive-operation state of this machine, and where to start reading. Project state lives in `PLAN.md` — if you are about to add a status paragraph here, add it there instead. Why the rule is ownership rather than length, and how this file drifted to 102 lines despite it: D-052.
 
-**Headline.** The real ledger lives in its own Supabase project and the full gate is green against the synthetic one. Statement work is closed. Task 17 (transactions view) is **built, refined against the real ledger by the owner, and still has no automated browser check** — an owner-session Playwright spec is what it owes. Open build work after it: `PLAN.md` tasks 18–22.
+**Headline.** The real ledger lives in its own Supabase project and the full gate is green against the synthetic one. Statement work is closed. Task 17 (transactions view) is **done and verified both ways** — driven against the real ledger by the owner, and covered by two owner-session Playwright specs. Open build work: `PLAN.md` tasks 18–22.
 
 Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-052, append-only) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 

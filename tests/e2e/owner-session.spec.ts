@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { formatThb } from "../../lib/money";
 import { validStatement } from "../fixtures/krungthai-layout-v1";
 import { kbankStatement, scbStatement } from "../fixtures/statement-layouts";
 import { buildStatementPdf } from "../fixtures/synthetic-pdf";
@@ -368,4 +369,119 @@ test("refuses an SCB statement bound to a Krungthai account with the same last f
 
   const owner = ownerId();
   expect(psql(`select count(*) from public.import_batches where owner_id = '${owner}';`).output.trim()).toBe("0");
+});
+
+// PLAN task 17. The unit suite covers the wire contract and the pure derivations, which
+// is exactly the evidence D-027 warns is weaker than it looks: none of it renders a row.
+// These two specs are the first thing that runs the view itself.
+
+async function importStatement(
+  page: import("@playwright/test").Page,
+  pdf: Uint8Array,
+  accountId: string,
+  boundLabel: string,
+  expectedRowsAfter: number
+) {
+  await readStatement(page, pdf);
+  await page.getByRole("button", { name: "Load ledger accounts" }).click();
+  const chooser = page.locator('select[name="ledger-account"]');
+  await expect(chooser.locator("option")).toHaveCount(expectedOptionCount(), { timeout: 15_000 });
+  await chooser.selectOption(accountId);
+  await page.getByRole("button", { name: "Bind statement to this account" }).click();
+  await expect(page.getByRole("status")).toContainText(`Bound to ${boundLabel}`);
+  await page.getByRole("button", { name: "Confirm import" }).click();
+  await expect(page.getByRole("status")).not.toContainText("could not be confirmed", { timeout: 30_000 });
+
+  // Assert the rows are in the database before moving on. A negative assertion on the
+  // status line passes for a confirm that never rendered anything at all, so without
+  // this a lost import surfaces later as a puzzling row count in a different assertion.
+  await expect.poll(
+    () => psql(`select count(*) from public.source_transactions where owner_id = '${ownerId()}';`).output.trim(),
+    { message: `the ${boundLabel} import must have landed`, timeout: 15_000 }
+  ).toBe(String(expectedRowsAfter));
+}
+
+test("reads a confirmed import back, and switches between merged and per-account", async ({ page }) => {
+  await signIn(page);
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  const ledger = page.locator("section.ledger-band");
+  // Nothing loads until asked, so the table cannot exist before the button is pressed.
+  await expect(ledger.locator("table")).toHaveCount(0);
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+
+  const rows = ledger.locator("tbody tr");
+  await expect(rows).toHaveCount(4, { timeout: 30_000 });
+  await expect(ledger.getByText("Imported accounts: 1 of")).toBeVisible();
+
+  // Merged is the default and carries both money columns.
+  await expect(ledger.getByRole("columnheader", { name: "Account balance" })).toBeVisible();
+  await expect(ledger.getByRole("columnheader", { name: "All accounts" })).toBeVisible();
+
+  // Choosing one account drops the combined column and shows the printed reference
+  // instead of the account name, because neither is useful in the other mode.
+  await ledger.getByLabel("Account").selectOption(MATCHING_ACCOUNT);
+  await expect(ledger.getByRole("columnheader", { name: "All accounts" })).toHaveCount(0);
+  await expect(ledger.getByRole("columnheader", { name: "Reference" })).toBeVisible();
+  await expect(ledger.getByRole("columnheader", { name: "Balance", exact: true })).toBeVisible();
+  await expect(rows).toHaveCount(4);
+
+  // An account holding nothing shows the empty state rather than an empty table.
+  await ledger.getByLabel("Account").selectOption(MISMATCHED_ACCOUNT);
+  await expect(ledger.locator("table")).toHaveCount(0);
+  await expect(ledger.getByText("No transaction matches this filter")).toBeVisible();
+});
+
+test("orders both ways and derives the all-accounts balance from every account", async ({ page }) => {
+  await signIn(page);
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+  // A second account with rows is what makes the combined column mean anything: with one
+  // account it is trivially that account's own balance and a broken derivation would pass.
+  await page.goto("/");
+  await importStatement(page, buildStatementPdf(scbStatement), SCB_ACCOUNT, "Browser synthetic SCB", 7);
+
+  const owner = ownerId();
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+
+  const rows = ledger.locator("tbody tr");
+  await expect(rows).toHaveCount(7, { timeout: 30_000 });
+  await expect(ledger.getByText("Imported accounts: 2 of")).toBeVisible();
+
+  // The newest row sits after every account's latest row, so the combined figure there
+  // must equal the sum of each account's final printed balance. Computed in SQL rather
+  // than restated in the spec, so this checks the app against the database and not
+  // against a number someone typed twice.
+  const expected = psql(`
+    select sum(x)::text from (
+      select distinct on (account_id) post_balance_minor as x
+      from public.source_transactions where owner_id = '${owner}'
+      order by account_id, source_date desc, source_time desc nulls last, id
+    ) latest;
+  `);
+  expect(expected.ok, `balance query failed: ${expected.output}`).toBe(true);
+
+  const newest = rows.first();
+  await expect(newest.locator('td[data-label="All accounts"]')).toHaveText(formatThb(expected.output.trim()));
+  // And it is genuinely a different number from that row's own account balance, which is
+  // what a regression collapsing the two columns would break.
+  await expect(newest.locator('td[data-label="Account balance"]'))
+    .not.toHaveText(formatThb(expected.output.trim()));
+
+  // Oldest-first reverses the list. Comparing the two ends rather than a fixed date keeps
+  // this independent of the fixtures' calendar.
+  const newestDate = await newest.locator("time").getAttribute("datetime");
+  const oldestDate = await rows.last().locator("time").getAttribute("datetime");
+  expect(newestDate! >= oldestDate!, "default order must be newest first").toBe(true);
+
+  await ledger.getByLabel("Order").selectOption("oldest");
+  await expect(rows.first().locator("time")).toHaveAttribute("datetime", oldestDate!);
+  await expect(rows.last().locator("time")).toHaveAttribute("datetime", newestDate!);
+
+  // The filter narrows the list without touching the balances, which are a fact about the
+  // ledger rather than about the rows a search matched.
+  await ledger.getByLabel("Filter").fill("no-such-description-anywhere");
+  await expect(ledger.locator("table")).toHaveCount(0);
+  await ledger.getByLabel("Filter").fill("");
+  await expect(rows).toHaveCount(7);
 });
