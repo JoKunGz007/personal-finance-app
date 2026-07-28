@@ -9,7 +9,7 @@ describe("privacy guardrails", () => {
 
   it("does not register a service worker or install observation tooling", () => {
     const packageJson = readFileSync("package.json", "utf8");
-    const ui = readFileSync("app/ledger-app.tsx", "utf8");
+    const ui = readFileSync("app/ledger-app.tsx", "utf8") + readFileSync("app/transactions-view.tsx", "utf8");
     expect(ui).not.toMatch(/serviceWorker|localStorage|sessionStorage|console\./);
     expect(packageJson).not.toMatch(/analytics|sentry|datadog|hotjar|fullstory/i);
   });

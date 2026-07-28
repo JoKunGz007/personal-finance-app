@@ -4,7 +4,7 @@ Last updated: 2026-07-28 — trimmed back to a thin entry point and synced; `mai
 
 Thin entry point. It carries only what is **mutable and current**: live authorizations, the destructive-operation state of this machine, and where to start reading. Project state lives in `PLAN.md` — if you are about to add a status paragraph here, add it there instead. Why the rule is ownership rather than length, and how this file drifted to 102 lines despite it: D-052.
 
-**Headline.** The real ledger lives in its own Supabase project and the full gate is green against the synthetic one. Statement work is closed; open build work is `PLAN.md` tasks 17–22, transactions view first.
+**Headline.** The real ledger lives in its own Supabase project and the full gate is green against the synthetic one. Statement work is closed. Task 17 (transactions view) is **built and unit-verified but has never run in a browser** — that spec is the next thing owed. Open build work after it: `PLAN.md` tasks 18–22.
 
 Read in order: [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) → [DECISIONS.md](DECISIONS.md) (D-001…D-052, append-only) → [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
@@ -31,7 +31,7 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 ## Before you touch anything
 
-- Run `git status --short`. Two kinds of uncommitted file are in the tree and they are not the same thing. **Three config files** — `eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml` — are **deliberately local-only**; preserve them, do not commit them. The continuity edits of 2026-07-28 (`HANDOFF.md`, `SPEC.md`, `PLAN.md`, `DECISIONS.md`, `GOTCHAS.md`, `.agents/skills/sync-continuity/SKILL.md` — D-052) are ordinary work awaiting authorization to commit.
+- Run `git status --short`. Two kinds of uncommitted file are in the tree and they are not the same thing. **Three config files** — `eslint.config.mjs`, `playwright.config.ts`, `pnpm-workspace.yaml` — are **deliberately local-only**; preserve them, do not commit them. Everything else uncommitted is ordinary work awaiting authorization to commit: as of 2026-07-28 that is the task 17 transactions view (`lib/transactions.ts`, `lib/wire.ts`, `app/transactions-view.tsx`, `tests/transactions.test.ts`, plus edits to `app/ledger-app.tsx`, `app/globals.css`, `tests/privacy.test.ts`) and the D-053 slip assessment in `DECISIONS.md`, `GOTCHAS.md` and `PLAN.md`.
 - `main` was level with `origin/main` at `94a0144` on 2026-07-28. Check with `git log --oneline -3` rather than trusting this line; it is a snapshot.
 - `shared-statements/` holds 16 password-free files — 12 SCB, 1 Krungthai and 2 KBANK statements, plus `KBANK-01.pdf`, which is a bank-code reference sheet rather than a statement and correctly refuses with `UNSUPPORTED_LAYOUT`. `masked-dumps/` holds the matching `shared-01…16.md`; sorted order maps to 01–03 KBANK, 04 Krungthai, 05–16 SCB. Both are gitignored working material, never fixtures, and neither contains a receipt — tasks 20–21 need their own samples.
 - The recovery destination is a **second Supabase project** and may be left stopped. `node scripts/recovery-destination.mjs up` starts and migrates it, `down` discards it. `tests/recovery-portability.test.ts` skips without it, the Vitest totals read the same either way, and a skipped run proves nothing about recovery.

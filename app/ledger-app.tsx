@@ -11,6 +11,8 @@ import type { StatementFrame } from "@/lib/statement-frame";
 import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
+import { readError } from "@/lib/wire";
+import { TransactionsView } from "@/app/transactions-view";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
 const stages: Array<{ id: Stage; label: string }> = [
@@ -35,15 +37,6 @@ const categories = ["Uncategorized", "Income", "Food", "Cash", "Fees", "Interest
 
 function stageIndex(stage: Stage) {
   return stages.findIndex((item) => item.id === stage);
-}
-
-// Every route answers a failure as { error }. Reading it back rather than showing a
-// status code matters most on the recovery path, where the server's own wording is the
-// only guidance a person has.
-function readError(body: unknown, fallback: string): string {
-  return typeof body === "object" && body !== null && "error" in body
-    ? String((body as { error: unknown }).error)
-    : fallback;
 }
 
 function downloadFile(contents: string, name: string, type: string) {
@@ -799,6 +792,8 @@ export function LedgerApp() {
           {recoveryNote ? <div className="warning" role="status"><strong>Recovery</strong><span>{recoveryNote}</span></div> : null}
           {recoveryError ? <div className="warning error" role="alert"><strong>Recovery failed</strong><span>{recoveryError}</span></div> : null}
         </section>
+
+        <TransactionsView />
       </main>
 
       <footer><span>Private Ledger</span><p>No analytics · no session replay · no financial response caching</p></footer>

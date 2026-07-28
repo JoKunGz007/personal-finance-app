@@ -1,0 +1,145 @@
+import { z } from "zod";
+import { isoDateSchema } from "@/lib/dates";
+import { minorUnitStringSchema, type MinorUnitString } from "@/lib/money";
+
+// Wire contract for GET /api/v1/accounts/[id]/transactions, which returns
+// `public.list_account_transactions` verbatim. Column names stay as the database
+// returns them, matching the other read endpoints (lib/accounts.ts).
+//
+// Money arrives as text because the RPC casts every bigint with `::text`. Parsing it
+// into a number here would be the one place a float could enter the read path, so
+// the schema accepts canonical integer strings only and every derivation below is
+// BigInt. A balance past 2^53 minor units is not reachable at this scale, but the
+// rule is structural rather than sized: nothing in this app turns money into a
+// double, and a read path is where that habit would first slip.
+
+export const ledgerComponentSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(["deposit", "withdrawal"]),
+  amount_minor: minorUnitStringSchema,
+  currency: z.literal("THB")
+}).strict();
+
+// `to_jsonb(o) - 'owner_id' - 'transaction_id'` yields exactly the remaining
+// columns of public.transaction_overlays. Strict on purpose: a migration that adds
+// a column should fail this parse loudly rather than have the view quietly ignore
+// a field the ledger now considers part of an overlay.
+export const transactionOverlaySchema = z.object({
+  category_id: z.string().uuid().nullable(),
+  description: z.string().nullable(),
+  counterparty: z.string().nullable(),
+  effective_date: isoDateSchema.nullable(),
+  note: z.string().nullable(),
+  include_in_reporting: z.boolean(),
+  revision: z.number().int().nonnegative(),
+  updated_at: z.string()
+}).strict();
+
+export const importBatchRowSchema = z.object({
+  batch_id: z.string().uuid(),
+  source_index: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  row_number: z.number().int().positive(),
+  parser_fields: z.unknown(),
+  linked_existing: z.boolean()
+}).strict();
+
+export const ledgerTransactionSchema = z.object({
+  id: z.string().uuid(),
+  source_date: isoDateSchema,
+  source_time: z.string().nullable(),
+  effective_date: isoDateSchema,
+  transaction_label: z.string(),
+  description: z.string(),
+  reference: z.string().nullable(),
+  branch: z.string().nullable(),
+  post_balance_minor: minorUnitStringSchema,
+  currency: z.literal("THB"),
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  source_components: z.array(ledgerComponentSchema),
+  import_batch_rows: z.array(importBatchRowSchema),
+  transaction_overlays: z.array(transactionOverlaySchema)
+}).strict();
+
+export const transactionListSchema = z.object({
+  transactions: z.array(ledgerTransactionSchema)
+}).strict();
+
+export type LedgerTransaction = z.infer<typeof ledgerTransactionSchema>;
+
+/** A transaction carrying the account it was read from, for the merged view. */
+export type AccountTransaction = LedgerTransaction & { account_id: string };
+
+/**
+ * Net movement of a row: components already carry their sign (deposits positive,
+ * withdrawals negative, enforced by componentSchema and by the database), so the
+ * sum is the movement and no per-kind branching is needed.
+ */
+export function movementMinor(transaction: LedgerTransaction): MinorUnitString {
+  const total = transaction.source_components.reduce((sum, component) => sum + BigInt(component.amount_minor), 0n);
+  return total.toString() as MinorUnitString;
+}
+
+export type TransactionTotals = {
+  rows: number;
+  deposits: MinorUnitString;
+  withdrawals: MinorUnitString;
+  net: MinorUnitString;
+};
+
+export function summarize(transactions: readonly LedgerTransaction[]): TransactionTotals {
+  let deposits = 0n;
+  let withdrawals = 0n;
+  for (const transaction of transactions) {
+    for (const component of transaction.source_components) {
+      const amount = BigInt(component.amount_minor);
+      if (component.kind === "deposit") deposits += amount;
+      else withdrawals += amount;
+    }
+  }
+  return {
+    rows: transactions.length,
+    deposits: deposits.toString() as MinorUnitString,
+    withdrawals: withdrawals.toString() as MinorUnitString,
+    net: (deposits + withdrawals).toString() as MinorUnitString
+  };
+}
+
+/**
+ * Mirrors the RPC's `order by t.source_date desc, t.source_time desc nulls last, t.id`.
+ *
+ * The merged all-accounts view is several single-account responses concatenated, so
+ * it has to re-sort in the browser; using the same comparator keeps one account's
+ * rows in the order the database would have produced them. `nulls last` is explicit
+ * because PostgreSQL puts nulls *first* under `desc` by default, which is the
+ * opposite of what a reader expects from an untimed row.
+ */
+export function compareTransactions(a: LedgerTransaction, b: LedgerTransaction): number {
+  if (a.source_date !== b.source_date) return a.source_date < b.source_date ? 1 : -1;
+  if (a.source_time !== b.source_time) {
+    if (a.source_time === null) return 1;
+    if (b.source_time === null) return -1;
+    return a.source_time < b.source_time ? 1 : -1;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * Client-side text filter. Per-account server-side filtering does not exist and is
+ * not worth adding at this scale (PLAN task 17); this searches the fields a person
+ * would recognise a row by, and deliberately not the fingerprint or any id.
+ */
+export function matchesQuery(transaction: LedgerTransaction, query: string): boolean {
+  const needle = query.trim().toLocaleLowerCase();
+  if (needle === "") return true;
+  const overlay = transaction.transaction_overlays[0];
+  const haystack = [
+    transaction.transaction_label,
+    transaction.description,
+    transaction.reference,
+    transaction.branch,
+    overlay?.description ?? null,
+    overlay?.counterparty ?? null
+  ];
+  return haystack.some((field) => field !== null && field.toLocaleLowerCase().includes(needle));
+}

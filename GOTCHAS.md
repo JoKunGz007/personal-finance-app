@@ -464,3 +464,17 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: AES-256-GCM authenticates ciphertext and key together, so a wrong PBKDF2 key and a tampered ciphertext both surface as one auth-tag failure. The hedged wording is honest rather than evasive.
 - Avoid: diagnose the envelope separately before suspecting the file. `lib/backup.ts` wraps the ciphertext in plain JSON — header, base64 salt and nonce — and corruption from a move, a sync client or a re-encode breaks *that* long before it reaches the cipher. If the JSON parses, the header matches exactly, the salt is 16 bytes and the nonce is 12, the file is intact and the password is the remaining explanation. This reads no plaintext and needs no password.
 - Verify: done on the real 2026-07-28 backup after a failed restore — 14,784 bytes, envelope structurally perfect, so the file was exonerated without anyone typing a password. Moving a file between volumes copies its bytes; it cannot change them.
+
+## A masking parser that fails open prints exactly what it was written to hide
+
+- Symptom: a probe written to print only field *lengths* from a slip QR printed 20 whole payloads instead, each carrying a per-transaction reference and embedded date digits. The script had an explicit allowlist and still leaked, because the allowlist was consulted after the parse rather than the parse being required to succeed.
+- Cause: the EMVCo TLV in a Thai slip QR nests the bank code and the reference inside a tag-`00` template. A parser that does not recurse reads that template as one opaque field, and a masker keyed on "tag `00` is safe metadata" then prints the whole blob. The failure is silent: the output looks structured and is wrong.
+- Avoid: mask by default, and let a field become printable only after the parse has succeeded and consumed the entire payload. Assert `consumed == len(payload)` before printing anything. An unrecognised structure must print nothing, not its value — the same fail-closed rule the readers follow (D-039), applied to diagnostics.
+- Verify: run the probe over one slip and confirm no run of payload characters appears in the output except the three-digit bank code. `lib/masked-diagnostics.ts` is the model — it is guarded by a test asserting no value survives it (D-038), which a scratchpad script is not.
+
+## A Thai slip QR does not always decode at native screenshot resolution
+
+- Symptom: `cv2.QRCodeDetector().detectAndDecode()` returns an empty string for some slips while others from the same bank decode from the same folder. It looks like those slips carry no QR.
+- Cause: the QR occupies only 0.17–0.26 of image width on a screenshot 1,000–1,300 px wide, which puts the module size near the decoder's limit once JPEG compression has been applied. `detect()` still finds the finder pattern, so "no QR present" and "QR present but unreadable" are different failures that look identical to a caller checking only the payload.
+- Avoid: on an empty payload, retry at 2x cubic upscale before concluding anything. Three of the 23 sample slips need it and all three then decode (D-053). Distinguish the two cases with `detect()` rather than inferring absence.
+- Verify: `detect()` returning `True` while `detectAndDecode()` returns `""` is the signature of the recoverable case; the same image at `fx=2, fy=2` returns a 64-character payload.
