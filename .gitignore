@@ -6,6 +6,11 @@
 # Private financial source documents
 private-statements/
 
+# Encrypted ledger backups. AES-256-GCM under a PBKDF2 key, so the contents are opaque —
+# but it is still the whole ledger, and a repository is the wrong place for it in two
+# ways: it can be pushed, and it dies with the working copy it was meant to survive.
+*.plbak
+
 # Masked structural dumps from scripts/mask-statement.mjs — value-free, but they
 # describe a real document, so committing one would make every fixture written
 # afterwards non-invented (DECISIONS D-035, docs/FIXTURE_POLICY.md).
