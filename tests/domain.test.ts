@@ -159,4 +159,99 @@ describe("segmented reconciliation", () => {
       return reconcileRows(minor("1000000"), rows).warnings.length === 0;
     }));
   });
+
+  // Invented rows throughout (docs/FIXTURE_POLICY.md). The shape is the one a real
+  // Krungthai statement prints (D-055): a date whose rows are printed in a different order
+  // from the one their balances were applied in, with an end-of-day posting printed first
+  // and applied last.
+  const dayRow = (date: string, movement: string, balance: string, index: number) => ({
+    sourceDate: date, sourceTime: null, effectiveDate: date,
+    transactionLabel: "รายการ", description: `Invented ${index}`, reference: `INV-${index}`, branch: null,
+    components: [{
+      kind: (BigInt(movement) > 0n ? "deposit" : "withdrawal") as "deposit" | "withdrawal",
+      amount: { minor: minor(movement), currency: "THB" as const }
+    }],
+    postBalance: { minor: minor(balance), currency: "THB" as const },
+    provenance: { page: 1, row: index, parserFields: { fixture: true } }
+  });
+
+  it("recovers the one ordering of a date's rows that reproduces every printed balance", () => {
+    const rows = [
+      dayRow("2026-07-01", "500", "49500", 1),      // applied last, printed first
+      dayRow("2026-07-01", "-20000", "80000", 2),
+      dayRow("2026-07-01", "-30000", "50000", 3),
+      dayRow("2026-07-01", "-1000", "49000", 4),
+      dayRow("2026-07-02", "-500", "49000", 5)
+    ];
+    const result = reconcileRows(minor("100000"), rows);
+
+    expect(result.blockers).toEqual([]);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]?.code).toBe("out-of-order-run");
+    expect(result.warnings[0]).toMatchObject({
+      row: 1, order: [2, 3, 4, 1], entryBalance: "100000", recoveredClosing: "49500"
+    });
+    // `rows` is printed order, for display.
+    expect(result.rows.map((row) => row.status))
+      .toEqual(["reordered", "reordered", "reordered", "reordered", "balanced"]);
+    // `applied` is the order the balances were applied in, and the order an import submits:
+    // confirm_import walks the payload requiring the chain to close.
+    expect(result.applied.map((row) => row.description))
+      .toEqual(["Invented 2", "Invented 3", "Invented 4", "Invented 1", "Invented 5"]);
+    let running = 100000n;
+    for (const row of result.applied) {
+      running += row.components.reduce((sum, item) => sum + BigInt(item.amount.minor), 0n);
+      expect(running).toBe(BigInt(row.postBalance.minor));
+    }
+    expect(running.toString()).toBe(result.closingBalance);
+    // The run leaves the balance its own order ends on, not the printed-order last row's,
+    // and the next date chains from that.
+    expect(result.rows[0]?.expectedBalance).toBe("49500");
+    expect(result.closingBalance).toBe("49000");
+  });
+
+  it("refuses when more than one ordering of a date's rows closes the chain", () => {
+    const rows = [
+      dayRow("2026-07-01", "1000", "101000", 1),
+      dayRow("2026-07-01", "1000", "101000", 2), // indistinguishable from row 1
+      dayRow("2026-07-01", "-1000", "100000", 3)
+    ];
+    const result = reconcileRows(minor("100000"), rows);
+
+    // Both 1,3,2 and 2,3,1 reproduce every printed balance, so neither is chosen.
+    expect(result.warnings).toEqual([]);
+    expect(result.blockers).toHaveLength(1);
+    expect(result.rows.some((row) => row.status === "blocked")).toBe(true);
+  });
+
+  it("does not reorder across a date boundary", () => {
+    const rows = [
+      dayRow("2026-07-01", "500", "49500", 1), // belongs after the 07-02 rows
+      dayRow("2026-07-02", "-20000", "80000", 2),
+      dayRow("2026-07-02", "-30000", "50000", 3),
+      dayRow("2026-07-02", "-1000", "49000", 4)
+    ];
+    const result = reconcileRows(minor("100000"), rows);
+
+    expect(result.warnings).toEqual([]);
+    expect(result.blockers.length).toBeGreaterThan(0);
+    // Nothing was repaired, so the submitted order is the printed order.
+    expect(result.applied.map((row) => row.description)).toEqual(rows.map((row) => row.description));
+  });
+
+  it("refuses a same-date run too long to settle rather than searching it", () => {
+    // Eleven rows on one date, one past MAX_REORDER_RUN. Built as a correct chain and then
+    // rotated, so an ordering exists and is deliberately not looked for.
+    const movements = ["-100", "-200", "-300", "-400", "-500", "-600", "-700", "-800", "-900", "-1000", "-1100"];
+    let balance = 100000n;
+    const chain = movements.map((movement, index) => {
+      balance += BigInt(movement);
+      return dayRow("2026-07-01", movement, balance.toString(), index + 1);
+    });
+    const rotated = [chain[chain.length - 1]!, ...chain.slice(0, -1)];
+    const result = reconcileRows(minor("100000"), rotated);
+
+    expect(result.warnings).toEqual([]);
+    expect(result.blockers.length).toBeGreaterThan(0);
+  });
 });

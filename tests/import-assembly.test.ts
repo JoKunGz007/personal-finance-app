@@ -29,6 +29,40 @@ describe("import payload assembly", () => {
     expect(result.payload.rows).toHaveLength(4);
   });
 
+  it("submits a reordered statement in applied order and reports the reordering", () => {
+    // The defect this guards: the payload's rows are in applied order, so re-reconciling
+    // the payload finds nothing to report. A caller rendering only its own reconciliation
+    // would show a clean statement and never mention the reordering (D-055).
+    const { frame, rows } = extracted();
+    const day = rows[0]!.sourceDate;
+    // Invented: put every row on one date and print an end-of-day posting first, so the
+    // printed chain breaks and exactly one ordering closes it.
+    const chained = [rows[1]!, rows[2]!, rows[3]!, rows[0]!].map((row) => ({ ...row, sourceDate: day }));
+    let running = BigInt(frame.openingBalance);
+    const renumbered = chained.map((row) => {
+      running += row.components.reduce((sum, item) => sum + BigInt(item.amount.minor), 0n);
+      return { ...row, postBalance: { ...row.postBalance, minor: running.toString() as typeof row.postBalance.minor } };
+    });
+    const printed = [renumbered[3]!, renumbered[0]!, renumbered[1]!, renumbered[2]!];
+
+    const result = assembleImportPayload({ ...frame, closingBalance: running.toString() as typeof frame.closingBalance }, printed, target);
+    expect(result.ok, result.ok ? "" : JSON.stringify(result.details ?? result.message)).toBe(true);
+    if (!result.ok) return;
+
+    // Reported, not silent.
+    expect(result.warnings.map((warning) => warning.code)).toContain("out-of-order-run");
+    // Submitted in the order that closes, which is what confirm_import walks.
+    let chain = BigInt(result.payload.openingBalance.minor);
+    for (const row of result.payload.rows) {
+      chain += row.components.reduce((sum, item) => sum + BigInt(item.amount.minor), 0n);
+      expect(chain.toString()).toBe(row.postBalance.minor);
+    }
+    expect(chain.toString()).toBe(result.payload.closingBalance.minor);
+    // Printed position survives the reordering.
+    expect(result.payload.rows.map((row) => row.provenance.row).sort())
+      .toEqual(printed.map((row) => row.provenance.row).sort());
+  });
+
   it("produces rows the confirm route can fingerprint and digest", async () => {
     const { frame, rows } = extracted();
     const result = assembleImportPayload(frame, rows, target);

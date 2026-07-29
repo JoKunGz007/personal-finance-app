@@ -1,6 +1,6 @@
 import type { StatementFrame } from "@/lib/statement-frame";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
-import { reconcileRows } from "@/lib/reconcile";
+import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 
 // Turns an extracted statement into a confirmable ImportPayload.
 //
@@ -26,7 +26,11 @@ export type AssemblyErrorCode =
   | "INVALID_PAYLOAD";
 
 export type AssemblyResult =
-  | { ok: true; payload: ImportPayload }
+  // `warnings` travels with the payload deliberately. The payload's rows are in applied
+  // order, so re-reconciling it finds nothing to report — a caller that renders only its
+  // own reconciliation of the payload would show a clean statement and never mention that
+  // rows were reordered, which is precisely the fact the owner is confirming (D-055).
+  | { ok: true; payload: ImportPayload; warnings: readonly ReconciliationWarning[] }
   | { ok: false; code: AssemblyErrorCode; message: string; details?: unknown };
 
 export function assembleImportPayload(
@@ -96,6 +100,20 @@ export function assembleImportPayload(
     };
   }
 
+  // A reordered final date-run leaves a closing balance that is not the printed-order last
+  // row's. Where the statement printed its own closing figure, the two must agree: a
+  // disagreement means the recovered order contradicts the bank's own total, which is a
+  // reason to refuse rather than to prefer either figure. Where no closing balance was
+  // printed it is derived (D-026), and the reconciled one is the figure to carry.
+  if (frame.balancesPrinted && reconciliation.closingBalance !== frame.closingBalance) {
+    return {
+      ok: false,
+      code: "BALANCE_RECONCILIATION_FAILED",
+      message: "The reconciled closing balance does not match the printed closing balance.",
+      details: { reconciled: reconciliation.closingBalance, printed: frame.closingBalance }
+    };
+  }
+
   const candidate = {
     // From the frame, not hard-coded: three layouts reach this function now, and the
     // schema pins the contract version to the bank code so a mismatch cannot pass.
@@ -107,8 +125,14 @@ export function assembleImportPayload(
     periodStart: frame.periodStart,
     periodEnd: frame.periodEnd,
     openingBalance: { minor: frame.openingBalance, currency: frame.currency },
-    closingBalance: { minor: frame.closingBalance, currency: frame.currency },
-    rows
+    // Both from the reconciliation, not the frame, and they travel together. `confirm_import`
+    // walks the payload's rows requiring the chain to close and then requires it to end on
+    // the declared closing balance, so a statement whose rows were reordered has to be
+    // submitted in the order that closes — and its closing figure is the one that order
+    // reaches, which is not the printed-order last row's balance when the final date-run was
+    // repaired. Each row keeps its printed page and row in `provenance` (D-055).
+    closingBalance: { minor: reconciliation.closingBalance, currency: frame.currency },
+    rows: reconciliation.applied
   };
 
   // The schema is the authority on what may be confirmed, including the source-text
@@ -123,5 +147,5 @@ export function assembleImportPayload(
     };
   }
 
-  return { ok: true, payload: parsed.data };
+  return { ok: true, payload: parsed.data, warnings: reconciliation.warnings };
 }

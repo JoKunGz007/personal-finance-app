@@ -9,7 +9,7 @@ import { sha256HexBytes } from "@/lib/canonical";
 import { assembleImportPayload } from "@/lib/import-assembly";
 import type { StatementFrame } from "@/lib/statement-frame";
 import { addMinor, formatThb } from "@/lib/money";
-import { reconcileRows } from "@/lib/reconcile";
+import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
 import { readError } from "@/lib/wire";
 import { TransactionsView } from "@/app/transactions-view";
@@ -54,6 +54,10 @@ export function LedgerApp() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("No PDF selected. Try the synthetic statement to review the complete flow safely.");
   const [statement, setStatement] = useState<ImportPayload | null>(null);
+  // From the reconciliation that produced the payload, not from re-reconciling the payload.
+  // The payload's rows are already in applied order, so it reconciles clean and would
+  // report nothing — hiding the one fact the owner most needs before confirming (D-055).
+  const [assemblyWarnings, setAssemblyWarnings] = useState<readonly ReconciliationWarning[]>([]);
   const [extracted, setExtracted] = useState<Extracted | null>(null);
   const [artifactDigest, setArtifactDigest] = useState("");
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
@@ -94,6 +98,26 @@ export function LedgerApp() {
     };
   }, [statement]);
 
+  // Rows are submitted and displayed in applied order, so a row the reconciliation moved is
+  // one printed later on the page than the row now above it. Derived from provenance rather
+  // than carried as a flag, because provenance is what survives into the payload (D-055).
+  const movedRows = useMemo(() => {
+    const moved = new Set<number>();
+    if (!statement) return moved;
+    for (let index = 1; index < statement.rows.length; index += 1) {
+      const previous = statement.rows[index - 1]!.provenance;
+      const current = statement.rows[index]!.provenance;
+      if (current.page < previous.page || (current.page === previous.page && current.row < previous.row)) {
+        moved.add(index);
+      }
+    }
+    return moved;
+  }, [statement]);
+
+  // At review the payload is what will be imported, so its own reconciliation drives the
+  // table — but the warnings must come from the reconciliation that built it.
+  const shownWarnings = assemblyWarnings.length > 0 ? assemblyWarnings : reconciliation?.warnings ?? [];
+
   async function loadSynthetic() {
     setStatus("Loading invented statement…");
     const response = await fetch("/api/v1/demo", { cache: "no-store" });
@@ -106,6 +130,7 @@ export function LedgerApp() {
     setBoundAccount(null);
     setBindingError(null);
     setStatement(parsed.data);
+    setAssemblyWarnings([]);
     setStage("review");
     setStatus("Synthetic statement ready. Nothing in this review came from a real account.");
   }
@@ -136,6 +161,7 @@ export function LedgerApp() {
         setStructure([]);
         setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
         setStatement(null);
+        setAssemblyWarnings([]);
         setBoundAccount(null);
         setBindingError(null);
         setStage("bind");
@@ -283,6 +309,7 @@ export function LedgerApp() {
     setBindingError(null);
     setBoundAccount(account);
     setStatement(result.payload);
+    setAssemblyWarnings(result.warnings);
     // One key per bound statement, so retrying a failed confirmation is a retry
     // rather than a second import.
     setIdempotencyKey(crypto.randomUUID());
@@ -473,6 +500,8 @@ export function LedgerApp() {
           </div>
           <p className="intro-copy">The PDF is unlocked and parsed in a dedicated browser worker. Only validated transaction facts can cross the confirmation boundary.</p>
         </section>
+
+        <TransactionsView />
 
         <section className="import-bench" aria-labelledby="import-title">
           <div className="bench-heading">
@@ -665,10 +694,21 @@ export function LedgerApp() {
               <div><dt>Rows</dt><dd>{statement.rows.length}</dd></div>
             </dl>
 
-            {reconciliation.warnings.map((warning) => (
-              <div className="warning" key={warning.row} role="status">
-                <strong>Reconciliation resumes at row {warning.row}</strong>
-                <span>{warning.message} Expected {formatThb(warning.expected)}; printed {formatThb(warning.printed)}.</span>
+            {shownWarnings.map((warning) => (
+              <div className="warning" key={`${warning.code}-${warning.row}`} role="status">
+                {warning.code === "out-of-order-run" ? (
+                  <>
+                    <strong>Rows reordered on {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${warning.date}T00:00:00+07:00`))}</strong>
+                    <span>
+                      {warning.message} That date&rsquo;s {warning.order.length} rows are shown and imported in the applied order, running from {formatThb(warning.entryBalance)} to {formatThb(warning.recoveredClosing)}. Each row marked <em>reordered</em> below sits later on the printed page than the row above it — read the balance column straight down to check the chain joins up. The printed page and row of every row are kept.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <strong>Reconciliation resumes at row {warning.row}</strong>
+                    <span>{warning.message} Expected {formatThb(warning.expected)}; printed {formatThb(warning.printed)}.</span>
+                  </>
+                )}
               </div>
             ))}
             {reconciliation.blockers.map((blocker) => (
@@ -681,14 +721,14 @@ export function LedgerApp() {
             <div className="ledger-wrap">
               <div className="balance-rail" aria-hidden="true">
                 <span className="rail-label">Balance trace</span>
-                {reconciliation.rows.map((row, index) => <i key={index} className={row.status === "resynchronized" ? "rail-break" : row.status === "blocked" ? "rail-blocker" : ""} />)}
+                {reconciliation.rows.map((row, index) => <i key={index} className={row.status === "blocked" ? "rail-blocker" : row.status === "resynchronized" || row.status === "reordered" || movedRows.has(index) ? "rail-break" : ""} />)}
               </div>
               <div className="table-scroll">
                 <table>
                   <thead><tr><th>Date</th><th>Source description</th><th>Category</th><th className="numeric">Movement</th><th className="numeric">Balance</th><th><span className="sr-only">Details</span></th></tr></thead>
                   <tbody>
                     {reconciliation.rows.map((row, index) => (
-                      <tr key={`${row.provenance.page}-${row.provenance.row}`} className={row.status === "resynchronized" ? "resync-row" : ""}>
+                      <tr key={`${row.provenance.page}-${row.provenance.row}`} className={row.status === "resynchronized" || row.status === "reordered" || movedRows.has(index) ? "resync-row" : ""}>
                         <td data-label="Date"><time dateTime={row.sourceDate}>{new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(new Date(`${row.sourceDate}T00:00:00+07:00`))}</time><small>{row.sourceTime ?? "—"}</small></td>
                         <td data-label="Description"><strong lang="th">{row.transactionLabel}</strong><span>{row.description}</span>{row.components.length > 1 && <em>2 components</em>}</td>
                         <td data-label="Category">
@@ -697,7 +737,7 @@ export function LedgerApp() {
                           </select>
                         </td>
                         <td data-label="Movement" className={`numeric ${BigInt(row.movement) > 0n ? "positive" : ""}`}>{BigInt(row.movement) > 0n ? "+" : ""}{formatThb(row.movement)}</td>
-                        <td data-label="Balance" className="numeric">{formatThb(row.postBalance.minor)}{row.status === "resynchronized" && <small className="resync-label">resynced</small>}</td>
+                        <td data-label="Balance" className="numeric">{formatThb(row.postBalance.minor)}{row.status === "resynchronized" && <small className="resync-label">resynced</small>}{(row.status === "reordered" || movedRows.has(index)) && <small className="resync-label">reordered</small>}</td>
                         <td><button type="button" className="detail-button" aria-label={`View source details for ${row.description}`} onClick={() => openDetail(index)}>View</button></td>
                       </tr>
                     ))}
@@ -792,8 +832,6 @@ export function LedgerApp() {
           {recoveryNote ? <div className="warning" role="status"><strong>Recovery</strong><span>{recoveryNote}</span></div> : null}
           {recoveryError ? <div className="warning error" role="alert"><strong>Recovery failed</strong><span>{recoveryError}</span></div> : null}
         </section>
-
-        <TransactionsView />
       </main>
 
       <footer><span>Private Ledger</span><p>No analytics · no session replay · no financial response caching</p></footer>
