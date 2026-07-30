@@ -10,19 +10,54 @@ import { readError } from "@/lib/wire";
 type Category = { id: string; name: string; archived: boolean };
 type Kind = (typeof SLIP_KINDS)[number];
 
-// The browser's own barcode reader. Deliberately not a bundled decoder: the CSP forbids
-// remote script and allows WASM only for the pdf.js worker, and a slip is decoded on the
-// same device that took the photo — so the native detector is both the smallest and the
-// least surprising option. It is Chromium-only, which is stated to the owner rather than
-// discovered as a silent failure to read a perfectly good QR.
 type BarcodeDetectorLike = { detect(source: ImageBitmapSource): Promise<Array<{ rawValue: string }>> };
-type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
+type BarcodeDetectorConstructor = {
+  new (options?: { formats?: string[] }): BarcodeDetectorLike;
+  getSupportedFormats?: () => Promise<string[]>;
+};
 
-function barcodeDetector(): BarcodeDetectorLike | null {
-  const ctor = (globalThis as { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
-  if (!ctor) return null;
+// Resolves a QR reader, preferring the platform's own.
+//
+// The native detector is the better choice **where it exists**: nothing to download, and
+// it is backed by the platform on the device this feature is actually for. It does not
+// exist everywhere. Chrome implements the Shape Detection barcode backend on Android,
+// macOS and ChromeOS and **not on Windows or Linux desktop** — measured on this machine
+// across bundled Chromium and installed Chrome, headless and headed, with the relevant
+// flags, all absent (D-057). Depending on it alone meant slip capture could not run, or be
+// verified, on the owner's own computer.
+//
+// The fallback is `import()`ed rather than imported at module scope, so a platform that
+// has a native detector never downloads the ~1.1 MB WebAssembly reader. That is what makes
+// its size acceptable; putting it in the bundle unconditionally would tax the phone, which
+// is the one device that does not need it.
+async function resolveDetector(): Promise<BarcodeDetectorLike | null> {
+  const native = (globalThis as { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
+  if (native) {
+    try {
+      // Constructing it is not proof it can read a QR: the constructor's presence and its
+      // format support are separate facts, so ask before trusting it.
+      const formats = await native.getSupportedFormats?.();
+      if (!formats || formats.includes("qr_code")) return new native({ formats: ["qr_code"] });
+    } catch {
+      // Fall through. A native detector that throws is not worth diagnosing here when a
+      // working reader is one dynamic import away.
+    }
+  }
   try {
-    return new ctor({ formats: ["qr_code"] });
+    const { BarcodeDetector, prepareZXingModule } = await import("barcode-detector/ponyfill");
+    // Point the reader at our own copy of its WebAssembly binary. Without this it resolves
+    // the file relative to its bundled chunk — `/_next/static/chunks/zxing_reader.wasm` —
+    // which does not exist, so the fetch 404s and every decode returns nothing at all. The
+    // failure is silent, which is what makes it worth an explicit override rather than a
+    // default. `scripts/copy-zxing-wasm.mjs` puts the file there at build time, and the CSP
+    // permits it precisely because it is same-origin (D-057).
+    await prepareZXingModule({
+      overrides: {
+        locateFile: (path: string, prefix: string) => (path.endsWith(".wasm") ? "/zxing_reader.wasm" : `${prefix}${path}`)
+      },
+      fireImmediately: true
+    });
+    return new BarcodeDetector({ formats: ["qr_code"] });
   } catch {
     return null;
   }
@@ -104,7 +139,6 @@ export function SlipCapture() {
   const [note, setNote] = useState("");
 
   const fileInput = useRef<HTMLInputElement>(null);
-  const detectorAvailable = useMemo(() => barcodeDetector() !== null, []);
   const window = useMemo(() => slipDateWindow(new Date()), []);
 
   // Revoking the object URL matters more here than usual: the whole promise of this
@@ -177,9 +211,9 @@ export function SlipCapture() {
     setBusy(true);
     setStatus("Reading the slip's QR code…");
     try {
-      const detector = barcodeDetector();
+      const detector = await resolveDetector();
       if (!detector) {
-        setError("This browser has no built-in QR reader. Capture needs a Chromium browser such as Chrome or Edge.");
+        setError("No QR reader could be loaded in this browser.");
         return;
       }
       const bitmap = await createImageBitmap(file);
@@ -273,16 +307,6 @@ export function SlipCapture() {
         </div>
       </div>
 
-      {!detectorAvailable && (
-        // Deliberately not `role="status"`. This is static explanatory text, not something
-        // that changes in response to an action — and announcing it as a live region also
-        // put a second status role on the page, which broke every existing spec that looks
-        // one up by role. A live region is for what just happened, not for what is true.
-        <p className="notice">
-          This browser has no built-in QR reader, so slips cannot be captured here. Chrome or Edge can.
-        </p>
-      )}
-
       <div className="slip-controls">
         <label className="file-control">
           <span>Slip image</span>
@@ -290,7 +314,7 @@ export function SlipCapture() {
             ref={fileInput}
             type="file"
             accept="image/*"
-            disabled={busy || !detectorAvailable}
+            disabled={busy}
             onChange={(event) => void onFile(event.target.files?.[0])}
           />
           <b>{identity ? "Slip read" : "Choose or photograph a slip…"}</b>

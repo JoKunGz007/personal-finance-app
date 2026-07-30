@@ -534,3 +534,18 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: allow-list on the leaf that will actually be printed, after parsing, rather than on a container whose contents are the thing being determined. When probing an unknown format, print lengths and character classes on the first pass and add values only once the structure is known.
 - Note what it does and does not cost: reading a real value is permitted under D-049's successor scope, and this was a read. The rule it puts pressure on is the one that matters — nothing read may become a fixture, quotation or commit. Every slip fixture in this repo is built by `buildSlipQrPayload` from an invented reference for exactly that reason (D-056).
 - Verify: 2026-07-30, during the task 20 sizing probe. Re-running with the allow-list moved to the inner tags printed lengths and character classes only.
+
+## A WebAssembly decoder resolves its binary next to the bundled chunk, so it 404s and fails silently
+
+- Symptom: a decoder that works perfectly in a scratch harness returns nothing at all inside the app. No exception, no console error the page surfaces, no CSP violation — the capture form simply never appears, as though the image contained no QR.
+- Cause: `zxing-wasm` locates `zxing_reader.wasm` relative to its own module URL. Bundled by Next.js that URL is `/_next/static/chunks/…`, where no such file exists. The fetch 404s inside the module's initialisation and the failure surfaces as an empty result rather than a throw, which reads exactly like "this image has no barcode".
+- Avoid: serve the binary from your own origin and say so explicitly — `prepareZXingModule({ overrides: { locateFile: … } })` pointing at a copy in `public/`, put there at build time by `scripts/copy-zxing-wasm.mjs` (`prebuild`). Do not reach for a CDN; `default-src 'self'` is deliberate. Do not commit the binary either — copying from `node_modules` keeps it pinned to the installed version.
+- The generalisation worth keeping: when a WASM-backed library "works in a test script and not in the app", suspect asset resolution before suspecting the CSP. The bundler moved the module; the asset did not move with it.
+- Verify: 2026-07-30. Five owner-session specs failed with the form never rendering, and passed once `locateFile` pointed at `/zxing_reader.wasm`. `public/zxing_reader.wasm` is gitignored and present after any `pnpm build`.
+
+## Stubbing a browser API can hide which code path the test is exercising
+
+- Symptom: new specs pass, ten unrelated specs fail, and later the stubbed feature turns out never to have worked on this platform at all.
+- Cause: the slip specs stubbed `BarcodeDetector`. Headless Chromium has none — a fact the stub concealed twice over. It hid that the "no QR reader" notice rendered for every *other* spec (breaking their `getByRole("status")` lookups), and it hid that the native detector is unavailable on Windows desktop entirely, so the feature could not run on the developer's own machine (D-057).
+- Avoid: prefer a real artifact through the real code path when one can be generated. A QR can be rendered to a PNG from an invented payload (`tests/fixtures/synthetic-slip.ts`), exactly as statements are rendered to real PDFs — after which the specs exercise the decoder instead of a fake. Where a stub is genuinely unavoidable, assert what the *unstubbed* environment does somewhere too, or the stub becomes the only thing keeping the test green.
+- Verify: 2026-07-30. Replacing the stub with generated QR images kept all five specs green and additionally caught the wasm resolution failure above, which the stubbed versions passed straight through.

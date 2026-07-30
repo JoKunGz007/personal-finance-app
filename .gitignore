@@ -57,3 +57,8 @@ live/supabase/.temp/
 .impeccable/live/previews/
 .impeccable/live/annotations/
 .impeccable/live/cache/
+
+# Copied from node_modules at build time by scripts/copy-zxing-wasm.mjs, never committed:
+# a 1.1 MB binary in git is an unreviewable surface, and copying pins it to the installed
+# package version rather than to whatever was checked in.
+public/zxing_reader.wasm

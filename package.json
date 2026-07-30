@@ -2,10 +2,13 @@
   "name": "private-ledger",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=24 <25" },
+  "engines": {
+    "node": ">=24 <25"
+  },
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/copy-zxing-wasm.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -23,6 +26,7 @@
     "@fontsource/ibm-plex-sans-thai": "^5.3.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.0",
+    "barcode-detector": "^3.2.1",
     "next": "^16.0.0",
     "pdfjs-dist": "^5.4.0",
     "react": "^19.2.0",
@@ -43,6 +47,7 @@
     "supabase": "^2.39.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.0"
+    "vitest": "^3.2.0",
+    "zxing-wasm": "^3.1.2"
   }
 }
