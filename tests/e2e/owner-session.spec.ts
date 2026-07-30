@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import { formatThb } from "../../lib/money";
+import { buildSlipQrPayload } from "../../lib/slip-qr";
 import { validStatement } from "../fixtures/krungthai-layout-v1";
 import { kbankStatement, scbStatement } from "../fixtures/statement-layouts";
 import { buildStatementPdf } from "../fixtures/synthetic-pdf";
@@ -484,4 +486,148 @@ test("orders both ways and derives the all-accounts balance from every account",
   await expect(ledger.locator("table")).toHaveCount(0);
   await ledger.getByLabel("Filter").fill("");
   await expect(rows).toHaveCount(7);
+});
+
+// Slip capture (PLAN task 20, D-050).
+//
+// The native `BarcodeDetector` is stubbed here, and that limit is worth stating plainly:
+// these specs prove the *surface* — the retry ladder wiring, the confirm form, the POST,
+// what actually lands in the database and what a second share does. They prove nothing
+// about whether Chromium can read a real slip. That is established elsewhere and against
+// stronger evidence: `lib/slip-qr.ts` was run over all 23 real sample slips, accepted every
+// one, and rebuilt each payload byte-identically (D-053's grammar, confirmed).
+//
+// The payload below is built by `buildSlipQrPayload`, so it carries the real grammar and an
+// invented reference. No real slip reference exists anywhere in this repo.
+const SLIP_REFERENCE = "202601010000000000000009z";
+const SLIP_PAYLOAD = buildSlipQrPayload({ bankQrCode: "014", reference: SLIP_REFERENCE });
+
+async function stubDetector(page: import("@playwright/test").Page, payloads: string[], decodeAtScale = 1) {
+  await page.addInitScript(([values, scale]: [string[], number]) => {
+    let call = 0;
+    class StubBarcodeDetector {
+      async detect() {
+        call += 1;
+        // Reproduces the case D-053 measured on 3 of 23 real slips: nothing readable at
+        // native resolution, readable once upscaled. With scale 2 the first call returns
+        // empty so the ladder has to take its second step to succeed.
+        if (call < scale) return [];
+        return values.map((rawValue) => ({ rawValue }));
+      }
+    }
+    Object.defineProperty(globalThis, "BarcodeDetector", { value: StubBarcodeDetector, configurable: true });
+  }, [payloads, decodeAtScale] as [string[], number]);
+}
+
+async function chooseSlipImage(page: import("@playwright/test").Page) {
+  // A one-pixel PNG. The bytes never reach the detector stub, and never leave the browser
+  // in any case — the image is decoded on device and discarded (D-050).
+  await page.locator('.slip-bench input[type="file"]').setInputFiles({
+    name: "slip.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64"
+    )
+  });
+}
+
+test("captures a slip from its QR and stores it as a provisional entry", async ({ page }) => {
+  await stubDetector(page, [SLIP_PAYLOAD]);
+  await signIn(page);
+
+  const bench = page.locator(".slip-bench");
+  await chooseSlipImage(page);
+
+  // Identity comes from the QR, so it is displayed rather than typed.
+  await expect(bench.getByText(SLIP_REFERENCE)).toBeVisible();
+  await expect(bench.getByText("SCB", { exact: true })).toBeVisible();
+
+  await bench.getByLabel("Amount (THB)").fill("1,250.75");
+  // The parsed value is echoed before anything is submitted, so a typo is caught here
+  // rather than becoming a stored value only a reconciliation notices.
+  await expect(bench.getByText(`Will be recorded as ${formatThb("-125075")}.`)).toBeVisible();
+  await bench.getByLabel("Date", { exact: true }).fill("2026-07-20");
+  await bench.getByLabel("Counterparty (optional)").fill("Browser synthetic payee");
+  await bench.getByRole("button", { name: "Capture slip" }).click();
+
+  await expect(bench.getByText(/Captured as a provisional entry/)).toBeVisible({ timeout: 15_000 });
+
+  // Read the ledger itself rather than the status line. A status line asserting success is
+  // the exact trap PLAN task 17 recorded: it can be true of a page that stored nothing.
+  const owner = ownerId();
+  const stored = psql(`
+    select kind || ' ' || amount_minor || ' ' || bank_code || ' ' || occurred_on
+    from public.slips where owner_id = '${owner}' and slip_reference = '${SLIP_REFERENCE}';
+  `);
+  expect(stored.ok, stored.output).toBe(true);
+  expect(stored.output).toContain("withdrawal -125075 SCB 2026-07-20");
+
+  // Provisional means provisional: nothing was written to the authoritative ledger.
+  const authoritative = psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`);
+  expect(authoritative.output.trim()).toContain("0");
+});
+
+test("recovers a slip that only decodes once the image is upscaled", async ({ page }) => {
+  // D-053: 3 of 23 real slips fail at native resolution while the detector still finds the
+  // code. Before the retry ladder they fell through to the no-QR path.
+  await stubDetector(page, [SLIP_PAYLOAD], 2);
+  await signIn(page);
+
+  const bench = page.locator(".slip-bench");
+  await chooseSlipImage(page);
+
+  await expect(bench.getByText(/does not decode at its native resolution/)).toBeVisible();
+  await expect(bench.getByText("after 2× upscale")).toBeVisible();
+  await expect(bench.getByText(SLIP_REFERENCE)).toBeVisible();
+});
+
+test("reports a re-shared slip as already captured and stores no second row", async ({ page }) => {
+  // Share-to-app makes double capture the expected accident rather than an unlikely one,
+  // so the second share has to be a plain outcome and not an error to interpret.
+  await stubDetector(page, [SLIP_PAYLOAD]);
+  await signIn(page);
+
+  const bench = page.locator(".slip-bench");
+  for (const [attempt, amount] of [["first", "1250.75"], ["second", "9999.00"]] as const) {
+    await chooseSlipImage(page);
+    await bench.getByLabel("Amount (THB)").fill(amount);
+    await bench.getByLabel("Date", { exact: true }).fill("2026-07-20");
+    await bench.getByRole("button", { name: "Capture slip" }).click();
+    await expect(
+      bench.getByText(attempt === "first" ? /Captured as a provisional entry/ : /Already captured/)
+    ).toBeVisible({ timeout: 15_000 });
+  }
+
+  const owner = ownerId();
+  const rows = psql(`select count(*), min(amount_minor) from public.slips where owner_id = '${owner}';`);
+  // One row, still holding the amount confirmed the first time. An append-only table must
+  // not let a second share quietly overwrite a value the owner already reviewed.
+  expect(rows.output).toContain("1");
+  expect(rows.output).toContain("-125075");
+});
+
+test("keeps a Buddhist-era year outside the date the capture form will accept", async ({ page }) => {
+  // The 543-year shift, which D-031 established must fail closed rather than be silently
+  // reinterpreted. The input's own bounds are the first line; `capture_slip` refuses it
+  // server-side regardless (pgTAP 004).
+  await stubDetector(page, [SLIP_PAYLOAD]);
+  await signIn(page);
+
+  const bench = page.locator(".slip-bench");
+  await chooseSlipImage(page);
+  const date = bench.getByLabel("Date", { exact: true });
+  const max = await date.getAttribute("max");
+  expect(max).not.toBeNull();
+  expect("2569-07-20" > max!).toBe(true);
+  await expect(bench.getByText(/Enter the Gregorian year/)).toBeVisible();
+});
+
+test("slip capture has no automatically detectable accessibility violations", async ({ page }) => {
+  await stubDetector(page, [SLIP_PAYLOAD]);
+  await signIn(page);
+  await chooseSlipImage(page);
+  await expect(page.locator(".slip-bench").getByText(SLIP_REFERENCE)).toBeVisible();
+  const results = await new AxeBuilder({ page }).include(".slip-bench").analyze();
+  expect(results.violations).toEqual([]);
 });

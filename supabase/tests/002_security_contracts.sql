@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(46);
+select plan(47);
 
 -- Canonical signed-int64 text boundaries.
 select ok(private.is_canonical_int64_text('-9223372036854775808'), 'signed int64 minimum is canonical');
@@ -246,8 +246,16 @@ create temporary table snapshot_result as
 select public.export_backup_snapshot() as value;
 select is(
   (select value->>'schemaVersion' from snapshot_result),
-  '2',
-  'snapshot export succeeds with schema version 2'
+  '3',
+  'snapshot export succeeds with schema version 3'
+);
+-- The twelfth table has to be *in* the export, not merely permitted by it. A version bump
+-- that forgot to emit the new key would still read as v3 here and would silently back up a
+-- ledger without its slips.
+select ok(
+  (select value#>'{data,slips}' is not null from snapshot_result)
+    and (select value#>'{tableCounts,slips}' is not null from snapshot_result),
+  'snapshot export carries the slips table and its count'
 );
 select is(
   public.mark_backup_exported(

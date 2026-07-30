@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Private Ledger">
+  <rect width="512" height="512" rx="96" fill="#1f3d57"/>
+  <g fill="none" stroke="#eaf0f4" stroke-width="26" stroke-linecap="round">
+    <path d="M150 128h212"/>
+    <path d="M150 200h212"/>
+    <path d="M150 272h140"/>
+    <path d="M150 344h100"/>
+  </g>
+</svg>

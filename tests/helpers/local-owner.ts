@@ -174,6 +174,7 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
   const accounts = accountIds.map((id) => `'${id}'`).join(",");
   return psql(`
     set session_replication_role = replica;
+    delete from public.slips where owner_id = '${owner}';
     delete from public.import_batch_rows where owner_id = '${owner}';
     delete from public.source_components where owner_id = '${owner}';
     delete from public.source_transactions where owner_id = '${owner}';

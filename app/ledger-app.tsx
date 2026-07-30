@@ -12,6 +12,7 @@ import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
 import { readError } from "@/lib/wire";
+import { SlipCapture } from "@/app/slip-capture";
 import { TransactionsView } from "@/app/transactions-view";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
@@ -502,6 +503,8 @@ export function LedgerApp() {
         </section>
 
         <TransactionsView />
+
+        <SlipCapture />
 
         <section className="import-bench" aria-labelledby="import-title">
           <div className="bench-heading">

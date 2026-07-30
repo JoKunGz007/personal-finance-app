@@ -27,6 +27,15 @@ export function minor(value: string): MinorUnitString {
   return minorUnitStringSchema.parse(value);
 }
 
+// Zod runs an object's refinements even when one of its fields already failed, so a
+// cross-field check that reaches for `BigInt(row.amount_minor)` throws a raw SyntaxError
+// instead of adding an issue — turning a 422 into a 500 at any route that validates a
+// payload. Refinements use this instead of casting directly.
+export function toMinorAmount(value: unknown): bigint | null {
+  if (typeof value !== "string" || !CANONICAL_INTEGER.test(value) || value === "-0") return null;
+  return BigInt(value);
+}
+
 export function parseThb(text: string): Money {
   const cleaned = text.normalize("NFKC").replace(/[฿,\s]/g, "");
   if (!/^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(cleaned) || cleaned === "-0") {

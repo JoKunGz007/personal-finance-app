@@ -1,13 +1,33 @@
 import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
-import { minorUnitStringSchema } from "@/lib/money";
+import { minorUnitStringSchema, toMinorAmount } from "@/lib/money";
 import { BANK_CODES, CONTRACT_VERSIONS } from "@/lib/statement-frame";
 
-export const BACKUP_TABLE_KINDS = [
+// Order is contract, not style. A manifest binds each chunk to its index, so `slips` is
+// appended rather than slotted in alphabetically: indices 0..10 keep meaning exactly what
+// they meant in schema v2, and a v2 payload therefore stages against the same descriptors
+// it always did. Inserting a kind in the middle would invalidate every existing descriptor
+// in a way no digest could distinguish from tampering.
+export const BACKUP_TABLE_KINDS_V2 = [
   "accounts", "categories", "import_artifacts", "import_batches", "source_transactions",
   "source_components", "import_batch_rows", "transaction_overlays", "overlay_revisions",
   "audit_events", "mutation_sequences"
 ] as const;
+
+export const BACKUP_TABLE_KINDS = [...BACKUP_TABLE_KINDS_V2, "slips"] as const;
+
+export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
+
+// The owner holds exactly one backup covering the whole ledger and it is a v2 file. Reading
+// it stays supported for that reason — a hard bump, the way pre-release v1 was dropped
+// (D-018), would have stranded the only complete backup in existence the moment migration
+// 011 landed. New backups are always written at the current version.
+export const BACKUP_SCHEMA_VERSION = 3;
+export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3] as const;
+
+export function backupTableKindsFor(schemaVersion: number): readonly BackupTableKind[] {
+  return schemaVersion === 2 ? BACKUP_TABLE_KINDS_V2 : BACKUP_TABLE_KINDS;
+}
 
 export const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const canonicalSequenceSchema = minorUnitStringSchema.refine((value) => BigInt(value) >= 0n);
@@ -89,8 +109,11 @@ const sourceComponentRowSchema = z.object({
   currency: z.literal("THB"),
   created_at: timestampSchema
 }).strict().superRefine((component, context) => {
-  const amount = BigInt(component.amount_minor);
-  if ((component.kind === "deposit" && amount <= 0n) || (component.kind === "withdrawal" && amount >= 0n)) {
+  // `toMinorAmount` rather than a bare cast: an object refinement still runs when the
+  // field it reads has already failed, so casting here would throw out of a `safeParse`
+  // that a restore route depends on to fail closed.
+  const amount = toMinorAmount(component.amount_minor);
+  if (amount !== null && ((component.kind === "deposit" && amount <= 0n) || (component.kind === "withdrawal" && amount >= 0n))) {
     context.addIssue({ code: "custom", message: "Component sign does not match its kind." });
   }
 });
@@ -150,7 +173,33 @@ const mutationSequenceRowSchema = z.object({
   message: "Exported sequence cannot exceed the mutation sequence."
 });
 
-export const backupDataSchema = z.object({
+// A slip is a provisional entry: identity from the QR, values from the owner (D-050). It
+// carries no account_id, because the QR names a bank and only the statement will later say
+// which account — see migration 011.
+const slipRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  bank_code: z.enum(BANK_CODES),
+  bank_qr_code: z.string().regex(/^\d{3}$/),
+  slip_reference: z.string().regex(/^[0-9A-Za-z]{1,64}$/),
+  qr_payload: z.string().min(1).max(512),
+  kind: z.enum(["deposit", "withdrawal"]),
+  amount_minor: minorUnitStringSchema,
+  currency: z.literal("THB"),
+  occurred_on: isoDateSchema,
+  occurred_at_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,6})?)?$/).nullable(),
+  counterparty: nullableText,
+  category_id: uuidSchema.nullable(),
+  note: nullableText,
+  captured_at: timestampSchema
+}).strict().superRefine((slip, context) => {
+  const amount = toMinorAmount(slip.amount_minor);
+  if (amount !== null && ((slip.kind === "deposit" && amount <= 0n) || (slip.kind === "withdrawal" && amount >= 0n))) {
+    context.addIssue({ code: "custom", message: "Slip sign does not match its kind." });
+  }
+});
+
+const v2DataShape = {
   accounts: z.array(accountRowSchema),
   categories: z.array(categoryRowSchema),
   import_artifacts: z.array(importArtifactRowSchema),
@@ -162,7 +211,13 @@ export const backupDataSchema = z.object({
   overlay_revisions: z.array(overlayRevisionRowSchema),
   audit_events: z.array(auditEventRowSchema),
   mutation_sequences: z.array(mutationSequenceRowSchema).length(1)
-}).strict();
+} as const;
+
+// Both are `.strict()`, which is what makes the versions genuinely distinct rather than
+// merely tolerant: a v2 payload carrying a `slips` key is refused, and so is a v3 payload
+// missing one. "Accepts v2" must not mean "stops checking".
+export const backupDataSchemaV2 = z.object(v2DataShape).strict();
+export const backupDataSchema = z.object({ ...v2DataShape, slips: z.array(slipRowSchema) }).strict();
 
 function chunkSchema<const Kind extends (typeof BACKUP_TABLE_KINDS)[number], Row extends z.ZodType>(
   kind: Kind,
@@ -182,62 +237,102 @@ export const backupChunkSchema = z.discriminatedUnion("kind", [
   chunkSchema("transaction_overlays", transactionOverlayRowSchema),
   chunkSchema("overlay_revisions", overlayRevisionRowSchema),
   chunkSchema("audit_events", auditEventRowSchema),
-  chunkSchema("mutation_sequences", mutationSequenceRowSchema)
+  chunkSchema("mutation_sequences", mutationSequenceRowSchema),
+  chunkSchema("slips", slipRowSchema)
 ]);
 
-const tableCountsShape = Object.fromEntries(BACKUP_TABLE_KINDS.map((kind) => [kind, z.number().int().nonnegative()])) as Record<(typeof BACKUP_TABLE_KINDS)[number], z.ZodNumber>;
-export const tableCountsSchema = z.object(tableCountsShape).strict();
+function tableCountsFor(kinds: readonly BackupTableKind[]) {
+  return z.object(
+    Object.fromEntries(kinds.map((kind) => [kind, z.number().int().nonnegative()])) as Record<string, z.ZodNumber>
+  ).strict();
+}
 
-export const restoreManifestSchema = z.object({
-  exportedAt: z.string().datetime({ offset: true }),
-  snapshotSequence: canonicalSequenceSchema,
-  chunks: z.array(z.object({
-    index: z.number().int().nonnegative(),
-    kind: z.enum(BACKUP_TABLE_KINDS),
-    rowCount: z.number().int().nonnegative(),
-    sha256: digestSchema
-  }).strict()).length(BACKUP_TABLE_KINDS.length),
-  tableCounts: tableCountsSchema,
-  payloadDigest: digestSchema
-}).strict().superRefine((manifest, context) => {
-  manifest.chunks.forEach((chunk, index) => {
-    if (chunk.index !== index || chunk.kind !== BACKUP_TABLE_KINDS[index] || chunk.rowCount !== manifest.tableCounts[chunk.kind]) {
-      context.addIssue({ code: "custom", message: "Manifest chunks must exactly follow the backup table order.", path: ["chunks", index] });
-    }
+export const tableCountsSchemaV2 = tableCountsFor(BACKUP_TABLE_KINDS_V2);
+export const tableCountsSchema = tableCountsFor(BACKUP_TABLE_KINDS);
+
+function manifestFor(kinds: readonly BackupTableKind[]) {
+  return z.object({
+    exportedAt: z.string().datetime({ offset: true }),
+    snapshotSequence: canonicalSequenceSchema,
+    chunks: z.array(z.object({
+      index: z.number().int().nonnegative(),
+      kind: z.enum(BACKUP_TABLE_KINDS),
+      rowCount: z.number().int().nonnegative(),
+      sha256: digestSchema
+    }).strict()).length(kinds.length),
+    tableCounts: tableCountsFor(kinds),
+    payloadDigest: digestSchema
+  }).strict().superRefine((manifest, context) => {
+    manifest.chunks.forEach((chunk, index) => {
+      if (chunk.index !== index || chunk.kind !== kinds[index] || chunk.rowCount !== manifest.tableCounts[chunk.kind]) {
+        context.addIssue({ code: "custom", message: "Manifest chunks must exactly follow the backup table order.", path: ["chunks", index] });
+      }
+    });
   });
-});
+}
 
-const base = z.object({
+export const restoreManifestSchemaV2 = manifestFor(BACKUP_TABLE_KINDS_V2);
+export const restoreManifestSchema = manifestFor(BACKUP_TABLE_KINDS);
+
+// Version is part of the request rather than a constant, and the manifest that travels
+// with it is validated against *that* version's table list. The two cannot drift: a v2
+// request carrying a twelve-chunk manifest fails, and so does a v3 request carrying eleven.
+const identity = {
   restoreId: z.string().uuid(),
   idempotencyKey: z.string().uuid(),
-  schemaVersion: z.literal(2),
   digest: digestSchema
-}).strict();
+} as const;
+
+const baseV2 = z.object({ ...identity, schemaVersion: z.literal(2) }).strict();
+const baseV3 = z.object({ ...identity, schemaVersion: z.literal(3) }).strict();
+
+function actionUnion<Shape extends z.ZodRawShape>(extend: (kinds: readonly BackupTableKind[]) => Shape) {
+  return z.discriminatedUnion("schemaVersion", [
+    baseV2.extend(extend(BACKUP_TABLE_KINDS_V2)).strict(),
+    baseV3.extend(extend(BACKUP_TABLE_KINDS)).strict()
+  ]);
+}
 
 export const restoreActionSchemas = {
-  stage: base.extend({ manifest: restoreManifestSchema }).strict(),
-  chunk: base.extend({
+  stage: actionUnion((kinds) => ({ manifest: manifestFor(kinds) })),
+  chunk: actionUnion(() => ({
     chunkIndex: z.number().int().nonnegative(),
     chunkDigest: digestSchema,
     chunk: backupChunkSchema
-  }).strict(),
-  commit: base,
-  abort: base
+  })),
+  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3]),
+  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3])
 } as const;
 
-export const backupSnapshotSchema = z.object({
-  schemaVersion: z.literal(2),
-  exportedAt: z.string().datetime({ offset: true }),
-  snapshotSequence: canonicalSequenceSchema,
-  tableCounts: tableCountsSchema,
-  data: backupDataSchema
-}).strict().superRefine((snapshot, context) => {
-  BACKUP_TABLE_KINDS.forEach((kind) => {
-    if (snapshot.tableCounts[kind] !== snapshot.data[kind].length) {
-      context.addIssue({ code: "custom", message: "Snapshot table count does not match its rows.", path: ["tableCounts", kind] });
+function snapshotFor<Data extends z.ZodType>(version: 2 | 3, kinds: readonly BackupTableKind[], data: Data) {
+  return z.object({
+    schemaVersion: z.literal(version),
+    exportedAt: z.string().datetime({ offset: true }),
+    snapshotSequence: canonicalSequenceSchema,
+    tableCounts: tableCountsFor(kinds),
+    data
+  }).strict().superRefine((value, context) => {
+    const snapshot = value as { tableCounts: Record<string, number>; data: Record<string, unknown[]>; snapshotSequence: string };
+    const rows = snapshot.data;
+    kinds.forEach((kind) => {
+      if (snapshot.tableCounts[kind] !== rows[kind]?.length) {
+        context.addIssue({ code: "custom", message: "Snapshot table count does not match its rows.", path: ["tableCounts", kind] });
+      }
+    });
+    const sequences = rows.mutation_sequences as Array<{ sequence: string }> | undefined;
+    if (sequences?.[0]?.sequence !== snapshot.snapshotSequence) {
+      context.addIssue({ code: "custom", message: "Snapshot sequence does not match the mutation-sequence row.", path: ["snapshotSequence"] });
     }
   });
-  if (snapshot.data.mutation_sequences[0]?.sequence !== snapshot.snapshotSequence) {
-    context.addIssue({ code: "custom", message: "Snapshot sequence does not match the mutation-sequence row.", path: ["snapshotSequence"] });
-  }
-});
+}
+
+export const backupSnapshotSchemaV2 = snapshotFor(2, BACKUP_TABLE_KINDS_V2, backupDataSchemaV2);
+export const backupSnapshotSchemaV3 = snapshotFor(3, BACKUP_TABLE_KINDS, backupDataSchema);
+
+// What a restore accepts. A snapshot read off disk is one or the other and nothing else —
+// the union discriminates on the payload's own declared version rather than sniffing for a
+// `slips` key, so a v2 file with a stray slips array is refused instead of upgraded.
+export const backupSnapshotSchema = z.discriminatedUnion("schemaVersion", [
+  backupSnapshotSchemaV2,
+  backupSnapshotSchemaV3
+]);

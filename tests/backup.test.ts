@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { decryptBackup, encryptBackup } from "@/lib/backup";
-import { BACKUP_TABLE_KINDS, backupSnapshotSchema, restoreActionSchemas, restoreManifestSchema } from "@/lib/backup-contract";
+import {
+  BACKUP_SCHEMA_VERSION,
+  BACKUP_TABLE_KINDS,
+  BACKUP_TABLE_KINDS_V2,
+  backupSnapshotSchema,
+  restoreActionSchemas,
+  restoreManifestSchema,
+  restoreManifestSchemaV2
+} from "@/lib/backup-contract";
 
 describe("portable encrypted backup", () => {
   it("round-trips canonical JSON with the versioned authenticated envelope", async () => {
@@ -19,16 +27,51 @@ describe("portable encrypted backup", () => {
   }, 30_000);
 });
 
-describe("schema-v2 restore manifest", () => {
+function manifestOver(kinds: readonly string[]) {
+  return {
+    exportedAt: "2026-07-24T00:00:00.000Z",
+    snapshotSequence: "0",
+    chunks: kinds.map((kind, index) => ({ index, kind, rowCount: 0, sha256: "a".repeat(64) })),
+    tableCounts: Object.fromEntries(kinds.map((kind) => [kind, 0])),
+    payloadDigest: "b".repeat(64)
+  };
+}
+
+describe("restore manifest", () => {
   it("requires the exact ordered table set and canonical snapshot sequence", () => {
-    const chunks = BACKUP_TABLE_KINDS.map((kind, index) => ({ index, kind, rowCount: 0, sha256: "a".repeat(64) }));
-    const tableCounts = Object.fromEntries(BACKUP_TABLE_KINDS.map((kind) => [kind, 0]));
-    expect(restoreManifestSchema.parse({
-      exportedAt: "2026-07-24T00:00:00.000Z", snapshotSequence: "0", chunks, tableCounts, payloadDigest: "b".repeat(64)
-    }).chunks).toHaveLength(11);
-    expect(() => restoreManifestSchema.parse({
-      exportedAt: "2026-07-24T00:00:00.000Z", snapshotSequence: "01", chunks: [...chunks].reverse(), tableCounts, payloadDigest: "b".repeat(64)
-    })).toThrow();
+    const manifest = manifestOver(BACKUP_TABLE_KINDS);
+    expect(restoreManifestSchema.parse(manifest).chunks).toHaveLength(12);
+    expect(() => restoreManifestSchema.parse({ ...manifest, snapshotSequence: "01" })).toThrow();
+    expect(() => restoreManifestSchema.parse({ ...manifest, chunks: [...manifest.chunks].reverse() })).toThrow();
+  });
+
+  it("keeps reading a v2 manifest, and refuses to read either version as the other", () => {
+    // The owner holds one backup covering the whole ledger and it is a v2 file. If this
+    // test ever goes red, that file has become unrestorable — which is the specific harm
+    // the two-version contract exists to prevent.
+    const v2 = manifestOver(BACKUP_TABLE_KINDS_V2);
+    const v3 = manifestOver(BACKUP_TABLE_KINDS);
+    expect(restoreManifestSchemaV2.parse(v2).chunks).toHaveLength(11);
+
+    // Accepting v2 must not mean accepting anything. Each version pins its own table
+    // count, so neither manifest passes as the other.
+    expect(restoreManifestSchemaV2.safeParse(v3).success).toBe(false);
+    expect(restoreManifestSchema.safeParse(v2).success).toBe(false);
+  });
+
+  it("binds a staged manifest to the version declared alongside it", () => {
+    const identity = {
+      restoreId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      idempotencyKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      digest: "a".repeat(64)
+    };
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 2, manifest: manifestOver(BACKUP_TABLE_KINDS_V2) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 3, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
+    // The pairing is the point: a version and a manifest that disagree about how many
+    // tables exist cannot both be right, and the server would otherwise stage one and
+    // then refuse chunks against the other.
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 3, manifest: manifestOver(BACKUP_TABLE_KINDS_V2) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 2, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
   });
 
   it("does not impose a 1,000-row API cap and preserves int64 text", () => {
@@ -60,8 +103,9 @@ describe("schema-v2 restore manifest", () => {
     }];
     const tableCounts = Object.fromEntries(BACKUP_TABLE_KINDS.map((kind) => [kind, data[kind].length]));
     const parsed = backupSnapshotSchema.parse({
-      schemaVersion: 2, exportedAt: "2026-07-24T00:00:00.000Z", snapshotSequence: "9223372036854775807", tableCounts, data
+      schemaVersion: BACKUP_SCHEMA_VERSION, exportedAt: "2026-07-24T00:00:00.000Z", snapshotSequence: "9223372036854775807", tableCounts, data
     });
+    expect(parsed.schemaVersion).toBe(3);
     expect(parsed.data.source_transactions).toHaveLength(1001);
     expect(parsed.data.source_transactions[0]).toMatchObject({ post_balance_minor: "-9223372036854775808" });
     expect(parsed.data.source_transactions[1000]).toMatchObject({ post_balance_minor: "9223372036854775807" });

@@ -113,6 +113,29 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .account-create .binding-controls { margin: 16px 0 0; }
 .account-create .warning { margin-left: 0; }
 
+/* Slip capture. Provisional by design, so it reads lighter than the import bench: the
+   statement is still the authority, and nothing here is cross-checked against printed
+   totals the way an import is. */
+.slip-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
+.slip-controls { margin: 26px 0 0 167px; display: flex; flex-wrap: wrap; gap: 18px; align-items: end; }
+.slip-controls .file-control { min-width: 280px; }
+.slip-form { margin: 22px 0 0 167px; display: grid; gap: 18px; max-width: 720px; }
+.slip-identity { margin: 0; display: flex; flex-wrap: wrap; gap: 26px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); }
+.slip-identity div { display: grid; gap: 4px; }
+.slip-identity dt { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.slip-identity dd { margin: 0; font-size: 14px; }
+.slip-identity .mono { font-family: var(--font-data); font-size: 13px; word-break: break-all; }
+.slip-preview { display: block; max-width: 320px; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.slip-fields { display: grid; grid-template-columns: repeat(2, minmax(200px, 1fr)); gap: 16px; }
+.slip-fields label, .slip-note { display: grid; gap: 7px; }
+.slip-fields label > span, .slip-note > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.slip-fields input, .slip-fields select, .slip-note textarea { padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
+.slip-fields input, .slip-fields select { height: 47px; }
+.field-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.slip-form button[type="submit"] { justify-self: start; }
+.slip-bench .status, .slip-bench .notice { margin: 18px 0 0 167px; color: var(--muted); font-size: 13px; }
+.slip-bench .status.error { color: var(--red); }
+
 /* Recovery reads as infrastructure rather than as part of the import flow, because the
    day it is needed there is no import in progress. */
 .recovery-band { padding: 46px 0 54px; border-top: 1px solid var(--line); }
@@ -229,6 +252,10 @@ footer p { margin: 0; }
   .recovery-band .warning { margin-left: 0; }
   .label-diagnostic { margin-left: 0; }
   .status-line { margin-left: 0; }
+  /* Capture is phone-first by definition — share-to-app means sharing from a phone — so
+     these lose the heading gutter earlier than they strictly need to. */
+  .slip-controls, .slip-form { margin-left: 0; }
+  .slip-bench .status, .slip-bench .notice { margin-left: 0; }
   .or-rule { display: none; }
   .ledger-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .ledger-controls > button { grid-column: 1 / -1; }
@@ -251,6 +278,8 @@ footer p { margin: 0; }
   .bench-heading { grid-template-columns: 1fr; gap: 0; }
   .import-controls { grid-template-columns: 1fr; }
   .binding-controls { grid-template-columns: 1fr; }
+  .slip-fields { grid-template-columns: 1fr; }
+  .slip-controls { flex-direction: column; align-items: stretch; }
   .password-control small { position: static; transform: none; }
   .review-heading { align-items: flex-start; flex-direction: column; }
   .review-actions { width: 100%; align-items: stretch; flex-direction: column; }
