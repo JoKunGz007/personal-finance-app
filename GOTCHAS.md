@@ -557,3 +557,11 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: assert the produced value, not the text that produces it, whenever the value is importable — `securityHeaders(...)` returns the real header, so the test now checks it. Where a source grep is genuinely the right tool (proving an *absence* across a directory), derive the file list rather than hard-coding two of them, and make the assertion say which files it inspected.
 - The sharper lesson: a green test whose name asserts something false is worse than no test, because it is read as evidence. When adding a capability the codebase previously forbade, grep the suite for the old prohibition before assuming nothing covered it.
 - Verify: 2026-07-30. The service-worker test now enumerates candidate files and asserts registration appears in exactly one, plus that the worker has a single fetch handler, no precache list and exactly one `cache.put` — it fails if a second registration or an app-shell cache is added.
+
+## A placeholder that looks like a real value reads as a failed autofill
+
+- Symptom: the owner asks why a field "doesn't autofill" a value it was never meant to fill. The field is empty and behaving correctly.
+- Cause: the amount input's placeholder was `1250.00` — a plausible number, rendered grey. Grey text in a form field is ambiguous between "hint" and "value the app filled in for you", and a number resolves that ambiguity the wrong way. Browser validation then fires on submit for a field that looks populated, which compounds it.
+- Avoid: a placeholder in a money or date field should be impossible to mistake for a value — words, not digits. Where a format hint is genuinely needed, put it in the help text where it reads as an example rather than as content.
+- The broader point: this was found in the first ten minutes of an owner using the form, and no test could have caught it, because every test fills the field before looking at it. Owner-driven use keeps finding this class of defect here — the transactions view produced three refinements the same way (`PLAN.md` task 17).
+- Verify: 2026-07-30. Placeholder replaced with text; the Buddhist-era and date-source help lines now say which value came from where.

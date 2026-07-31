@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSlipQrPayload } from "@/lib/slip-qr";
-import { slipCaptureSchema, slipDateWindow } from "@/lib/slips";
+import { slipCaptureSchema, slipDateFromReference, slipDateWindow } from "@/lib/slips";
 
 const REFERENCE = "202601010000000000000001x";
 const PAYLOAD = buildSlipQrPayload({ bankQrCode: "014", reference: REFERENCE });
@@ -82,5 +82,49 @@ describe("slip capture contract", () => {
     expect(window.latest).toBe("2026-07-31");
     expect(window.earliest).toBe("2016-07-30");
     expect("2569-07-20" > window.latest).toBe(true);
+  });
+});
+
+describe("date carried in the QR reference", () => {
+  // Measured over the 23 real samples (D-059): SCB embeds YYYYMMDD at the start, Krungthai's
+  // 21-character variant after one letter, and Krungthai's 17-character variant and KBANK
+  // carry none. The references below are invented but reproduce those shapes exactly.
+  const window = slipDateWindow(new Date("2026-07-31T00:00:00Z"));
+
+  it("reads the date SCB puts at the start of its reference", () => {
+    expect(slipDateFromReference("202607200000000000000001x", window)).toBe("2026-07-20");
+  });
+
+  it("reads the date Krungthai puts after its leading letter", () => {
+    expect(slipDateFromReference("C20260715619612956197", window)).toBe("2026-07-15");
+  });
+
+  it("returns nothing for the reference shapes that carry no date", () => {
+    // Krungthai's 17-character hex variant and a KBANK reference. Both must fail rather than
+    // find a date in unrelated digits — a wrong pre-filled date is worse than none.
+    expect(slipDateFromReference("A7856f4b340b94a3d", window)).toBeNull();
+    expect(slipDateFromReference("016205113859AOR04880", window)).toBeNull();
+  });
+
+  it("refuses digits that are date-shaped but not a real date", () => {
+    expect(slipDateFromReference("20260230abcdefghijklmnopq", window)).toBeNull();
+    expect(slipDateFromReference("20261301abcdefghijklmnopq", window)).toBeNull();
+    expect(slipDateFromReference("00000000abcdefghijklmnopq", window)).toBeNull();
+  });
+
+  it("never proposes a date the form would then refuse", () => {
+    // The guarantee that makes this safe to pre-fill: anything outside the accepted window
+    // yields null, so the field is never populated with a value the server rejects. A
+    // Buddhist-era year is the case that matters, and it cannot reach the field.
+    expect(slipDateFromReference("25690720abcdefghijklmnopq", window)).toBeNull();
+    expect(slipDateFromReference("19990720abcdefghijklmnopq", window)).toBeNull();
+    // Tomorrow is inside the window; the day after is not.
+    expect(slipDateFromReference("20260801abcdefghijklmnopq", window)).toBe("2026-08-01");
+    expect(slipDateFromReference("20260802abcdefghijklmnopq", window)).toBeNull();
+  });
+
+  it("prefers the earliest offset that yields a valid date", () => {
+    // Deterministic rather than "whichever matched": offset 0 wins when both parse.
+    expect(slipDateFromReference("2026072020260721xxxxxxxxx", window)).toBe("2026-07-20");
   });
 });

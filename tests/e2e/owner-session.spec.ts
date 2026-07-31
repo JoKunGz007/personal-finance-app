@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { formatThb } from "../../lib/money";
-import { buildSlipQrPng, KBANK_SLIP, KTB_SLIP, SCB_SLIP } from "../fixtures/synthetic-slip";
+import { buildSlipQrPng, KBANK_SLIP, KTB_SLIP, KTB_SLIP_DATED, SCB_SLIP } from "../fixtures/synthetic-slip";
 import { validStatement } from "../fixtures/krungthai-layout-v1";
 import { kbankStatement, scbStatement } from "../fixtures/statement-layouts";
 import { buildStatementPdf } from "../fixtures/synthetic-pdf";
@@ -590,15 +590,44 @@ test("keeps a Buddhist-era year outside the date the capture form will accept", 
   // The 543-year shift, which D-031 established must fail closed rather than be silently
   // reinterpreted. The input's own bounds are the first line; `capture_slip` refuses it
   // server-side regardless (pgTAP 004).
+  //
+  // Deliberately a KBANK slip: its reference carries no date, so this is the path where the
+  // owner types one and the warning is the thing standing between 2569 and the ledger.
   await signIn(page);
 
   const bench = page.locator(".slip-bench");
-  await chooseSlipImage(page);
+  await chooseSlipImage(page, KBANK_SLIP);
   const date = bench.getByLabel("Date", { exact: true });
   const max = await date.getAttribute("max");
   expect(max).not.toBeNull();
   expect("2569-07-20" > max!).toBe(true);
-  await expect(bench.getByText(/Enter the Gregorian year/)).toBeVisible();
+  await expect(bench.getByText(/Gregorian year/)).toBeVisible();
+});
+
+test("fills the date from the QR when the reference carries one, and says so", async ({ page }) => {
+  // SCB embeds YYYYMMDD at the start of its reference and Krungthai's longer variant puts it
+  // after one letter, so for those the date is read rather than assumed — exact, covered by
+  // the QR's CRC, and Gregorian, which removes the Buddhist-era hazard instead of warning
+  // about it (D-059). KBANK carries none and must fall back to today.
+  await signIn(page);
+  const bench = page.locator(".slip-bench");
+  const date = bench.getByLabel("Date", { exact: true });
+  const today = new Date().toISOString().slice(0, 10);
+
+  await chooseSlipImage(page, SCB_SLIP);
+  await expect(date).toHaveValue(SCB_SLIP.reference.slice(0, 8).replace(/(\d{4})(\d{2})(\d{2})/u, "$1-$2-$3"));
+  await expect(bench.getByText(/Read from the slip's QR code/)).toBeVisible();
+  await bench.getByRole("button", { name: "Discard" }).click();
+
+  await chooseSlipImage(page, KTB_SLIP_DATED);
+  await expect(date).toHaveValue("2026-07-15");
+  await bench.getByRole("button", { name: "Discard" }).click();
+
+  // A pre-filled date the owner did not type must not be silently presented as one they did,
+  // and a slip with no date must not claim to have read one.
+  await chooseSlipImage(page, KBANK_SLIP);
+  await expect(date).toHaveValue(today);
+  await expect(bench.getByText(/carries no date, so today is filled in/)).toBeVisible();
 });
 
 test("slip capture has no automatically detectable accessibility violations", async ({ page }) => {

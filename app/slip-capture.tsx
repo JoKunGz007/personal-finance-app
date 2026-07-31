@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatThb, parseThb } from "@/lib/money";
 import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
 import { type SlipIdentity } from "@/lib/slip-qr";
-import { slipDateWindow, SLIP_KINDS } from "@/lib/slips";
+import { slipDateFromReference, slipDateWindow, SLIP_KINDS } from "@/lib/slips";
 import { readError } from "@/lib/wire";
 
 type Category = { id: string; name: string; archived: boolean };
@@ -133,6 +133,7 @@ export function SlipCapture() {
   const [kind, setKind] = useState<Kind>("withdrawal");
   const [amount, setAmount] = useState("");
   const [occurredOn, setOccurredOn] = useState("");
+  const [dateFromQr, setDateFromQr] = useState(false);
   const [occurredAtTime, setOccurredAtTime] = useState("");
   const [counterparty, setCounterparty] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -196,6 +197,7 @@ export function SlipCapture() {
     setScanned(null);
     setAmount("");
     setOccurredAtTime("");
+    setDateFromQr(false);
     setCounterparty("");
     setCategoryId("");
     setNote("");
@@ -232,7 +234,13 @@ export function SlipCapture() {
       // Only the payload the reader accepted travels on. Re-deriving the bank and
       // reference from it server-side is what keeps identity the QR's job (lib/slips.ts).
       setQrPayload(result.payload);
-      setOccurredOn((current) => current || new Date().toISOString().slice(0, 10));
+      // SCB and Krungthai's longer variant embed the transaction date in the reference, so
+      // for those the date is *read* rather than assumed — exact, CRC-covered, and Gregorian,
+      // which is the Buddhist-era hazard removed rather than guarded (D-059). The others fall
+      // back to today, which is right for a slip captured at the moment of payment.
+      const fromQr = slipDateFromReference(result.identity.reference, window);
+      setDateFromQr(fromQr !== null);
+      setOccurredOn(fromQr ?? new Date().toISOString().slice(0, 10));
       setStatus(result.scale === 2
         ? "Read after upscaling — this slip does not decode at its native resolution."
         : "Slip QR read. Confirm the amount from the image.");
@@ -359,7 +367,7 @@ export function SlipCapture() {
                 inputMode="decimal"
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
-                placeholder="1250.00"
+                placeholder="Amount from the slip"
                 required
                 aria-describedby="slip-amount-help"
               />
@@ -407,8 +415,11 @@ export function SlipCapture() {
                 : parsedAmount.message}
           </p>
           <p id="slip-date-help" className="field-help">
-            Thai slips often print a Buddhist year such as 2569. Enter the Gregorian year — a
-            Buddhist one is outside the accepted range and will be refused.
+            {dateFromQr
+              // Say where a pre-filled value came from. A date the owner did not type looks
+              // identical to one they did, and the difference matters: this one is exact.
+              ? "Read from the slip's QR code, so this is the bank's own date rather than a guess. Change it if it looks wrong."
+              : "This slip's QR carries no date, so today is filled in. Thai slips often print a Buddhist year such as 2569 — enter the Gregorian year, since a Buddhist one is outside the accepted range and will be refused."}
           </p>
 
           <label className="slip-note">

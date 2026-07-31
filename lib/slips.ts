@@ -57,6 +57,42 @@ export const slipCaptureSchema = z.object({
 
 export type SlipCapture = z.infer<typeof slipCaptureSchema>;
 
+// Offsets at which a reference has been observed to begin with a date: SCB starts with one
+// outright, and Krungthai's 21-character variant puts a single letter in front. Only these
+// two are tried, because every additional offset is another chance to read eight unrelated
+// digits as a date.
+const DATE_OFFSETS = [0, 1] as const;
+
+/**
+ * The transaction date carried inside the QR reference, when there is one.
+ *
+ * Measured over the 23 real samples: SCB 9/9 and Krungthai's 21-character variant 5/5 embed
+ * a `YYYYMMDD`; Krungthai's 17-character variant and KBANK carry none (D-059). Reference
+ * *lengths* are deliberately not keyed on — D-057 established that pinning them refuses
+ * legitimate slips — so this reads the shape and lets implausible values fall out.
+ *
+ * Returns null unless the digits parse as a real calendar date **inside the window the form
+ * would accept**, which is what stops it pre-filling something the server then refuses. This
+ * is exact rather than inferred: the reference is covered by the QR's CRC, so a date read
+ * here is the bank's own, not a guess from pixels. The owner still confirms it.
+ */
+export function slipDateFromReference(
+  reference: string,
+  window: { earliest: string; latest: string }
+): string | null {
+  for (const offset of DATE_OFFSETS) {
+    const digits = reference.slice(offset, offset + 8);
+    if (digits.length !== 8 || !/^\d{8}$/.test(digits)) continue;
+    const candidate = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+    // `isoDateSchema` rejects impossible days such as 2026-02-30, so a run of digits that
+    // merely looks date-shaped does not survive.
+    if (!isoDateSchema.safeParse(candidate).success) continue;
+    if (candidate < window.earliest || candidate > window.latest) continue;
+    return candidate;
+  }
+  return null;
+}
+
 export function slipDateWindow(today: Date): { earliest: string; latest: string } {
   const latest = new Date(today);
   latest.setUTCDate(latest.getUTCDate() + 1);

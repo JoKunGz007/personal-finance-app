@@ -18,6 +18,9 @@ export type SlipFixture = { bankQrCode: string; reference: string };
 
 export const SCB_SLIP: SlipFixture = { bankQrCode: "014", reference: "202601010000000000000009z" };
 export const KTB_SLIP: SlipFixture = { bankQrCode: "006", reference: "A0000000000000042" };
+// Krungthai's 21-character variant, which puts a date after its leading letter where the
+// 17-character one above carries none (D-059). Both are real shapes; the digits are invented.
+export const KTB_SLIP_DATED: SlipFixture = { bankQrCode: "006", reference: "C20260715619612956197" };
 export const KBANK_SLIP: SlipFixture = { bankQrCode: "004", reference: "00000000000000000042" };
 
 /**
