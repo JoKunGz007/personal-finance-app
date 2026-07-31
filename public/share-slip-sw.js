@@ -9,8 +9,12 @@
 //
 // It caches **nothing else**. No app shell, no assets, no routes. That is deliberate: a
 // caching service worker serving a stale build is one of the hardest failures to diagnose
-// in this kind of app, and task 19 is about to rewrite routing. This worker has exactly one
-// fetch handler and it matches exactly one URL.
+// in this kind of app, and task 19 has now rewritten routing around it. This worker has
+// exactly one fetch handler and it matches exactly one URL.
+//
+// Routing changed two things here and nothing else: the redirect lands on `/slips`, which is
+// where the capture form lives now, and registration moved to the shell (`app/site-header.tsx`)
+// so that any visited route arms this interceptor rather than only the one the share lands on.
 
 const SHARE_CACHE = "shared-slip-v1";
 const SHARE_PATH = "/share-slip";
@@ -33,12 +37,12 @@ self.addEventListener("fetch", (event) => {
           PENDING_URL,
           new Response(file, { headers: { "content-type": file.type || "application/octet-stream" } })
         );
-        return Response.redirect("/?shared=slip", 303);
+        return Response.redirect("/slips?shared=slip", 303);
       }
     } catch {
       // Fall through to the plain redirect below. A share that could not be stashed must
       // still land the owner somewhere useful rather than on a failed navigation.
     }
-    return Response.redirect("/?shared=none", 303);
+    return Response.redirect("/slips?shared=none", 303);
   })());
 });

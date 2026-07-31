@@ -5,6 +5,7 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
+import { SiteHeader } from "@/app/site-header";
 
 export const metadata: Metadata = {
   title: "Private Ledger",
@@ -18,14 +19,22 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { colorScheme: "light dark", themeColor: "#eaf0f4" };
 
+// The shell — header, main, footer — belongs to every route since routing landed, so it
+// lives here instead of inside a page component. Each route renders its own sections into
+// `main` and owns its own state; nothing is shared across a navigation but the session
+// cookie, which is what makes the split honest rather than cosmetic.
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <body>
         <nav aria-label="Skip links">
-          <a className="skip-link" href="#main">Skip to ledger</a>
+          <a className="skip-link" href="#main">Skip to content</a>
         </nav>
-        {children}
+        <div className="app-shell">
+          <SiteHeader />
+          <main id="main">{children}</main>
+          <footer><span>Private Ledger</span><p>No analytics · no session replay · no financial response caching</p></footer>
+        </div>
       </body>
     </html>
   );

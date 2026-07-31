@@ -10,7 +10,9 @@ describe("privacy guardrails", () => {
 
   it("installs no observation tooling and keeps the ledger surfaces free of client storage", () => {
     const packageJson = readFileSync("package.json", "utf8");
-    const ui = readFileSync("app/ledger-app.tsx", "utf8") + readFileSync("app/transactions-view.tsx", "utf8");
+    const ui = readFileSync("app/import-bench.tsx", "utf8")
+      + readFileSync("app/recovery-bench.tsx", "utf8")
+      + readFileSync("app/transactions-view.tsx", "utf8");
     expect(ui).not.toMatch(/serviceWorker|localStorage|sessionStorage|console\./);
     expect(packageJson).not.toMatch(/analytics|sentry|datadog|hotjar|fullstory/i);
   });
@@ -22,9 +24,16 @@ describe("privacy guardrails", () => {
     // had become false. The rule was never "no service worker" — it is that a worker exists
     // for one reason and must not become an app-shell cache, because a stale one serving
     // old code is among the hardest failures here to diagnose.
-    const registrations = ["app/slip-capture.tsx", "app/ledger-app.tsx", "app/transactions-view.tsx", "app/layout.tsx"]
-      .filter((file) => readFileSync(file, "utf8").includes("serviceWorker.register"));
-    expect(registrations).toEqual(["app/slip-capture.tsx"]);
+    //
+    // Routing moved the registration from the capture form to the shell so that any visited
+    // route arms the share interceptor, not only the one a share lands on — the rule is one
+    // registration site, and it is still one. The candidate list is every client component
+    // in `app/`, so a second registration anywhere fails this rather than hiding.
+    const registrations = [
+      "app/site-header.tsx", "app/slip-capture.tsx", "app/import-bench.tsx",
+      "app/recovery-bench.tsx", "app/transactions-view.tsx", "app/layout.tsx"
+    ].filter((file) => readFileSync(file, "utf8").includes("serviceWorker.register"));
+    expect(registrations).toEqual(["app/site-header.tsx"]);
 
     const worker = readFileSync("public/share-slip-sw.js", "utf8");
     // One fetch handler, and it must return early for anything that is not the share POST.
@@ -80,7 +89,12 @@ describe("privacy guardrails", () => {
   });
 
   it("keeps every client request same-origin and limited to the import contract", () => {
-    const ui = readFileSync("app/ledger-app.tsx", "utf8");
+    // Every client surface that fetches, not just the one that used to be the whole app:
+    // routing split `app/ledger-app.tsx` into these three, and a check naming one file would
+    // have gone on passing while saying nothing about the other two.
+    const ui = readFileSync("app/import-bench.tsx", "utf8")
+      + readFileSync("app/recovery-bench.tsx", "utf8")
+      + readFileSync("app/site-header.tsx", "utf8");
     const targets = [...ui.matchAll(/fetch\(\s*"([^"]+)"/gu)].map((match) => match[1]!);
     expect(targets.length).toBeGreaterThan(0);
     targets.forEach((target) => expect(target).toMatch(/^\/api\/v1\//u));
@@ -92,7 +106,7 @@ describe("privacy guardrails", () => {
   });
 
   it("never infers which ledger account a statement belongs to", () => {
-    const ui = readFileSync("app/ledger-app.tsx", "utf8");
+    const ui = readFileSync("app/import-bench.tsx", "utf8");
     // Binding is a checked user decision (DECISIONS D-017): the account id comes from
     // the chooser, and assembleImportPayload re-checks it against the printed account
     // and currency. Matching an account to the statement automatically — however

@@ -1,6 +1,6 @@
 # Private Ledger gotchas
 
-Last reviewed: 2026-07-29
+Last reviewed: 2026-07-31
 
 Record only repeatable, non-obvious traps. Each item states the symptom, cause, prevention, and verification.
 
@@ -565,3 +565,32 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: a placeholder in a money or date field should be impossible to mistake for a value — words, not digits. Where a format hint is genuinely needed, put it in the help text where it reads as an example rather than as content.
 - The broader point: this was found in the first ten minutes of an owner using the form, and no test could have caught it, because every test fills the field before looking at it. Owner-driven use keeps finding this class of defect here — the transactions view produced three refinements the same way (`PLAN.md` task 17).
 - Verify: 2026-07-30. Placeholder replaced with text; the Buddhist-era and date-source help lines now say which value came from where.
+
+## A value-free reporting rule guards the print, not the reuse hours later
+
+- Symptom: real data appears in a committed fixture written by someone who knew the rule, had just applied it, and had explicitly said the leaked values would not be reused.
+- Cause: the rule fires at the moment a value is *printed* and has nothing to say at the moment it is *reused*. By then the value no longer feels like a stolen sample — it feels like knowledge of the format, which is legitimately held. Writing tests that needed one reference shape per bank, three shapes were reproduced from what a probe had printed earlier in the same session (D-060).
+- Avoid: when a fixture must reproduce a real *shape*, generate it from the grammar rather than recalling an instance. A builder usually already exists for this — here `buildSlipQrPayload` was used for the payloads while the references handed to it were pasted, which is the whole failure in one line. Treat "I saw this value earlier" as disqualifying it from a fixture, permanently, however structural it now looks.
+- Second-order trap: the leak had already been written up as a gotcha, and the write-up said "nothing derived from it will reach a fixture". Recording a hazard is not the same as being protected from it, and a confident note about future behaviour is worth less than a mechanism.
+- Verify: 2026-07-31. Found by the owner capturing a real slip and noticing its printed reference matched a fixture verbatim — no test, lint or review caught it, and none has been added that would.
+
+## Splitting one page into routes breaks specs whose subject has nothing to do with routing
+
+- Symptom: after a routing change, eight browser specs fail on `locator('input[name="statement-pdf"]') — waiting for locator`, in two files about the PDF reader and the layout readers. Nothing about parsing changed.
+- Cause: every spec navigated to `/`, which used to render the whole app. `page.goto("/")` is an invisible dependency on there being one page, and it is spread across files by subject rather than collected anywhere. Updating the specs whose *subject* was the routing (the ledger and owner-session suites) left the rest pointing at a route that no longer holds the control they use.
+- Avoid: before splitting a page, grep the whole browser suite for `goto(` and fix every hit, not the files the change is "about". The failure message names a missing locator, so it reads as a broken selector rather than as a spec on the wrong page — which sends you looking at the component that is fine.
+- Verify: 2026-07-31. The isolated suite ran 8 failed / 10 passed with two files unfixed, and 18/18 once `parser.spec.ts` and `statement-pdf.spec.ts` were pointed at `/import`.
+
+## A second `role="status"` in the shell makes every existing status assertion ambiguous
+
+- Symptom: a live region added to a shared header turns unrelated specs red with `strict mode violation: locator resolved to 2 elements`, on assertions that were not touched.
+- Cause: `getByRole("status")` matches every element with that role on the page. Each route here already has exactly one status line, and specs read it unscoped. A shell element carrying `role="status"` — or an `<output>`, which computes to the same role — appears on all of them at once.
+- Avoid: a shell-level announcement can use `aria-live="polite"` on a plain element, which announces identically and does **not** compute to `role="status"`, and specs then target it by class. Where a second status role is genuinely wanted, scope the existing assertions to their section first, in a separate change, so the two failures do not arrive together.
+- Verify: 2026-07-31. `app/site-header.tsx` uses `aria-live` and `signIn()` reads `.session-state`; owner-session passes 16/16 with per-route status assertions untouched.
+
+## Grepping `.next` for a Supabase port now finds one hit that is not a build target
+
+- Symptom: the documented check for which project a build targets — grep `.next/server` for the test project's port — reports one file, where it previously reported none. The build looks mis-aimed.
+- Cause: `app/api/v1/dev/session/route.ts` carries a literal port→project-name map (`54321: private-ledger-local`, `54331: …recovery`, `54341: …live`) so it can name the project it is minting a session against. That map is inlined into a server chunk by every build, whatever the build targets.
+- Avoid: read the match's context rather than counting files. A genuine target appears as a bare origin (`http://127.0.0.1:5434…`) in the client and server chunks; the map appears as a JavaScript object literal with all three ports beside each other. Counting alone cannot tell them apart, and "0 references to the test project" is no longer the right expectation.
+- Verify: 2026-07-31. After `pnpm build` against `.env.local`: two chunks carry the live port, one carries the test port, and inspecting the latter shows the three-port map and no target.

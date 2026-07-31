@@ -148,8 +148,12 @@ export function SlipCapture() {
 
   // Share-to-app. The service worker has already intercepted the share POST and stashed the
   // image locally (public/share-slip-sw.js); this picks it up and runs it through the same
-  // path a file chosen by hand takes. Registration is here rather than in the layout so the
-  // only page that needs a worker is the only page that installs one.
+  // path a file chosen by hand takes.
+  //
+  // **Registering** that worker is the shell's job rather than this component's, and routing
+  // is what moved it (`app/site-header.tsx`). A worker installed only by the page the share
+  // lands on cannot intercept the first share ever made — and an unintercepted share is one
+  // that reaches the server, which is the single thing D-050 forbids.
   //
   // Every setState below happens in an async continuation, never synchronously in the
   // effect body — a shared slip is an external event arriving, which is what effects are
@@ -157,22 +161,15 @@ export function SlipCapture() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (!("serviceWorker" in navigator)) return;
-      try {
-        await navigator.serviceWorker.register("/share-slip-sw.js", { scope: "/" });
-      } catch {
-        // An unregistrable worker only costs share-to-app; choosing a file still works.
-        return;
-      }
-      if (cancelled || !new URLSearchParams(globalThis.location.search).has("shared")) return;
+      if (!new URLSearchParams(globalThis.location.search).has("shared")) return;
       const shared = await consumePendingSharedSlip();
       if (cancelled || !shared) return;
       await onFile(shared);
     })();
     return () => { cancelled = true; };
-    // Mount-only on purpose. `onFile` is redefined every render, so listing it would
-    // re-register the worker and re-read the pending share on each one — and the pending
-    // share is consumed destructively, so the second read would find nothing.
+    // Mount-only on purpose. `onFile` is redefined every render, so listing it would re-read
+    // the pending share on each one — and the pending share is consumed destructively, so
+    // the second read would find nothing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -304,7 +301,7 @@ export function SlipCapture() {
   return (
     <section className="slip-bench" aria-labelledby="slip-title">
       <div className="bench-heading">
-        <p className="section-index">Slips / 06</p>
+        <p className="section-index">Slips</p>
         <div>
           <h2 id="slip-title">Capture a transfer slip</h2>
           <p>

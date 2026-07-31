@@ -15,7 +15,7 @@ test("reads a synthetic PDF through the real pdf.js worker", async ({ page }, te
   page.on("console", (message) => noise.push(`${message.type()}: ${message.text()}`));
   page.on("pageerror", (error) => noise.push(`pageerror: ${error.message}`));
 
-  await page.goto("/");
+  await page.goto("/import");
   await page.locator('input[name="statement-pdf"]').setInputFiles({
     name: "synthetic-statement.pdf",
     mimeType: "application/pdf",
@@ -66,7 +66,7 @@ test("reads a synthetic PDF through the real pdf.js worker", async ({ page }, te
 test("rejects a PDF that does not match the supported layout, with its code", async ({ page }) => {
   // A structurally valid PDF whose text is nothing like a statement must fail closed
   // and say why, rather than producing a partial or invented reading.
-  await page.goto("/");
+  await page.goto("/import");
   await page.locator('input[name="statement-pdf"]').setInputFiles({
     name: "not-a-statement.pdf",
     mimeType: "application/pdf",

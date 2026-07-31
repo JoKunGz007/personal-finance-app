@@ -2,7 +2,7 @@
   "name": "Private Ledger",
   "short_name": "Ledger",
   "description": "A local-first Thai bank statement and slip ledger.",
-  "start_url": "/",
+  "start_url": "/ledger",
   "scope": "/",
   "display": "standalone",
   "background_color": "#eaf0f4",

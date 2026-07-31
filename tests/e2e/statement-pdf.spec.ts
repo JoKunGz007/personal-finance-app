@@ -18,7 +18,7 @@ import { buildStatementPdf } from "../fixtures/synthetic-pdf";
 const UNLOCK = "synthetic-unlock-not-a-real-password";
 
 async function readPdf(page: import("@playwright/test").Page, name: string, bytes: Uint8Array) {
-  await page.goto("/");
+  await page.goto("/import");
   await page.locator('input[name="statement-pdf"]').setInputFiles({
     name, mimeType: "application/pdf", buffer: Buffer.from(bytes)
   });

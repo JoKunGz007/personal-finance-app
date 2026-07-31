@@ -123,7 +123,7 @@ export function TransactionsView() {
   return (
     <section className="ledger-band" aria-labelledby="ledger-title">
       <div className="bench-heading">
-        <p className="section-index">Ledger / 05</p>
+        <p className="section-index">Ledger</p>
         <div>
           <h2 id="ledger-title">Confirmed transactions</h2>
           <p>

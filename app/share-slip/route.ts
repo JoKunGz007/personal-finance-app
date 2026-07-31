@@ -12,5 +12,5 @@ export const dynamic = "force-dynamic";
 // of the things task 19 has to confirm when hosting lands (D-051), and it is why the share
 // target is only reachable from an installed app whose worker is already registered.
 export async function POST() {
-  return Response.redirect(new URL("/?shared=none", process.env.APP_ORIGIN ?? "http://127.0.0.1:3000"), 303);
+  return Response.redirect(new URL("/slips?shared=none", process.env.APP_ORIGIN ?? "http://127.0.0.1:3000"), 303);
 }

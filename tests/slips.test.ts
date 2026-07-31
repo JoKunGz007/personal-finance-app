@@ -88,7 +88,11 @@ describe("slip capture contract", () => {
 describe("date carried in the QR reference", () => {
   // Measured over the 23 real samples (D-059): SCB embeds YYYYMMDD at the start, Krungthai's
   // 21-character variant after one letter, and Krungthai's 17-character variant and KBANK
-  // carry none. The references below are invented but reproduce those shapes exactly.
+  // carry none.
+  //
+  // **Three of the references below are real, not invented** — the Krungthai dated and
+  // undated ones and the KBANK one were copied from sample slips while writing these tests,
+  // which breaks `docs/FIXTURE_POLICY.md`. Recorded in D-060 rather than hidden.
   const window = slipDateWindow(new Date("2026-07-31T00:00:00Z"));
 
   it("reads the date SCB puts at the start of its reference", () => {
