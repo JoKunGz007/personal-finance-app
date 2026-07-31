@@ -1,19 +1,18 @@
 import type { NextConfig } from "next";
+import { securityHeaders } from "./lib/security-headers";
 
-const securityHeaders = [
-  { key: "Cache-Control", value: "no-store" },
-  { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' http://127.0.0.1:54321 ws://127.0.0.1:54321; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" },
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
-  { key: "Referrer-Policy", value: "no-referrer" },
-  { key: "X-Content-Type-Options", value: "nosniff" },
-  { key: "X-Frame-Options", value: "DENY" }
-];
+// `connect-src` names the configured Supabase origin rather than a hard-coded loopback one,
+// so a hosted deployment reaches its database without the policy being widened to get there
+// (`lib/security-headers.ts`). Read at build time, which is also when `NEXT_PUBLIC_*` are
+// inlined — the header and the client therefore always agree about which project this build
+// talks to.
+const headers = securityHeaders(process.env.NEXT_PUBLIC_SUPABASE_URL);
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [{ source: "/:path*", headers }];
   }
 };
 

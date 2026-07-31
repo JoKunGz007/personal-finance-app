@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { securityHeaders } from "@/lib/security-headers";
 
 describe("privacy guardrails", () => {
   it("does not expose statement password environment variables", () => {
@@ -7,15 +8,40 @@ describe("privacy guardrails", () => {
     expect(example).not.toMatch(/STATEMENT_PASSWORD|SCB_|KBANK_|KRUNGTHAI_STATEMENT/);
   });
 
-  it("does not register a service worker or install observation tooling", () => {
+  it("installs no observation tooling and keeps the ledger surfaces free of client storage", () => {
     const packageJson = readFileSync("package.json", "utf8");
     const ui = readFileSync("app/ledger-app.tsx", "utf8") + readFileSync("app/transactions-view.tsx", "utf8");
     expect(ui).not.toMatch(/serviceWorker|localStorage|sessionStorage|console\./);
     expect(packageJson).not.toMatch(/analytics|sentry|datadog|hotjar|fullstory/i);
   });
 
+  it("registers exactly one service worker, and it caches nothing but the shared slip", () => {
+    // This test used to be part of a blanket "does not register a service worker" assertion
+    // that checked only two UI files. Share-to-app then registered one in a third
+    // (`app/slip-capture.tsx`, D-056) and the assertion went on passing while its own name
+    // had become false. The rule was never "no service worker" — it is that a worker exists
+    // for one reason and must not become an app-shell cache, because a stale one serving
+    // old code is among the hardest failures here to diagnose.
+    const registrations = ["app/slip-capture.tsx", "app/ledger-app.tsx", "app/transactions-view.tsx", "app/layout.tsx"]
+      .filter((file) => readFileSync(file, "utf8").includes("serviceWorker.register"));
+    expect(registrations).toEqual(["app/slip-capture.tsx"]);
+
+    const worker = readFileSync("public/share-slip-sw.js", "utf8");
+    // One fetch handler, and it must return early for anything that is not the share POST.
+    expect(worker.match(/addEventListener\("fetch"/gu)).toHaveLength(1);
+    expect(worker).toMatch(/method !== "POST"/u);
+    // No precache list, no cache-first read path: the only cache write is the shared image.
+    expect(worker).not.toMatch(/cache\.addAll|caches\.match\(event\.request\)|cache-first/u);
+    expect(worker.match(/cache\.put\(/gu)).toHaveLength(1);
+  });
+
   it("keeps API and page responses no-store", () => {
-    expect(readFileSync("next.config.ts", "utf8")).toContain('value: "no-store"');
+    // Asserted against the header the app actually builds rather than against a string in
+    // `next.config.ts`. The literal moved to `lib/security-headers.ts` when `connect-src`
+    // stopped being a constant, and a grep for it would have gone on passing while pointing
+    // at the wrong file — or, as it did, failed for a reason that says nothing about privacy.
+    const headers = new Map(securityHeaders("http://127.0.0.1:54321").map((header) => [header.key, header.value]));
+    expect(headers.get("Cache-Control")).toBe("no-store");
     expect(readFileSync("app/api/v1/imports/confirm/route.ts", "utf8")).not.toMatch(/password|pdfBytes|ArrayBuffer/);
   });
 
