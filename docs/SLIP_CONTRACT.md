@@ -88,9 +88,19 @@ slip** is Buddhist and always does. The two sources disagree by 543 years on the
 
 ## What this does not yet establish
 
-- **No OCR has been run.** This is a reading of the layouts by eye across a sample of the 23,
-  which is what region targeting needs before it can be written; it is not a measurement of
-  what an OCR engine actually recovers from these images.
+- ~~**No OCR has been run.**~~ **Measured 2026-08-05** (D-066), by a throwaway harness under
+  `.runtime/diag/`, deleted after use. Engine: tesseract.js 7.0.0 with `tha+eng`, default
+  settings, native resolution, no upscaling, over the 14 samples whose QR carries a date.
+  **Thai script was recognised on 14 of 14** at a mean of 187 words per image, so the engine
+  reads these documents. **The amount's label was found on 11 of 14 (79%)**, and on all 11 of
+  those the label anchoring and the money grammar returned a usable amount — so where OCR
+  reads the label, the rest of the path works. The 3 failures are the engine not recognising
+  the label, not a targeting fault.
+- **A retry ladder is the obvious next thing to try, and is untested.** D-053 measured that 3
+  of 23 samples do not decode their QR at native resolution and need a 2× upscale; the amount
+  label also failed on 3. Whether they are the same 3 low-resolution images is unmeasured and
+  would be the first thing to check, because `lib/slip-scan.ts` already owns exactly that
+  ladder for the QR and the OCR path would want the same one.
 - **The month tokens are unrecorded, and that blocks the printed date.** The tables above give
   the date *layout* — `D MMM YYYY - HH:MM`, `D MMM YY  HH:MM น.` — without saying whether
   `MMM` prints as a Thai abbreviation or a Latin one. Found on 2026-08-05 while writing
