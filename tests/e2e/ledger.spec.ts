@@ -33,7 +33,7 @@ test("reaches every route from the header, without a signed-in owner", async ({ 
     ["Import", "/import", "Open a statement locally"],
     ["Slips", "/slips", "Capture a transfer slip"],
     ["Recovery", "/recovery", "Back up and restore the ledger"],
-    ["Ledger", "/ledger", "Confirmed transactions"]
+    ["Ledger", "/ledger", "Transactions"]
   ] as const) {
     const link = nav.getByRole("link", { name: label, exact: true });
     await link.click();

@@ -643,6 +643,101 @@ test("fills the date from the QR when the reference carries one, and says so", a
   await expect(bench.getByText(/carries no date, so today is filled in/)).toBeVisible();
 });
 
+// Reconciliation in the ledger view (PLAN task 22, D-063). The gap the owner found by using
+// the app: a captured slip was stored correctly and shown nowhere, while `GET /api/v1/slips`
+// had existed with no caller. Slips now appear in the ledger, a matched pair collapses onto
+// its statement row, and the totals count each payment exactly once.
+//
+// No layout prints the slip's reference, so a match is a proposal from bank, exact amount and
+// a date within three days — which is why both halves are covered here: the pair that
+// collapses, and the slip that has nothing to collapse onto.
+
+async function captureSlip(
+  page: import("@playwright/test").Page,
+  options: { slip?: Parameters<typeof buildSlipQrPng>[0]; amount: string; date: string; counterparty?: string }
+) {
+  await page.goto("/slips");
+  const bench = page.locator(".slip-bench");
+  await chooseSlipImage(page, options.slip);
+  await bench.getByLabel("Amount (THB)").fill(options.amount);
+  await bench.getByLabel("Date", { exact: true }).fill(options.date);
+  if (options.counterparty) await bench.getByLabel("Counterparty (optional)").fill(options.counterparty);
+  await bench.getByRole("button", { name: "Capture slip" }).click();
+  await expect(bench.getByText(/Captured as a provisional entry/)).toBeVisible({ timeout: 15_000 });
+}
+
+test("collapses a slip onto the statement row it matches, and counts the payment once", async ({ page }) => {
+  await signIn(page, "/slips");
+  // 500.00 out on 09/01/69 is one row of the Krungthai fixture, and the only row of that
+  // amount — so this is the unambiguous case the matcher is allowed to act on.
+  await captureSlip(page, { slip: KTB_SLIP, amount: "500.00", date: "2026-01-09", counterparty: "Browser synthetic payee" });
+
+  await page.goto("/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+
+  // Four rows, not five: the pair is one payment. This is the assertion that would fail if
+  // matching regressed to showing both records.
+  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 30_000 });
+  await expect(ledger.locator("tr.provisional-row")).toHaveCount(0);
+
+  const verified = ledger.locator("tr.verified-row");
+  await expect(verified).toHaveCount(1);
+  await expect(verified.getByText("Verified by slip")).toBeVisible();
+  // The statement row survives, carrying its printed balance — and takes the counterparty the
+  // owner typed, which the bank's own description does not carry.
+  await expect(verified.locator('td[data-label="Account balance"]')).toHaveText(formatThb("1024950"));
+  await expect(verified.getByText("Browser synthetic payee (from slip)")).toBeVisible();
+
+  // The total counts four payments and reports none of them provisional.
+  await expect(ledger.locator(".ledger-strip dd").first()).toHaveText("4");
+  await expect(ledger.getByText("1 verified")).toBeVisible();
+
+  // And the authoritative ledger is untouched by any of it: the slip did not become a row.
+  const owner = ownerId();
+  expect(psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`).output.trim()).toBe("4");
+  expect(psql(`select count(*) from public.slips where owner_id = '${owner}';`).output.trim()).toBe("1");
+});
+
+test("keeps a slip with no matching row as its own provisional entry, counted in the total", async ({ page }) => {
+  await signIn(page, "/slips");
+  // An SCB slip against a Krungthai statement: right owner, wrong bank, so nothing can match
+  // however well the amount reads. It stays a row of its own.
+  await captureSlip(page, { amount: "1250.75", date: "2026-07-20" });
+
+  await page.goto("/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+
+  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  const provisional = ledger.locator("tr.provisional-row");
+  await expect(provisional).toHaveCount(1);
+  await expect(provisional.getByText("Awaiting statement")).toBeVisible();
+
+  // Counted as money that moved — five rows, one of them provisional, said in the strip.
+  await expect(ledger.locator(".ledger-strip dd").first()).toContainText("5");
+  await expect(ledger.locator(".ledger-strip dd").first()).toContainText("1 provisional");
+  await expect(ledger.getByText("1 awaiting a statement")).toBeVisible();
+
+  // No balance in either money column: a slip is not in the statement's balance chain, and a
+  // derived figure there would be invented.
+  await expect(provisional.locator('td[data-label="Account balance"]')).toHaveText("—");
+  await expect(provisional.locator('td[data-label="All accounts"]')).toHaveText("—");
+
+  // This owner holds two SCB accounts, so the QR's bank does not identify one — the row says
+  // so rather than filing the slip under a guess (D-056).
+  await expect(provisional.getByText("SCB · account unknown")).toBeVisible();
+  await ledger.getByLabel("Account").selectOption(MATCHING_ACCOUNT);
+  await expect(ledger.locator("tr.provisional-row")).toHaveCount(0);
+  await expect(ledger.getByText(/hidden while one account is selected/)).toBeVisible();
+});
+
 test("slip capture has no automatically detectable accessibility violations", async ({ page }) => {
   await signIn(page, "/slips");
   await chooseSlipImage(page);

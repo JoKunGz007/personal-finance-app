@@ -1,0 +1,269 @@
+import type { CapturedSlip } from "@/lib/slips";
+import type { LedgerAccount } from "@/lib/accounts";
+import { movementMinor, type AccountTransaction } from "@/lib/transactions";
+
+/**
+ * Matching captured slips to confirmed statement rows (PLAN task 22).
+ *
+ * **There is no identifier to join on.** No supported layout prints the transaction
+ * reference the slip QR carries: Krungthai and KBANK print none at all, and SCB's is a short
+ * channel code such as `SIPI`. That single fact decides everything here — a match is a
+ * *proposal* from bank, amount and date, never a fact the two records assert about each
+ * other, so it must be visible, reversible, and refuse when it cannot be sure.
+ *
+ * The rule, stated once:
+ *
+ * - the slip's bank equals the bank of the account the transaction belongs to;
+ * - the amounts are equal **to the minor unit**, sign included — no tolerance, ever, because
+ *   a near-match on money is exactly the thing this ledger must not invent;
+ * - the dates are within `MATCH_WINDOW_DAYS`, since a transfer made late can post the next
+ *   working day, and a slip's date is the owner's while the row's is the bank's;
+ * - among the candidates that survive, **only those nearest in date are considered**;
+ * - and the pair is **mutually unique**: the slip has exactly one nearest candidate row, and
+ *   that row has exactly one slip claiming it.
+ *
+ * The last two clauses are the ones that carry their weight, and the nearest-date one was
+ * added on evidence rather than taste. Measured over the owner's real ledger — 1,465 rows —
+ * the share of rows sharing a bank and an exact amount with another row is 6.5% on the same
+ * day, 11.5% within one day, **16.3% within three** and 27.8% within seven. So the window
+ * that buys tolerance for a late posting also doubles the ambiguity it has to resolve.
+ * Preferring the nearest date takes that 16.3% back down to **6.5%** — the same-day floor —
+ * which means the tolerance costs nothing and the residue is irreducible: two identical
+ * payments on one day, where no date rule can help and a guess would be a coin toss.
+ *
+ * Mutual uniqueness is what makes the result order-independent. Matching greedily in
+ * iteration order would pair two identical transfers with whichever row came first and look
+ * confident doing it — and that case is not hypothetical: the real ledger holds a same-bank,
+ * same-day pair of equal amount.
+ */
+
+export const MATCH_WINDOW_DAYS = 3;
+
+export type SlipMatchStatus = "verified" | "awaiting-statement" | "needs-review" | "statement-only";
+
+function dayNumber(date: string): number {
+  return Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))) / 86_400_000;
+}
+
+/**
+ * The account a slip is shown against, derived and never stored.
+ *
+ * D-056 refused to put an account on a slip and that still holds: the QR names a bank, and
+ * only the statement says which of that bank's accounts the money moved through. But when the
+ * owner holds exactly **one** account at that bank there is nothing to guess — the attribution
+ * is forced by the data, not chosen. With two, this returns null and the view says so.
+ *
+ * Derived at read time on purpose. A stored account id would be a guess written down, and a
+ * later statement could contradict it with no way to notice.
+ */
+export function slipAccount(slip: CapturedSlip, accounts: readonly LedgerAccount[]): LedgerAccount | null {
+  const atBank = accounts.filter((account) => account.bank_code === slip.bank_code);
+  return atBank.length === 1 ? atBank[0]! : null;
+}
+
+export type SlipMatches = {
+  /** slip id → the transaction it was matched to. */
+  bySlip: Map<string, string>;
+  /** transaction id → the slip matched to it. */
+  byTransaction: Map<string, CapturedSlip>;
+  /** Slips with candidates that were not unique on both sides. Shown, never guessed at. */
+  needsReview: Set<string>;
+};
+
+export function proposeSlipMatches(
+  transactions: readonly AccountTransaction[],
+  slips: readonly CapturedSlip[],
+  accounts: readonly LedgerAccount[]
+): SlipMatches {
+  const bankByAccount = new Map(accounts.map((account) => [account.id, account.bank_code]));
+
+  // Candidates in both directions, computed before anything is committed to, so no pairing
+  // depends on the order rows arrived in.
+  const candidatesBySlip = new Map<string, string[]>();
+  const claimantsByTransaction = new Map<string, Array<{ slipId: string; distance: number }>>();
+
+  for (const slip of slips) {
+    const slipDay = dayNumber(slip.occurred_on);
+    const amount = BigInt(slip.amount_minor);
+    const withDistance: Array<{ id: string; distance: number }> = [];
+    for (const transaction of transactions) {
+      if (bankByAccount.get(transaction.account_id) !== slip.bank_code) continue;
+      if (BigInt(movementMinor(transaction)) !== amount) continue;
+      const distance = Math.abs(dayNumber(transaction.source_date) - slipDay);
+      if (distance > MATCH_WINDOW_DAYS) continue;
+      withDistance.push({ id: transaction.id, distance });
+    }
+    // Nearest in date only. A row on the slip's own day is a better explanation of it than
+    // one three days away, and keeping both would manufacture an ambiguity the data does not
+    // have — measured at nearly ten points of this ledger's rows.
+    const nearest = withDistance.length === 0
+      ? 0
+      : withDistance.reduce((best, candidate) => Math.min(best, candidate.distance), Number.POSITIVE_INFINITY);
+    const candidates = withDistance.filter((candidate) => candidate.distance === nearest).map((candidate) => candidate.id);
+
+    // Claims carry their distance, so competition between slips is resolved the same way
+    // competition between rows is: the nearer record is the better explanation. Without this,
+    // a slip three days from a row would block the slip sitting exactly on it.
+    for (const id of candidates) {
+      const claimants = claimantsByTransaction.get(id);
+      if (claimants) claimants.push({ slipId: slip.id, distance: nearest });
+      else claimantsByTransaction.set(id, [{ slipId: slip.id, distance: nearest }]);
+    }
+    candidatesBySlip.set(slip.id, candidates);
+  }
+
+  const bySlip = new Map<string, string>();
+  const byTransaction = new Map<string, CapturedSlip>();
+  const needsReview = new Set<string>();
+
+  for (const slip of slips) {
+    const candidates = candidatesBySlip.get(slip.id) ?? [];
+    if (candidates.length === 0) continue; // awaiting a statement, which is not a problem
+    if (candidates.length > 1) {
+      needsReview.add(slip.id);
+      continue;
+    }
+    const transactionId = candidates[0]!;
+    const claimants = claimantsByTransaction.get(transactionId) ?? [];
+    const closest = claimants.reduce((best, claim) => Math.min(best, claim.distance), Number.POSITIVE_INFINITY);
+    const winners = claimants.filter((claim) => claim.distance === closest);
+    if (winners.length > 1) {
+      // Two slips equally close to one row: neither is safe to pair, and picking one would be
+      // a coin toss that reads as a decision.
+      needsReview.add(slip.id);
+      continue;
+    }
+    // A slip that lost to a nearer one has no candidate left, which is "awaiting a statement"
+    // rather than a problem — the row it wanted is better explained by the other slip.
+    if (winners[0]!.slipId !== slip.id) continue;
+    bySlip.set(slip.id, transactionId);
+    byTransaction.set(transactionId, slip);
+  }
+
+  return { bySlip, byTransaction, needsReview };
+}
+
+/**
+ * A row of the ledger after reconciliation: one row per payment.
+ *
+ * A matched pair collapses onto its **statement row**, which keeps the printed balance and
+ * the immutable source facts, and takes the slip's counterparty, category and note as
+ * detail. The slip does not also appear — that is the whole point, and it is what makes the
+ * confirmed totals safe to include slips in.
+ */
+export type ReconciledRow =
+  | {
+      kind: "confirmed";
+      id: string;
+      date: string;
+      time: string | null;
+      status: Extract<SlipMatchStatus, "verified" | "statement-only">;
+      transaction: AccountTransaction;
+      slip: CapturedSlip | null;
+    }
+  | {
+      kind: "provisional";
+      id: string;
+      date: string;
+      time: string | null;
+      status: Extract<SlipMatchStatus, "awaiting-statement" | "needs-review">;
+      slip: CapturedSlip;
+      account: LedgerAccount | null;
+    };
+
+export function reconcileLedger(
+  transactions: readonly AccountTransaction[],
+  slips: readonly CapturedSlip[],
+  accounts: readonly LedgerAccount[]
+): { rows: ReconciledRow[]; matches: SlipMatches } {
+  const matches = proposeSlipMatches(transactions, slips, accounts);
+
+  const rows: ReconciledRow[] = transactions.map((transaction) => {
+    const slip = matches.byTransaction.get(transaction.id) ?? null;
+    return {
+      kind: "confirmed" as const,
+      id: transaction.id,
+      date: transaction.source_date,
+      time: transaction.source_time,
+      status: slip ? ("verified" as const) : ("statement-only" as const),
+      transaction,
+      slip
+    };
+  });
+
+  for (const slip of slips) {
+    if (matches.bySlip.has(slip.id)) continue; // already shown as its statement row
+    rows.push({
+      kind: "provisional" as const,
+      id: slip.id,
+      date: slip.occurred_on,
+      time: slip.occurred_at_time,
+      status: matches.needsReview.has(slip.id) ? ("needs-review" as const) : ("awaiting-statement" as const),
+      slip,
+      account: slipAccount(slip, accounts)
+    });
+  }
+
+  return { rows, matches };
+}
+
+/** `compareTransactions`' rule over reconciled rows, so both kinds sort into one sequence. */
+export function compareRows(a: ReconciledRow, b: ReconciledRow): number {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+  if (a.time !== b.time) {
+    if (a.time === null) return 1;
+    if (b.time === null) return -1;
+    return a.time < b.time ? 1 : -1;
+  }
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** The signed movement of a row, whichever kind it is. */
+export function rowMovementMinor(row: ReconciledRow): string {
+  return row.kind === "confirmed" ? movementMinor(row.transaction) : row.slip.amount_minor;
+}
+
+export type LedgerTotals = {
+  rows: number;
+  deposits: string;
+  withdrawals: string;
+  net: string;
+  /** How many of those rows are provisional, so the figure can say what it rests on. */
+  provisional: number;
+};
+
+/**
+ * One total over both kinds — which is only correct *because* a matched slip is not a row.
+ *
+ * Before reconciliation existed this had to keep slips apart, since a slip and its statement
+ * row would have been counted twice (D-062). Collapsing the pair removes that hazard at the
+ * source, so the total can finally mean "money that moved" rather than "money the bank has
+ * confirmed" (D-063). The provisional count travels with it so the number can disclose how
+ * much of itself is still unconfirmed.
+ */
+export function summarizeRows(rows: readonly ReconciledRow[]): LedgerTotals {
+  let deposits = 0n;
+  let withdrawals = 0n;
+  let provisional = 0;
+  for (const row of rows) {
+    if (row.kind === "provisional") provisional += 1;
+    if (row.kind === "confirmed") {
+      for (const component of row.transaction.source_components) {
+        const amount = BigInt(component.amount_minor);
+        if (component.kind === "deposit") deposits += amount;
+        else withdrawals += amount;
+      }
+    } else {
+      const amount = BigInt(row.slip.amount_minor);
+      if (row.slip.kind === "deposit") deposits += amount;
+      else withdrawals += amount;
+    }
+  }
+  return {
+    rows: rows.length,
+    deposits: deposits.toString(),
+    withdrawals: withdrawals.toString(),
+    net: (deposits + withdrawals).toString(),
+    provisional
+  };
+}

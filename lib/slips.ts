@@ -57,6 +57,32 @@ export const slipCaptureSchema = z.object({
 
 export type SlipCapture = z.infer<typeof slipCaptureSchema>;
 
+// The read contract for GET /api/v1/slips, which returns `public.slips` for the owner.
+// Column names stay as the database returns them, matching every other read endpoint, and
+// money arrives as canonical text because the route stringifies the bigint (D-018).
+//
+// Strict on purpose, like the overlay schema: a migration adding a column to `public.slips`
+// should fail this parse loudly rather than have the ledger view quietly ignore a field the
+// database now considers part of a slip.
+export const capturedSlipSchema = z.object({
+  id: z.string().uuid(),
+  bank_code: z.enum(BANK_CODES),
+  slip_reference: z.string(),
+  kind: z.enum(SLIP_KINDS),
+  amount_minor: minorUnitStringSchema,
+  currency: z.literal("THB"),
+  occurred_on: isoDateSchema,
+  occurred_at_time: z.string().nullable(),
+  counterparty: z.string().nullable(),
+  category_id: z.string().uuid().nullable(),
+  note: z.string().nullable(),
+  captured_at: z.string()
+}).strict();
+
+export const slipListSchema = z.object({ slips: z.array(capturedSlipSchema) }).strict();
+
+export type CapturedSlip = z.infer<typeof capturedSlipSchema>;
+
 // Offsets at which a reference has been observed to begin with a date: SCB starts with one
 // outright, and Krungthai's 21-character variant puts a single letter in front. Only these
 // two are tried, because every additional offset is another chance to read eight unrelated

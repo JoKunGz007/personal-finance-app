@@ -3,12 +3,14 @@ import {
   combinedBalanceByTransaction,
   compareTransactions,
   matchesQuery,
+  matchesSlipQuery,
   movementMinor,
   summarize,
   transactionListSchema,
   type AccountTransaction,
   type LedgerTransaction
 } from "@/lib/transactions";
+import { slipListSchema, type CapturedSlip } from "@/lib/slips";
 
 const FINGERPRINT = "a".repeat(64);
 
@@ -208,5 +210,56 @@ describe("client-side filtering", () => {
   it("does not match on the fingerprint or the id", () => {
     expect(matchesQuery(transaction(), FINGERPRINT)).toBe(false);
     expect(matchesQuery(transaction(), "11111111-1111-4111-8111-111111111111")).toBe(false);
+  });
+});
+
+// The slip half of the ledger view's wire and filter contracts. Matching itself lives in
+// `tests/slip-reconcile.test.ts`, with the module that owns it.
+describe("captured slips in the ledger view", () => {
+  const slip = (overrides: Partial<CapturedSlip> = {}): CapturedSlip => ({
+    id: "33333333-3333-4333-8333-333333333333",
+    bank_code: "SCB",
+    slip_reference: "INVENTEDREFERENCE01",
+    kind: "withdrawal",
+    amount_minor: "-25000",
+    currency: "THB",
+    occurred_on: "2026-06-02",
+    occurred_at_time: "12:00",
+    counterparty: "Invented payee",
+    category_id: null,
+    note: null,
+    captured_at: "2026-06-02T05:00:00Z",
+    ...overrides
+  });
+
+  it("keeps slips out of the balance derivation entirely", () => {
+    // `combinedBalanceByTransaction` takes confirmed rows only — there is no overload that
+    // accepts a slip, which is the type system carrying the invariant rather than a comment.
+    const rows: AccountTransaction[] = [{ ...transaction(), account_id: "acct-1" }];
+    const balances = combinedBalanceByTransaction(rows);
+    expect(balances.size).toBe(1);
+    expect(balances.get(transaction().id)).toBe("100000");
+  });
+
+  it("filters a slip by reference, counterparty, note and bank, and not by its id", () => {
+    expect(matchesSlipQuery(slip(), "inventedref")).toBe(true);
+    expect(matchesSlipQuery(slip(), "payee")).toBe(true);
+    expect(matchesSlipQuery(slip({ note: "Invented note" }), "invented note")).toBe(true);
+    expect(matchesSlipQuery(slip(), "scb")).toBe(true);
+    expect(matchesSlipQuery(slip(), "")).toBe(true);
+    expect(matchesSlipQuery(slip(), "33333333-3333-4333-8333-333333333333")).toBe(false);
+  });
+
+  it("tolerates a slip with no counterparty or note, which is the common case", () => {
+    expect(matchesSlipQuery(slip({ counterparty: null, note: null }), "anything")).toBe(false);
+    expect(matchesSlipQuery(slip({ counterparty: null, note: null }), "")).toBe(true);
+  });
+
+  it("accepts the shape GET /api/v1/slips returns, and rejects an unknown column", () => {
+    expect(slipListSchema.safeParse({ slips: [slip()] }).success).toBe(true);
+    // Strict, so a migration adding a column fails here loudly rather than being ignored.
+    expect(slipListSchema.safeParse({ slips: [{ ...slip(), reconciled_transaction_id: null }] }).success).toBe(false);
+    // Money must arrive as canonical text; a JSON number is the one way a float could enter.
+    expect(slipListSchema.safeParse({ slips: [{ ...slip(), amount_minor: -25000 }] }).success).toBe(false);
   });
 });

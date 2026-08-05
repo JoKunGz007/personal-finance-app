@@ -588,9 +588,23 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: a shell-level announcement can use `aria-live="polite"` on a plain element, which announces identically and does **not** compute to `role="status"`, and specs then target it by class. Where a second status role is genuinely wanted, scope the existing assertions to their section first, in a separate change, so the two failures do not arrive together.
 - Verify: 2026-07-31. `app/site-header.tsx` uses `aria-live` and `signIn()` reads `.session-state`; owner-session passes 16/16 with per-route status assertions untouched.
 
-## Grepping `.next` for a Supabase port now finds one hit that is not a build target
+## Per-slip mutable state cannot be a column on `public.slips`
 
-- Symptom: the documented check for which project a build targets — grep `.next/server` for the test project's port — reports one file, where it previously reported none. The build looks mis-aimed.
-- Cause: `app/api/v1/dev/session/route.ts` carries a literal port→project-name map (`54321: private-ledger-local`, `54331: …recovery`, `54341: …live`) so it can name the project it is minting a session against. That map is inlined into a server chunk by every build, whatever the build targets.
-- Avoid: read the match's context rather than counting files. A genuine target appears as a bare origin (`http://127.0.0.1:5434…`) in the client and server chunks; the map appears as a JavaScript object literal with all three ports beside each other. Counting alone cannot tell them apart, and "0 references to the test project" is no longer the right expectation.
-- Verify: 2026-07-31. After `pnpm build` against `.env.local`: two chunks carry the live port, one carries the test port, and inspecting the latter shows the three-port map and no target.
+- Symptom: the obvious design for "remember which statement row this slip matches" — a nullable column on `public.slips` — fails at run time with the trigger's own refusal, not at design time.
+- Cause: migration 011 puts `slips_immutable before update or delete` on the table, calling `private.reject_change()`. Slips are append-only like every other ledger-fact table, so **no** column on them can ever be updated, whatever it holds. The same is true of `source_transactions`; the ledger's answer to mutable per-row state is the `transaction_overlays` + `overlay_revisions` pair, where the current value lives in one table and the history in an append-only other.
+- Avoid: put per-slip decisions in a separate append-only table keyed by slip, where the latest revision wins, and reach for the overlay pattern rather than a column. Note the knock-on before starting: any new owner-record table is a table the backup must carry, so it bumps the backup schema version and every older version must stay restorable (`SPEC.md` gate 6, D-056).
+- Verify: 2026-08-01, while designing the second half of task 22. Reading migration 011 before writing 012 is what caught it; the column design would have failed on its first update.
+
+## Running the browser gate deletes whatever you captured by hand in the test project
+
+- Symptom: a slip captured through the UI, or a statement imported by hand, is simply gone the next time you look — with no error and no sign anything happened.
+- Cause: `tests/e2e/owner-session.spec.ts` calls `resetOwnerImportSurface` in `beforeEach` **and** `afterAll`, which deletes the seeded owner's slips, transactions, batches and artifacts. That is correct — a suite that left rows behind would fail its own next run on their fingerprints — but the owner drives the app as that same seeded owner in that same project, so hand-made data is inside the blast radius.
+- Avoid: treat anything you create by hand in `private-ledger-local` as disposable, and re-create it after a gate run. Do not reach for the live project instead to keep it — it has no `slips` table until migration 011 is applied there, and that needs its own authorization. If a hand-captured state must survive a test run, note what it was and re-enter it; there is no fixture path for it by design, since fixtures are invented.
+- Verify: 2026-07-31. `public.slips` held 1 row captured through the UI; after `playwright.owner.config.ts` ran, the same query returned 0, alongside 0 transactions and the 3 seeded accounts.
+
+## A rediscovered trap is not a new one — check before adding an entry
+
+- Symptom: an entry is written up as a fresh discovery, in detail, describing something this file already recorded three days earlier.
+- Cause: on 2026-07-31 the bare-port `.next` grep was hit again, investigated from scratch, and written up as new. **The existing entry above already covered it** — "Do not grep the bare port. That check was valid until 2026-07-28 and is not any more" — including the same `containerFor` cause and the same remedy. The duplicate was caught only by a validation pass on the following day.
+- Avoid: grep this file for the symptom before writing an entry. It is long enough that reading it end to end is not realistic, which is exactly why the grep is the habit — and the same applies before "discovering" anything in `DECISIONS.md`.
+- Verify: 2026-08-01. The duplicate was removed and this entry replaces it; the original coverage is under the build-target entry earlier in this file.

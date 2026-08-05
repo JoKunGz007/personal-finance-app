@@ -223,19 +223,36 @@ footer p { margin: 0; }
 .ledger-controls { margin: 22px 0 0 167px; display: grid; grid-template-columns: auto minmax(200px, 260px) minmax(140px, 170px) minmax(200px, 1fr); align-items: end; gap: 14px; }
 /* The shared nth-child widths assume the import review table. This one carries a
    sixth money column in merged mode, which that rule would squeeze to 70px. */
-.ledger-table { min-width: 1020px; }
+.ledger-table { min-width: 1160px; }
 .ledger-table th:nth-child(1) { width: 115px; }
-.ledger-table th:nth-child(2) { width: 28%; }
-.ledger-table th:nth-child(3) { width: 190px; }
-.ledger-table th:nth-child(4), .ledger-table th:nth-child(5) { width: 145px; }
-.ledger-table.merged { min-width: 1140px; }
-.ledger-table.merged th:nth-child(6) { width: 160px; }
+.ledger-table th:nth-child(2) { width: 26%; }
+.ledger-table th:nth-child(3) { width: 140px; }
+.ledger-table th:nth-child(4) { width: 190px; }
+.ledger-table th:nth-child(5), .ledger-table th:nth-child(6) { width: 145px; }
+.ledger-table.merged { min-width: 1280px; }
+.ledger-table.merged th:nth-child(7) { width: 160px; }
 .combined-balance { color: var(--muted); }
 .ledger-controls .secondary-button { height: 47px; }
 .ledger-strip { grid-template-columns: repeat(4, 1fr); }
 .ledger-empty { margin: 26px 0 0; padding: 22px; color: var(--muted); border: 1px solid var(--line); background: var(--mist); }
 .ledger-status { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .ledger-status b { color: var(--navy); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .07em; }
+
+/* A provisional row is the owner's record, not the bank's, and the table has to say so
+   without relying on colour alone — hence the badge text and the left rule as well as the
+   wash. Saffron is already this app's "not settled yet" signal (a stale backup). */
+.provisional-row { background: color-mix(in srgb, var(--saffron-wash) 55%, transparent); }
+.provisional-row td:first-child { box-shadow: inset 3px 0 var(--saffron); }
+.verified-row td:first-child { box-shadow: inset 3px 0 #278263; }
+.ledger-table .mono { font-family: var(--font-data); font-size: 12px; word-break: break-all; }
+
+/* Four states, and the row says which in words rather than by colour alone — the difference
+   between the bank's record and the owner's is the most important thing this table says. */
+.status-chip { display: inline-block; padding: 3px 7px; border: 1px solid currentColor; border-radius: 3px; font: 500 9px/1.35 var(--font-data); font-style: normal; text-transform: uppercase; letter-spacing: .05em; }
+.status-chip.verified { color: #1d6a52; }
+.status-chip.awaiting { color: #60410b; }
+.status-chip.needs-review { color: var(--red); }
+.status-chip.statement-only { color: var(--muted); border-color: var(--line); }
 
 .detail-dialog { width: min(680px, calc(100% - 32px)); max-height: calc(100vh - 48px); padding: 0; color: var(--navy); border: 1px solid var(--navy); border-radius: var(--radius); background: var(--paper); }
 .detail-dialog::backdrop { background: color-mix(in srgb, var(--navy) 65%, transparent); }
@@ -341,6 +358,11 @@ footer p { margin: 0; }
   .primary-button { color: #071522; }
   .brand-mark { color: #071522; background: var(--blue); }
   .warning, .backup-band.stale { color: #f3cf84; }
+  /* The light-mode brown reads as near-black on this background; the same amber the stale
+     backup band uses in dark carries the "not settled yet" meaning legibly. */
+  .status-chip.awaiting { color: #f3cf84; }
+  .status-chip.verified { color: #7fd0b2; }
+  .verified-row td:first-child { box-shadow: inset 3px 0 #7fd0b2; }
   .stale .backup-button { color: #211707; border-color: var(--saffron); background: var(--saffron); }
   .detail-dialog { border-color: var(--line); }
 }

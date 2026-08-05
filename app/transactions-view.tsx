@@ -5,13 +5,19 @@ import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { formatThb } from "@/lib/money";
 import {
   combinedBalanceByTransaction,
-  compareTransactions,
   matchesQuery,
+  matchesSlipQuery,
   movementMinor,
-  summarize,
   transactionListSchema,
   type AccountTransaction
 } from "@/lib/transactions";
+import {
+  compareRows,
+  reconcileLedger,
+  summarizeRows,
+  type ReconciledRow
+} from "@/lib/slip-reconcile";
+import { slipListSchema, type CapturedSlip } from "@/lib/slips";
 import { readError } from "@/lib/wire";
 
 const ALL_ACCOUNTS = "all";
@@ -34,6 +40,8 @@ function formatDate(date: string) {
 export function TransactionsView() {
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
   const [transactions, setTransactions] = useState<AccountTransaction[] | null>(null);
+  const [slips, setSlips] = useState<CapturedSlip[]>([]);
+  const [slipsError, setSlipsError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>(ALL_ACCOUNTS);
   const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
@@ -55,15 +63,45 @@ export function TransactionsView() {
 
   const combined = useMemo(() => combinedBalanceByTransaction(scope), [scope]);
 
-  const visible = useMemo(() => {
-    const sorted = scope.filter((transaction) => matchesQuery(transaction, query)).sort(compareTransactions);
-    if (order === "oldest") sorted.reverse();
-    return sorted;
-  }, [scope, query, order]);
-
-  const totals = useMemo(() => summarize(visible), [visible]);
-
   const showCombined = selected === ALL_ACCOUNTS;
+
+  // Reconciliation runs over the **whole** ledger, before any account or text filter. A
+  // match is a fact about two records, not about what is on screen — reconciling the
+  // filtered subset would let choosing an account or typing in the search box silently
+  // unmatch a pair and change the totals (D-063).
+  const reconciled = useMemo(
+    () => reconcileLedger(transactions ?? [], slips, accounts ?? []),
+    [transactions, slips, accounts]
+  );
+
+  // A slip is shown against an account when the owner holds exactly one at that bank, so the
+  // attribution is forced rather than guessed; with two, it belongs to the all-accounts view
+  // only, and the status line says why (D-056 still holds — the QR names a bank).
+  const inAccount = useMemo(() => (row: ReconciledRow) => {
+    if (selected === ALL_ACCOUNTS) return true;
+    return row.kind === "confirmed" ? row.transaction.account_id === selected : row.account?.id === selected;
+  }, [selected]);
+
+  const visibleRows = useMemo(() => {
+    const filtered = reconciled.rows.filter((row) => {
+      if (!inAccount(row)) return false;
+      // A matched pair is one row and must be findable by either record's text.
+      if (row.kind === "confirmed") {
+        return matchesQuery(row.transaction, query) || (row.slip !== null && matchesSlipQuery(row.slip, query));
+      }
+      return matchesSlipQuery(row.slip, query);
+    });
+    filtered.sort(compareRows);
+    if (order === "oldest") filtered.reverse();
+    return filtered;
+  }, [reconciled, inAccount, query, order]);
+
+  const totals = useMemo(() => summarizeRows(visibleRows), [visibleRows]);
+
+  const unattributedSlips = useMemo(
+    () => reconciled.rows.filter((row) => row.kind === "provisional" && row.account === null).length,
+    [reconciled]
+  );
 
   // An account with no imported rows has no derivable balance, so the combined figure
   // cannot speak for it. Stated as a plain status of what *is* imported rather than a
@@ -111,6 +149,21 @@ export function TransactionsView() {
         }
       }
 
+      // Provisional entries, loaded after the confirmed ones and deliberately unable to
+      // fail the view. The ledger is the authority; a slips outage must not hide it, so a
+      // failure here is reported beside the rows instead of replacing them.
+      setSlipsError(null);
+      setSlips([]);
+      const slipsResponse = await fetch("/api/v1/slips", { cache: "no-store" });
+      const slipsBody: unknown = await slipsResponse.json().catch(() => null);
+      if (!slipsResponse.ok) {
+        setSlipsError(readError(slipsBody, "Captured slips could not be loaded, so none are shown."));
+      } else {
+        const parsedSlips = slipListSchema.safeParse(slipsBody);
+        if (parsedSlips.success) setSlips(parsedSlips.data.slips);
+        else setSlipsError("The slips response did not match its contract, so none are shown.");
+      }
+
       setAccounts(parsedAccounts.data.accounts);
       setTransactions(loaded);
     } catch {
@@ -125,10 +178,11 @@ export function TransactionsView() {
       <div className="bench-heading">
         <p className="section-index">Ledger</p>
         <div>
-          <h2 id="ledger-title">Confirmed transactions</h2>
+          <h2 id="ledger-title">Transactions</h2>
           <p>
-            Everything already committed to the ledger. Source facts are immutable here —
-            this view reads them and never writes.
+            Everything committed to the ledger, and every slip still waiting for the statement
+            that will confirm it. Source facts are immutable here — this view reads them and
+            never writes.
           </p>
         </div>
       </div>
@@ -180,12 +234,32 @@ export function TransactionsView() {
 
       {transactions ? (
         <>
+          {/* One total over both kinds, which is only correct because a matched pair is one
+              row. The provisional count travels with the figure so it discloses how much of
+              itself the bank has not confirmed (D-063). */}
           <dl className="statement-strip ledger-strip">
-            <div><dt>Rows</dt><dd>{totals.rows}</dd></div>
+            <div><dt>Rows</dt><dd>{totals.rows}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}</dd></div>
             <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}</dd></div>
             <div><dt>Withdrawals</dt><dd>{formatThb(totals.withdrawals)}</dd></div>
             <div><dt>Net movement</dt><dd>{formatThb(totals.net)}</dd></div>
           </dl>
+
+          {slips.length > 0 ? (
+            <p className="ledger-status">
+              <b>Slips: {reconciled.matches.bySlip.size} verified · {slips.length - reconciled.matches.bySlip.size - reconciled.matches.needsReview.size} awaiting a statement{reconciled.matches.needsReview.size > 0 ? ` · ${reconciled.matches.needsReview.size} needing review` : ""}</b>
+              {" · a slip is matched to a statement row only when the bank, the exact amount and a date within three days identify one row and no other slip claims it. No layout prints the slip's reference, so a match is a proposal from those three facts rather than an identifier the two records share."}
+            </p>
+          ) : null}
+
+          {slipsError ? (
+            <p className="ledger-status" role="status">{slipsError}</p>
+          ) : null}
+
+          {!showCombined && unattributedSlips > 0 ? (
+            <p className="ledger-status">
+              {unattributedSlips} slip{unattributedSlips === 1 ? " is" : "s are"} hidden while one account is selected: you hold more than one account at that bank, and a slip&rsquo;s QR names the bank without saying which account the money moved through.
+            </p>
+          ) : null}
 
           {showCombined && accounts ? (
             <p className="ledger-status">
@@ -199,10 +273,10 @@ export function TransactionsView() {
             </p>
           ) : null}
 
-          {visible.length === 0 ? (
+          {visibleRows.length === 0 ? (
             <p className="ledger-empty" role="status">
-              {transactions.length === 0
-                ? "This ledger holds no confirmed transactions yet. Import a statement to fill it."
+              {transactions.length === 0 && slips.length === 0
+                ? "This ledger holds no confirmed transactions yet. Import a statement to fill it, or capture a slip."
                 : "No transaction matches this filter."}
             </p>
           ) : (
@@ -212,6 +286,7 @@ export function TransactionsView() {
                   <tr>
                     <th>Date</th>
                     <th>Source description</th>
+                    <th>Status</th>
                     <th>{showCombined ? "Account" : "Reference"}</th>
                     <th className="numeric">Movement</th>
                     <th className="numeric">{showCombined ? "Account balance" : "Balance"}</th>
@@ -219,12 +294,60 @@ export function TransactionsView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visible.map((transaction) => {
+                  {visibleRows.map((row) => {
+                    if (row.kind === "provisional") {
+                      const slip = row.slip;
+                      const amount = BigInt(slip.amount_minor);
+                      return (
+                        // Marked in the row itself, not only by colour: the difference between
+                        // a bank's record and one the owner typed is the most important thing
+                        // this table says, and it has to survive a screenshot, a print and a
+                        // screen reader.
+                        <tr key={slip.id} className="provisional-row">
+                          <td data-label="Date">
+                            <time dateTime={slip.occurred_on}>{formatDate(slip.occurred_on)}</time>
+                            <small>{slip.occurred_at_time ?? "—"}</small>
+                          </td>
+                          <td data-label="Description">
+                            <strong>Slip · {slip.bank_code}</strong>
+                            <span>{slip.counterparty ?? "No counterparty recorded"}</span>
+                          </td>
+                          <td data-label="Status">
+                            {row.status === "needs-review" ? (
+                              <em className="status-chip needs-review">Needs review · several rows match</em>
+                            ) : (
+                              <em className="status-chip awaiting">Awaiting statement</em>
+                            )}
+                          </td>
+                          <td data-label={showCombined ? "Account" : "Reference"}>
+                            {showCombined
+                              ? <span>{row.account ? `${row.account.label} ···· ${row.account.last_four}` : `${slip.bank_code} · account unknown`}</span>
+                              : <span className="mono">{slip.slip_reference}</span>}
+                          </td>
+                          <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>
+                            {amount > 0n ? "+" : ""}{formatThb(slip.amount_minor)}
+                          </td>
+                          {/* No balance, in either column. A printed balance is the bank's
+                              statement of the account after a row, and a slip is not in that
+                              chain — writing a derived figure here would invent one. */}
+                          <td data-label={showCombined ? "Account balance" : "Balance"} className="numeric">
+                            <span aria-label="No balance: a slip is not in the statement's balance chain">—</span>
+                          </td>
+                          {showCombined ? <td data-label="All accounts" className="numeric combined-balance">—</td> : null}
+                        </tr>
+                      );
+                    }
+
+                    const transaction = row.transaction;
                     const movement = movementMinor(transaction);
                     const overlay = transaction.transaction_overlays[0];
                     const account = accountsById.get(transaction.account_id);
+                    // A verified row is the statement's, enriched by the slip: the printed
+                    // balance and the immutable source facts stay, and the counterparty the
+                    // owner typed fills in what the bank's own description usually does not say.
+                    const counterparty = overlay?.counterparty ?? row.slip?.counterparty ?? null;
                     return (
-                      <tr key={transaction.id}>
+                      <tr key={transaction.id} className={row.slip ? "verified-row" : ""}>
                         <td data-label="Date">
                           <time dateTime={transaction.source_date}>{formatDate(transaction.source_date)}</time>
                           <small>{transaction.source_time ?? "—"}</small>
@@ -232,8 +355,13 @@ export function TransactionsView() {
                         <td data-label="Description">
                           <strong lang="th">{transaction.transaction_label}</strong>
                           <span>{overlay?.description ?? transaction.description}</span>
-                          {overlay?.counterparty ? <em>{overlay.counterparty}</em> : null}
+                          {counterparty ? <em>{counterparty}{overlay?.counterparty ? "" : " (from slip)"}</em> : null}
                           {transaction.source_components.length > 1 ? <em>2 components</em> : null}
+                        </td>
+                        <td data-label="Status">
+                          {row.slip
+                            ? <em className="status-chip verified">Verified by slip</em>
+                            : <em className="status-chip statement-only">Statement only</em>}
                         </td>
                         <td data-label={showCombined ? "Account" : "Reference"}>
                           {showCombined

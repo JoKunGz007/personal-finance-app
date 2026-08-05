@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema, type MinorUnitString } from "@/lib/money";
+import type { CapturedSlip } from "@/lib/slips";
 
 // Wire contract for GET /api/v1/accounts/[id]/transactions, which returns
 // `public.list_account_transactions` verbatim. Column names stay as the database
@@ -170,6 +171,11 @@ export function combinedBalanceByTransaction(
   return combined;
 }
 
+// The merged-entry helpers that briefly lived here (D-062) moved to `lib/slip-reconcile.ts`
+// when matching arrived a few hours later (D-063): a ledger row is no longer "a transaction
+// or a slip" but "a payment, evidenced by one record or two", and the module that decides
+// which is the one that should own the type.
+
 /**
  * Client-side text filter. Per-account server-side filtering does not exist and is
  * not worth adding at this scale (PLAN task 17); this searches the fields a person
@@ -187,5 +193,17 @@ export function matchesQuery(transaction: LedgerTransaction, query: string): boo
     overlay?.description ?? null,
     overlay?.counterparty ?? null
   ];
+  return haystack.some((field) => field !== null && field.toLocaleLowerCase().includes(needle));
+}
+
+/**
+ * The same filter over a slip. A slip has no description or branch — what identifies it is
+ * the reference the QR carried, the counterparty the owner typed, and the bank. The note is
+ * searched too, since it is the only free text a slip has.
+ */
+export function matchesSlipQuery(slip: CapturedSlip, query: string): boolean {
+  const needle = query.trim().toLocaleLowerCase();
+  if (needle === "") return true;
+  const haystack = [slip.slip_reference, slip.counterparty, slip.note, slip.bank_code];
   return haystack.some((field) => field !== null && field.toLocaleLowerCase().includes(needle));
 }
