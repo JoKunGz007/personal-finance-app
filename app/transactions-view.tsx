@@ -15,13 +15,16 @@ import {
   compareRows,
   reconcileLedger,
   summarizeRows,
-  type ReconciledRow
+  type ReconciledRow,
+  type SlipMatchStatus
 } from "@/lib/slip-reconcile";
 import { slipListSchema, type CapturedSlip } from "@/lib/slips";
 import { readError } from "@/lib/wire";
 
 const ALL_ACCOUNTS = "all";
+const ALL_STATUSES = "all";
 type Order = "newest" | "oldest";
+type StatusFilter = typeof ALL_STATUSES | SlipMatchStatus;
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
@@ -45,6 +48,7 @@ export function TransactionsView() {
   const [selected, setSelected] = useState<string>(ALL_ACCOUNTS);
   const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<StatusFilter>(ALL_STATUSES);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,6 +89,10 @@ export function TransactionsView() {
   const visibleRows = useMemo(() => {
     const filtered = reconciled.rows.filter((row) => {
       if (!inAccount(row)) return false;
+      // Status filters the reconciled result; it never feeds back into reconciliation, which
+      // has already run over the whole ledger above. That ordering is the point — a filter
+      // that could change what matched would let a dropdown move the totals (D-063).
+      if (status !== ALL_STATUSES && row.status !== status) return false;
       // A matched pair is one row and must be findable by either record's text.
       if (row.kind === "confirmed") {
         return matchesQuery(row.transaction, query) || (row.slip !== null && matchesSlipQuery(row.slip, query));
@@ -94,7 +102,7 @@ export function TransactionsView() {
     filtered.sort(compareRows);
     if (order === "oldest") filtered.reverse();
     return filtered;
-  }, [reconciled, inAccount, query, order]);
+  }, [reconciled, inAccount, query, order, status]);
 
   const totals = useMemo(() => summarizeRows(visibleRows), [visibleRows]);
 
@@ -211,6 +219,19 @@ export function TransactionsView() {
                 <option value="oldest">Oldest first</option>
               </select>
             </label>
+            {/* The status a row carries is no longer written on the row itself when it is
+                the unremarkable one, so this is where the question gets asked instead
+                (D-064). */}
+            <label className="account-control">
+              <span>Status</span>
+              <select value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
+                <option value={ALL_STATUSES}>All statuses</option>
+                <option value="verified">Verified by slip</option>
+                <option value="awaiting-statement">Awaiting statement</option>
+                <option value="needs-review">Needs review</option>
+                <option value="statement-only">Statement only</option>
+              </select>
+            </label>
             <label className="account-control">
               <span>Filter</span>
               <input
@@ -247,7 +268,7 @@ export function TransactionsView() {
           {slips.length > 0 ? (
             <p className="ledger-status">
               <b>Slips: {reconciled.matches.bySlip.size} verified · {slips.length - reconciled.matches.bySlip.size - reconciled.matches.needsReview.size} awaiting a statement{reconciled.matches.needsReview.size > 0 ? ` · ${reconciled.matches.needsReview.size} needing review` : ""}</b>
-              {" · a slip is matched to a statement row only when the bank, the exact amount and a date within three days identify one row and no other slip claims it. No layout prints the slip's reference, so a match is a proposal from those three facts rather than an identifier the two records share."}
+              {" · a slip is matched to a statement row only when the bank, the exact amount and a date within one day identify one row and no other slip claims it. No layout prints the slip's reference, so a match is a proposal from those three facts rather than an identifier the two records share."}
             </p>
           ) : null}
 
@@ -358,10 +379,15 @@ export function TransactionsView() {
                           {counterparty ? <em>{counterparty}{overlay?.counterparty ? "" : " (from slip)"}</em> : null}
                           {transaction.source_components.length > 1 ? <em>2 components</em> : null}
                         </td>
+                        {/* No chip for a statement row with no slip. It is the ledger's default
+                            state — on this ledger, essentially every row — so a badge on each
+                            one carries no information while making the three statuses that do
+                            mean something harder to find. The status is still readable to a
+                            screen reader here, and askable through the Status filter (D-064). */}
                         <td data-label="Status">
                           {row.slip
                             ? <em className="status-chip verified">Verified by slip</em>
-                            : <em className="status-chip statement-only">Statement only</em>}
+                            : <span className="status-none" aria-label="Statement only: no slip is matched to this row">—</span>}
                         </td>
                         <td data-label={showCombined ? "Account" : "Reference"}>
                           {showCombined

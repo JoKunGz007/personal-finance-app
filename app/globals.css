@@ -252,7 +252,7 @@ footer p { margin: 0; }
 .status-chip.verified { color: #1d6a52; }
 .status-chip.awaiting { color: #60410b; }
 .status-chip.needs-review { color: var(--red); }
-.status-chip.statement-only { color: var(--muted); border-color: var(--line); }
+.status-none { color: var(--muted); }
 
 .detail-dialog { width: min(680px, calc(100% - 32px)); max-height: calc(100vh - 48px); padding: 0; color: var(--navy); border: 1px solid var(--navy); border-radius: var(--radius); background: var(--paper); }
 .detail-dialog::backdrop { background: color-mix(in srgb, var(--navy) 65%, transparent); }

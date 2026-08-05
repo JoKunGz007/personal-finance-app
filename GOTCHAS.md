@@ -165,6 +165,13 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: let `pg_temp.confirm` inject derived fingerprints by default; pass `p_bind_fingerprints => false` only when the test needs a wrong or deliberately colliding claim. For overlap fixtures, make the fingerprint inputs identical and vary only `provenance`, which is not fingerprinted.
 - Verify: `002` test 23 expects `fingerprint mismatch` and fails on the pre-008 schema; the overlap test still asserts `linked_existing`.
 
+## Narrowing a threshold constant makes its tests pass for the wrong reason, not fail
+
+- Symptom: `MATCH_WINDOW_DAYS` drops from 3 to 1, the whole reconciliation suite stays green, and two tests have quietly stopped testing what they are named for.
+- Cause: a test that discriminates between two candidates has to place both **inside** the window, or the window excludes the far one before the clause under test ever runs. "Prefers the nearest date instead of treating everything in the window as equal" and "does not let a far candidate block a pairing it could never win" both built their far candidate three days out. Under a one-day window that candidate is not a candidate at all, so each test passed while exercising the window rather than the nearest-date preference or the claim-resolution it names. Widening a threshold makes a bad fixture fail loudly; narrowing one makes it pass silently, which is why this direction is the dangerous one.
+- Avoid: when a threshold moves, re-read every fixture built against the old value and ask what would still fail if the clause under test were deleted. Assert the constant itself in one place — `expect(MATCH_WINDOW_DAYS).toBe(1)` — so the value is pinned somewhere obvious, but do not mistake that assertion for coverage of the behaviour around it.
+- Verify: with the far candidates moved to one day out, both tests still pass; delete the nearest-date filter in `proposeSlipMatches` and the preference test fails, which it did not before the fixtures were rebuilt (D-064).
+
 ## Order of checks in confirm_import decides which error a fixture sees
 
 - Symptom: a test expecting `fingerprint mismatch` gets `ambiguous duplicate fingerprints` or `payload digest mismatch` instead.

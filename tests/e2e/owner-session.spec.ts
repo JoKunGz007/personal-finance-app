@@ -649,7 +649,7 @@ test("fills the date from the QR when the reference carries one, and says so", a
 // its statement row, and the totals count each payment exactly once.
 //
 // No layout prints the slip's reference, so a match is a proposal from bank, exact amount and
-// a date within three days — which is why both halves are covered here: the pair that
+// a date within one day (D-064) — which is why both halves are covered here: the pair that
 // collapses, and the slip that has nothing to collapse onto.
 
 async function captureSlip(

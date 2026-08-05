@@ -16,8 +16,8 @@ import { movementMinor, type AccountTransaction } from "@/lib/transactions";
  * - the slip's bank equals the bank of the account the transaction belongs to;
  * - the amounts are equal **to the minor unit**, sign included — no tolerance, ever, because
  *   a near-match on money is exactly the thing this ledger must not invent;
- * - the dates are within `MATCH_WINDOW_DAYS`, since a transfer made late can post the next
- *   working day, and a slip's date is the owner's while the row's is the bank's;
+ * - the dates are within `MATCH_WINDOW_DAYS`, because the slip's date is the owner's local
+ *   date and the row's is the bank's posting date, so the two can straddle midnight;
  * - among the candidates that survive, **only those nearest in date are considered**;
  * - and the pair is **mutually unique**: the slip has exactly one nearest candidate row, and
  *   that row has exactly one slip claiming it.
@@ -25,10 +25,9 @@ import { movementMinor, type AccountTransaction } from "@/lib/transactions";
  * The last two clauses are the ones that carry their weight, and the nearest-date one was
  * added on evidence rather than taste. Measured over the owner's real ledger — 1,465 rows —
  * the share of rows sharing a bank and an exact amount with another row is 6.5% on the same
- * day, 11.5% within one day, **16.3% within three** and 27.8% within seven. So the window
- * that buys tolerance for a late posting also doubles the ambiguity it has to resolve.
- * Preferring the nearest date takes that 16.3% back down to **6.5%** — the same-day floor —
- * which means the tolerance costs nothing and the residue is irreducible: two identical
+ * day, 11.5% within one day, **16.3% within three** and 27.8% within seven. Preferring the
+ * nearest date takes the three-day figure back down to **6.5%** — the same-day floor — so a
+ * wider window costs nothing in ambiguity, and the residue is irreducible: two identical
  * payments on one day, where no date rule can help and a guess would be a coin toss.
  *
  * Mutual uniqueness is what makes the result order-independent. Matching greedily in
@@ -37,7 +36,27 @@ import { movementMinor, type AccountTransaction } from "@/lib/transactions";
  * same-day pair of equal amount.
  */
 
-export const MATCH_WINDOW_DAYS = 3;
+/**
+ * One day — tolerance for the clocks, not for the bank (D-064).
+ *
+ * The owner's judgement is that his banks post same-day, and the evidence that exists points
+ * the same way: of the six real slips ever checked against the live ledger, four produced a
+ * candidate at all, and every one of those sat on the slip's own day. So this is not buying
+ * room for a late posting. It is buying room for the fact that the slip's date is the owner's
+ * local date while the row's is the bank's posting date — a payment made late in the evening
+ * can fall either side of midnight between those two clocks with no lag at all. Zero would
+ * have no room for that; one does, and by the measurement above it costs nothing, because
+ * nearest-date collapses even a three-day window back to the same-day floor.
+ *
+ * **It has not been measured across the whole sample, and cannot be until PLAN task 21.** The
+ * rule needs bank, exact amount and date. The QR carries only bank and reference
+ * (`SlipIdentity` in `lib/slip-qr.ts`), and the amount exists solely on the printed face of
+ * the slip — `docs/SLIP_CONTRACT.md` records that no OCR has been run. So checking a slip
+ * against the ledger means reading its image by eye, which is why the evidence stops at six
+ * rather than covering all 23 samples. When task 21 lands this becomes a script, and the
+ * window should be re-derived from that run rather than from this note.
+ */
+export const MATCH_WINDOW_DAYS = 1;
 
 export type SlipMatchStatus = "verified" | "awaiting-statement" | "needs-review" | "statement-only";
 
@@ -94,8 +113,9 @@ export function proposeSlipMatches(
       withDistance.push({ id: transaction.id, distance });
     }
     // Nearest in date only. A row on the slip's own day is a better explanation of it than
-    // one three days away, and keeping both would manufacture an ambiguity the data does not
-    // have — measured at nearly ten points of this ledger's rows.
+    // one a day away, and keeping both would manufacture an ambiguity the data does not
+    // have — measured at nearly ten points of this ledger's rows across a three-day window,
+    // and the clause is what lets the window be widened again without paying for it.
     const nearest = withDistance.length === 0
       ? 0
       : withDistance.reduce((best, candidate) => Math.min(best, candidate.distance), Number.POSITIVE_INFINITY);
@@ -103,7 +123,7 @@ export function proposeSlipMatches(
 
     // Claims carry their distance, so competition between slips is resolved the same way
     // competition between rows is: the nearer record is the better explanation. Without this,
-    // a slip three days from a row would block the slip sitting exactly on it.
+    // a slip a day from a row would block the slip sitting exactly on it.
     for (const id of candidates) {
       const claimants = claimantsByTransaction.get(id);
       if (claimants) claimants.push({ slipId: slip.id, distance: nearest });

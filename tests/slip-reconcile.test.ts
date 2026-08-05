@@ -76,13 +76,13 @@ describe("matching a slip to a statement row", () => {
   });
 
   it("matches across the window's edge and refuses one day beyond it", () => {
-    // A transfer made late posts the next working day, so the window is real rather than
-    // generous — but it is a hard edge, not a slope.
-    const inside = proposeSlipMatches([row({ source_date: "2026-06-13" })], [slip({ occurred_on: "2026-06-10" })], ACCOUNTS);
+    // The window is one day (D-064): room for the slip's clock and the bank's to fall either
+    // side of midnight, not room for a late posting. It is a hard edge, not a slope.
+    const inside = proposeSlipMatches([row({ source_date: "2026-06-11" })], [slip({ occurred_on: "2026-06-10" })], ACCOUNTS);
     expect(inside.bySlip.size).toBe(1);
-    expect(MATCH_WINDOW_DAYS).toBe(3);
+    expect(MATCH_WINDOW_DAYS).toBe(1);
 
-    const outside = proposeSlipMatches([row({ source_date: "2026-06-14" })], [slip({ occurred_on: "2026-06-10" })], ACCOUNTS);
+    const outside = proposeSlipMatches([row({ source_date: "2026-06-12" })], [slip({ occurred_on: "2026-06-10" })], ACCOUNTS);
     expect(outside.bySlip.size).toBe(0);
     expect(outside.needsReview.size).toBe(0); // no candidate at all is "awaiting", not a problem
   });
@@ -118,14 +118,18 @@ describe("matching a slip to a statement row", () => {
     expect(matches.needsReview.has(slip().id)).toBe(true);
   });
 
-  // Measured rather than assumed: over 1,465 real rows, taking every candidate inside the
-  // window leaves 16.3% of rows ambiguous, and preferring the nearest date takes that to 6.5%
-  // — the same-day floor. The window's tolerance therefore costs nothing.
+  // Measured rather than assumed: over 1,465 real rows, taking every candidate inside a
+  // three-day window leaves 16.3% of rows ambiguous, and preferring the nearest date takes
+  // that to 6.5% — the same-day floor. The window's tolerance therefore costs nothing, which
+  // is what would let it widen again without paying for it.
+  //
+  // Both candidates here must sit *inside* the window, or the window rather than the
+  // preference is what separates them and this stops testing its own name.
   it("prefers the nearest date instead of treating everything in the window as equal", () => {
     const matches = proposeSlipMatches(
       [
         row(), // the slip's own day
-        row({ id: "bbbbbbbb-0000-4000-8000-000000000002", source_date: "2026-06-12" })
+        row({ id: "bbbbbbbb-0000-4000-8000-000000000002", source_date: "2026-06-11" })
       ],
       [slip()],
       ACCOUNTS
@@ -150,10 +154,12 @@ describe("matching a slip to a statement row", () => {
   });
 
   it("does not let a far candidate block a pairing it could never win", () => {
-    // Two slips, one on the row's day and one three days off, and a single row. The near slip
-    // takes it; the far one is left awaiting rather than both being called ambiguous.
+    // Two slips, one on the row's day and one a day off but still inside the window, and a
+    // single row. The near slip takes it; the far one is left awaiting rather than both being
+    // called ambiguous. The far slip has to be a genuine candidate for this to mean anything —
+    // put it outside the window and the test passes without exercising the claim.
     const near = slip();
-    const far = slip({ id: "dddddddd-0000-4000-8000-000000000007", occurred_on: "2026-06-13", slip_reference: "A00000000000000007" });
+    const far = slip({ id: "dddddddd-0000-4000-8000-000000000007", occurred_on: "2026-06-11", slip_reference: "A00000000000000007" });
     const matches = proposeSlipMatches([row()], [near, far], ACCOUNTS);
     expect(matches.bySlip.get(near.id)).toBe(row().id);
     expect(matches.bySlip.has(far.id)).toBe(false);
