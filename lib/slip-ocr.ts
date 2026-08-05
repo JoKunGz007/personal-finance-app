@@ -45,7 +45,7 @@ import type { BankCode } from "@/lib/statement-frame";
  * printed date is only the sole source on KBANK. Reading it needs the month token forms, and
  * `docs/SLIP_CONTRACT.md` records the date *layout* without recording whether the months
  * print in Thai or Latin abbreviations — so writing a month table now would be inventing
- * format knowledge nobody has measured. `printedYearIsBuddhist` below is the half that can
+ * format knowledge nobody has measured. `gregorianFromPrintedYear` below is the half that can
  * be written without it, because the era hazard is arithmetic rather than vocabulary.
  *
  * **The counterparty.** The contract says it is not sized, and it is free text in two
