@@ -91,6 +91,17 @@ slip** is Buddhist and always does. The two sources disagree by 543 years on the
 - **No OCR has been run.** This is a reading of the layouts by eye across a sample of the 23,
   which is what region targeting needs before it can be written; it is not a measurement of
   what an OCR engine actually recovers from these images.
+- **The month tokens are unrecorded, and that blocks the printed date.** The tables above give
+  the date *layout* — `D MMM YYYY - HH:MM`, `D MMM YY  HH:MM น.` — without saying whether
+  `MMM` prints as a Thai abbreviation or a Latin one. Found on 2026-08-05 while writing
+  `lib/slip-ocr.ts`: a month table cannot be written from this file, and writing one from
+  guesswork would be inventing format knowledge nobody has measured, which is the one thing
+  these contracts exist to prevent. The era arithmetic is separable and is built
+  (`gregorianFromPrintedYear`); the vocabulary is not. **Measure the month forms per layout
+  when the slips are next open** — it is a one-line addition to the tables above and it is the
+  only thing standing between the era guard and a working printed-date reader. Note where this
+  bites: KBANK's reference carries no date (D-059), so for that layout the printed date is the
+  only date there is.
 - **Digit confusability is unmeasured.** Thai slips print money in a proportional face, and
   `0`/`o`, `1`/`7` and a comma against a full stop are the errors that would silently change
   an amount. A digit whitelist and a mandatory per-field review against the source image are
