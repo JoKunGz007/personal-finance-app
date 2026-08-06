@@ -80,6 +80,20 @@ export function slipAccount(slip: CapturedSlip, accounts: readonly LedgerAccount
   return atBank.length === 1 ? atBank[0]! : null;
 }
 
+/**
+ * A decision the owner stored about one slip (migration 012, PLAN task 22 second half).
+ *
+ * `matched` names the statement row; `unmatched` says this slip is none of them. No row at
+ * all means no decision, and the automatic rule applies — which is the state every slip is
+ * in until the owner disagrees with something.
+ */
+export type SlipMatchDecision = {
+  slip_id: string;
+  decision: "matched" | "unmatched";
+  transaction_id: string | null;
+  revision: number;
+};
+
 export type SlipMatches = {
   /** slip id → the transaction it was matched to. */
   bySlip: Map<string, string>;
@@ -87,14 +101,45 @@ export type SlipMatches = {
   byTransaction: Map<string, CapturedSlip>;
   /** Slips with candidates that were not unique on both sides. Shown, never guessed at. */
   needsReview: Set<string>;
+  /** Slips whose pairing is the owner's stored decision rather than the rule's proposal. */
+  decided: Set<string>;
 };
 
+/**
+ * Decisions are facts and the rule is a proposal, so decisions are applied **first** and the
+ * rule only ever sees what is left.
+ *
+ * Doing it the other way round — rule first, decisions layered over the result — would let an
+ * automatic pairing consume the very statement row the owner had already assigned to another
+ * slip, and the owner's decision would then lose silently to a guess. Removing the decided
+ * slips and claimed rows from the pool before the rule runs makes that unrepresentable rather
+ * than a matter of ordering luck.
+ */
 export function proposeSlipMatches(
   transactions: readonly AccountTransaction[],
   slips: readonly CapturedSlip[],
-  accounts: readonly LedgerAccount[]
+  accounts: readonly LedgerAccount[],
+  decisions: readonly SlipMatchDecision[] = []
 ): SlipMatches {
   const bankByAccount = new Map(accounts.map((account) => [account.id, account.bank_code]));
+  const transactionIds = new Set(transactions.map((transaction) => transaction.id));
+  const slipsById = new Map(slips.map((slip) => [slip.id, slip]));
+
+  const decidedSlips = new Set<string>();
+  const claimedTransactions = new Set<string>();
+  const decidedPairs: Array<{ slip: CapturedSlip; transactionId: string }> = [];
+  for (const decision of decisions) {
+    const slip = slipsById.get(decision.slip_id);
+    if (!slip) continue;
+    decidedSlips.add(slip.id);
+    if (decision.decision !== "matched" || decision.transaction_id === null) continue;
+    // A decision naming a row this ledger no longer holds is ignored rather than obeyed: the
+    // slip falls back to being its own provisional row, which is visible, instead of pairing
+    // with nothing and disappearing from the totals.
+    if (!transactionIds.has(decision.transaction_id)) continue;
+    claimedTransactions.add(decision.transaction_id);
+    decidedPairs.push({ slip, transactionId: decision.transaction_id });
+  }
 
   // Candidates in both directions, computed before anything is committed to, so no pairing
   // depends on the order rows arrived in.
@@ -102,10 +147,12 @@ export function proposeSlipMatches(
   const claimantsByTransaction = new Map<string, Array<{ slipId: string; distance: number }>>();
 
   for (const slip of slips) {
+    if (decidedSlips.has(slip.id)) continue; // the owner has spoken; the rule does not re-open it
     const slipDay = dayNumber(slip.occurred_on);
     const amount = BigInt(slip.amount_minor);
     const withDistance: Array<{ id: string; distance: number }> = [];
     for (const transaction of transactions) {
+      if (claimedTransactions.has(transaction.id)) continue; // already assigned by the owner
       if (bankByAccount.get(transaction.account_id) !== slip.bank_code) continue;
       if (BigInt(movementMinor(transaction)) !== amount) continue;
       const distance = Math.abs(dayNumber(transaction.source_date) - slipDay);
@@ -136,7 +183,14 @@ export function proposeSlipMatches(
   const byTransaction = new Map<string, CapturedSlip>();
   const needsReview = new Set<string>();
 
+  // Seeded before the rule's own results, so a decision can never be displaced by one.
+  for (const pair of decidedPairs) {
+    bySlip.set(pair.slip.id, pair.transactionId);
+    byTransaction.set(pair.transactionId, pair.slip);
+  }
+
   for (const slip of slips) {
+    if (decidedSlips.has(slip.id)) continue;
     const candidates = candidatesBySlip.get(slip.id) ?? [];
     if (candidates.length === 0) continue; // awaiting a statement, which is not a problem
     if (candidates.length > 1) {
@@ -160,7 +214,7 @@ export function proposeSlipMatches(
     byTransaction.set(transactionId, slip);
   }
 
-  return { bySlip, byTransaction, needsReview };
+  return { bySlip, byTransaction, needsReview, decided: decidedSlips };
 }
 
 /**
@@ -180,6 +234,8 @@ export type ReconciledRow =
       status: Extract<SlipMatchStatus, "verified" | "statement-only">;
       transaction: AccountTransaction;
       slip: CapturedSlip | null;
+      /** True when this pairing is the owner's stored decision rather than the rule's proposal. */
+      ownerDecided: boolean;
     }
   | {
       kind: "provisional";
@@ -189,14 +245,16 @@ export type ReconciledRow =
       status: Extract<SlipMatchStatus, "awaiting-statement" | "needs-review">;
       slip: CapturedSlip;
       account: LedgerAccount | null;
+      ownerDecided: boolean;
     };
 
 export function reconcileLedger(
   transactions: readonly AccountTransaction[],
   slips: readonly CapturedSlip[],
-  accounts: readonly LedgerAccount[]
+  accounts: readonly LedgerAccount[],
+  decisions: readonly SlipMatchDecision[] = []
 ): { rows: ReconciledRow[]; matches: SlipMatches } {
-  const matches = proposeSlipMatches(transactions, slips, accounts);
+  const matches = proposeSlipMatches(transactions, slips, accounts, decisions);
 
   const rows: ReconciledRow[] = transactions.map((transaction) => {
     const slip = matches.byTransaction.get(transaction.id) ?? null;
@@ -207,7 +265,8 @@ export function reconcileLedger(
       time: transaction.source_time,
       status: slip ? ("verified" as const) : ("statement-only" as const),
       transaction,
-      slip
+      slip,
+      ownerDecided: slip !== null && matches.decided.has(slip.id)
     };
   });
 
@@ -220,7 +279,8 @@ export function reconcileLedger(
       time: slip.occurred_at_time,
       status: matches.needsReview.has(slip.id) ? ("needs-review" as const) : ("awaiting-statement" as const),
       slip,
-      account: slipAccount(slip, accounts)
+      account: slipAccount(slip, accounts),
+      ownerDecided: matches.decided.has(slip.id)
     });
   }
 

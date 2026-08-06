@@ -14,19 +14,28 @@ export const BACKUP_TABLE_KINDS_V2 = [
   "audit_events", "mutation_sequences"
 ] as const;
 
-export const BACKUP_TABLE_KINDS = [...BACKUP_TABLE_KINDS_V2, "slips"] as const;
+export const BACKUP_TABLE_KINDS_V3 = [...BACKUP_TABLE_KINDS_V2, "slips"] as const;
+
+// v4 appends the owner's match decisions and their history (migration 012). Appended for the
+// same reason `slips` was: indices 0..11 keep meaning exactly what they meant in v3.
+export const BACKUP_TABLE_KINDS = [
+  ...BACKUP_TABLE_KINDS_V3, "slip_match_overlays", "slip_match_revisions"
+] as const;
 
 export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
 
-// The owner holds exactly one backup covering the whole ledger and it is a v2 file. Reading
-// it stays supported for that reason — a hard bump, the way pre-release v1 was dropped
-// (D-018), would have stranded the only complete backup in existence the moment migration
-// 011 landed. New backups are always written at the current version.
-export const BACKUP_SCHEMA_VERSION = 3;
-export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3] as const;
+// The owner holds exactly one backup covering the whole ledger and it is **still a v2 file**.
+// Reading it stays supported for that reason — a hard bump, the way pre-release v1 was
+// dropped (D-018), would have stranded the only complete backup in existence the moment
+// migration 011 landed, and 012 does not change that arithmetic. Every version ever written
+// stays readable; new backups are always written at the current version.
+export const BACKUP_SCHEMA_VERSION = 4;
+export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4] as const;
 
 export function backupTableKindsFor(schemaVersion: number): readonly BackupTableKind[] {
-  return schemaVersion === 2 ? BACKUP_TABLE_KINDS_V2 : BACKUP_TABLE_KINDS;
+  if (schemaVersion === 2) return BACKUP_TABLE_KINDS_V2;
+  if (schemaVersion === 3) return BACKUP_TABLE_KINDS_V3;
+  return BACKUP_TABLE_KINDS;
 }
 
 export const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -199,6 +208,32 @@ const slipRowSchema = z.object({
   }
 });
 
+// The owner's say over a match, and its append-only history (migration 012). The current
+// value carries a transaction exactly when the decision is `matched`, which is a CHECK in the
+// database and is re-stated here because a restore must not be able to smuggle past it.
+const slipMatchOverlayRowSchema = z.object({
+  slip_id: uuidSchema,
+  owner_id: uuidSchema,
+  decision: z.enum(["matched", "unmatched"]),
+  transaction_id: uuidSchema.nullable(),
+  revision: z.number().int().nonnegative(),
+  updated_at: timestampSchema
+}).strict().superRefine((overlay, context) => {
+  if ((overlay.decision === "matched") !== (overlay.transaction_id !== null)) {
+    context.addIssue({ code: "custom", message: "A matched decision must name a transaction, and an unmatched one must not." });
+  }
+});
+
+const slipMatchRevisionRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  slip_id: uuidSchema,
+  revision: z.number().int().positive(),
+  snapshot: jsonObjectSchema,
+  changed_at: timestampSchema,
+  changed_by: uuidSchema
+}).strict();
+
 const v2DataShape = {
   accounts: z.array(accountRowSchema),
   categories: z.array(categoryRowSchema),
@@ -213,11 +248,18 @@ const v2DataShape = {
   mutation_sequences: z.array(mutationSequenceRowSchema).length(1)
 } as const;
 
-// Both are `.strict()`, which is what makes the versions genuinely distinct rather than
-// merely tolerant: a v2 payload carrying a `slips` key is refused, and so is a v3 payload
-// missing one. "Accepts v2" must not mean "stops checking".
+// All three are `.strict()`, which is what makes the versions genuinely distinct rather than
+// merely tolerant: a v2 payload carrying a `slips` key is refused, a v3 payload missing one
+// is refused, and a v3 payload that has grown match decisions is refused too. "Accepts v2"
+// must not mean "stops checking".
 export const backupDataSchemaV2 = z.object(v2DataShape).strict();
-export const backupDataSchema = z.object({ ...v2DataShape, slips: z.array(slipRowSchema) }).strict();
+const v3DataShape = { ...v2DataShape, slips: z.array(slipRowSchema) } as const;
+export const backupDataSchemaV3 = z.object(v3DataShape).strict();
+export const backupDataSchema = z.object({
+  ...v3DataShape,
+  slip_match_overlays: z.array(slipMatchOverlayRowSchema),
+  slip_match_revisions: z.array(slipMatchRevisionRowSchema)
+}).strict();
 
 function chunkSchema<const Kind extends (typeof BACKUP_TABLE_KINDS)[number], Row extends z.ZodType>(
   kind: Kind,
@@ -238,7 +280,9 @@ export const backupChunkSchema = z.discriminatedUnion("kind", [
   chunkSchema("overlay_revisions", overlayRevisionRowSchema),
   chunkSchema("audit_events", auditEventRowSchema),
   chunkSchema("mutation_sequences", mutationSequenceRowSchema),
-  chunkSchema("slips", slipRowSchema)
+  chunkSchema("slips", slipRowSchema),
+  chunkSchema("slip_match_overlays", slipMatchOverlayRowSchema),
+  chunkSchema("slip_match_revisions", slipMatchRevisionRowSchema)
 ]);
 
 function tableCountsFor(kinds: readonly BackupTableKind[]) {
@@ -272,6 +316,7 @@ function manifestFor(kinds: readonly BackupTableKind[]) {
 }
 
 export const restoreManifestSchemaV2 = manifestFor(BACKUP_TABLE_KINDS_V2);
+export const restoreManifestSchemaV3 = manifestFor(BACKUP_TABLE_KINDS_V3);
 export const restoreManifestSchema = manifestFor(BACKUP_TABLE_KINDS);
 
 // Version is part of the request rather than a constant, and the manifest that travels
@@ -285,11 +330,15 @@ const identity = {
 
 const baseV2 = z.object({ ...identity, schemaVersion: z.literal(2) }).strict();
 const baseV3 = z.object({ ...identity, schemaVersion: z.literal(3) }).strict();
+const baseV4 = z.object({ ...identity, schemaVersion: z.literal(4) }).strict();
 
+// Each version keeps its own kind list, so a v2 request is still checked against eleven
+// chunks and a v3 against twelve. Widening the union is not the same as relaxing it.
 function actionUnion<Shape extends z.ZodRawShape>(extend: (kinds: readonly BackupTableKind[]) => Shape) {
   return z.discriminatedUnion("schemaVersion", [
     baseV2.extend(extend(BACKUP_TABLE_KINDS_V2)).strict(),
-    baseV3.extend(extend(BACKUP_TABLE_KINDS)).strict()
+    baseV3.extend(extend(BACKUP_TABLE_KINDS_V3)).strict(),
+    baseV4.extend(extend(BACKUP_TABLE_KINDS)).strict()
   ]);
 }
 
@@ -300,11 +349,15 @@ export const restoreActionSchemas = {
     chunkDigest: digestSchema,
     chunk: backupChunkSchema
   })),
-  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3]),
-  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3])
+  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4]),
+  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4])
 } as const;
 
-function snapshotFor<Data extends z.ZodType>(version: 2 | 3, kinds: readonly BackupTableKind[], data: Data) {
+function snapshotFor<Data extends z.ZodType>(
+  version: (typeof SUPPORTED_BACKUP_SCHEMA_VERSIONS)[number],
+  kinds: readonly BackupTableKind[],
+  data: Data
+) {
   return z.object({
     schemaVersion: z.literal(version),
     exportedAt: z.string().datetime({ offset: true }),
@@ -327,12 +380,14 @@ function snapshotFor<Data extends z.ZodType>(version: 2 | 3, kinds: readonly Bac
 }
 
 export const backupSnapshotSchemaV2 = snapshotFor(2, BACKUP_TABLE_KINDS_V2, backupDataSchemaV2);
-export const backupSnapshotSchemaV3 = snapshotFor(3, BACKUP_TABLE_KINDS, backupDataSchema);
+export const backupSnapshotSchemaV3 = snapshotFor(3, BACKUP_TABLE_KINDS_V3, backupDataSchemaV3);
+export const backupSnapshotSchemaV4 = snapshotFor(4, BACKUP_TABLE_KINDS, backupDataSchema);
 
-// What a restore accepts. A snapshot read off disk is one or the other and nothing else —
-// the union discriminates on the payload's own declared version rather than sniffing for a
+// What a restore accepts. A snapshot read off disk is one of these and nothing else — the
+// union discriminates on the payload's own declared version rather than sniffing for a
 // `slips` key, so a v2 file with a stray slips array is refused instead of upgraded.
 export const backupSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   backupSnapshotSchemaV2,
-  backupSnapshotSchemaV3
+  backupSnapshotSchemaV3,
+  backupSnapshotSchemaV4
 ]);

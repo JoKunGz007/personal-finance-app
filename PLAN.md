@@ -212,7 +212,9 @@ Tasks 1–12, 14, 15 and 16 are complete and verified for statements. Remaining 
 
     The fact that shaped it: **no layout prints the slip's reference** (Krungthai and KBANK none, SCB a short channel code), so a match is a proposal from three facts, never an identifier the two records share.
 
-    **Not built, and the reason it is separate:** the owner cannot override or undo a match. Matching is recomputed on every load with nothing stored, so a new statement can change what matches and a wrong match cannot be corrected. That needs a column on `public.slips`, a mutation RPC with an audit row, and **backup schema v4 keeping v2 and v3 restorable** — expensive to reverse, which is why the read-time half shipped first for the rule to be judged against real data.
+    **Built 2026-08-05** (migration 012, D-067): the owner can override or undo a match, and the decision is stored, audited, revisioned and carried by the backup. ~~That needs a column on `public.slips`~~ — **it does not, and that sentence was wrong**: migration 011 put `slips_immutable` on that table, so no column on it can ever be updated (`GOTCHAS.md`, which contradicted this line from 2026-08-01 until it was corrected). It is the `transaction_overlays` + `overlay_revisions` shape instead — `public.slip_match_overlays` for the current decision, append-only `public.slip_match_revisions` for its history, `set_slip_match` as the only write path — plus **backup schema v4 keeping v2 and v3 restorable**. A partial unique index makes it impossible for two slips to claim one statement row, which the read-time rule could only ever enforce as a proposal.
+
+    **Still unbuilt in this half:** the RPC has no HTTP route and no UI, so the decision cannot yet be made from the app. That is deliberately the next step and deliberately noted — task 20 shipped a write path with no read path and it took the owner using the app to notice (D-063), which is the same shape of gap.
 
     Still unbuilt beyond that: manual entry for cash, and the **correction path** the capture form has never had (a captured slip is append-only; the overlay pattern is the shape to reach for).
 

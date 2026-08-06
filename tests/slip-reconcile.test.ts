@@ -188,6 +188,88 @@ describe("matching a slip to a statement row", () => {
   });
 });
 
+describe("the owner's stored decision, which outranks the rule", () => {
+  // The headline case: two rows on the slip's own day is the ambiguity the rule must refuse,
+  // and the decision is how the owner resolves what no rule can.
+  it("resolves an ambiguity the rule correctly refused", () => {
+    const second = row({ id: "bbbbbbbb-0000-4000-8000-000000000002" });
+    const undecided = proposeSlipMatches([row(), second], [slip()], ACCOUNTS);
+    expect(undecided.needsReview.has(slip().id)).toBe(true);
+
+    const decided = proposeSlipMatches([row(), second], [slip()], ACCOUNTS, [
+      { slip_id: slip().id, decision: "matched", transaction_id: second.id, revision: 1 }
+    ]);
+    expect(decided.bySlip.get(slip().id)).toBe(second.id);
+    expect(decided.needsReview.size).toBe(0);
+    expect(decided.decided.has(slip().id)).toBe(true);
+  });
+
+  it("undoes a match the rule would otherwise make", () => {
+    const { rows } = reconcileLedger([row()], [slip()], ACCOUNTS, [
+      { slip_id: slip().id, decision: "unmatched", transaction_id: null, revision: 1 }
+    ]);
+    // Two rows, not one: the pair no longer collapses, and the slip is visible again.
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((entry) => entry.status === "statement-only")).toHaveLength(1);
+    expect(rows.filter((entry) => entry.status === "awaiting-statement")).toHaveLength(1);
+  });
+
+  it("takes the claimed row out of the pool, so the rule cannot pair it with something else", () => {
+    // Without this the automatic rule would find the same row a decision already owns, and
+    // the owner's decision would lose to a guess depending on iteration order.
+    const other = slip({ id: "dddddddd-0000-4000-8000-000000000002", slip_reference: "A00000000000000002" });
+    const matches = proposeSlipMatches([row()], [slip(), other], ACCOUNTS, [
+      { slip_id: slip().id, decision: "matched", transaction_id: row().id, revision: 1 }
+    ]);
+    expect(matches.bySlip.get(slip().id)).toBe(row().id);
+    expect(matches.bySlip.has(other.id)).toBe(false);
+    // Awaiting a statement, not ambiguous: the row it wanted is spoken for.
+    expect(matches.needsReview.size).toBe(0);
+  });
+
+  it("ignores a decision naming a row this ledger no longer holds, rather than losing the slip", () => {
+    // A restore or a re-import can remove the row a decision pointed at. Obeying it would pair
+    // the slip with nothing and drop it out of the totals; ignoring it leaves it visible.
+    const { rows } = reconcileLedger([row()], [slip()], ACCOUNTS, [
+      { slip_id: slip().id, decision: "matched", transaction_id: "bbbbbbbb-0000-4000-8000-00000000dead", revision: 1 }
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((entry) => entry.kind === "provisional")).toHaveLength(1);
+    expect(summarizeRows(rows).provisional).toBe(1);
+  });
+
+  it("says which pairings are the owner's and which are the rule's", () => {
+    const automatic = reconcileLedger([row()], [slip()], ACCOUNTS);
+    expect(automatic.rows[0]!.ownerDecided).toBe(false);
+
+    const manual = reconcileLedger([row()], [slip()], ACCOUNTS, [
+      { slip_id: slip().id, decision: "matched", transaction_id: row().id, revision: 1 }
+    ]);
+    expect(manual.rows[0]!.ownerDecided).toBe(true);
+  });
+
+  it("ignores a decision about a slip that is not loaded", () => {
+    const matches = proposeSlipMatches([row()], [slip()], ACCOUNTS, [
+      { slip_id: "dddddddd-0000-4000-8000-00000000dead", decision: "unmatched", transaction_id: null, revision: 1 }
+    ]);
+    expect(matches.bySlip.get(slip().id)).toBe(row().id);
+    expect(matches.decided.size).toBe(0);
+  });
+
+  it("stays independent of the order decisions and slips arrive in", () => {
+    const second = row({ id: "bbbbbbbb-0000-4000-8000-000000000002" });
+    const other = slip({ id: "dddddddd-0000-4000-8000-000000000002", slip_reference: "A00000000000000002" });
+    const decisions = [
+      { slip_id: other.id, decision: "matched" as const, transaction_id: row().id, revision: 1 },
+      { slip_id: slip().id, decision: "matched" as const, transaction_id: second.id, revision: 1 }
+    ];
+    const forward = proposeSlipMatches([row(), second], [slip(), other], ACCOUNTS, decisions);
+    const reversed = proposeSlipMatches([second, row()], [other, slip()], ACCOUNTS, [...decisions].reverse());
+    expect([...forward.bySlip.entries()].sort()).toEqual([...reversed.bySlip.entries()].sort());
+    expect(forward.bySlip.size).toBe(2);
+  });
+});
+
 describe("the account a slip is shown against", () => {
   it("takes the one account at that bank, because nothing is being guessed", () => {
     expect(slipAccount(slip(), ACCOUNTS)?.id).toBe(KTB_ACCOUNT.id);
