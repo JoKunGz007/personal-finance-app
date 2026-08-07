@@ -12,11 +12,21 @@ export async function GET() {
     .order("occurred_on", { ascending: false })
     .order("captured_at", { ascending: false });
   if (error) return routeError("Slips could not be loaded.", 400);
+
+  // The owner's stored decisions, on the same response as the slips they are about (D-067).
+  // A decision that failed to arrive on its own would leave the ledger showing a pairing the
+  // owner has already overruled, presented as the automatic rule's — so this failing fails the
+  // whole read rather than silently downgrading it to the rule.
+  const matches = await auth.supabase
+    .from("slip_match_overlays")
+    .select("slip_id,decision,transaction_id,revision");
+  if (matches.error) return routeError("Slips could not be loaded.", 400);
+
   // bigint arrives as a JS number from PostgREST unless it is cast, so the amount is
   // stringified here rather than trusted to survive JSON. Every money value in this app
   // crosses the wire as canonical text (D-018).
   const slips = (data ?? []).map((slip) => ({ ...slip, amount_minor: String(slip.amount_minor) }));
-  return Response.json({ slips }, { headers: noStoreHeaders });
+  return Response.json({ slips, matches: matches.data ?? [] }, { headers: noStoreHeaders });
 }
 
 export async function POST(request: Request) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { formatThb } from "@/lib/money";
 import {
@@ -13,12 +13,18 @@ import {
 } from "@/lib/transactions";
 import {
   compareRows,
+  matchCandidates,
   reconcileLedger,
   summarizeRows,
   type ReconciledRow,
   type SlipMatchStatus
 } from "@/lib/slip-reconcile";
-import { slipListSchema, type CapturedSlip } from "@/lib/slips";
+import {
+  slipListSchema,
+  slipMatchResponseSchema,
+  type CapturedSlip,
+  type SlipMatchDecision
+} from "@/lib/slips";
 import { readError } from "@/lib/wire";
 
 const ALL_ACCOUNTS = "all";
@@ -44,7 +50,18 @@ export function TransactionsView() {
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
   const [transactions, setTransactions] = useState<AccountTransaction[] | null>(null);
   const [slips, setSlips] = useState<CapturedSlip[]>([]);
+  const [matches, setMatches] = useState<SlipMatchDecision[]>([]);
   const [slipsError, setSlipsError] = useState<string | null>(null);
+  // Which slip is being decided, so one row's control can be busy without disabling the rest.
+  const [deciding, setDeciding] = useState<string | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  // The slip currently being matched by hand, if any. While this is set the table shows that
+  // slip and the rows it could be, and nothing else (D-069).
+  const [matching, setMatching] = useState<string | null>(null);
+  // Focus has to follow the mode. The button that opens it disables itself in the same update,
+  // and a browser blurs a disabled element — which drops a keyboard or screen-reader user to
+  // the top of the document with the `aria-live` announcement read but nowhere to be.
+  const cancelMatching = useRef<HTMLButtonElement | null>(null);
   const [selected, setSelected] = useState<string>(ALL_ACCOUNTS);
   const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
@@ -57,6 +74,28 @@ export function TransactionsView() {
     [accounts]
   );
 
+  const matchingSlip = useMemo(
+    () => (matching === null ? null : slips.find((slip) => slip.id === matching) ?? null),
+    [matching, slips]
+  );
+
+  /**
+   * One derived value decides whether the mode is on, and everything reads it.
+   *
+   * Gating the banner on the slip while the row filter and the disabled controls gated on the
+   * id alone left a reachable dead end: a slip that vanished mid-choice took the banner — and
+   * with it the only Cancel — off the screen while the controls stayed disabled and the totals
+   * strip reappeared over a picking subset. Recovery needed a page reload. A mode that cannot
+   * be half-on cannot do that.
+   */
+  const picking = matching !== null && matchingSlip !== null;
+
+  // Entering the mode moves focus to Cancel: it is the one control that is certainly present,
+  // it is the way out, and it sits beside the announcement rather than at the top of the page.
+  useEffect(() => {
+    if (picking) cancelMatching.current?.focus();
+  }, [picking]);
+
   // The account scope, before any text filter. Balances are derived from this rather
   // than from `visible`, because a running total of whatever a search matched would
   // not be a balance.
@@ -67,15 +106,43 @@ export function TransactionsView() {
 
   const combined = useMemo(() => combinedBalanceByTransaction(scope), [scope]);
 
-  const showCombined = selected === ALL_ACCOUNTS;
+  // The account column, not the reference one, whenever a slip is being matched: candidates are
+  // filtered by **bank**, so with two accounts at one bank the offered rows can belong to
+  // different accounts — and in the per-account layout nothing on screen would say which. That
+  // is the very ambiguity `slipAccount` refuses to guess at (D-056), so the chooser must show it.
+  const showCombined = picking || selected === ALL_ACCOUNTS;
 
   // Reconciliation runs over the **whole** ledger, before any account or text filter. A
   // match is a fact about two records, not about what is on screen — reconciling the
   // filtered subset would let choosing an account or typing in the search box silently
   // unmatch a pair and change the totals (D-063).
   const reconciled = useMemo(
-    () => reconcileLedger(transactions ?? [], slips, accounts ?? []),
-    [transactions, slips, accounts]
+    () => reconcileLedger(transactions ?? [], slips, accounts ?? [], matches),
+    [transactions, slips, accounts, matches]
+  );
+
+  const decisionBySlip = useMemo(
+    () => new Map(matches.map((match) => [match.slip_id, match])),
+    [matches]
+  );
+
+  // The rows a slip may be paired with by hand, computed for the provisional rows only — a
+  // matched slip's control is an undo and needs no list. Not date-bounded: an override exists
+  // precisely to reach past the automatic window (D-067).
+  const candidatesBySlip = useMemo(() => {
+    const byslip = new Map<string, AccountTransaction[]>();
+    for (const row of reconciled.rows) {
+      if (row.kind !== "provisional") continue;
+      byslip.set(row.slip.id, matchCandidates(row.slip, transactions ?? [], accounts ?? [], matches));
+    }
+    return byslip;
+  }, [reconciled, transactions, accounts, matches]);
+
+  // The rows on offer while matching, as a set, so a confirmed row can ask whether it is one
+  // of them without re-deriving the list per row.
+  const offered = useMemo(
+    () => new Set((matching === null ? [] : candidatesBySlip.get(matching) ?? []).map((candidate) => candidate.id)),
+    [matching, candidatesBySlip]
   );
 
   // A slip is shown against an account when the owner holds exactly one at that bank, so the
@@ -87,6 +154,18 @@ export function TransactionsView() {
   }, [selected]);
 
   const visibleRows = useMemo(() => {
+    // Matching is its own view of the ledger, not a filter of the current one: the slip being
+    // matched and every row it could be, whatever the Account, Status and search controls were
+    // left on. Those are suspended rather than obeyed, because a filter set earlier could
+    // otherwise hide the very row the owner is looking for and read as "it is not there".
+    if (picking) {
+      const candidates = reconciled.rows.filter((row) =>
+        row.kind === "provisional" ? row.slip.id === matching : offered.has(row.transaction.id));
+      candidates.sort(compareRows);
+      if (order === "oldest") candidates.reverse();
+      return candidates;
+    }
+
     const filtered = reconciled.rows.filter((row) => {
       if (!inAccount(row)) return false;
       // Status filters the reconciled result; it never feeds back into reconciliation, which
@@ -102,7 +181,7 @@ export function TransactionsView() {
     filtered.sort(compareRows);
     if (order === "oldest") filtered.reverse();
     return filtered;
-  }, [reconciled, inAccount, query, order, status]);
+  }, [reconciled, inAccount, query, order, status, matching, picking, offered]);
 
   const totals = useMemo(() => summarizeRows(visibleRows), [visibleRows]);
 
@@ -162,14 +241,22 @@ export function TransactionsView() {
       // failure here is reported beside the rows instead of replacing them.
       setSlipsError(null);
       setSlips([]);
+      // Decisions travel with the slips and are cleared with them. Keeping stale ones while
+      // the slips they belong to failed to load would reconcile against records no longer on
+      // screen; keeping none while the slips loaded would present an overruled pairing as the
+      // rule's own. They are one response for exactly that reason (D-067).
+      setMatches([]);
+      setDecisionError(null);
       const slipsResponse = await fetch("/api/v1/slips", { cache: "no-store" });
       const slipsBody: unknown = await slipsResponse.json().catch(() => null);
       if (!slipsResponse.ok) {
         setSlipsError(readError(slipsBody, "Captured slips could not be loaded, so none are shown."));
       } else {
         const parsedSlips = slipListSchema.safeParse(slipsBody);
-        if (parsedSlips.success) setSlips(parsedSlips.data.slips);
-        else setSlipsError("The slips response did not match its contract, so none are shown.");
+        if (parsedSlips.success) {
+          setSlips(parsedSlips.data.slips);
+          setMatches(parsedSlips.data.matches);
+        } else setSlipsError("The slips response did not match its contract, so none are shown.");
       }
 
       setAccounts(parsedAccounts.data.accounts);
@@ -181,6 +268,50 @@ export function TransactionsView() {
     }
   }
 
+  /**
+   * The owner's say over one slip's match (D-067). Three cases reach this: a wrong automatic
+   * pairing rejected, an ambiguity resolved by naming the row, and a stored decision changed.
+   *
+   * The reconciled view is derived from `matches`, so replacing one decision here re-runs the
+   * whole rule — including the totals and any *other* slip that was competing for the row.
+   * That is why this updates state from the response rather than reloading: the decision the
+   * database stored is the one the view then reasons about, revision included.
+   */
+  async function decide(slipId: string, decision: "matched" | "unmatched", transactionId: string | null) {
+    setDeciding(slipId);
+    setDecisionError(null);
+    try {
+      const response = await fetch(`/api/v1/slips/${slipId}/match`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          // 0 means "I believe no decision exists", which is what the RPC's optimistic
+          // concurrency compares against. A second tab having decided already is a conflict
+          // worth reporting rather than a write to repeat.
+          expectedRevision: decisionBySlip.get(slipId)?.revision ?? 0,
+          decision,
+          transactionId
+        })
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        setDecisionError(readError(body, "The match decision could not be saved."));
+        return;
+      }
+      const parsed = slipMatchResponseSchema.safeParse(body);
+      if (!parsed.success) {
+        setDecisionError("The saved decision did not match its contract. Reload before trusting this view.");
+        return;
+      }
+      setMatches((current) => [...current.filter((match) => match.slip_id !== slipId), parsed.data.match]);
+      setMatching(null);
+    } catch {
+      setDecisionError("The ledger could not be reached, so the decision was not saved.");
+    } finally {
+      setDeciding(null);
+    }
+  }
+
   return (
     <section className="ledger-band" aria-labelledby="ledger-title">
       <div className="bench-heading">
@@ -189,21 +320,24 @@ export function TransactionsView() {
           <h2 id="ledger-title">Transactions</h2>
           <p>
             Everything committed to the ledger, and every slip still waiting for the statement
-            that will confirm it. Source facts are immutable here — this view reads them and
-            never writes.
+            that will confirm it. Source facts are immutable here — the one thing this view
+            writes is your say over a match, which is stored beside them and never in them.
           </p>
         </div>
       </div>
 
       <div className="ledger-controls">
-        <button type="button" className="secondary-button" disabled={busy} onClick={load}>
+        {/* Every control here is suspended while a slip is being matched — including Reload,
+            which would drop the choice half-made. The mode is a different question about the
+            ledger, not a filter of it. */}
+        <button type="button" className="secondary-button" disabled={busy || picking} onClick={load}>
           {busy ? "Loading…" : transactions ? "Reload" : "Load transactions"}
         </button>
         {transactions ? (
           <>
             <label className="account-control">
               <span>Account</span>
-              <select value={selected} onChange={(event) => setSelected(event.target.value)}>
+              <select value={selected} disabled={picking} onChange={(event) => setSelected(event.target.value)}>
                 <option value={ALL_ACCOUNTS}>All accounts</option>
                 {(accounts ?? []).map((account) => (
                   <option key={account.id} value={account.id}>
@@ -224,7 +358,7 @@ export function TransactionsView() {
                 (D-064). */}
             <label className="account-control">
               <span>Status</span>
-              <select value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
+              <select value={status} disabled={picking} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
                 <option value={ALL_STATUSES}>All statuses</option>
                 <option value="verified">Verified by slip</option>
                 <option value="awaiting-statement">Awaiting statement</option>
@@ -238,6 +372,7 @@ export function TransactionsView() {
                 type="search"
                 name="transaction-filter"
                 value={query}
+                disabled={picking}
                 placeholder="Description, reference, branch…"
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -255,34 +390,71 @@ export function TransactionsView() {
 
       {transactions ? (
         <>
-          {/* One total over both kinds, which is only correct because a matched pair is one
-              row. The provisional count travels with the figure so it discloses how much of
-              itself the bank has not confirmed (D-063). */}
-          <dl className="statement-strip ledger-strip">
-            <div><dt>Rows</dt><dd>{totals.rows}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}</dd></div>
-            <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}</dd></div>
-            <div><dt>Withdrawals</dt><dd>{formatThb(totals.withdrawals)}</dd></div>
-            <div><dt>Net movement</dt><dd>{formatThb(totals.net)}</dd></div>
-          </dl>
+          {picking && matchingSlip ? (
+            /* The totals are deliberately gone while this is up. What is on screen is a slip
+               and the rows it could be, which is not a view of the ledger and has no total
+               worth printing — a subtotal of three unrelated rows reads as a figure. */
+            <div className="matching-banner" aria-live="polite">
+              <div>
+                <strong>Choosing a statement row</strong>
+                <span>
+                  {`${matchingSlip.bank_code} slip · ${formatDate(matchingSlip.occurred_on)}${matchingSlip.occurred_at_time ? ` ${matchingSlip.occurred_at_time}` : ""} · ${formatThb(matchingSlip.amount_minor)}`}
+                  {` — ${offered.size} row${offered.size === 1 ? "" : "s"} could be it, each at the same bank for the same amount to the satang. The time and the balance are what tell them apart, so they are shown as rows rather than as a list of names. Other filters are suspended while you choose.`}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                ref={cancelMatching}
+                disabled={deciding !== null}
+                onClick={() => setMatching(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* One total over both kinds, which is only correct because a matched pair is one
+                  row. The provisional count travels with the figure so it discloses how much of
+                  itself the bank has not confirmed (D-063). */}
+              <dl className="statement-strip ledger-strip">
+                <div><dt>Rows</dt><dd>{totals.rows}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}</dd></div>
+                <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}</dd></div>
+                <div><dt>Withdrawals</dt><dd>{formatThb(totals.withdrawals)}</dd></div>
+                <div><dt>Net movement</dt><dd>{formatThb(totals.net)}</dd></div>
+              </dl>
 
-          {slips.length > 0 ? (
-            <p className="ledger-status">
-              <b>Slips: {reconciled.matches.bySlip.size} verified · {slips.length - reconciled.matches.bySlip.size - reconciled.matches.needsReview.size} awaiting a statement{reconciled.matches.needsReview.size > 0 ? ` · ${reconciled.matches.needsReview.size} needing review` : ""}</b>
-              {" · a slip is matched to a statement row only when the bank, the exact amount and a date within one day identify one row and no other slip claims it. No layout prints the slip's reference, so a match is a proposal from those three facts rather than an identifier the two records share."}
-            </p>
-          ) : null}
+              {slips.length > 0 ? (
+                <p className="ledger-status">
+                  <b>Slips: {reconciled.matches.bySlip.size} verified · {slips.length - reconciled.matches.bySlip.size - reconciled.matches.needsReview.size} awaiting a statement{reconciled.matches.needsReview.size > 0 ? ` · ${reconciled.matches.needsReview.size} needing review` : ""}</b>
+                  {" · a slip is matched to a statement row only when the bank, the exact amount and a date within one day identify one row and no other slip claims it. No layout prints the slip's reference, so a match is a proposal from those three facts rather than an identifier the two records share."}
+                </p>
+              ) : null}
+            </>
+          )}
 
           {slipsError ? (
             <p className="ledger-status" role="status">{slipsError}</p>
           ) : null}
 
-          {!showCombined && unattributedSlips > 0 ? (
+          {/* A refused decision is reported where it can be read against the row it was about,
+              and as an alert: the owner has just pressed something, and silence would read as
+              success. Every message here is one the database refused for a reason the owner
+              can act on. */}
+          {decisionError ? (
+            <div className="warning error" role="alert">
+              <strong>Not saved</strong>
+              <span>{decisionError}</span>
+            </div>
+          ) : null}
+
+          {!picking &&!showCombined && unattributedSlips > 0 ? (
             <p className="ledger-status">
               {unattributedSlips} slip{unattributedSlips === 1 ? " is" : "s are"} hidden while one account is selected: you hold more than one account at that bank, and a slip&rsquo;s QR names the bank without saying which account the money moved through.
             </p>
           ) : null}
 
-          {showCombined && accounts ? (
+          {!picking &&showCombined && accounts ? (
             <p className="ledger-status">
               <b>Imported accounts: {importedAccounts.length} of {accounts.length}</b>
               {importedAccounts.length > 0
@@ -319,6 +491,7 @@ export function TransactionsView() {
                     if (row.kind === "provisional") {
                       const slip = row.slip;
                       const amount = BigInt(slip.amount_minor);
+                      const candidates = candidatesBySlip.get(slip.id) ?? [];
                       return (
                         // Marked in the row itself, not only by colour: the difference between
                         // a bank's record and one the owner typed is the most important thing
@@ -338,6 +511,34 @@ export function TransactionsView() {
                               <em className="status-chip needs-review">Needs review · several rows match</em>
                             ) : (
                               <em className="status-chip awaiting">Awaiting statement</em>
+                            )}
+                            {/* Said in words, because "awaiting a statement" and "you decided
+                                this is on no statement" look identical otherwise, and the
+                                second is a decision the owner may want to take back. */}
+                            {row.ownerDecided ? <small className="decision-mark">Your decision · on no statement row</small> : null}
+                            {/* Not a dropdown (D-069). Candidate rows share a bank, an amount
+                                and usually a date and a wording, so an option label repeating
+                                the first two of those cannot tell them apart — the printed time
+                                and the running balance can, and both live in the table. The
+                                button asks the table to show only this slip and its candidates
+                                instead of describing them here. */}
+                            {candidates.length > 0 ? (
+                              <div className="match-control">
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  aria-label={`Choose a statement row for the slip dated ${formatDate(slip.occurred_on)}`}
+                                  disabled={deciding !== null || matching !== null}
+                                  onClick={() => { setDecisionError(null); setMatching(slip.id); }}
+                                >
+                                  Choose a statement row
+                                </button>
+                                <small>{candidates.length} row{candidates.length === 1 ? "" : "s"} could be this payment</small>
+                              </div>
+                            ) : (
+                              <small className="decision-mark">
+                                No {slip.bank_code} row carries this exact amount, so there is nothing to match it to.
+                              </small>
                             )}
                           </td>
                           <td data-label={showCombined ? "Account" : "Reference"}>
@@ -385,9 +586,69 @@ export function TransactionsView() {
                             mean something harder to find. The status is still readable to a
                             screen reader here, and askable through the Status filter (D-064). */}
                         <td data-label="Status">
-                          {row.slip
-                            ? <em className="status-chip verified">Verified by slip</em>
-                            : <span className="status-none" aria-label="Statement only: no slip is matched to this row">—</span>}
+                          {picking && matching !== null ? (
+                            /* Picking mode: this row is one of the candidates, or it would not
+                               be on screen. The button is on the row itself, beside the time
+                               and the balance that are the only things distinguishing it from
+                               its neighbours. */
+                            <div className="match-control">
+                              {/* The chip stays. A candidate may already be paired with a
+                                  *different* slip — `matchCandidates` offers those deliberately,
+                                  and the database accepts the write — so replacing the status
+                                  with a button would let the owner take a row off another slip
+                                  with nothing on screen saying so but a green edge, which is
+                                  colour alone. Taking it is allowed; not being told is not. */}
+                              {row.slip ? <em className="status-chip verified">Verified by slip</em> : null}
+                              {row.slip && row.slip.id !== matching ? (
+                                <small className="decision-mark warn">
+                                  Already matched to the {formatDate(row.slip.occurred_on)} slip
+                                  {row.slip.counterparty ? ` · ${row.slip.counterparty}` : ""}. Choosing this row
+                                  unmatches that one, which goes back to waiting for a statement.
+                                </small>
+                              ) : null}
+                              <button
+                                type="button"
+                                className="primary-button"
+                                /* The visible words come first, because an accessible name that
+                                   does not contain the label is a name nobody can speak — and
+                                   the rest is what distinguishes this row from its twin. */
+                                aria-label={`This is it — ${formatDate(row.date)}${transaction.source_time ? ` at ${transaction.source_time}` : ""}, balance ${formatThb(transaction.post_balance_minor)}`}
+                                disabled={deciding !== null}
+                                onClick={() => decide(matching, "matched", transaction.id)}
+                              >
+                                {deciding === matching ? "Saving…" : "This is it"}
+                              </button>
+                            </div>
+                          ) : row.slip ? (
+                            <>
+                              <em className="status-chip verified">Verified by slip</em>
+                              {row.ownerDecided ? <small className="decision-mark">Your match</small> : null}
+                              {/* The undo, and the only control a matched row needs. It stores
+                                  `unmatched` rather than deleting the decision: the RPC has no
+                                  way to return a slip to the automatic rule, and pretending
+                                  otherwise would promise something the database cannot do. */}
+                              <div className="match-control">
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  aria-label={`Not this slip — the row dated ${formatDate(row.date)} is not this payment`}
+                                  /* Every decision control, not just this row's. One write at a
+                                     time: two in flight let the first to resolve re-enable a
+                                     button whose own write is still pending, and a second press
+                                     then sends a revision the database has already moved past —
+                                     which comes back as "changed in another session" to an owner
+                                     who has only one tab open. The shared error line has the same
+                                     problem: it cannot say which decision it is about. */
+                                  disabled={deciding !== null}
+                                  onClick={() => decide(row.slip!.id, "unmatched", null)}
+                                >
+                                  {deciding === row.slip.id ? "Saving…" : "Not this slip"}
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <span className="status-none" aria-label="Statement only: no slip is matched to this row">—</span>
+                          )}
                         </td>
                         <td data-label={showCombined ? "Account" : "Reference"}>
                           {showCombined

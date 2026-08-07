@@ -79,9 +79,68 @@ export const capturedSlipSchema = z.object({
   captured_at: z.string()
 }).strict();
 
-export const slipListSchema = z.object({ slips: z.array(capturedSlipSchema) }).strict();
+/**
+ * A decision the owner stored about one slip (migration 012, D-067).
+ *
+ * `matched` names the statement row, `unmatched` says this slip is none of them, and the
+ * absence of a row means no decision has been made and the automatic rule applies. Strict for
+ * the same reason the slip schema is: this is the shape the ledger view reasons about, and a
+ * column the database later considers part of a decision must fail loudly here.
+ */
+export const slipMatchDecisionSchema = z.object({
+  slip_id: z.string().uuid(),
+  decision: z.enum(["matched", "unmatched"]),
+  transaction_id: z.string().uuid().nullable(),
+  revision: z.number().int().nonnegative()
+}).strict();
+
+export type SlipMatchDecision = z.infer<typeof slipMatchDecisionSchema>;
+
+/**
+ * Slips and their decisions travel together, on one response, deliberately.
+ *
+ * A decision is meaningless without its slip, and two endpoints mean two failure modes — the
+ * dangerous one being slips arriving while their decisions do not, which shows the owner a
+ * pairing they have already overruled and reports it as the rule's own. One response cannot
+ * half-arrive: the ledger view already treats a slips failure as "no slips shown", and that
+ * degradation stays honest only while a decision cannot go missing on its own.
+ */
+export const slipListSchema = z.object({
+  slips: z.array(capturedSlipSchema),
+  matches: z.array(slipMatchDecisionSchema)
+}).strict();
 
 export type CapturedSlip = z.infer<typeof capturedSlipSchema>;
+
+/**
+ * The write contract for `PUT /api/v1/slips/[id]/match`, mirroring `set_slip_match`.
+ *
+ * The null travels *with* the decision rather than being implied by it: the RPC and the table's
+ * CHECK both require `transaction_id` to be present exactly when the decision is `matched`, so
+ * a client that sends one without the other is refused here rather than by the database, where
+ * the message would have to be translated back into something the form can say.
+ *
+ * `expectedRevision` is optimistic concurrency, exactly as the transaction overlay does it
+ * (D-067): 0 means "I believe no decision exists". Two tabs disagreeing about a match is worth
+ * surfacing, because the loser's intent is invisible afterwards.
+ */
+export const slipMatchRequestSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  decision: z.enum(["matched", "unmatched"]),
+  transactionId: z.string().uuid().nullable()
+}).strict().superRefine((match, context) => {
+  if ((match.decision === "matched") !== (match.transactionId !== null)) {
+    context.addIssue({
+      code: "custom",
+      message: "A match names a statement row and an undo names none.",
+      path: ["transactionId"]
+    });
+  }
+});
+
+export type SlipMatchRequest = z.infer<typeof slipMatchRequestSchema>;
+
+export const slipMatchResponseSchema = z.object({ match: slipMatchDecisionSchema }).strict();
 
 // Offsets at which a reference has been observed to begin with a date: SCB starts with one
 // outright, and Krungthai's 21-character variant puts a single letter in front. Only these

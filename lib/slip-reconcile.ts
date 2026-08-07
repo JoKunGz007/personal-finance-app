@@ -1,4 +1,4 @@
-import type { CapturedSlip } from "@/lib/slips";
+import type { CapturedSlip, SlipMatchDecision } from "@/lib/slips";
 import type { LedgerAccount } from "@/lib/accounts";
 import { movementMinor, type AccountTransaction } from "@/lib/transactions";
 
@@ -86,13 +86,12 @@ export function slipAccount(slip: CapturedSlip, accounts: readonly LedgerAccount
  * `matched` names the statement row; `unmatched` says this slip is none of them. No row at
  * all means no decision, and the automatic rule applies — which is the state every slip is
  * in until the owner disagrees with something.
+ *
+ * Defined once, in `lib/slips.ts`, where its zod schema parses it off the wire. Re-exported
+ * here because this module is where it is reasoned about, and two hand-kept copies of the same
+ * shape would drift the moment one of them gained a field.
  */
-export type SlipMatchDecision = {
-  slip_id: string;
-  decision: "matched" | "unmatched";
-  transaction_id: string | null;
-  revision: number;
-};
+export type { SlipMatchDecision };
 
 export type SlipMatches = {
   /** slip id → the transaction it was matched to. */
@@ -215,6 +214,62 @@ export function proposeSlipMatches(
   }
 
   return { bySlip, byTransaction, needsReview, decided: decidedSlips };
+}
+
+/**
+ * The statement rows the owner may pair a slip with by hand (D-067).
+ *
+ * **Deliberately not the automatic rule's candidate set.** Two of that rule's three facts are
+ * re-checked here because `set_slip_match` re-checks them server-side and would refuse anything
+ * else: the same bank, and an amount equal to the minor unit. The third — the date window — is
+ * *not* applied, and its absence is the entire point of an override. A rule that only ever
+ * offered what the rule had already found could resolve nothing it refused.
+ *
+ * Rows already claimed by another slip's stored decision are left out, because the partial
+ * unique index makes that write fail (`statement row already claimed by another slip`) and
+ * offering a choice the database will refuse is worse than not offering it. A row the automatic
+ * rule paired with some other slip **is** offered: taking it is a legitimate overrule, the
+ * database permits it, and the slip that loses it falls back to a visible provisional row
+ * rather than disappearing.
+ *
+ * Returns **every** eligible row rather than a capped best few. These are shown as rows of the
+ * ledger's own table, where a row describes itself — the same amount, the same day and the same
+ * wording is what candidates look like on a real statement, and only the printed time and the
+ * running balance tell them apart (D-069). A capped list existed while they were options in a
+ * dropdown, which could not carry either.
+ *
+ * Nearest in date first, because that is the likeliest answer, and the ordering is total —
+ * date, then id — so a caller that does not re-sort gets a stable list.
+ */
+export function matchCandidates(
+  slip: CapturedSlip,
+  transactions: readonly AccountTransaction[],
+  accounts: readonly LedgerAccount[],
+  decisions: readonly SlipMatchDecision[] = []
+): AccountTransaction[] {
+  const bankByAccount = new Map(accounts.map((account) => [account.id, account.bank_code]));
+  const claimed = new Set(
+    decisions
+      .filter((decision) => decision.slip_id !== slip.id && decision.transaction_id !== null)
+      .map((decision) => decision.transaction_id!)
+  );
+  const slipDay = dayNumber(slip.occurred_on);
+  const amount = BigInt(slip.amount_minor);
+
+  const eligible = transactions.filter((transaction) => {
+    if (claimed.has(transaction.id)) return false;
+    if (bankByAccount.get(transaction.account_id) !== slip.bank_code) return false;
+    return BigInt(movementMinor(transaction)) === amount;
+  });
+
+  eligible.sort((a, b) => {
+    const byDistance = Math.abs(dayNumber(a.source_date) - slipDay) - Math.abs(dayNumber(b.source_date) - slipDay);
+    if (byDistance !== 0) return byDistance;
+    if (a.source_date !== b.source_date) return a.source_date < b.source_date ? 1 : -1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+
+  return eligible;
 }
 
 /**

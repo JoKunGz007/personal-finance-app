@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LedgerAccount } from "@/lib/accounts";
-import type { CapturedSlip } from "@/lib/slips";
+import { slipMatchRequestSchema, type CapturedSlip } from "@/lib/slips";
 import type { AccountTransaction, LedgerTransaction } from "@/lib/transactions";
 import {
   MATCH_WINDOW_DAYS,
   compareRows,
+  matchCandidates,
   proposeSlipMatches,
   reconcileLedger,
   slipAccount,
@@ -360,5 +361,103 @@ describe("totals over a reconciled ledger", () => {
 
   it("is empty and zero for an empty ledger rather than failing", () => {
     expect(summarizeRows([])).toEqual({ rows: 0, deposits: "0", withdrawals: "0", net: "0", provisional: 0 });
+  });
+});
+
+describe("the rows an owner may pair a slip with by hand", () => {
+  // The candidate list behind the override control (D-067). It is deliberately *not* the
+  // automatic rule's candidate set: it re-checks the two facts `set_slip_match` re-checks
+  // server-side, and drops the date window entirely, because reaching past that window is the
+  // whole reason an override exists.
+  it("offers a row the automatic window refused", () => {
+    const distant = row({ source_date: "2026-05-02" });
+    expect(proposeSlipMatches([distant], [slip()], ACCOUNTS).bySlip.size).toBe(0);
+    expect(matchCandidates(slip(), [distant], ACCOUNTS).map((candidate) => candidate.id)).toEqual([distant.id]);
+  });
+
+  it("offers nothing at another bank or another amount, because the database would refuse it", () => {
+    // The two guards `set_slip_match` enforces. Offering a choice the RPC then rejects would
+    // teach the owner that the control is unreliable, and the refusal it earns is the one
+    // D-067 called the conservative end: a mismatched pairing takes a real payment off the
+    // ledger with no audit row that makes the loss visible.
+    const elsewhere = row({ id: "bbbbbbbb-0000-4000-8000-000000000009", account_id: SCB_ACCOUNT.id });
+    const different = row({
+      id: "bbbbbbbb-0000-4000-8000-00000000000a",
+      source_components: [{ id: "cccccccc-0000-4000-8000-00000000000a", kind: "withdrawal", amount_minor: "-9001", currency: "THB" }]
+    });
+    expect(matchCandidates(slip(), [elsewhere, different], ACCOUNTS)).toEqual([]);
+  });
+
+  it("leaves out a row another slip's stored decision already claims, and keeps one the rule merely paired", () => {
+    const claimed = row({ id: "bbbbbbbb-0000-4000-8000-00000000000b" });
+    const free = row({ id: "bbbbbbbb-0000-4000-8000-00000000000c" });
+    const other = slip({ id: "dddddddd-0000-4000-8000-00000000000b", slip_reference: "A00000000000000004" });
+    const candidates = matchCandidates(slip(), [claimed, free], ACCOUNTS, [
+      { slip_id: other.id, decision: "matched", transaction_id: claimed.id, revision: 1 }
+    ]);
+    // The partial unique index would refuse the claimed one (`statement row already claimed`).
+    // The other is offered: taking a row the rule paired is a legitimate overrule, and the slip
+    // that loses it becomes a visible provisional row rather than disappearing.
+    expect(candidates.map((candidate) => candidate.id)).toEqual([free.id]);
+  });
+
+  it("keeps the slip's own decision from hiding the row it already names", () => {
+    // Otherwise a decided slip could never be re-pointed at the row it is on, since its own
+    // claim would exclude it — and the control would silently offer one row fewer than exists.
+    const claimed = row({ id: "bbbbbbbb-0000-4000-8000-00000000000d" });
+    const candidates = matchCandidates(slip(), [claimed], ACCOUNTS, [
+      { slip_id: slip().id, decision: "matched", transaction_id: claimed.id, revision: 2 }
+    ]);
+    expect(candidates.map((candidate) => candidate.id)).toEqual([claimed.id]);
+  });
+
+  it("puts the nearest date first and orders the rest without ties", () => {
+    const near = row({ id: "bbbbbbbb-0000-4000-8000-00000000000e", source_date: "2026-06-11" });
+    const far = row({ id: "bbbbbbbb-0000-4000-8000-00000000000f", source_date: "2026-04-01" });
+    const exact = row({ id: "bbbbbbbb-0000-4000-8000-000000000010", source_date: "2026-06-10" });
+    const forward = matchCandidates(slip(), [far, near, exact], ACCOUNTS).map((candidate) => candidate.id);
+    const reversed = matchCandidates(slip(), [exact, near, far], ACCOUNTS).map((candidate) => candidate.id);
+    expect(forward).toEqual([exact.id, near.id, far.id]);
+    // Order-independent, like every other result here. The ledger view re-sorts these into its
+    // own order because they are shown as rows (D-069), so this is a property of the function
+    // rather than of the screen — but a function that returned them in input order would make
+    // any caller that does *not* re-sort quietly non-deterministic.
+    expect(reversed).toEqual(forward);
+  });
+
+  it("returns every eligible row, however many share the amount", () => {
+    // Bank plus exact amount is not selective on a round figure — a monthly transfer of the
+    // same amount produces one candidate per month. They are shown as rows of the table, which
+    // has no length problem, so none is withheld: a cap that hid the right row would be worse
+    // than a long list, and the owner is choosing among records rather than reading a menu.
+    const many = Array.from({ length: 40 }, (_, index) =>
+      row({ id: `bbbbbbbb-0000-4000-8000-0000000${String(index).padStart(5, "1")}`, source_date: "2026-03-01" }));
+    expect(matchCandidates(slip(), many, ACCOUNTS)).toHaveLength(40);
+  });
+});
+
+describe("the write contract for a match decision", () => {
+  const request = { expectedRevision: 0, decision: "matched" as const, transactionId: "bbbbbbbb-0000-4000-8000-000000000001" };
+
+  it("requires the row to travel with the decision, in both directions", () => {
+    // The table's CHECK and the RPC both require this; refusing it here means the form gets a
+    // message it can show rather than a translated database error.
+    expect(slipMatchRequestSchema.safeParse(request).success).toBe(true);
+    expect(slipMatchRequestSchema.safeParse({ ...request, transactionId: null }).success).toBe(false);
+    expect(slipMatchRequestSchema.safeParse({ expectedRevision: 1, decision: "unmatched", transactionId: null }).success).toBe(true);
+    expect(slipMatchRequestSchema.safeParse({ expectedRevision: 1, decision: "unmatched", transactionId: request.transactionId }).success).toBe(false);
+  });
+
+  it("refuses a decision the database has no vocabulary for, and a revision that is not one", () => {
+    expect(slipMatchRequestSchema.safeParse({ ...request, decision: "probably" }).success).toBe(false);
+    expect(slipMatchRequestSchema.safeParse({ ...request, expectedRevision: -1 }).success).toBe(false);
+    expect(slipMatchRequestSchema.safeParse({ ...request, expectedRevision: 1.5 }).success).toBe(false);
+    expect(slipMatchRequestSchema.safeParse({ ...request, transactionId: "not-a-uuid" }).success).toBe(false);
+  });
+
+  it("refuses an unknown field rather than dropping it", () => {
+    // Same reason the capture contract is strict: a client sending `slipId` in the body
+    // believes it is naming the slip, and the route takes that from the path.
+    expect(slipMatchRequestSchema.safeParse({ ...request, slipId: "dddddddd-0000-4000-8000-000000000001" }).success).toBe(false);
   });
 });

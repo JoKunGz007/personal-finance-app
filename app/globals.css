@@ -254,6 +254,26 @@ footer p { margin: 0; }
 .status-chip.needs-review { color: var(--red); }
 .status-none { color: var(--muted); }
 
+/* The owner's say over a match, on the row it is about (D-067). Deliberately quiet: a match is
+   the rule's proposal almost every time, and a control that shouted would make the three
+   statuses that mean something harder to find. The button keeps the standard hit area — this
+   writes a stored, audited decision, not a display preference. */
+.decision-mark { display: block; margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.match-control { margin: 8px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.match-control .secondary-button, .match-control .primary-button { min-height: 36px; padding: 7px 13px; font-size: 12px; }
+.match-control small { flex-basis: 100%; color: var(--muted); font-size: 11px; }
+/* A candidate row that is already someone else's. Not a refusal — the write is allowed — so it
+   reads as a consequence rather than an error, but it is words rather than the green edge. */
+.decision-mark.warn { color: var(--red); }
+
+/* Choosing a statement row for a slip (D-069). The table becomes the chooser, so this band has
+   to say plainly that what is on screen is no longer the ledger — hence the saffron rule the
+   provisional rows already use for "not settled yet", and the totals disappearing above it. */
+.matching-banner { margin: 26px 0 0; padding: 16px 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border: 1px solid var(--saffron); border-left-width: 3px; border-radius: var(--radius); background: color-mix(in srgb, var(--saffron-wash) 55%, transparent); }
+.matching-banner strong { display: block; color: var(--navy); font: 500 10px/1.6 var(--font-data); text-transform: uppercase; letter-spacing: .07em; }
+.matching-banner span { display: block; margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.matching-banner .secondary-button { flex-shrink: 0; min-height: 38px; padding: 8px 15px; font-size: 12px; }
+
 .detail-dialog { width: min(680px, calc(100% - 32px)); max-height: calc(100vh - 48px); padding: 0; color: var(--navy); border: 1px solid var(--navy); border-radius: var(--radius); background: var(--paper); }
 .detail-dialog::backdrop { background: color-mix(in srgb, var(--navy) 65%, transparent); }
 .detail-dialog > div { padding: 28px; }

@@ -738,6 +738,126 @@ test("keeps a slip with no matching row as its own provisional entry, counted in
   await expect(ledger.getByText(/hidden while one account is selected/)).toBeVisible();
 });
 
+test("lets the owner overrule a match and put it back, and stores every decision", async ({ page }) => {
+  // The second half of PLAN task 22 (migration 012, D-067), which shipped as an RPC with no
+  // route and no UI — the same shape of gap as D-063, where a write path had no read path and
+  // it took the owner using the app to find it. This is that path driven end to end: the
+  // decision is made in the browser, stored by `set_slip_match`, and reconciled against on the
+  // next render, with the ledger's own totals following it.
+  await signIn(page, "/slips");
+  await captureSlip(page, { slip: KTB_SLIP, amount: "500.00", date: "2026-01-09", counterparty: "Browser synthetic payee" });
+
+  await page.goto("/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 30_000 });
+
+  // The rule paired these two. The owner disagrees, and that is the whole feature.
+  await ledger.locator("tr.verified-row").getByRole("button", { name: /^Not this slip/u }).click();
+
+  // Five rows again: the pair is two records, the slip is visible rather than absorbed, and
+  // the totals count it as money that moved but not yet confirmed.
+  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 15_000 });
+  await expect(ledger.locator("tr.verified-row")).toHaveCount(0);
+  const provisional = ledger.locator("tr.provisional-row");
+  await expect(provisional).toHaveCount(1);
+  // Said in words, because "no statement has arrived" and "you decided this is on none of
+  // them" are the same picture otherwise, and only one of them is take-back-able.
+  await expect(provisional.getByText("Your decision · on no statement row")).toBeVisible();
+  await expect(ledger.locator(".ledger-strip dd").first()).toContainText("1 provisional");
+
+  // Stored, audited and revisioned — not merely on screen.
+  const owner = ownerId();
+  expect(psql(`select decision from public.slip_match_overlays where owner_id = '${owner}';`).output.trim()).toBe("unmatched");
+  expect(psql(`select count(*) from public.audit_events
+    where owner_id = '${owner}' and event_type = 'slip.match.unmatched';`).output.trim()).toBe("1");
+
+  // Both controls sit inside a table cell and are labelled per row rather than by a heading,
+  // so they are checked where they are: a select whose only visible text is its options, and a
+  // button whose four words repeat down the column, are exactly what an accessible name has to
+  // carry. This is the only automatic coverage they have — the axe pass in the isolated suite
+  // runs against a ledger nobody has loaded, where neither control exists.
+  expect((await new AxeBuilder({ page }).include("section.ledger-band").analyze()).violations).toEqual([]);
+
+  // And it goes back, by choosing the row rather than picking its name out of a list (D-069).
+  // The table becomes the chooser: it shows the slip and only the rows that could be it — bank
+  // and exact amount, not the automatic date window, which is what lets an override reach a row
+  // the rule refused.
+  await provisional.getByRole("button", { name: /Choose a statement row/u }).click();
+  await expect(ledger.getByText("Choosing a statement row")).toBeVisible();
+  // Focus follows the mode. The button that opened it disables itself in the same update, and a
+  // browser blurs a disabled element — so without this a keyboard user lands on <body>, hears
+  // the announcement, and has nowhere to be. axe cannot see this; only a focus assertion can.
+  await expect(ledger.getByRole("button", { name: "Cancel" })).toBeFocused();
+  // Two rows on screen: the slip, and the one row of that amount. The totals are gone, because
+  // a subtotal of a slip and its candidates is not a figure about anything.
+  await expect(ledger.locator("tbody tr")).toHaveCount(2);
+  await expect(ledger.locator(".ledger-strip")).toHaveCount(0);
+  // The filters cannot be used to hide the answer while the question is being asked.
+  await expect(ledger.getByLabel("Status")).toBeDisabled();
+
+  // Located by the row it sits in, not by the button's own words — every candidate's button
+  // says the same thing, which is the point: the row is what identifies it, and the accessible
+  // name carries the time and balance that distinguish this one.
+  await ledger.locator("tr:not(.provisional-row)").getByRole("button", { name: /^This is it/u }).click();
+
+  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 15_000 });
+  const verified = ledger.locator("tr.verified-row");
+  await expect(verified).toHaveCount(1);
+  await expect(verified.getByText("Your match")).toBeVisible();
+  await expect(ledger.locator(".ledger-strip dd").first()).toHaveText("4");
+
+  // Two decisions about one slip, one current row and two revisions of it: the current value
+  // is mutable and the history is not, which is why this is an overlay pair and not a column.
+  expect(psql(`select decision from public.slip_match_overlays where owner_id = '${owner}';`).output.trim()).toBe("matched");
+  expect(psql(`select count(*) from public.slip_match_revisions where owner_id = '${owner}';`).output.trim()).toBe("2");
+
+  expect((await new AxeBuilder({ page }).include("section.ledger-band").analyze()).violations).toEqual([]);
+});
+
+test("says a statement row is already another slip's before letting this one take it", async ({ page }) => {
+  // `matchCandidates` offers a row the rule paired with some *other* slip, deliberately: taking
+  // it is a legitimate overrule and the database accepts it. What must not happen is taking it
+  // without being told — the losing slip drops back to provisional, and the only cue left would
+  // be a green edge, which is colour alone.
+  await signIn(page, "/slips");
+  // Both 500.00 at Krungthai. Only the 09 Jan one is on the row's own day, so the rule pairs
+  // that and leaves the other provisional — which is the shape where this can happen at all.
+  await captureSlip(page, { slip: KTB_SLIP, amount: "500.00", date: "2026-01-09", counterparty: "Browser synthetic payee" });
+  await captureSlip(page, { slip: KTB_SLIP_DATED, amount: "500.00", date: "2026-01-05", counterparty: "Browser synthetic other" });
+
+  await page.goto("/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tr.verified-row")).toHaveCount(1);
+
+  await ledger.locator("tr.provisional-row").getByRole("button", { name: /Choose a statement row/u }).click();
+
+  // The candidate keeps its status and gains the consequence in words.
+  const candidate = ledger.locator("tr:not(.provisional-row)");
+  await expect(candidate.getByText("Verified by slip")).toBeVisible();
+  await expect(candidate.getByText(/Already matched to the .+ slip/u)).toBeVisible();
+  await expect(candidate.getByText(/unmatches that one/u)).toBeVisible();
+
+  await candidate.getByRole("button", { name: /^This is it/u }).click();
+
+  // The swap happened and is visible from both sides: the row is now the owner's match, and the
+  // slip that lost it is back as its own provisional row rather than gone.
+  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 15_000 });
+  await expect(ledger.locator("tr.verified-row").getByText("Your match")).toBeVisible();
+  await expect(ledger.locator("tr.provisional-row").getByText("Browser synthetic payee")).toBeVisible();
+
+  const owner = ownerId();
+  expect(psql(`select count(*) from public.slip_match_overlays where owner_id = '${owner}';`).output.trim()).toBe("1");
+});
+
 test("slip capture has no automatically detectable accessibility violations", async ({ page }) => {
   await signIn(page, "/slips");
   await chooseSlipImage(page);

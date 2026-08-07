@@ -174,6 +174,12 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
   const accounts = accountIds.map((id) => `'${id}'`).join(",");
   return psql(`
     set session_replication_role = replica;
+    -- Before the slips they reference. Replica session_replication_role disables the FK
+    -- triggers as well as the append-only ones, so deleting slips first would leave decisions
+    -- pointing at rows that no longer exist rather than failing — silently, and only visible
+    -- later as a slip that arrives already decided (migration 012).
+    delete from public.slip_match_revisions where owner_id = '${owner}';
+    delete from public.slip_match_overlays where owner_id = '${owner}';
     delete from public.slips where owner_id = '${owner}';
     delete from public.import_batch_rows where owner_id = '${owner}';
     delete from public.source_components where owner_id = '${owner}';

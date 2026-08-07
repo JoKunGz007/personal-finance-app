@@ -256,10 +256,29 @@ describe("captured slips in the ledger view", () => {
   });
 
   it("accepts the shape GET /api/v1/slips returns, and rejects an unknown column", () => {
-    expect(slipListSchema.safeParse({ slips: [slip()] }).success).toBe(true);
+    expect(slipListSchema.safeParse({ slips: [slip()], matches: [] }).success).toBe(true);
     // Strict, so a migration adding a column fails here loudly rather than being ignored.
-    expect(slipListSchema.safeParse({ slips: [{ ...slip(), reconciled_transaction_id: null }] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [{ ...slip(), reconciled_transaction_id: null }], matches: [] }).success).toBe(false);
     // Money must arrive as canonical text; a JSON number is the one way a float could enter.
-    expect(slipListSchema.safeParse({ slips: [{ ...slip(), amount_minor: -25000 }] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [{ ...slip(), amount_minor: -25000 }], matches: [] }).success).toBe(false);
+  });
+
+  it("requires the stored decisions to arrive with the slips rather than separately", () => {
+    // The two are one response on purpose (D-067): slips arriving without their decisions would
+    // show a pairing the owner has already overruled and call it the rule's. A response missing
+    // the key is a contract failure, not an empty list.
+    expect(slipListSchema.safeParse({ slips: [] }).success).toBe(false);
+    const decision = {
+      slip_id: "33333333-3333-4333-8333-333333333333",
+      decision: "matched",
+      transaction_id: "44444444-4444-4444-8444-444444444444",
+      revision: 1
+    };
+    expect(slipListSchema.safeParse({ slips: [slip()], matches: [decision] }).success).toBe(true);
+    // `unmatched` carries no row, and a vocabulary this schema does not know is not a decision.
+    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, decision: "unmatched", transaction_id: null }] }).success).toBe(true);
+    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, decision: "maybe" }] }).success).toBe(false);
+    // The owner id and timestamp the table also holds are not part of the published shape.
+    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, owner_id: "x" }] }).success).toBe(false);
   });
 });
