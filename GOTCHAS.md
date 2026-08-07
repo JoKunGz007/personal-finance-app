@@ -519,6 +519,14 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Related trap in the same shape: the warning cited printed row numbers (206–209) that no screen displays, so even once rendered it could not be checked against the table. It now names the date and points at the balance column, which is what the owner can actually read.
 - Verify: 2026-07-29. Reproduced by loading `KRUNGTHAI-01` and searching the review page for "reordered" — 0 matches before the fix, 2 after (banner and badge), with the badged row being the interest posting printed first on its date and applied last.
 
+## A stopped Docker makes the browser gate print all 18 test names and exit 0 without running one
+
+- Symptom: `playwright test --config=playwright.owner.config.ts` lists every spec by name, `[1/18]` through `[18/18]`, finishes in seconds, and exits **0**. The only difference from a passing run is the last line: `18 skipped` rather than `18 passed`.
+- Cause: `owner-session.spec.ts` calls `containerReachable()` at module scope and `test.skip()`s the whole file when the local Supabase container does not answer — correct behaviour, so the spec is harmless under a config that should not pick it up. When Docker Desktop has stopped, *nothing* answers, so the entire suite skips. The line reporter still enumerates the collected tests, which is what makes the output read like a full run.
+- Note why this is worse than the Vitest version of the same trap: an exit code of 0 and eighteen green-looking lines defeat both of the usual checks. Reading "the counts, not the colour" only helps if the count read is `passed` and not the numeral beside it.
+- Avoid: read the final word, not the tally. Before trusting any browser-gate result, confirm the daemon answers — `docker ps` failing with `failed to connect to the docker API at npipe:…` is the tell — and remember that Docker Desktop has stopped on this machine repeatedly. After restarting it, wait for the `supabase_db_…` containers to leave `health: starting`, and expect `auth` to lag the database by a few seconds.
+- Verify: 2026-08-05. The owner suite reported `18 skipped` at exit 0 while `docker ps` could not reach the daemon; after restarting Docker Desktop and waiting for health, the identical command reported `18 passed (1.7m)`.
+
 ## Restarting the Supabase database container breaks every host connection until its dependants restart too
 
 - Symptom: `supabase test db`, `supabase migration list --local` and every other CLI command that talks to the database fail with `LegacyDbConnectError: failed to connect to postgres`, while `docker exec supabase_db_… psql -U postgres` works, the container reports `(healthy)`, and `Test-NetConnection 127.0.0.1 -Port 54322` returns `True`. Later, a browser suite fails at sign-in with `Sign-in failed: fetch failed` and a Vitest recovery test dies with `UND_ERR_SOCKET: other side closed` against the recovery project's API port.
@@ -608,6 +616,34 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Cause: `tests/e2e/owner-session.spec.ts` calls `resetOwnerImportSurface` in `beforeEach` **and** `afterAll`, which deletes the seeded owner's slips, transactions, batches and artifacts. That is correct — a suite that left rows behind would fail its own next run on their fingerprints — but the owner drives the app as that same seeded owner in that same project, so hand-made data is inside the blast radius.
 - Avoid: treat anything you create by hand in `private-ledger-local` as disposable, and re-create it after a gate run. Do not reach for the live project instead to keep it — since 2026-08-05 it does have a `slips` table (D-065), which makes this *more* dangerous rather than less: a slip captured there is a real mutation of real records, it is append-only and cannot be deleted, and it invalidates the standing backup by bumping the mutation sequence. If a hand-captured state must survive a test run, note what it was and re-enter it; there is no fixture path for it by design, since fixtures are invented.
 - Verify: 2026-07-31. `public.slips` held 1 row captured through the UI; after `playwright.owner.config.ts` ran, the same query returned 0, alongside 0 transactions and the 3 seeded accounts.
+
+## A replica-mode wipe deletes parent rows without complaining about their children
+
+- Symptom: nothing at all, for as long as it takes to matter. Later, a slip appears in a fresh run already carrying a decision nobody made, or a restore into an apparently empty ledger refuses with `restore destination ledger is not empty`.
+- Cause: `resetOwnerImportSurface` and the mid-test wipes run under `session_replication_role = replica`, which is there to get past the append-only triggers — but it disables **foreign-key** triggers too. Deleting `public.slips` while `public.slip_match_overlays` still references it therefore succeeds and orphans the children, where the same delete in ordinary mode would have failed loudly and told you exactly which table you forgot. The gap arrived with migration 012 and could not surface until something wrote a decision from a test.
+- Avoid: when a migration adds a table referencing an existing one, add its delete to every wipe **above** the parent's, in child-first order, in the same change as the migration. Do not rely on the delete failing to remind you — under replica mode it cannot. `restore_backup`'s emptiness check is the other half of the cost: it counts every owner-record table, including ones a wipe forgot.
+- Verify: 2026-08-07. `tests/helpers/local-owner.ts` now deletes `slip_match_revisions` then `slip_match_overlays` then `slips`; `tests/slip-match-route.test.ts` writes decisions and leaves none behind, and the owner browser suite passes 19/19 with the restore specs running after it in the same file.
+
+## An axe pass on a route that loads nothing proves nothing about what the route renders
+
+- Symptom: an accessibility gate reports a clean pass on `/ledger` while a control added to every row of the ledger table has never been examined by it.
+- Cause: `tests/e2e/ledger.spec.ts` visits each route and analyses it as delivered. This app loads nothing until asked (`PLAN.md` task 17), so the ledger it checks has no table, no rows, and none of the per-row controls — and a per-row control is precisely where an accessible name is most likely to be missing or duplicated down a column.
+- Avoid: read the isolated suite's axe rows as covering the *shell* of a route. Anything behind a load button needs its own axe call in the owner suite, where a session and real rows exist — one per state, since a table that shows a matched row and one that shows a provisional row have different controls on them.
+- Verify: 2026-08-07. Two `AxeBuilder` passes scoped to `section.ledger-band` inside the D-068 spec, one after the undo and one after the re-match, both clean; the isolated suite's 18/18 is unchanged by controls it never sees.
+
+## An `aria-label` replaces a button's words rather than adding to them, and axe says nothing
+
+- Symptom: a Playwright locator asking for a button by the words printed on it times out, and the button is plainly there in the trace. It reads as a bad selector.
+- Cause: `aria-label` **overrides** the visible text as the accessible name. A button reading `Not this slip` labelled `This slip is not the row dated 10 Jun 2026` has an accessible name that does not contain its own words, so `getByRole("button", { name: "Not this slip" })` cannot match. The real cost is not the test: it breaks WCAG 2.5.3 (label in name), so a voice-control user saying what is written on the button reaches nothing. axe passes it — the element *has* a name, and axe cannot know the name is not the one on screen.
+- Avoid: when a repeated control needs a per-row name, **start the label with the visible text** and append the distinguishing detail — `This is it — 10 Jun 2026 at 11:05, balance ฿7,850.00`. Locate it in tests by an anchored prefix on the visible words, and by the row it sits in for the rest.
+- Verify: 2026-08-07. Both D-069 controls relabelled; the spec locates them by `/^Not this slip/` and `/^This is it/` and passes, with the two axe passes over the loaded ledger still clean — which is the point: axe was clean before the fix too.
+
+## A control that disables itself takes the focus with it
+
+- Symptom: activating a button by keyboard appears to work — the mode changes, the live region announces it — but the next Tab starts from the top of the document. Nothing is reported by axe, and every text assertion in the suite passes.
+- Cause: a browser blurs an element that becomes `disabled`, and focus falls to `<body>`. Any control whose own click disables it does this: `onClick={() => setMatching(id)}` on a button whose `disabled` prop reads the same state. An `aria-live` announcement does **not** restore a position in the tab order — it says what happened and leaves the user nowhere.
+- Avoid: when an interaction replaces the controls on screen, move focus deliberately to a control that is certainly present in the new state — the way out of the mode is usually the right one. A `ref` plus a `useEffect` on the mode flag is enough. Assert it: `await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused()`.
+- Verify: 2026-08-07. `app/transactions-view.tsx` focuses the picking mode's `Cancel`; `tests/e2e/owner-session.spec.ts` asserts it. Found by review, not by the suite — the axe passes over that exact screen were green before and after.
 
 ## A rediscovered trap is not a new one — check before adding an entry
 
