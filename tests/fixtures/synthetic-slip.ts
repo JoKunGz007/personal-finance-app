@@ -6,11 +6,12 @@ import { buildSlipQrPayload } from "@/lib/slip-qr";
 // **actual decoder** instead of stubbing `BarcodeDetector` and proving only the wiring.
 //
 // Every payload is built by `buildSlipQrPayload`, which keeps the grammar real without a
-// real *payload* ever being pasted in. The references are supposed to be invented too, and
-// **`KTB_SLIP_DATED` below is not** — it was copied from a real slip while writing D-059's
-// tests. That breaks `docs/FIXTURE_POLICY.md`'s central rule and is left visible here
-// rather than quietly corrected, because the policy is only worth anything if a breach of
-// it is legible (D-060).
+// real *payload* ever being pasted in. The references are invented, including
+// `KTB_SLIP_DATED` below — which **was** a real one, copied from a slip while writing
+// D-059's tests, left visible for a week under D-060 because a breach of
+// `docs/FIXTURE_POLICY.md` is only useful if it is legible, and replaced on 2026-08-09
+// (D-077). What a shape has to preserve is the *grammar*, not the digits: the leading
+// letter, the eight-digit date, and the twelve digits after it.
 //
 // Note what this does and does not establish. It proves the app's decoder reads a
 // well-formed QR of this grammar end to end. It does not reproduce a phone camera's
@@ -22,8 +23,9 @@ export type SlipFixture = { bankQrCode: string; reference: string };
 export const SCB_SLIP: SlipFixture = { bankQrCode: "014", reference: "202601010000000000000009z" };
 export const KTB_SLIP: SlipFixture = { bankQrCode: "006", reference: "A0000000000000042" };
 // Krungthai's 21-character variant, which puts a date after its leading letter where the
-// 17-character one above carries none (D-059). **This one is a real reference** (D-060).
-export const KTB_SLIP_DATED: SlipFixture = { bankQrCode: "006", reference: "C20260715619612956197" };
+// 17-character one above carries none (D-059). Invented, and the date in it is invented
+// too — a real slip's date is a real value even when its digits are not money (D-077).
+export const KTB_SLIP_DATED: SlipFixture = { bankQrCode: "006", reference: "C20260401000000000123" };
 export const KBANK_SLIP: SlipFixture = { bankQrCode: "004", reference: "00000000000000000042" };
 
 /**

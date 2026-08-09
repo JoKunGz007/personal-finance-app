@@ -830,6 +830,16 @@ Entries are append-only. A superseding decision must reference the earlier entry
 - **The general rule, which is why this is a decision and not a bug fix:** a status line that mixes measured values with module constants reads as one claim and is two. Where a sentence describes an artifact, every figure in it must come from that artifact. The same shape has bitten this repo before from the other direction — a source-grep test that kept passing after the thing it named became false (`GOTCHAS.md`).
 - Evidence: `lib/backup-contract.ts` (`describeBackupSnapshot`), `app/recovery-bench.tsx`, `tests/backup.test.ts` — the new test asserts a v3 snapshot is described as twelve tables at version 3 **and explicitly not as the newest list's length**, which is the assertion that fails against the old code.
 
+## D-077 — The three real slip references are gone from the working tree, and so is the real date inside one
+
+- Date: 2026-08-09
+- Status: Accepted and done. Closes the standing violation D-060 recorded on 2026-07-31 and left visible on purpose.
+- **What was wrong.** Three references in `tests/` were copied from real slips while writing the D-059 date tests: Krungthai's dated 21-character variant, Krungthai's undated 17-character one, and a KBANK one. `docs/FIXTURE_POLICY.md` says fixtures are invented; these were not. D-060 chose to record the breach rather than quietly fix it, on the grounds that a policy is only worth something if a breach of it is legible — and the fix then waited a week, which is the cost of that choice.
+- **A fourth value nobody had counted.** The dated Krungthai reference embeds a **real slip's transaction date**, which the test asserted as an expected value. A date is a real value even when its digits are not money, so the replacement invents the date too and the browser spec now **derives** the expected date from the fixture instead of writing it out — a hard-coded date beside an invented reference would have quietly re-introduced the same problem at the next edit.
+- **What "same shape" had to mean.** Each replacement preserves the grammar the test exercises, not the digits: the leading letter and eight-digit date of the 21-character variant, the letter-plus-sixteen-hex of the 17-character one, and the digits-then-letters block of the KBANK one. The hex case is the sharpest — from its second character it *is* eight digits, so it reaches the date parser and must be refused on the calendar rather than on the shape, which an invented value has to keep true.
+- **What this does not undo.** The originals are in the git history and on GitHub, permanently; nothing in this entry changes that. What changes is that the working tree stops breaching the policy, every future clone and fork carries invented values, and the next person editing these files is not shown a real reference as an example of what a fixture looks like.
+- Evidence: `tests/fixtures/synthetic-slip.ts`, `tests/slips.test.ts`, `tests/e2e/owner-session.spec.ts`; a repository-wide search for all three originals now returns nothing outside `.git`.
+
 ## D-076 — The statements are reimportable, so a backup protects the typed layer rather than the ledger
 
 - Date: 2026-08-09

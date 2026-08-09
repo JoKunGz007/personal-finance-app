@@ -90,9 +90,11 @@ describe("date carried in the QR reference", () => {
   // 21-character variant after one letter, and Krungthai's 17-character variant and KBANK
   // carry none.
   //
-  // **Three of the references below are real, not invented** — the Krungthai dated and
-  // undated ones and the KBANK one were copied from sample slips while writing these tests,
-  // which breaks `docs/FIXTURE_POLICY.md`. Recorded in D-060 rather than hidden.
+  // Three of the references here **were** real, copied from sample slips while writing these
+  // tests and left visible under D-060 because a breach of `docs/FIXTURE_POLICY.md` is only
+  // useful if it is legible. Replaced with invented values on 2026-08-09 (D-077). Each keeps
+  // the *grammar* that makes the test meaningful — leading letter, hex run, digit-then-letter
+  // block — and none keeps a digit from a real slip.
   const window = slipDateWindow(new Date("2026-07-31T00:00:00Z"));
 
   it("reads the date SCB puts at the start of its reference", () => {
@@ -100,14 +102,16 @@ describe("date carried in the QR reference", () => {
   });
 
   it("reads the date Krungthai puts after its leading letter", () => {
-    expect(slipDateFromReference("C20260715619612956197", window)).toBe("2026-07-15");
+    expect(slipDateFromReference("C20260401000000000123", window)).toBe("2026-04-01");
   });
 
   it("returns nothing for the reference shapes that carry no date", () => {
     // Krungthai's 17-character hex variant and a KBANK reference. Both must fail rather than
-    // find a date in unrelated digits — a wrong pre-filled date is worse than none.
-    expect(slipDateFromReference("A7856f4b340b94a3d", window)).toBeNull();
-    expect(slipDateFromReference("016205113859AOR04880", window)).toBeNull();
+    // find a date in unrelated digits — a wrong pre-filled date is worse than none. The hex
+    // one is the sharper case: its second character onward *is* eight digits, so it reaches
+    // the date parser and has to be refused on the calendar rather than on the shape.
+    expect(slipDateFromReference("A0123456789abcdef", window)).toBeNull();
+    expect(slipDateFromReference("000000000000AOR00001", window)).toBeNull();
   });
 
   it("refuses digits that are date-shaped but not a real date", () => {
