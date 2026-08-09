@@ -266,6 +266,17 @@ footer p { margin: 0; }
    reads as a consequence rather than an error, but it is words rather than the green edge. */
 .decision-mark.warn { color: var(--red); }
 
+/* The slip behind a verified row (D-075). A matched pair is one row, so the slip has nowhere
+   else to be seen — this is where "verified by slip" stops being something to take on trust. */
+.pair-detail > td { padding: 4px 0 18px; background: color-mix(in srgb, var(--celadon) 16%, transparent); }
+.pair-detail dl { margin: 0; padding: 0 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px 22px; }
+.pair-detail dt { color: var(--muted); font-size: 11px; }
+.pair-detail dd { margin: 3px 0 0; color: var(--navy); font: 500 13px/1.4 var(--font-data); overflow-wrap: anywhere; }
+.pair-detail p { margin: 14px 0 0; padding: 0 20px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+
+/* Captured slips, listed on the page that captures them (D-075). */
+.captured-slips { padding: 44px 0 12px; border-top: 1px solid var(--line); }
+
 /* Choosing a statement row for a slip (D-069). The table becomes the chooser, so this band has
    to say plainly that what is on screen is no longer the ledger — hence the saffron rule the
    provisional rows already use for "not settled yet", and the totals disappearing above it. */

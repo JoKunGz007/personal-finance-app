@@ -557,6 +557,25 @@ test("captures a slip from its QR and stores it as a provisional entry", async (
   // Provisional means provisional: nothing was written to the authoritative ledger.
   const authoritative = psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`);
   expect(authoritative.output.trim()).toContain("0");
+
+  // The capture route now keeps a record of what it captured (D-075). Before this, the form
+  // cleared itself and left nothing on the page, so a real capture read as "nothing happened"
+  // — the owner found that by doing it, which is how D-062 was found too.
+  const captured = page.locator(".captured-slips");
+  await captured.getByRole("button", { name: "Show captured slips" }).click();
+  await expect(captured.getByText(SLIP_REFERENCE)).toBeVisible();
+  await expect(captured.getByText("Browser synthetic payee")).toBeVisible();
+
+  // And a second capture refreshes it without being asked again: the list exists to answer
+  // "did that land", so it must not answer for the capture before last.
+  // No Discard first: a successful capture resets the form, so that button is gone. Clicking a
+  // locator that will never resolve does not fail fast — it burns the whole test timeout and
+  // then reports the *next* action as the failure.
+  await chooseSlipImage(page, KTB_SLIP);
+  await bench.getByLabel("Amount (THB)").fill("500.00");
+  await bench.getByLabel("Date", { exact: true }).fill("2026-01-09");
+  await bench.getByRole("button", { name: "Capture slip" }).click();
+  await expect(captured.locator("tbody tr")).toHaveCount(2, { timeout: 15_000 });
 });
 
 test("reads a slip from each supported bank, not just the one layout", async ({ page }) => {
@@ -691,6 +710,16 @@ test("collapses a slip onto the statement row it matches, and counts the payment
   // owner typed, which the bank's own description does not carry.
   await expect(verified.locator('td[data-label="Account balance"]')).toHaveText(formatThb("1024950"));
   await expect(verified.getByText("Browser synthetic payee (from slip)")).toBeVisible();
+
+  // The pair collapsed onto the statement row, so the slip is on screen nowhere until this is
+  // opened — and "verified" would be something the owner could only take on trust (D-075).
+  await verified.getByRole("button", { name: /^Show slip/u }).click();
+  const detail = ledger.locator("tr.pair-detail");
+  await expect(detail.getByText(KTB_SLIP.reference)).toBeVisible();
+  // The claim is checkable rather than asserted: the slip's own amount is shown beside the
+  // row's movement, and they are equal to the satang or the pairing could not exist.
+  await expect(detail.getByText(formatThb("-50000"))).toBeVisible();
+  await expect(detail.getByText(/the rule — same bank, same amount to the satang, within one day/u)).toBeVisible();
 
   // The total counts four payments and reports none of them provisional.
   await expect(ledger.locator(".ledger-strip dd").first()).toHaveText("4");

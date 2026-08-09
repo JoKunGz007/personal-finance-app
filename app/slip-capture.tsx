@@ -120,7 +120,7 @@ async function consumePendingSharedSlip(): Promise<File | null> {
  * The image is never uploaded and never stored. It is decoded in this component and
  * discarded; what crosses the wire is the QR payload and the values the owner typed.
  */
-export function SlipCapture() {
+export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   const [identity, setIdentity] = useState<SlipIdentity | null>(null);
   const [qrPayload, setQrPayload] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -291,6 +291,10 @@ export function SlipCapture() {
         ? "Captured as a provisional entry. The statement remains the authority."
         : "Already captured — this slip is in the ledger and nothing changed.");
       reset();
+      // Both outcomes refresh the list below: an already-captured slip is still one the owner
+      // is entitled to see, and a form that clears itself with no record left on the page is
+      // what made a successful capture feel like nothing happened (D-075).
+      onCaptured?.();
     } catch {
       setError("The slip could not be captured.");
     } finally {

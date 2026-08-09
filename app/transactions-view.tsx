@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { formatThb } from "@/lib/money";
 import {
@@ -62,6 +62,9 @@ export function TransactionsView() {
   // and a browser blurs a disabled element — which drops a keyboard or screen-reader user to
   // the top of the document with the `aria-live` announcement read but nowhere to be.
   const cancelMatching = useRef<HTMLButtonElement | null>(null);
+  // Which pair is expanded, by transaction id. A matched pair collapses to one row, so without
+  // this the ledger can say a row is verified but never say what by (D-075).
+  const [openPair, setOpenPair] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>(ALL_ACCOUNTS);
   const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
@@ -568,8 +571,10 @@ export function TransactionsView() {
                     // balance and the immutable source facts stay, and the counterparty the
                     // owner typed fills in what the bank's own description usually does not say.
                     const counterparty = overlay?.counterparty ?? row.slip?.counterparty ?? null;
+                    const pair = row.slip;
                     return (
-                      <tr key={transaction.id} className={row.slip ? "verified-row" : ""}>
+                      <Fragment key={transaction.id}>
+                      <tr className={row.slip ? "verified-row" : ""}>
                         <td data-label="Date">
                           <time dateTime={transaction.source_date}>{formatDate(transaction.source_date)}</time>
                           <small>{transaction.source_time ?? "—"}</small>
@@ -628,6 +633,24 @@ export function TransactionsView() {
                                   way to return a slip to the automatic rule, and pretending
                                   otherwise would promise something the database cannot do. */}
                               <div className="match-control">
+                                {/* A pairing this app itself calls a proposal from three facts
+                                    has to be inspectable, or "verified" is something the owner
+                                    can only take on trust. The pair collapsed onto the statement
+                                    row, so without this the slip is on screen nowhere. */}
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  aria-expanded={openPair === transaction.id}
+                                  aria-controls={`pair-${transaction.id}`}
+                                  /* Visible words first — an accessible name that does not
+                                     contain the label is a name nobody can speak, and it is the
+                                     second time in one day that rule caught a locator instead of
+                                     a screen reader (GOTCHAS). */
+                                  aria-label={`${openPair === transaction.id ? "Hide slip" : "Show slip"} — the slip matched to the row dated ${formatDate(row.date)}`}
+                                  onClick={() => setOpenPair((current) => current === transaction.id ? null : transaction.id)}
+                                >
+                                  {openPair === transaction.id ? "Hide slip" : "Show slip"}
+                                </button>
                                 <button
                                   type="button"
                                   className="secondary-button"
@@ -667,6 +690,38 @@ export function TransactionsView() {
                           </td>
                         ) : null}
                       </tr>
+                      {pair && openPair === transaction.id ? (
+                        <tr className="pair-detail" id={`pair-${transaction.id}`}>
+                          <td colSpan={showCombined ? 7 : 6}>
+                            <dl>
+                              <div><dt>Slip reference</dt><dd className="mono">{pair.slip_reference}</dd></div>
+                              <div><dt>Slip bank</dt><dd>{pair.bank_code}</dd></div>
+                              <div>
+                                <dt>Printed on the slip</dt>
+                                <dd>{formatDate(pair.occurred_on)}{pair.occurred_at_time ? ` · ${pair.occurred_at_time}` : " · no time printed"}</dd>
+                              </div>
+                              {/* Shown because it is the match: the slip's amount and the row's
+                                  movement are equal to the minor unit, or this pairing could not
+                                  exist. Seeing both is what makes the claim checkable. */}
+                              <div><dt>Slip amount</dt><dd>{formatThb(pair.amount_minor)}</dd></div>
+                              <div><dt>Counterparty on the slip</dt><dd>{pair.counterparty ?? "none recorded"}</dd></div>
+                              {pair.note ? <div><dt>Note</dt><dd>{pair.note}</dd></div> : null}
+                              <div>
+                                <dt>Paired by</dt>
+                                <dd>{row.ownerDecided ? "you — a stored decision" : "the rule — same bank, same amount to the satang, within one day"}</dd>
+                              </div>
+                            </dl>
+                            {row.ownerDecided ? null : (
+                              <p>
+                                No statement layout prints a slip&rsquo;s reference, so this is a proposal from
+                                three facts rather than an identifier the two records share. It is recomputed
+                                on every load and nothing about it is stored until you decide something.
+                              </p>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                      </Fragment>
                     );
                   })}
                 </tbody>

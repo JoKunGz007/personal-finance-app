@@ -1,4 +1,4 @@
-import { SlipCapture } from "@/app/slip-capture";
+import { SlipsBench } from "@/app/slips-bench";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export default function SlipsPage() {
         </div>
         <p className="intro-copy">A slip is read on this device and never uploaded. It stays provisional until the statement it belongs to arrives.</p>
       </section>
-      <SlipCapture />
+      <SlipsBench />
     </>
   );
 }

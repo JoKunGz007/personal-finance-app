@@ -12,7 +12,9 @@ describe("privacy guardrails", () => {
     const packageJson = readFileSync("package.json", "utf8");
     const ui = readFileSync("app/import-bench.tsx", "utf8")
       + readFileSync("app/recovery-bench.tsx", "utf8")
-      + readFileSync("app/transactions-view.tsx", "utf8");
+      + readFileSync("app/transactions-view.tsx", "utf8")
+      + readFileSync("app/captured-slips.tsx", "utf8")
+      + readFileSync("app/slips-bench.tsx", "utf8");
     expect(ui).not.toMatch(/serviceWorker|localStorage|sessionStorage|console\./);
     expect(packageJson).not.toMatch(/analytics|sentry|datadog|hotjar|fullstory/i);
   });
@@ -31,7 +33,8 @@ describe("privacy guardrails", () => {
     // in `app/`, so a second registration anywhere fails this rather than hiding.
     const registrations = [
       "app/site-header.tsx", "app/slip-capture.tsx", "app/import-bench.tsx",
-      "app/recovery-bench.tsx", "app/transactions-view.tsx", "app/layout.tsx"
+      "app/recovery-bench.tsx", "app/transactions-view.tsx", "app/layout.tsx",
+      "app/captured-slips.tsx", "app/slips-bench.tsx"
     ].filter((file) => readFileSync(file, "utf8").includes("serviceWorker.register"));
     expect(registrations).toEqual(["app/site-header.tsx"]);
 
