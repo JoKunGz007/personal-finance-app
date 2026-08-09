@@ -6,6 +6,7 @@ import {
   BACKUP_TABLE_KINDS_V2,
   BACKUP_TABLE_KINDS_V3,
   backupSnapshotSchema,
+  describeBackupSnapshot,
   restoreActionSchemas,
   restoreManifestSchema,
   restoreManifestSchemaV2,
@@ -117,6 +118,28 @@ describe("restore manifest", () => {
     expect(parsed.data.source_transactions).toHaveLength(1001);
     expect(parsed.data.source_transactions[0]).toMatchObject({ post_balance_minor: "-9223372036854775808" });
     expect(parsed.data.source_transactions[1000]).toMatchObject({ post_balance_minor: "9223372036854775807" });
+  });
+
+  it("describes a written backup from the snapshot rather than from the newest table list", () => {
+    // The defect this replaces: the recovery bench printed a row count computed from the file
+    // beside a table count read off `BACKUP_TABLE_KINDS`, which is always the *newest* list.
+    // Both halves looked like evidence and only one was. On 2026-08-09 a real export from a
+    // ledger still on migration 011 wrote twelve tables at v3 and announced fourteen (D-074).
+    const countsFor = (kinds: readonly string[]) => Object.fromEntries(kinds.map((kind, index) => [kind, index]));
+
+    const v3 = describeBackupSnapshot({ schemaVersion: 3, tableCounts: countsFor(BACKUP_TABLE_KINDS_V3) });
+    expect(v3).toContain(`${BACKUP_TABLE_KINDS_V3.length} tables`);
+    expect(v3).toContain("schema version 3");
+    // The whole point: the newest list is longer, and saying so here would be the bug.
+    expect(v3).not.toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+
+    const v4 = describeBackupSnapshot({ schemaVersion: 4, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
+    expect(v4).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    expect(v4).toContain("schema version 4");
+
+    // Rows are summed from the counts, so the sentence cannot claim rows the file lacks.
+    const rows = BACKUP_TABLE_KINDS_V3.reduce((sum, _kind, index) => sum + index, 0);
+    expect(v3).toContain(`${rows} rows`);
   });
 
   it("rejects numeric or non-canonical bigint values at the HTTP restore boundary", () => {

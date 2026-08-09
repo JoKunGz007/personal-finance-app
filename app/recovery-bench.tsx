@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { decryptBackup, encryptBackup, encryptedBackupSchema } from "@/lib/backup";
-import { BACKUP_TABLE_KINDS, backupSnapshotSchema } from "@/lib/backup-contract";
+import { backupSnapshotSchema, describeBackupSnapshot } from "@/lib/backup-contract";
 import { downloadFile } from "@/lib/download";
 import { buildRestorePlan } from "@/lib/restore-plan";
 import { readError } from "@/lib/wire";
@@ -64,8 +64,10 @@ export function RecoveryBench() {
         setNote(`Backup written, but custody was not recorded: ${readError(await acknowledged.json().catch(() => null), "the ledger changed while the file was being written.")} Export again to clear the staleness flag.`);
         return;
       }
-      const counted = Object.values(snapshot.data.tableCounts).reduce((sum, count) => sum + count, 0);
-      setNote(`Encrypted backup written and custody recorded: ${counted} rows across ${BACKUP_TABLE_KINDS.length} tables. Keep the file and its password apart.`);
+      // Described from the snapshot, never from this module's own table list: the server may
+      // be a schema version behind the client, and a sentence about a file must be about that
+      // file (D-074).
+      setNote(`Encrypted backup written and custody recorded: ${describeBackupSnapshot(snapshot.data)}. Keep the file and its password apart.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The backup could not be written.");
     } finally {

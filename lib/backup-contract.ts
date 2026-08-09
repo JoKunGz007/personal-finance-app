@@ -391,3 +391,26 @@ export const backupSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   backupSnapshotSchemaV3,
   backupSnapshotSchemaV4
 ]);
+
+/**
+ * What a written backup actually contains, described from the snapshot rather than from here.
+ *
+ * The recovery bench used to report `BACKUP_TABLE_KINDS.length` — this module's **newest**
+ * table list — beside a row count it computed from the file. The row count was therefore
+ * evidence and the table count was a constant, and the two disagreed the moment the server was
+ * a version behind the client: on 2026-08-09 an export from a ledger still on migration 011
+ * wrote twelve tables at schema v3 and announced fourteen. Nothing was wrong with the file;
+ * the sentence was wrong about it, which is worse on a screen whose whole job is to tell the
+ * owner what they now hold.
+ *
+ * Both figures now come from the snapshot, and the version is named because a person checking
+ * a backup needs to know which one they are holding — v2, v3 and v4 are all still restorable
+ * and all still in circulation here.
+ */
+export function describeBackupSnapshot(
+  snapshot: { schemaVersion: number; tableCounts: Record<string, number> }
+): string {
+  const counts = Object.values(snapshot.tableCounts);
+  const rows = counts.reduce((sum, count) => sum + count, 0);
+  return `${rows} rows across ${counts.length} tables at schema version ${snapshot.schemaVersion}`;
+}
