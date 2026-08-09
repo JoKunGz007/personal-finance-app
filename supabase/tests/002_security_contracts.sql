@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(48);
+select plan(49);
 
 -- Canonical signed-int64 text boundaries.
 select ok(private.is_canonical_int64_text('-9223372036854775808'), 'signed int64 minimum is canonical');
@@ -246,8 +246,8 @@ create temporary table snapshot_result as
 select public.export_backup_snapshot() as value;
 select is(
   (select value->>'schemaVersion' from snapshot_result),
-  '4',
-  'snapshot export succeeds with schema version 4'
+  '5',
+  'snapshot export succeeds with schema version 5'
 );
 -- Each new table has to be *in* the export, not merely permitted by it. A version bump that
 -- forgot to emit the new key would still read as the right version here and would silently
@@ -263,6 +263,22 @@ select ok(
     and (select value#>'{data,slip_match_revisions}' is not null from snapshot_result)
     and (select value#>'{tableCounts,slip_match_revisions}' is not null from snapshot_result),
   'snapshot export carries both slip-match tables and their counts'
+);
+-- Cash is the one figure with no statement behind it, so a backup that quietly omitted it
+-- would lose the only record of those payments. Both correction overlays are here for the
+-- same reason: the correction *is* the evidence of what the number should have been.
+select ok(
+  (select value#>'{data,cash_entries}' is not null from snapshot_result)
+    and (select value#>'{tableCounts,cash_entries}' is not null from snapshot_result)
+    and (select value#>'{data,cash_entry_overlays}' is not null from snapshot_result)
+    and (select value#>'{tableCounts,cash_entry_overlays}' is not null from snapshot_result)
+    and (select value#>'{data,cash_entry_revisions}' is not null from snapshot_result)
+    and (select value#>'{tableCounts,cash_entry_revisions}' is not null from snapshot_result)
+    and (select value#>'{data,slip_correction_overlays}' is not null from snapshot_result)
+    and (select value#>'{tableCounts,slip_correction_overlays}' is not null from snapshot_result)
+    and (select value#>'{data,slip_correction_revisions}' is not null from snapshot_result)
+    and (select value#>'{tableCounts,slip_correction_revisions}' is not null from snapshot_result),
+  'snapshot export carries the cash and correction tables and their counts'
 );
 select is(
   public.mark_backup_exported(
