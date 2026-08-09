@@ -645,6 +645,13 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Avoid: when an interaction replaces the controls on screen, move focus deliberately to a control that is certainly present in the new state — the way out of the mode is usually the right one. A `ref` plus a `useEffect` on the mode flag is enough. Assert it: `await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused()`.
 - Verify: 2026-08-07. `app/transactions-view.tsx` focuses the picking mode's `Cancel`; `tests/e2e/owner-session.spec.ts` asserts it. Found by review, not by the suite — the axe passes over that exact screen were green before and after.
 
+## `locator.click().catch(() => {})` does not skip a missing control, it burns the timeout
+
+- Symptom: a spec fails on a line that has nothing to do with the problem — typically `Target page, context or browser has been closed` at the *next* action — after running for the full test timeout.
+- Cause: a Playwright locator action on an element that never appears waits until the test deadline before rejecting. Wrapping it in `.catch()` swallows the rejection but not the wait, so the whole budget is gone and everything after it fails against a torn-down page. Written as an "optional step", it reads as harmless and is the most expensive line in the file.
+- Avoid: decide whether the control is there rather than trying it optionally. `if (await locator.count())`, or a short explicit `{ timeout: 2000 }` when a genuine race is being tolerated. Better still, know the state: after a successful capture the form resets, so the Discard button is *gone* — the optional click existed only because the spec had not thought about what the previous step left behind.
+- Verify: 2026-08-09. The second capture in `captures a slip from its QR…` now chooses the next image directly; the spec runs in ~7s where the optional click made it fail at 30s.
+
 ## A rediscovered trap is not a new one — check before adding an entry
 
 - Symptom: an entry is written up as a fresh discovery, in detail, describing something this file already recorded three days earlier.

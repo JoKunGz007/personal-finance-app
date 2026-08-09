@@ -222,6 +222,8 @@ Tasks 1–12, 14, 15 and 16 are complete and verified for statements. Remaining 
 
     **The fee question is settled, 2026-08-07** (D-071, D-072) — the last open design question about the match rule. Fees are posted as their own statement rows and every one of the 1,465 real rows carries a single component, so no transfer row hides a fee inside its amount; and a fee-bearing transaction never produces a slip, which `docs/SLIP_CONTRACT.md` corroborates by recording `Amount` and `Fee` as separately labelled fields on the slip itself. **Amount equality to the minor unit therefore stays, with no residual attached.** Nothing is pending here; D-071 records what loosening the manual path *would* have looked like, for a case that does not arise.
 
+    **Both read paths the owner asked for landed 2026-08-09** (D-075), after he captured his first real slip into the live ledger and asked where the confirmation was. The slips route now **lists what it has captured** — refreshing itself after each capture once shown — and a verified ledger row can be **expanded to show the slip beside it**, including the slip's own amount next to the row's movement, which is what makes "verified by slip" checkable rather than something to take on trust. Third time this shape of gap has been found by using the app rather than by a test.
+
     Still unbuilt beyond that: manual entry for cash, and the **correction path** the capture form has never had (a captured slip is append-only; the overlay pattern is the shape to reach for).
 
 Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slips; paper receipts from cash purchases are entered by hand rather than read.
