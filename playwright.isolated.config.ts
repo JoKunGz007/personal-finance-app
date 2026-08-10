@@ -15,10 +15,15 @@ const PORT = 3100;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  // `owner-session.spec.ts` needs the development sign-in route, which answers 404
-  // unless the server was built with NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=1 — the guard
-  // working as intended. It runs under `playwright.owner.config.ts`, which sets it.
-  testIgnore: /owner-session\.spec\.ts/u,
+  // Both owner specs need the development sign-in route, which answers 404 unless the
+  // server was built with NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=1 — the guard working as
+  // intended. They run under `playwright.owner.config.ts`, which sets it.
+  //
+  // `owner-access.spec.ts` was added on 2026-08-10 and this list had to grow with it: left
+  // out, it was collected here, failed four times over (two tests × two projects) and
+  // reported `"Not Found" is not valid JSON` — the 404 body, parsed as the session it
+  // expected. A pattern naming one file is a list of one, not a rule.
+  testIgnore: /owner-(session|access)\.spec\.ts/u,
   fullyParallel: true,
   use: { baseURL: `http://127.0.0.1:${PORT}`, trace: "retain-on-failure" },
   webServer: {

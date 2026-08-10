@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-One hundred and one traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred and five traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -119,6 +119,10 @@ One hundred and one traps, grouped on 2026-08-09 into the eight sections below a
 - An axe pass on a route that loads nothing proves nothing about what the route renders
 - `locator.click().catch(() => {})` does not skip a missing control, it burns the timeout
 - A rediscovered trap is not a new one — check before adding an entry
+- The default config runs the owner suite twice at once, so its two copies wipe each other's fixtures
+- The default config gives `prebuild` and a full `next build` the 60-second webServer default
+- `fullyParallel: false` serialises a file, not a suite, and looks serial while there is one file
+- A config that ignores one spec file by name is a list of one, not a rule
 
 ### App, auth, routing and accessibility
 
@@ -683,6 +687,36 @@ One hundred and one traps, grouped on 2026-08-09 into the eight sections below a
 - **Verified 2026-08-09, and the state is split.** All three configs in this working tree read `reuseExistingServer: false`; `playwright.isolated.config.ts` and `playwright.owner.config.ts` carry that in git, but `playwright.config.ts` does not — it is one of the deliberately uncommitted files (D-070), so **`git show HEAD:playwright.config.ts` still reads `!process.env.CI`**. The trap is therefore fixed on this machine and live for any fresh clone. Do not read a comment as the code: `playwright.isolated.config.ts:5` quotes `!process.env.CI` while describing the *default* config, and its own setting on line 27 is `false`.
 - Avoid: run `pnpm exec playwright test --config=playwright.isolated.config.ts`, which uses port 3100 and never reuses a server (D-027). If using the default config, first compare the listening process's start time with the source mtime — `Get-NetTCPConnection -LocalPort 3000 -State Listen` for the pid, `(Get-Item .next\BUILD_ID).LastWriteTime` for the build.
 - Verify: three consecutive runs reported `MISSING_COLUMN_ANCHOR` against a reader that no longer had those anchors; the build was 16 minutes older than `lib/krungthai-layout.ts`.
+
+## The default config runs the owner suite twice at once, so its two copies wipe each other's fixtures
+
+- Symptom: `owner-session.spec.ts` fails against `playwright.config.ts` with rows missing, an account absent, or a count short — and the same spec passes against `playwright.owner.config.ts`. The failures move between runs and between tests, so each one reads as a different defect.
+- Cause: `playwright.config.ts` sets `fullyParallel: true` with **two projects** (`desktop`, `mobile`) and **no `testIgnore`**, so that spec is collected under both and the two copies run concurrently against one database. Its `beforeEach` deletes the *shared seeded owner's* ledger tables — it is not scoped to a project, a worker or a test — so each copy's cleanup destroys the other's fixtures mid-test. `playwright.owner.config.ts` sets `fullyParallel: false` and a single project for exactly this reason.
+- **This was masked until 2026-08-10 and is newly reachable.** The committed copy of this config runs `pnpm dev`, which never hydrates under the strict CSP, so those tests could not really execute and the collision never showed. The deliberately uncommitted working copy runs `pnpm build && pnpm start`, which makes them execute — so the trap is **live on this machine and dormant in a fresh clone**, the reverse of the `reuseExistingServer` entry above.
+- Avoid: run the owner specs through `playwright.owner.config.ts`, which is what the gate uses. Never use the default config for a green run — it is the port-3000 config for driving the app by hand.
+- Verify: `playwright.config.ts` has `fullyParallel: true`, two entries under `projects`, and no `testIgnore` key; `playwright.owner.config.ts` has `fullyParallel: false` and one project. Dated 2026-08-10, read from both files rather than from a failing run — the collision is structural and was found by reading, not reproduced.
+
+## The default config gives `prebuild` and a full `next build` the 60-second webServer default
+
+- Symptom: a browser run against `playwright.config.ts` dies with a Playwright webServer timeout before any test starts, on a checkout where nothing is wrong. Most often on a fresh clone, after `.next/cache` is cleared, or on the first run after a dependency change.
+- Cause: that config sets no `webServer.timeout`, so Playwright's 60-second default has to cover the whole `pnpm build && pnpm start` command — including `prebuild`, which copies the ZXing reader and the four tesseract assets, and then a full Next production build. A warm build fits comfortably; a cold one need not, and the failure names the web server rather than the build that actually ran long.
+- Avoid: set `webServer.timeout` on any config whose `command` builds. `playwright.owner.config.ts` sets 180 seconds for the same command shape and is the value to copy.
+- Verify: `playwright.config.ts` has no `timeout` key inside `webServer` while `playwright.owner.config.ts` sets one; both run `pnpm build && pnpm start`. Dated 2026-08-10, read from the two configs — the slow path was not reproduced, so this is a bound that has been shown to be missing rather than one measured against a cold build.
+
+## `fullyParallel: false` serialises a file, not a suite, and looks serial while there is one file
+
+- Symptom: a browser test that passes every time it is run alone fails whenever the whole config runs. Here the message was `That code was not accepted: Auth session missing!` from a client that had demonstrably just used its session — the enrolment call immediately before it succeeded. An earlier run of the same fault showed a factor count that never advanced, with no error anywhere.
+- Cause: `fullyParallel: false` serialises tests **within** a file. Separate files still go to separate workers, and Playwright's default worker count is half the machine's cores. `playwright.owner.config.ts` had one spec file from the day it was written, so it had always *behaved* serially without ever *being* serial. Adding a second file on 2026-08-10 put two suites on one seeded owner at once: `owner-session.spec.ts` signs in on every test, `owner-access.spec.ts` deletes and re-enrols that owner's MFA factors, and a second sign-in rotates the refresh token the first one's browser client is holding — so its next auto-refresh fails and supabase-js clears the session locally. Nothing in the message names a worker, a file, or the other suite.
+- **The tell that separates this from an ordinary flake**: the reporter's `[n/total]` indices interleave the two files (`[1]` access, `[2]` session, `[3]` session, `[4]` access). Under one worker the indices for a file are adjacent. Read the interleaving, not the failure.
+- Avoid: set `workers: 1` explicitly on any config whose specs share one database identity. `fullyParallel: false` is not that guarantee and never was. `playwright.owner.config.ts` now sets both.
+- Verify: with `workers: 1` the same 25 tests pass and the two files' indices are adjacent; removing it reproduces two failures in `owner-access.spec.ts` alone, both of which pass when that file is run by itself. Dated 2026-08-10.
+
+## A config that ignores one spec file by name is a list of one, not a rule
+
+- Symptom: a new browser spec fails under a config it was never meant for, four times over — once per project — with `SyntaxError: Unexpected token 'N', "Not Found" is not valid JSON`. That is a 404 body being parsed as the JSON the test expected, and it names neither the route nor the config.
+- Cause: `playwright.isolated.config.ts` carried `testIgnore: /owner-session\.spec\.ts/u`, which reads as a rule about owner-signed-in specs and is actually one file name. It builds with `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "0"`, so the development sign-in route correctly answers 404 — the guard working — and any spec needing a session fails on the response body rather than on the guard. The same shape applies to `playwright.owner.config.ts`'s `testMatch`, which had to grow too.
+- Avoid: when adding an owner-signed-in spec, change **both** patterns in the same edit — `testMatch` in the owner config to collect it, `testIgnore` in the isolated config to skip it. Both now read `/owner-(session|access)\.spec\.ts/u`.
+- Verify: the isolated config reports 18 passed with no owner spec collected; the owner config reports 25 and lists both files. Dated 2026-08-10.
 
 ## A unit suite that feeds the layout reader fixtures proves nothing about reading a PDF
 

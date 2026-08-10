@@ -53,6 +53,28 @@ button:disabled { cursor: wait; opacity: .65; }
 .session-state { order: 9; flex-basis: 100%; margin: 0; color: var(--muted); font: 400 12px/1.4 var(--font-data); }
 .session-state:empty { display: none; }
 
+/* The real sign-in (PLAN task 19). It takes the full header row rather than sitting beside
+   the nav, because two of its four states carry a panel — an enrolment square with its key,
+   and a six-digit code field — and neither fits in a header side. In the ordinary signed-in
+   state it is one line of text, so the room is only taken when there is something to show. */
+.owner-access { order: 8; flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.owner-access:empty { display: none; }
+.owner-access-note { margin: 0; color: var(--muted); font-size: 13px; }
+.owner-access-message { order: 9; flex-basis: 100%; margin: 0; color: var(--muted); font: 400 12px/1.4 var(--font-data); }
+.owner-access-message:empty { display: none; }
+.owner-access-panel { flex-basis: 100%; margin: 4px 0 8px; padding: 18px 20px; display: grid; justify-items: start; gap: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); }
+.owner-access-panel h2 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.owner-access-panel p { margin: 0; color: var(--muted); font-size: 14px; }
+.owner-access-panel form { display: grid; justify-items: start; gap: 7px; }
+.owner-access-panel label { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.owner-access-panel input { width: 9ch; height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); font: 500 17px/1 var(--font-data); letter-spacing: .12em; }
+/* Fixed size and a white plate under it: an authenticator reads the square from the screen,
+   and a QR rendered on a tinted or scaled background is the one that will not scan. */
+.owner-access-qr { width: 184px; height: 184px; padding: 10px; border-radius: var(--radius); background: #fff; }
+.owner-access-secret code { padding: 3px 7px; border-radius: 5px; background: color-mix(in srgb, var(--line) 40%, transparent); font: 500 13px/1.5 var(--font-data); overflow-wrap: anywhere; }
+.link-button { color: var(--blue); background: none; border: 0; padding: 0; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.link-button:disabled { opacity: .5; cursor: not-allowed; }
+
 .stage-nav { border-bottom: 1px solid var(--line); background: var(--paper); }
 .stage-nav ol { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); list-style: none; }
 .stage-nav li { position: relative; min-height: 52px; padding: 15px 18px 13px 0; display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }

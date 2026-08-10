@@ -163,6 +163,24 @@ export async function POST(request: Request) {
   if (listed.error) return routeError(`Could not list MFA factors: ${listed.error.message}`, 502);
   const verified = listed.data.totp.filter((factor) => factor.status === "verified");
 
+  // `?stop=aal1` signs in and stops, which is the only way to reach the real sign-in surface
+  // in a browser. `app/owner-access.tsx` shows TOTP enrolment or a code challenge depending
+  // on what Supabase reports, and this route's ordinary path ends at aal2 with both factors
+  // already verified — so neither state is otherwise reachable without a Google account.
+  //
+  // **It grants strictly less than this route grants anyway**: the same synthetic password
+  // sign-in, stopped earlier, behind the same three guards. There is no capability here that
+  // the ordinary path does not already hand out in full.
+  //
+  // Which state the caller then sees is decided by what is already enrolled — clear
+  // `auth.mfa_factors` first for enrolment, leave two verified for a challenge.
+  if (new URL(request.url).searchParams.get("stop") === "aal1") {
+    return Response.json(
+      { ok: true, email: OWNER_EMAIL, level: "aal1", verifiedFactors: verified.length, stoppedAt: "aal1" },
+      { headers: noStoreHeaders }
+    );
+  }
+
   // Enrol whatever is missing. Enrolment is permitted at aal1, and verifying a freshly
   // enrolled factor elevates the session — so a run that enrols anything ends at aal2.
   const known = new Map(stored.map((entry) => [entry.factorId, entry.secret]));

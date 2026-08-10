@@ -34,7 +34,7 @@ describe("privacy guardrails", () => {
     const registrations = [
       "app/site-header.tsx", "app/slip-capture.tsx", "app/import-bench.tsx",
       "app/recovery-bench.tsx", "app/transactions-view.tsx", "app/layout.tsx",
-      "app/captured-slips.tsx", "app/slips-bench.tsx"
+      "app/captured-slips.tsx", "app/slips-bench.tsx", "app/owner-access.tsx"
     ].filter((file) => readFileSync(file, "utf8").includes("serviceWorker.register"));
     expect(registrations).toEqual(["app/site-header.tsx"]);
 
@@ -504,6 +504,47 @@ describe("privacy guardrails", () => {
     expect(finder).not.toMatch(/proposeAmount|readAmount/u);
     // And the reader that returns a figure is not imported by the form at all.
     expect(form).not.toMatch(/proposeAmount/u);
+  });
+
+  it("keeps the session in cookies, which is the only client storage this app has", () => {
+    const browser = readFileSync("lib/browser/supabase.ts", "utf8");
+    const access = readFileSync("app/owner-access.tsx", "utf8");
+    // `createBrowserClient` from `@supabase/ssr` is the cookie-backed client; plain
+    // `createClient` from `supabase-js` defaults to localStorage, which would put the
+    // session somewhere `strongOwnerClient` cannot read *and* somewhere this app has
+    // promised to keep nothing. The two failures look nothing alike — the first is a
+    // signed-in browser whose every request is 401 — so the import is asserted rather
+    // than left to a convention.
+    expect(browser).toContain('createBrowserClient } from "@supabase/ssr"');
+    expect(browser).not.toMatch(/from\s+"@supabase\/supabase-js"/u);
+
+    // Comments are stripped before the storage check, the same way string literals are
+    // stripped for the worker's postMessage check above. Both of these files *explain* why
+    // they store nothing, so the words appear in prose — and a grep over raw source failed
+    // on its own documentation the first time this was run. The rule is about code.
+    const codeOnly = (source: string) => source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+    for (const [name, source] of [["lib/browser/supabase.ts", browser], ["app/owner-access.tsx", access]] as const) {
+      expect(codeOnly(source), `${name} must not store anything on the device`)
+        .not.toMatch(/localStorage|sessionStorage|indexedDB|document\.cookie/u);
+      expect(codeOnly(source), `${name} must not log`).not.toMatch(/console\./u);
+    }
+    // The enrolment secret is shown to the owner and typed into an authenticator. It must
+    // never be sent anywhere: no fetch, and no request built around it.
+    expect(codeOnly(access)).not.toMatch(/fetch\(/u);
+  });
+
+  it("never redirects a Google sign-in to an address the request supplied", () => {
+    const callback = readFileSync("app/auth/callback/route.ts", "utf8");
+    // This URL is handed to a third party by construction, so anything it echoes from its
+    // own query string into a Location header is attacker-controlled. The landing page is
+    // a module constant and the only value that may reach the header.
+    expect(callback).toMatch(/const LANDING = "\/ledger";/u);
+    const location = /Location:\s*([^\n]*)/u.exec(callback)?.[1] ?? "";
+    expect(location).toContain("LANDING");
+    expect(callback).not.toMatch(/searchParams\.get\("(next|redirect|redirectTo|return|returnTo)"\)/u);
+    // Only these three parameters are read, and none of them is a destination.
+    const read = [...callback.matchAll(/searchParams\.get\("([^"]+)"\)/gu)].map((match) => match[1]!);
+    expect(new Set(read)).toEqual(new Set(["error", "error_description", "code"]));
   });
 
   it("keeps masked dumps out of git", () => {

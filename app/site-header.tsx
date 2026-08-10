@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { OwnerAccess } from "@/app/owner-access";
 
 // The shell every route renders inside (PLAN task 19).
 //
@@ -38,11 +39,15 @@ export function SiteHeader() {
     void navigator.serviceWorker.register("/share-slip-sw.js", { scope: "/" }).catch(() => undefined);
   }, []);
 
-  // Development only, and stripped from a production bundle along with its button. The real
-  // login is Google OAuth; this mints the aal2 cookie session the owner-bound routes require,
-  // so every route behind one can be reached in a browser. It sits in the shell because a
-  // session is not a property of the import bench it used to live in — and because OAuth,
-  // when it lands, belongs in exactly this place.
+  // Development only, and stripped from a production bundle along with its button. It mints
+  // the aal2 cookie session the owner-bound routes require, so every route behind one can be
+  // reached in a browser without a Google account or an authenticator app.
+  //
+  // **It is not superseded by the Google sign-in that now sits beside it, and both stay.**
+  // The browser suites drive this one: it is synchronous, needs no third party, and cannot
+  // run anywhere but this machine (the route checks the flag, the Supabase URL and the
+  // request's own Host, all three fail closed). The real login is `app/owner-access.tsx`,
+  // which is the only one a hosted deployment has.
   // See app/api/v1/dev/session/route.ts for why a password session satisfies the gate.
   async function devSignIn() {
     setSession("Minting a development owner session…");
@@ -92,6 +97,11 @@ export function SiteHeader() {
           <button className="secondary-button" type="button" onClick={devSignIn}>Dev sign-in</button>
         ) : null}
       </div>
+
+      {/* A direct child of the header rather than of `.header-side`, so it can take the
+          full row when it has a panel to show — the enrolment square and its key do not fit
+          beside the nav, and neither does a code field. Ordered before the session line. */}
+      <OwnerAccess />
 
       {/* Always mounted, so the announcement is a change to a live region rather than a new
           one appearing. Deliberately not role="status": every route already has one status

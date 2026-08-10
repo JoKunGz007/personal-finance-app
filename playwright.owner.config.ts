@@ -22,8 +22,20 @@ const PORT = 3200;
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: /owner-session\.spec\.ts/u,
+  // Both owner-signed-in specs. `owner-access.spec.ts` covers the real sign-in surface —
+  // TOTP enrolment and the code challenge — which needs the same build flag for the same
+  // reason: it reaches those states through the development route's `?stop=aal1`.
+  testMatch: /owner-(session|access)\.spec\.ts/u,
   fullyParallel: false,
+  // **`fullyParallel: false` is not the same as serial, and the difference was invisible
+  // while this config had one spec file.** It serialises tests *within* a file; separate
+  // files still go to separate workers, and the default worker count is half the machine's
+  // cores. Adding `owner-access.spec.ts` made two files run at once against one seeded
+  // owner — both signing in as them, one enrolling MFA factors and the other deleting them.
+  // The symptom named neither cause: `Auth session missing!` from a browser client whose
+  // refresh token another worker's sign-in had rotated out from under it, on a test that
+  // passed every time it was run alone (GOTCHAS).
+  workers: 1,
   use: { baseURL: `http://127.0.0.1:${PORT}`, trace: "retain-on-failure" },
   webServer: {
     command: `pnpm build && pnpm exec next start --port ${PORT}`,

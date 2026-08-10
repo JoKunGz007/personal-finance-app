@@ -86,10 +86,36 @@ describe("development sign-in guards", () => {
     // which would turn it into a general-purpose credential endpoint.
     expect(route).toContain("local-synthetic-login-disabled");
     expect(route).not.toMatch(/process\.env\.[A-Z_]*PASSWORD/u);
-    // The request is read for its Host header and nothing else. Reading a body would turn
-    // this into a general-purpose credential endpoint that signs in as whoever asks.
+    // The request is read for its Host header and for one query parameter, and nothing
+    // else. Reading a body would turn this into a general-purpose credential endpoint that
+    // signs in as whoever asks.
     expect(route).not.toMatch(/request\.(json|text|formData|body)/u);
     expect(route).toMatch(/request\.headers\.get\("host"\)/u);
+    // `?stop=aal1` is the only parameter, and it can only make the route grant *less*.
+    const read = [...route.matchAll(/searchParams\.get\("([^"]+)"\)/gu)].map((match) => match[1]!);
+    expect(read).toEqual(["stop"]);
+  });
+
+  it("keeps the aal1 stop behind all three guards, since it is the same sign-in", () => {
+    // The stop mode exists so the real sign-in surface can be reached in a browser, and it
+    // must not become a second door with its own weaker rules. Each guard is asserted
+    // against a request that asks to stop, with the other two satisfied.
+    const stopping = (host = "127.0.0.1:3200") =>
+      new Request("http://127.0.0.1:3200/api/v1/dev/session?stop=aal1", { method: "POST", headers: { host } });
+
+    return (async () => {
+      configure({ NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "" });
+      let { POST } = await import("@/app/api/v1/dev/session/route");
+      expect((await POST(stopping())).status).toBe(404);
+
+      configure();
+      ({ POST } = await import("@/app/api/v1/dev/session/route"));
+      expect((await POST(stopping("ledger.example.com"))).status).toBe(404);
+
+      configure({ NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co" });
+      ({ POST } = await import("@/app/api/v1/dev/session/route"));
+      expect((await POST(stopping())).status).toBe(403);
+    })();
   });
 });
 
@@ -130,6 +156,41 @@ describe.skipIf(!reachable)("development sign-in against the live stack", () => 
       `select count(*) from auth.mfa_factors where user_id = '${ownerId()}' and status = 'verified';`
     );
     expect(verified.output.trim()).toBe("2");
+
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("stops at aal1 on request, and enrols nothing while doing so", async () => {
+    // The state `app/owner-access.tsx` shows an owner who has just arrived from Google.
+    // It is only reachable this way locally, because the ordinary path ends at aal2 with
+    // both factors already verified.
+    vi.stubEnv("NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION", "1");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", API);
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", PUBLISHABLE);
+    vi.stubEnv("OWNER_GOOGLE_EMAIL", OWNER_EMAIL);
+    vi.resetModules();
+
+    jar.clear();
+    psql(`delete from auth.mfa_factors where user_id = '${ownerId()}';`);
+    try { unlinkSync(".runtime/dev-mfa-private-ledger-local.json"); } catch { /* absent is the normal case */ }
+
+    const { POST } = await import("@/app/api/v1/dev/session/route");
+    const response = await POST(new Request(
+      "http://127.0.0.1:3000/api/v1/dev/session?stop=aal1",
+      { method: "POST", headers: { host: "127.0.0.1:3000" } }
+    ));
+    const body = await response.json();
+    expect(response.status, JSON.stringify(body)).toBe(200);
+    expect(body.level).toBe("aal1");
+    expect(body.stoppedAt).toBe("aal1");
+    expect(body.verifiedFactors).toBe(0);
+
+    // The point of the mode: it must not have enrolled anything on the way past. Asserted
+    // against the database rather than the route's report, since the report is what would
+    // be wrong if the early return were placed after the enrolment loop.
+    const factors = psql(`select count(*) from auth.mfa_factors where user_id = '${ownerId()}';`);
+    expect(factors.output.trim()).toBe("0");
 
     vi.unstubAllEnvs();
     vi.resetModules();
