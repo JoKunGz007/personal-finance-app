@@ -158,7 +158,7 @@ One hundred and one traps, grouped on 2026-08-09 into the eight sections below a
 - Symptom: a clean install ends with `ERR_PNPM_IGNORED_BUILDS` after packages are linked.
 - Cause: pnpm 11 replaced `onlyBuiltDependencies` with the stricter `allowBuilds` map.
 - Avoid: review each pending lifecycle script and allow only the required named packages in `pnpm-workspace.yaml`; never enable all dependency builds.
-- Verify: `pnpm install --frozen-lockfile --offline` succeeds and `pnpm ignored-builds` reports none. Dated 2026-07-25 from `5e4c5bb`, the commit that introduced the named `allowBuilds` allowlist.
+- Verify: `pnpm install --frozen-lockfile --offline` succeeds and `pnpm ignored-builds` reports none. **Re-checked 2026-08-10, and the previous provenance on this line was wrong.** It read `Dated 2026-07-25 from 5e4c5bb, the commit that introduced the named allowBuilds allowlist`; `git show 5e4c5bb -- pnpm-workspace.yaml` is empty, and **no commit ever introduced `allowBuilds`**. The file has exactly one commit, `9203a87`, which carries `onlyBuiltDependencies` with `esbuild`, `sharp` and `supabase`. The `allowBuilds` map — which also adds `unrs-resolver` and denies `tesseract.js` explicitly — exists **only in the deliberately uncommitted working copy** (`HANDOFF.md` § Before you touch anything). So this trap is fixed on this machine and **live for any fresh clone**, exactly like the `reuseExistingServer` entry below, and the remedy it points at is not in history. `PLAN.md` and `docs/LOCAL_DEV.md` both describe the four-package allowlist, which is true of the working copy and not of `HEAD`.
 
 ## Silent Python installers can outlive the calling shell
 

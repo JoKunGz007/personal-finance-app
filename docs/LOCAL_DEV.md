@@ -9,7 +9,7 @@ $env:COREPACK_HOME = "D:\Projects\personal-finance-app\.runtime\corepack"
 pnpm --version
 ```
 
-A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`.
+A clean frozen install succeeds offline after explicitly allowing build scripts only for `esbuild`, `sharp`, `supabase`, and `unrs-resolver`. **That allowlist is in the uncommitted working copy of `pnpm-workspace.yaml`, not in `HEAD`** — the committed file still carries pnpm 10's `onlyBuiltDependencies` naming three packages, so a fresh clone on pnpm 11 meets `ERR_PNPM_IGNORED_BUILDS` and has to write the `allowBuilds` map itself (GOTCHAS).
 
 ## Validation order
 
