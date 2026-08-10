@@ -17,7 +17,7 @@ A clean frozen install succeeds offline after explicitly allowing build scripts 
 pnpm install --frozen-lockfile --offline
 pnpm lint
 pnpm typecheck
-pnpm check:docs
+pnpm check:docs --strict
 pnpm test
 pnpm supabase:reset
 pnpm supabase:test
@@ -26,7 +26,7 @@ pnpm exec playwright test --config=playwright.isolated.config.ts
 pnpm exec playwright test --config=playwright.owner.config.ts
 ```
 
-`pnpm check:docs` is structural only: it fails when a continuity document contradicts the tree or itself — a duplicate or missing decision id, an index that has drifted from its entries, a `D-0NN` citation with no entry, a backtick-quoted repo path that is neither present nor a recorded retirement, a dead relative link, or a file over its line budget. It does not read for meaning; `/sync-continuity` does that (D-082). Add `--strict` to make its warnings fatal.
+`pnpm check:docs` is structural only: it fails when a continuity document contradicts the tree or itself — a duplicate or missing decision id, an index that has drifted from its entries, a `D-0NN` citation with no entry, a backtick-quoted repo path that is neither present nor a recorded retirement, a dead relative link, or a file over its line budget. It does not read for meaning; `/sync-continuity` does that (D-082). **`--strict` is now part of the order above**, since every trap carries a date as of 2026-08-10 (D-085) and the warning it was tolerating is gone — so a new undated trap fails the gate rather than adding to a backlog.
 
 Use the isolated config rather than `pnpm test:e2e`: the default one reuses a server someone else left running, so a browser run can silently test stale code (D-027).
 
