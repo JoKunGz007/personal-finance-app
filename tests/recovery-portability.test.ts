@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { canonicalJson } from "@/lib/canonical";
 import { decryptBackup, encryptBackup } from "@/lib/backup";
-import { backupSnapshotSchema, BACKUP_TABLE_KINDS } from "@/lib/backup-contract";
+import {
+  backupSnapshotSchema, backupSnapshotSchemaV4, BACKUP_TABLE_KINDS, BACKUP_TABLE_KINDS_V4
+} from "@/lib/backup-contract";
 import { buildRestorePlan } from "@/lib/restore-plan";
 import {
   API, CONTAINER, OWNER_EMAIL, OWNER_PASSWORD,
@@ -147,14 +149,16 @@ commit;
 // RPC enforces this is proven by pgTAP; clearing here is only what makes the suite
 // repeatable, and the last assertion re-establishes that the check is live.
 function emptyDestination(): void {
+  // Every backup table, not the eleven this file was written against. `restore_backup`
+  // refuses a destination that is not empty, and it counts the tables the *destination's*
+  // migration knows about — so a leftover row in one of the newer ones fails a later restore
+  // at commit, after every chunk has been accepted, with a message about emptiness that says
+  // nothing about which table.
   const result = psqlAt(DESTINATION_CONTAINER, `
 begin;
 set local session_replication_role = replica;
 delete from public.restore_chunks; delete from public.restore_runs; delete from public.backup_records;
-delete from public.overlay_revisions; delete from public.transaction_overlays;
-delete from public.import_batch_rows; delete from public.source_components; delete from public.source_transactions;
-delete from public.audit_events; delete from public.import_batches; delete from public.import_artifacts;
-delete from public.categories; delete from public.accounts;
+${BACKUP_TABLE_KINDS.filter((kind) => kind !== "mutation_sequences").map((kind) => `delete from public.${kind};`).join(" ")}
 set local session_replication_role = origin;
 commit;
 `);
@@ -181,6 +185,40 @@ function sourceOwnerTraces(): number {
   const result = psqlAt(DESTINATION_CONTAINER, `select coalesce(sum(n), 0) from (${[...owned, ...actors].join(" union all ")}) as traces;`);
   if (!result.ok) throw new Error(`trace query failed: ${result.output}`);
   return Number(result.output.trim());
+}
+
+// The five tables a v4 file predates entirely — everything migration 013 added.
+const V5_ONLY_KINDS = BACKUP_TABLE_KINDS.filter((kind) => !(BACKUP_TABLE_KINDS_V4 as readonly string[]).includes(kind));
+
+/**
+ * Turns a v5 export into the v4 file a ledger on migration 012 would have written.
+ *
+ * **Why this is a genuine v4 artifact and not an approximation of one.** The version kind
+ * lists are strictly additive — `restore_backup` builds them by appending, so v4 is v5 minus
+ * exactly these five tables — and migrations 013 and 014 alter no column of any table v4
+ * carries; their only `alter table` statements touch the new tables and the `restore_runs` /
+ * `restore_chunks` version constraints, neither of which travels in a backup. So dropping the
+ * five leaves precisely what the older `export_backup_snapshot` emitted. The alternative was
+ * standing up a fourth local project pinned at migration 012 to produce one, which would test
+ * the same bytes at considerably more expense.
+ *
+ * The caller asserts the five are empty at source first, without which this would be lossy
+ * rather than a downgrade.
+ */
+function downgradeToV4(snapshot: Snapshot): unknown {
+  const data: Record<string, unknown> = {};
+  const tableCounts: Record<string, number> = {};
+  for (const kind of BACKUP_TABLE_KINDS_V4) {
+    data[kind] = snapshot.data[kind];
+    tableCounts[kind] = snapshot.tableCounts[kind]!;
+  }
+  return {
+    schemaVersion: 4,
+    exportedAt: snapshot.exportedAt,
+    snapshotSequence: snapshot.snapshotSequence,
+    tableCounts,
+    data
+  };
 }
 
 describe.skipIf(!ready)("portable recovery into an empty separately bound project", () => {
@@ -270,6 +308,108 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
 
       expect(replay.at(-1)?.status, "a second restore into a populated destination must not commit").not.toBe(200);
       expect(replay.map((step) => step.body).join(" ")).toMatch(/not empty/iu);
+    } finally {
+      cleanSource();
+      clearFactors(CONTAINER, SOURCE_OWNER);
+      clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
+    }
+  }, 180_000);
+
+  // The version pair hosting actually depends on, and the one nothing exercised until now.
+  //
+  // `PLAN.md` task 19 moves this ledger by **restoring its encrypted backup into the hosted
+  // project** rather than reimporting the statements (D-083). The hosted project takes its
+  // migrations from this repository, so it starts on 014 and writes v5 — while
+  // `private-ledger-live` is still on 012 and therefore writes **v4**. That makes the first
+  // act of hosting a v4-into-v5 restore.
+  //
+  // What already existed was weaker than it looks. `tests/backup.test.ts` checks that the
+  // client's zod schemas accept a v4 manifest and refuse mismatched pairs — the *client*
+  // contract, never the database. pgTAP's restore contracts exercise schemaVersion 2 only.
+  // D-078 restored a real v3 file into a v4 ledger, which proved the mechanism but is a
+  // different pair, was operational rather than a suite row, and cannot be re-run without the
+  // owner's password. So "v2, v3, v4 and v5 all stay restorable" (SPEC gate 6) held for v4
+  // by construction and by nothing else.
+  //
+  // Note what this does *not* need: any access to the live ledger. The version being
+  // rehearsed is a property of the file format, not of the data, so synthetic rows through
+  // the real export, the real plan builder and the real RPC answer the question exactly.
+  it("restores a v4 file into a v5 ledger, which is the version pair hosting will use", async () => {
+    assertOnlyDisposableLedgerData([ID(1)]);
+
+    clearFactors(CONTAINER, SOURCE_OWNER);
+    clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
+    const sourceSession = await sessionAt(API, OWNER_EMAIL, OWNER_PASSWORD);
+    const destinationSession = await sessionAt(DESTINATION_API, DESTINATION_EMAIL, DESTINATION_PASSWORD);
+
+    emptyDestination();
+    expect(sourceOwnerTraces(), "the destination must not already hold source-owned rows").toBe(0);
+
+    try {
+      populateSource();
+
+      const exported = await rpc(API, sourceSession, "export_backup_snapshot");
+      expect(exported.status, exported.body).toBe(200);
+      const current = exported.json() as Snapshot;
+      expect(current.schemaVersion, "the source is on 014 and must write the newest version").toBe(5);
+
+      // Without this the "downgrade" would be silently dropping rows, and every assertion
+      // below would pass while testing a file no ledger could ever have produced.
+      for (const kind of V5_ONLY_KINDS) {
+        expect(current.tableCounts[kind], `${kind} must be empty for the downgrade to be lossless`).toBe(0);
+      }
+
+      const v4 = downgradeToV4(current);
+      const validated = backupSnapshotSchemaV4.safeParse(v4);
+      expect(validated.success, JSON.stringify(validated.error?.issues?.slice(0, 3))).toBe(true);
+
+      // Encrypted and decrypted like any other artifact — a file restored during a migration
+      // to hosting is one that has been sitting on disk, not one handed straight over.
+      const envelope = await encryptBackup(v4, "v4 into v5 rehearsal passphrase 2026");
+      const carried = await decryptBackup(envelope, "v4 into v5 rehearsal passphrase 2026");
+      expect(canonicalJson(carried)).toBe(canonicalJson(v4));
+
+      const plan = await buildRestorePlan(carried);
+      // Planned from the file's own declared version, not from this build's newest list.
+      expect(plan.stage.schemaVersion).toBe(4);
+      expect(plan.chunks).toHaveLength(BACKUP_TABLE_KINDS_V4.length);
+      expect(plan.chunks.map((chunk) => chunk.chunk.kind)).toEqual([...BACKUP_TABLE_KINDS_V4]);
+
+      const staged = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "stage", p_request: plan.stage });
+      expect(staged.status, staged.body).toBe(200);
+      for (const chunk of plan.chunks) {
+        const sent = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "chunk", p_request: chunk });
+        expect(sent.status, `chunk ${chunk.chunk.kind}: ${sent.body}`).toBe(200);
+      }
+      const committed = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "commit", p_request: plan.commit });
+      expect(committed.status, committed.body).toBe(200);
+
+      // Rebinding is not weakened by the version gap.
+      expect(sourceOwnerTraces(), "the source owner must not survive a cross-version restore either").toBe(0);
+
+      // The five tables the file predates exist in the destination and stay empty. A restore
+      // that applied the newest kind list leniently would have had to invent rows for them.
+      const untouched = psqlAt(
+        DESTINATION_CONTAINER,
+        `select ${V5_ONLY_KINDS.map((kind) => `(select count(*) from public.${kind})`).join(" + ")};`
+      );
+      expect(untouched.ok && untouched.output.trim(), "a v4 file must leave the v5-only tables empty").toBe("0");
+
+      // The payoff: the ledger is now readable as v5. This is the state hosting ends in —
+      // an older file in, the current contract out, with everything rebound.
+      const reExported = await rpc(DESTINATION_API, destinationSession, "export_backup_snapshot");
+      expect(reExported.status, reExported.body).toBe(200);
+      const landed = reExported.json() as Snapshot;
+      expect(landed.schemaVersion, "the destination writes its own version, not the file's").toBe(5);
+      expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
+
+      for (const kind of BACKUP_TABLE_KINDS_V4.filter((table) => table !== "mutation_sequences")) {
+        const rebound = canonicalJson((v4 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
+      }
+      for (const kind of V5_ONLY_KINDS) {
+        expect(landed.tableCounts[kind], `${kind} must be present and empty in the re-export`).toBe(0);
+      }
     } finally {
       cleanSource();
       clearFactors(CONTAINER, SOURCE_OWNER);

@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-One hundred traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred and one traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -64,6 +64,7 @@ One hundred traps, grouped on 2026-08-09 into the eight sections below and added
 - `restore_request` strips nulls inside the chunk, breaking digest binding
 - Restore counts must be canonical integers, not merely JSON numbers
 - A wiped ledger and a wiped session look the same from a failing restore
+- A cleanup helper that predates a migration makes the next restore fail, at commit, naming no table
 - A wrong backup password and a corrupted backup file report identically
 
 ### Statement and slip parsing
@@ -450,6 +451,14 @@ One hundred traps, grouped on 2026-08-09 into the eight sections below and added
 - Cause: reaching for `resetOwnerImportSurface` to empty the ledger. It also deletes the owner's `auth.mfa_factors`, and `private.has_strong_owner_access` counts verified factors in the database rather than trusting the token — so the session the restore needs is gone with the rows.
 - Avoid: for a mid-test wipe, delete the ledger tables directly under `session_replication_role = replica` and leave `auth` alone. Keep `resetOwnerImportSurface` for setup and teardown, where dropping the factors is harmless.
 - Verify: `tests/e2e/owner-session.spec.ts` "backs up a confirmed ledger and restores it after the ledger is destroyed" restores under the same session that took the backup. Dated 2026-07-27 from `b4df30c`, the commit that added the destroy-and-restore browser spec this was found in (D-046).
+
+## A cleanup helper that predates a migration makes the next restore fail, at commit, naming no table
+
+- Symptom: a restore stages cleanly, every chunk is accepted, and then `commit` refuses because the destination is not empty — with nothing to say which table is not empty. The suite that ran before it passed.
+- Cause: `restore_backup` checks emptiness across the tables the **destination's own migration** knows about, which grows with every schema version. A test helper that empties the destination by naming tables is a hard-coded list frozen at the day it was written; `tests/recovery-portability.test.ts`'s cleared only the original eleven while the destination had since gained `slips`, the two match-decision tables and migration 013's five. A row left in any of them is invisible to the helper and fatal to the next restore.
+- Avoid: derive the cleanup from `BACKUP_TABLE_KINDS` rather than from a literal list, so a new backup table is cleared by the same change that adds it — the same "build it from the contract, not from memory" rule `lib/restore-plan.ts` follows for the kind list. Keep `mutation_sequences` out of it: that row is a per-owner singleton the destination must retain.
+- Note where the cost lands, which is what makes this worth an entry: the failure surfaces at the **end** of the sequence, so every chunk has to be re-sent to reach it, and the message is about emptiness rather than about the table — so the natural suspicion is the restore contract rather than the fixture that ran before it.
+- Verify: 2026-08-10. Adding a second restore test to that file surfaced it immediately; deriving the delete list from `BACKUP_TABLE_KINDS` fixed it and left the original test passing unchanged (D-089).
 
 ## A wrong backup password and a corrupted backup file report identically
 
