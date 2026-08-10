@@ -40,17 +40,17 @@ import type { BankCode } from "@/lib/statement-frame";
  *
  * ## What this deliberately does not read yet
  *
- * **The printed date**, except to refuse an out-of-era one. 14 of 23 slips carry a Gregorian
- * date inside the QR reference already, exactly and under the QR's own CRC (D-059), so the
- * printed date is only the sole source on KBANK. Reading it needs the month token forms, and
- * `docs/SLIP_CONTRACT.md` records the date *layout* without recording whether the months
- * print in Thai or Latin abbreviations — so writing a month table now would be inventing
- * format knowledge nobody has measured. `gregorianFromPrintedYear` below is the half that can
- * be written without it, because the era hazard is arithmetic rather than vocabulary.
- *
  * **The counterparty.** The contract says it is not sized, and it is free text in two
  * scripts — the field least suited to a whitelist and the one where a wrong read is least
  * visible. It stays typed.
+ *
+ * ## What it now does read
+ *
+ * **The printed date**, as of 2026-08-10, once the month vocabulary was measured across all
+ * three layouts (`docs/SLIP_CONTRACT.md` § The month vocabulary). 14 of 23 slips carry a
+ * Gregorian date inside the QR reference already, exactly and under the QR's own CRC (D-059),
+ * so this matters most on KBANK, whose reference carries none — and KBANK is also the one
+ * layout this still refuses, because it prints a two-digit year. See `readPrintedDate`.
  */
 
 /** One recognised word and where it sits. The only thing an engine must supply. */
@@ -67,7 +67,10 @@ export type OcrRefusal =
   | "LABEL_AMBIGUOUS"
   | "NO_VALUE_BESIDE_LABEL"
   | "VALUE_NOT_MONEY"
-  | "VALUE_AMBIGUOUS";
+  | "VALUE_AMBIGUOUS"
+  | "DATE_NOT_FOUND"
+  | "DATE_AMBIGUOUS"
+  | "DATE_YEAR_UNRESOLVED";
 
 export type OcrRead<T> = { ok: true; value: T; source: string } | { ok: false; code: OcrRefusal; message: string };
 
@@ -291,4 +294,148 @@ export function gregorianFromPrintedYear(year: number, today: Date): number | nu
   // and an already-Gregorian year printed by mistake must not pass by looking reasonable.
   if (converted > thisYear + 1 || converted < thisYear - 10) return null;
   return converted;
+}
+
+/**
+ * The month vocabulary, measured across all three layouts on 2026-08-10.
+ *
+ * **Matched as a token list, never as a shape, and that is the whole point.** Nine of the
+ * twelve are two consonants between periods, so `[ก-ฮ]\.[ก-ฮ]\.` looks like it works — and
+ * silently misses `มี.ค.`, `เม.ย.` and `มิ.ย.`, which carry a vowel (`เม.ย.` begins with
+ * one). A reader built that way passes every test written in a month that is not March, April
+ * or June, and fails three months of the year in production.
+ *
+ * This table is standard Thai calendar vocabulary rather than anything the slips disclosed,
+ * which is why it can be written here in full: what the slips established is that all three
+ * layouts print *this* form rather than a Latin `Jul` or a full `กรกฎาคม`
+ * (`docs/SLIP_CONTRACT.md`).
+ */
+export const THAI_MONTH_TOKENS: ReadonlyArray<readonly [string, number]> = [
+  ["ม.ค.", 1], ["ก.พ.", 2], ["มี.ค.", 3], ["เม.ย.", 4], ["พ.ค.", 5], ["มิ.ย.", 6],
+  ["ก.ค.", 7], ["ส.ค.", 8], ["ก.ย.", 9], ["ต.ค.", 10], ["พ.ย.", 11], ["ธ.ค.", 12]
+];
+
+function escapeForPattern(token: string): string {
+  return token.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+// Longest first, so a token that is a prefix of another can never shadow it. None currently
+// is, and relying on that would make adding one a silent hazard.
+const MONTH_ALTERNATION = [...THAI_MONTH_TOKENS]
+  .sort((a, b) => b[0].length - a[0].length)
+  .map(([token]) => escapeForPattern(token))
+  .join("|");
+
+// Whitespace is already gone by the time this runs (`normalise`), because Thai has no
+// inter-word spaces and where an engine breaks a run is its business (`findLabelLine` makes
+// the same argument). The optional time tolerates the separator each layout prints — Krungthai
+// and SCB a hyphen, KBANK nothing — and the trailing `น.` KBANK appends.
+// **The tail is anchored, and that anchor is load-bearing.** Krungthai and SCB separate the
+// year from the time with a hyphen; KBANK separates them with spaces, which `normalise` has
+// already removed — so `… 69  11:38 น.` arrives as `…6911:38น.` and an unanchored `\d{2,4}`
+// reads the year as `6911`, which then fails the era window and reports "no date on this
+// image" about a slip that plainly prints one. Requiring the match to consume to the end of
+// the line makes the four-digit reading fail and the two-digit one succeed, which is the
+// correct split rather than a lucky one.
+const PRINTED_DATE = new RegExp(
+  `(\\d{1,2})(${MONTH_ALTERNATION})(\\d{4}|\\d{2})(?:[-–—]?(\\d{1,2}):(\\d{2}))?(?:น\\.)?$`,
+  "u"
+);
+
+export type PrintedDate = {
+  /** ISO `YYYY-MM-DD`, already converted out of the Buddhist era. */
+  iso: string;
+  /** `HH:MM` when the layout printed one, null otherwise. */
+  time: string | null;
+};
+
+/**
+ * Reads one line as a printed date, or refuses.
+ *
+ * Returns null rather than a refusal when the line simply is not a date, because most lines on
+ * a slip are not and the caller is scanning. A line that *is* date-shaped but whose year will
+ * not resolve is a refusal, not a null — that difference is what stops an unresolvable KBANK
+ * date being silently skipped and some other line picked up instead.
+ */
+function readDateLine(text: string, today: Date): PrintedDate | { unresolvedYear: true } | null {
+  const match = PRINTED_DATE.exec(normalise(text));
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = THAI_MONTH_TOKENS.find(([token]) => token === match[2])?.[1];
+  const printedYear = Number(match[3]);
+  if (month === undefined || day < 1 || day > 31) return null;
+
+  // Two failures live behind `gregorianFromPrintedYear`'s single null, and they must not be
+  // reported as one. A two-digit year is a decision this reader has not taken; a four-digit
+  // year outside the plausible window is simply not a usable date. Collapsing them told the
+  // owner "this slip prints a two-digit year" about a slip printing four.
+  if (printedYear < 1000) {
+    // The decision, not an omission. KBANK prints `YY`, so it is the layout where the printed
+    // date is the only date there is (D-059) — and also the one this refuses. Completing a
+    // two-digit year means assuming a century, which is guessing at the exact point D-031
+    // already cost this project a ledger dated 1983. It *may* reduce to arithmetic — the
+    // candidate set across both eras is small, and a window admitting exactly one would settle
+    // it the way the four-digit case is settled — but that is undecided, so it fails closed
+    // and names which case it is (`docs/SLIP_CONTRACT.md`, `PLAN.md` task 21).
+    return { unresolvedYear: true };
+  }
+  const year = gregorianFromPrintedYear(printedYear, today);
+  // Out of era or out of window: date-shaped, but not a date this ledger can believe.
+  if (year === null) return null;
+
+  // A real calendar day, not merely a plausible one: 31 September is refused here rather than
+  // rolling forward into October, which is what `Date` would do left alone.
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (utc.getUTCFullYear() !== year || utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day) return null;
+
+  const hour = match[4] === undefined ? null : Number(match[4]);
+  const minute = match[5] === undefined ? null : Number(match[5]);
+  const time = hour !== null && minute !== null && hour < 24 && minute < 60
+    ? `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`
+    : null;
+
+  return { iso: `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`, time };
+}
+
+/**
+ * The printed date, found by scanning rather than by a label.
+ *
+ * **Only Krungthai labels its date** (`วันที่ทำรายการ`); SCB centres it under the title and
+ * KBANK left-aligns it there, both with no label at all (`docs/SLIP_CONTRACT.md`). So there is
+ * nothing to anchor on for two of the three layouts, and the date is instead identified by
+ * being the one line that parses as one. That is safe here in a way it would not be for the
+ * amount: a date grammar requires a month token from a closed list, which a reference, a
+ * masked account number or a memo cannot satisfy, whereas money is just digits and the fee
+ * line is also money — which is why `readAmount` insists on its label and this does not.
+ *
+ * Two date-shaped lines is a refusal rather than a first-match, for the same reason a doubled
+ * label is: picking one would be a guess wearing a result's clothing.
+ */
+export function readPrintedDate(words: readonly OcrWord[], today: Date): OcrRead<PrintedDate> {
+  const lines = groupIntoLines(words);
+  const found: PrintedDate[] = [];
+  let sawUnresolvedYear = false;
+  for (const line of lines) {
+    const read = readDateLine(line.map((word) => word.text).join(""), today);
+    if (read === null) continue;
+    if ("unresolvedYear" in read) { sawUnresolvedYear = true; continue; }
+    found.push(read);
+  }
+
+  if (found.length === 1) return { ok: true, value: found[0]!, source: "printed" };
+  if (found.length > 1) {
+    return {
+      ok: false,
+      code: "DATE_AMBIGUOUS",
+      message: "More than one line on this slip reads as a date, so which one is the transaction's is not decidable."
+    };
+  }
+  if (sawUnresolvedYear) {
+    return {
+      ok: false,
+      code: "DATE_YEAR_UNRESOLVED",
+      message: "This slip prints a two-digit year, which this reader will not complete. Enter the date yourself."
+    };
+  }
+  return { ok: false, code: "DATE_NOT_FOUND", message: "No line on this image reads as a date." };
 }

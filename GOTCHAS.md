@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-Ninety-five traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+Ninety-six traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -79,6 +79,7 @@ Ninety-five traps, grouped on 2026-08-09 into the eight sections below and added
 - A fixture that supplies its own run widths cannot test right-edge geometry
 - A layout has one row date separator, not one date separator
 - A Thai slip QR does not always decode at native screenshot resolution
+- Stripping whitespace lets an unanchored numeric group swallow the next field
 - A cross-checked statement can still fail the balance chain
 - A payload that carries the repaired data reconciles clean, so the surface that should report the repair reports nothing
 - A WebAssembly decoder resolves its binary next to the bundled chunk, so it 404s and fails silently
@@ -832,3 +833,10 @@ Ninety-five traps, grouped on 2026-08-09 into the eight sections below and added
 - Cause: `readError(body, fallback)` in `lib/wire.ts` looks for an `error` key on an already-parsed object. A `Response` has no such key, so the check falls through to the fallback and nothing throws. `await readError(response, …)` compiles, runs, and is wrong: `await` on a non-promise is a no-op, and TypeScript accepts it because the parameter is `unknown`. The correct call is two lines — `const body: unknown = await response.json().catch(() => null)` and then `readError(body, …)`.
 - Avoid: read the signature rather than the name. Every other caller in `app/` does it correctly, which is what makes the one that does not hard to spot by eye; grep for `readError(response` before trusting an error path you have not seen fire.
 - Verify: 2026-08-10, found while writing `app/cash-entry.tsx` by copying the pattern from `app/slip-capture.tsx`, and **fixed in that file the same day**. What it had been hiding: the capture route words two refusals specifically — a Buddhist-era date and an unknown category — and neither had ever reached the screen. No test caught it and none does now; the suites assert the success path, and the two refusals are reachable only from a real form. `grep -rn "readError(response"` returns nothing, which is the check worth repeating.
+
+## Stripping whitespace lets an unanchored numeric group swallow the next field
+
+- Symptom: a reader works on two of three layouts and reports "no line on this image reads as a date" about a slip that plainly prints one. Every unit test passes, because the failing layout's test asserted only that the read was refused, not *which* refusal it was.
+- Cause: `normalise` in `lib/slip-ocr.ts` removes all whitespace before matching, because Thai has no inter-word spaces and where an OCR engine breaks a run is its business. Krungthai and SCB separate the year from the time with a hyphen, so `2569 - 09:05` survives as `2569-09:05` and reads correctly. **KBANK separates them with spaces alone**, so `69  11:38 น.` arrives as `6911:38น.` and a greedy `\d{2,4}` takes the year as `6911`. That converts to an implausible era year, fails closed, and the line is discarded as "not a date" — a correct-looking refusal reached for the wrong reason.
+- Avoid: anchor the tail. Requiring the match to consume to the end of the line makes the four-digit reading fail and the two-digit one succeed by backtracking, which is the correct split rather than a lucky one. The general rule is the part worth carrying: **once whitespace is stripped, every field boundary has to come from the grammar**, because the only thing separating two numbers is gone. Any `\d{n,m}` sitting next to another numeric field is this bug waiting.
+- Verify: 2026-08-10, found while building `readPrintedDate` and caught by the KBANK test asserting `DATE_YEAR_UNRESOLVED` rather than merely `ok === false`. That assertion *is* the check: before the anchor the call returned `DATE_NOT_FOUND`, which a test on `ok` alone cannot distinguish.

@@ -5,7 +5,9 @@ import {
   findLabelLine,
   proposeAmount,
   readAmount,
+  readPrintedDate,
   valueWordsFor,
+  THAI_MONTH_TOKENS,
   type OcrWord
 } from "@/lib/slip-ocr";
 
@@ -236,5 +238,125 @@ describe("the Buddhist era, which is the opposite way round from the QR", () => 
     expect(gregorianFromPrintedYear(2571, today)).toBeNull();
     expect(gregorianFromPrintedYear(2559, today)).toBe(2016);
     expect(gregorianFromPrintedYear(2558, today)).toBeNull();
+  });
+});
+
+// The printed date (measured 2026-08-10, docs/SLIP_CONTRACT.md § The month vocabulary). Every
+// date below is invented; what is real is the month vocabulary and the per-layout grammar, both
+// of which are format knowledge like the labels above.
+describe("reading the printed date", () => {
+  // 2026 CE is 2569 BE. `today` is fixed so the plausibility window cannot drift with the clock.
+  const today = new Date(Date.UTC(2026, 6, 1));
+
+  const dateLine = (text: string) => [{ text, left: 100, right: 400, top: 50, bottom: 74 }];
+
+  it("reads the Krungthai and SCB grammar, four-digit year with a hyphen before the time", () => {
+    const read = readPrintedDate(dateLine("14 ก.ค. 2569 - 09:05"), today);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.value).toEqual({ iso: "2026-07-14", time: "09:05" });
+  });
+
+  it("converts out of the Buddhist era rather than believing the printed year", () => {
+    // The whole hazard in one assertion: 2569 must not reach the ledger as the year 2569, and
+    // must not be silently accepted as 2026 without the subtraction either (D-031).
+    const read = readPrintedDate(dateLine("3 ธ.ค. 2568 - 18:40"), today);
+    expect(read.ok && read.value.iso).toBe("2025-12-03");
+  });
+
+  it("reads a date with no time printed beside it", () => {
+    const read = readPrintedDate(dateLine("9 ส.ค. 2569"), today);
+    expect(read.ok && read.value).toEqual({ iso: "2026-08-09", time: null });
+  });
+
+  // The three that defeat the obvious matcher. A `[ก-ฮ]\.[ก-ฮ]\.` pattern reads none of these,
+  // and a reader tested only in July would never find out.
+  it.each([
+    ["มี.ค.", "2026-03-08"],
+    ["เม.ย.", "2026-04-08"],
+    ["มิ.ย.", "2026-06-08"]
+  ])("reads %s, which carries a vowel and breaks a two-consonant pattern", (month, iso) => {
+    const read = readPrintedDate(dateLine(`8 ${month} 2569`), today);
+    expect(read.ok && read.value.iso).toBe(iso);
+  });
+
+  it("reads every month in the table, so none is left to be discovered in production", () => {
+    const isos = THAI_MONTH_TOKENS.map(([token]) => {
+      const read = readPrintedDate(dateLine(`5 ${token} 2569`), today);
+      return read.ok ? read.value.iso : `refused: ${token}`;
+    });
+    expect(isos).toEqual([
+      "2026-01-05", "2026-02-05", "2026-03-05", "2026-04-05", "2026-05-05", "2026-06-05",
+      "2026-07-05", "2026-08-05", "2026-09-05", "2026-10-05", "2026-11-05", "2026-12-05"
+    ]);
+  });
+
+  it("refuses KBANK's two-digit year rather than assuming a century", () => {
+    // The decision this reader deliberately does not make. It is named in the refusal so the
+    // form can say something true, rather than reporting "no date found" on a slip that
+    // plainly prints one.
+    const read = readPrintedDate(dateLine("24 ก.ค. 69  11:38 น."), today);
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.code).toBe("DATE_YEAR_UNRESOLVED");
+  });
+
+  it("refuses two date-shaped lines rather than picking the first", () => {
+    const read = readPrintedDate(
+      [
+        { text: "14 ก.ค. 2569 - 09:05", left: 100, right: 400, top: 50, bottom: 74 },
+        { text: "15 ก.ค. 2569 - 10:10", left: 100, right: 400, top: 120, bottom: 144 }
+      ],
+      today
+    );
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.code).toBe("DATE_AMBIGUOUS");
+  });
+
+  it("does not read a reference or a masked account as a date", () => {
+    // Both are digit runs, and a grammar keyed on digits alone would take either. Requiring a
+    // month token from a closed list is what makes scanning safe without a label.
+    const read = readPrintedDate(
+      [
+        { text: "202607231GM7e5j3VFEeH4XvB", left: 100, right: 500, top: 50, bottom: 74 },
+        { text: "xxx-x-x6850-x", left: 100, right: 300, top: 120, bottom: 144 }
+      ],
+      today
+    );
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.code).toBe("DATE_NOT_FOUND");
+  });
+
+  it("refuses a day the calendar does not have, rather than rolling it forward", () => {
+    // `Date` would turn 31 September into 1 October without complaint, which is a wrong date
+    // that looks right — the failure mode this whole module exists to avoid.
+    const read = readPrintedDate(dateLine("31 ก.ย. 2569"), today);
+    expect(read.ok).toBe(false);
+  });
+
+  it("refuses a year outside the window a slip can plausibly belong to", () => {
+    const read = readPrintedDate(dateLine("14 ก.ค. 2500"), today);
+    expect(read.ok).toBe(false);
+    // The code matters as much as the refusal. This is a four-digit year that converts out of
+    // the window, which is a different failure from the two-digit one above — and asserting
+    // only `ok === false` let both report as "this slip prints a two-digit year", which was
+    // false for this input and is exactly the passing-for-the-wrong-reason GOTCHAS warns of.
+    if (read.ok) return;
+    expect(read.code).toBe("DATE_NOT_FOUND");
+  });
+
+  it("tolerates the word breaks an engine chooses, since Thai has no spaces", () => {
+    // The same argument `findLabelLine` makes: where the engine splits a run is its business.
+    const read = readPrintedDate(
+      [
+        { text: "14", left: 100, right: 130, top: 50, bottom: 74 },
+        { text: "ก.ค.", left: 135, right: 180, top: 50, bottom: 74 },
+        { text: "2569", left: 185, right: 240, top: 50, bottom: 74 }
+      ],
+      today
+    );
+    expect(read.ok && read.value.iso).toBe("2026-07-14");
   });
 });

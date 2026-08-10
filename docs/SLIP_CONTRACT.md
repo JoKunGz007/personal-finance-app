@@ -1,6 +1,8 @@
 # Slip layout contract
 
-Last measured: 2026-08-01, against the 23 real slips in the gitignored `receipts_sample/`.
+Last measured: 2026-08-10, against the 23 real slips in the gitignored `receipts_sample/`. The
+2026-08-10 pass read four of them by eye under a fresh grant, to settle the month vocabulary;
+2026-08-01 established everything above it and 2026-08-05 added the OCR measurement.
 
 What a Thai bank transfer slip prints, and where — the sizing `PLAN.md` task 21 was blocked
 on. Companion to the three statement contracts; same rule as those, and same rule as
@@ -75,6 +77,33 @@ the amount, which is the opposite of Krungthai.
 KBANK is the layout where OCR matters most, because its reference carries no date (D-059) —
 so the printed date is the only date there is.
 
+## The month vocabulary, measured 2026-08-10
+
+**All three layouts print the month as an abbreviated Thai name with periods** — the `ก.ค.`
+form, not a Latin `Jul` and not the full `กรกฎาคม`. That was the one thing standing between the
+era arithmetic and a working printed-date reader, and the answer is simpler than feared: one
+month table serves every layout. Confirmed by eye across all three, on more than one month and
+more than one Buddhist year, so it is not an artefact of a single period.
+
+The date grammars differ only in the year and the suffix:
+
+| Layout | Grammar | Year |
+| --- | --- | --- |
+| Krungthai | `D MMM YYYY - HH:MM`, right-aligned after `วันที่ทำรายการ` | Four digits |
+| SCB | `D MMM YYYY - HH:MM`, centred under the title | Four digits |
+| KBANK | `D MMM YY  HH:MM น.`, left-aligned under the title | **Two digits** |
+
+**The table is standard Thai calendar vocabulary, not something these slips revealed** — which
+is why it can be written in full here while the dates on the slips cannot:
+
+`ม.ค. ก.พ. มี.ค. เม.ย. พ.ค. มิ.ย. ก.ค. ส.ค. ก.ย. ต.ค. พ.ย. ธ.ค.`
+
+**Three of the twelve break the obvious matcher, and that is the trap worth carrying.** A
+pattern like `[ก-ฮ]\.[ก-ฮ]\.` reads nine of them and silently misses `มี.ค.`, `เม.ย.` and
+`มิ.ย.`, which carry a vowel — `เม.ย.` even begins with one. A reader built against a sample
+that happens to hold none of those three months passes its tests and fails in March, April and
+June. Match against the token list, never against a shape.
+
 ## The era trap, which is the opposite way round from the QR
 
 **Every layout prints a Buddhist year.** Krungthai and SCB print it in full (`2569`, `2568`);
@@ -101,17 +130,22 @@ slip** is Buddhist and always does. The two sources disagree by 543 years on the
   label also failed on 3. Whether they are the same 3 low-resolution images is unmeasured and
   would be the first thing to check, because `lib/slip-scan.ts` already owns exactly that
   ladder for the QR and the OCR path would want the same one.
-- **The month tokens are unrecorded, and that blocks the printed date.** The tables above give
-  the date *layout* — `D MMM YYYY - HH:MM`, `D MMM YY  HH:MM น.` — without saying whether
-  `MMM` prints as a Thai abbreviation or a Latin one. Found on 2026-08-05 while writing
-  `lib/slip-ocr.ts`: a month table cannot be written from this file, and writing one from
-  guesswork would be inventing format knowledge nobody has measured, which is the one thing
-  these contracts exist to prevent. The era arithmetic is separable and is built
-  (`gregorianFromPrintedYear`); the vocabulary is not. **Measure the month forms per layout
-  when the slips are next open** — it is a one-line addition to the tables above and it is the
-  only thing standing between the era guard and a working printed-date reader. Note where this
-  bites: KBANK's reference carries no date (D-059), so for that layout the printed date is the
-  only date there is.
+- ~~**The month tokens are unrecorded, and that blocks the printed date.**~~ **Measured
+  2026-08-10** — see § The month vocabulary above. All three layouts print the abbreviated Thai
+  form, so one table serves them all, and the finding that matters is that three of the twelve
+  tokens defeat the obvious two-consonant pattern.
+
+- **KBANK's two-digit year is now the blocker, and the current guard refuses it by design.**
+  `gregorianFromPrintedYear` returns null for any year below 1000, and its comment says why: a
+  reader that resolves a two-digit year by assuming a century is guessing at the point where
+  D-031 already burned this project. But KBANK prints `YY` **and** its reference carries no
+  date (D-059), so under the present rule that layout has no readable date from either source.
+  Worth reopening rather than accepting, because the same arithmetic D-031 used may settle it
+  without guessing: completing a two-digit year gives a small candidate set across both eras,
+  and if a plausibility window admits **exactly one**, that is arithmetic rather than a
+  heuristic — the identical argument that made the four-digit case safe. If more than one
+  candidate survives, it must fail closed. **Not implemented, and it is a decision rather than
+  an oversight** (`PLAN.md` task 21).
 - **Digit confusability is unmeasured.** Thai slips print money in a proportional face, and
   `0`/`o`, `1`/`7` and a comma against a full stop are the errors that would silently change
   an amount. A digit whitelist and a mandatory per-field review against the source image are
