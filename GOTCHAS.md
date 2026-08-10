@@ -21,6 +21,8 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - Plain Node can run this repo's TypeScript, but only a module that imports nothing
 - An absolute Windows path is not a valid ESM specifier
 - `Get-Content`/`Set-Content` mangles every em dash in a Markdown file
+- A `.ps1` written as UTF-8 without a BOM is read as ANSI, so the script's own punctuation corrupts
+- Redirecting a native command's stderr in PowerShell 5.1 reports failure at exit 0
 - PowerShell prepends a UTF-8 BOM when piping into a native command
 
 ### Docker and the local Supabase projects
@@ -206,6 +208,20 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - Avoid: never round-trip a Markdown file through PowerShell. Use the editing tools, and give `git commit -F` a message file written by the `Write` tool.
 - Verify: `git diff` after such a rewrite marks every line containing punctuation as changed, not only the lines that were edited.
 
+## A `.ps1` written as UTF-8 without a BOM is read as ANSI, so the script's own punctuation corrupts
+
+- Symptom: a PowerShell script written by an editing tool fails to parse with `Unexpected token '$('` on a line that is obviously valid, and the error text shows `â€"` where the source has an em dash.
+- Cause: the third member of the same family as the two entries around this one, and the one that bites when *writing* tooling rather than editing documents. `powershell.exe -File script.ps1` decodes the file with the system ANSI codepage unless it carries a BOM. A UTF-8 em dash becomes two characters, and if either lands inside a quoted string the quoting breaks and the parser fails somewhere unrelated to the real fault.
+- Avoid: keep `.ps1` files ASCII-only. Where a script must emit non-ASCII — an em dash or ellipsis in generated Markdown, which this repo's continuity docs are full of — build it from a code point (`[char]0x2014`) rather than typing the character into the source. Writing the file with a BOM also works, but ASCII-only survives being moved or re-saved by anything.
+- Verify: 2026-08-09. A generator for the `DECISIONS.md` index failed this way on its first run; rewritten with `$em = [char]0x2014` and no literal non-ASCII, the identical logic ran and produced the same output the mangled version was trying to write.
+
+## Redirecting a native command's stderr in PowerShell 5.1 reports failure at exit 0
+
+- Symptom: `pnpm lint 2>&1` prints the tool's ordinary banner as a red `NativeCommandError` with a stack trace, and the calling script treats a clean run as failed. Reading the last few lines to check a result returns the error wrapper instead of the result.
+- Cause: in Windows PowerShell 5.1, redirecting a native executable's stderr wraps each line in an `ErrorRecord` and sets `$?` to `$false` even when the process exited 0. Tools that write progress to stderr — pnpm prints `$ eslint .` there — therefore look like failures.
+- Avoid: do not redirect. Read `$LASTEXITCODE`, which is the process's real exit code and is unaffected. When both streams are genuinely needed, let `cmd` do the redirect (`& cmd /c "pnpm lint 2>&1"`) so PowerShell never sees the stderr, or send output to a file and read it back.
+- Verify: 2026-08-09. `pnpm lint 2>&1 | Select-Object -Last 3` reported `NativeCommandError` on a run whose exit code was 0 and whose only stderr output was pnpm's own banner; the same command through `cmd /c` returned the lint result and exit 0.
+
 ## PowerShell prepends a UTF-8 BOM when piping into a native command
 
 - Symptom: a password piped into a Node script is rejected although it is correct, and the rejection is indistinguishable from a genuinely wrong one. Found while proving an offline backup-password checker: the *correct* password failed, with the derivation completing suspiciously fast.
@@ -220,7 +236,7 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - Symptom: the database remains healthy while auth, storage, and realtime restart because they cannot resolve `supabase_db_private-ledger-local`.
 - Cause: the attempted custom Docker network with a localhost bridge binding did not preserve Supabase service discovery after reset.
 - Avoid: start Supabase without `--network-id`; use its default project network.
-- Verify: `docker ps --filter "name=supabase_"` shows the expected services healthy and not restart-looping.
+- Verify: 2026-08-10. `docker ps --filter "name=supabase_"` shows the expected services healthy and not restart-looping, and `supabase/config.toml` carries no network or docker keys — so D-009's default-network decision still holds and nothing has drifted back. Still live guidance rather than settled history: the trap fires the moment anyone passes `--network-id`, which nothing prevents.
 
 ## Local Supabase is development-only
 
@@ -234,14 +250,14 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - Symptom: `docker ps` shows older `pg_container` and `pgadmin4_container` resources and volumes.
 - Cause: they predate this project.
 - Avoid: filter Docker operations to names labeled for `private-ledger-local`. Never prune or delete unrelated containers, networks, or volumes.
-- Verify: existing non-Supabase containers remain unchanged after project operations.
+- Verify: 2026-08-10. Three foreign containers are present right now — `database-postgres`, `pg_container` (postgres:12) and `pgadmin4_container` — so this is live, not historical. A broad `docker prune` or an unfiltered stop would take all three.
 
 ## A D-drive database is not an independent backup
 
 - Symptom: the ledger and its “backup” can be lost in the same device failure, malware incident, or accidental deletion.
 - Cause: two copies on one physical computer share a failure domain.
 - Avoid: keep an encrypted restorable file on D only as one extra copy, with another encrypted copy off-machine and the password stored separately.
-- Verify: periodically restore into an empty test project and compare the result.
+- Verify: 2026-08-10. Still live, and sharper than when written: the Windows service `postgresql-x64-18` is running on this machine, all three Supabase projects are local, and the newest backup sits on the same disk as the ledger it protects. Under D-083 hosting migrates by **restoring this file**, so it is now the whole migration rather than one copy among several — an off-machine copy matters more than it did, not less. The restore half of this line was discharged end to end on 2026-08-09 (D-078).
 
 ## Killing `docker exec` does not stop the process inside the container
 
@@ -262,8 +278,9 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - Symptom: `playwright test --config=playwright.owner.config.ts` lists every spec by name, `[1/18]` through `[18/18]`, finishes in seconds, and exits **0**. The only difference from a passing run is the last line: `18 skipped` rather than `18 passed`.
 - Cause: `owner-session.spec.ts` calls `containerReachable()` at module scope and `test.skip()`s the whole file when the local Supabase container does not answer — correct behaviour, so the spec is harmless under a config that should not pick it up. When Docker Desktop has stopped, *nothing* answers, so the entire suite skips. The line reporter still enumerates the collected tests, which is what makes the output read like a full run.
 - Note why this is worse than the Vitest version of the same trap: an exit code of 0 and eighteen green-looking lines defeat both of the usual checks. Reading "the counts, not the colour" only helps if the count read is `passed` and not the numeral beside it.
-- Avoid: read the final word, not the tally. Before trusting any browser-gate result, confirm the daemon answers — `docker ps` failing with `failed to connect to the docker API at npipe:…` is the tell — and remember that Docker Desktop has stopped on this machine repeatedly. After restarting it, wait for the `supabase_db_…` containers to leave `health: starting`, and expect `auth` to lag the database by a few seconds.
-- Verify: 2026-08-05. The owner suite reported `18 skipped` at exit 0 while `docker ps` could not reach the daemon; after restarting Docker Desktop and waiting for health, the identical command reported `18 passed (1.7m)`.
+- Avoid: read the final word, not the tally. Before trusting any browser-gate result, confirm the daemon answers — `docker ps` failing with `failed to connect to the docker API at npipe:…` is the tell. After starting it, wait for the `supabase_db_…` containers to leave `health: starting`, and expect `auth` to lag the database by a few seconds.
+- **Why it is not running is not what this file assumed, corrected by the owner 2026-08-10.** Earlier entries described Docker Desktop as having "stopped mid-session", five times in a week, which reads as an unstable daemon and points at the wrong remedy. It does not stop on its own: **it does not start with Windows, and a session that begins after a reboot begins without it.** So the risk is concentrated at the start of a session and after any restart of the machine, not scattered randomly through one — and the fix is to check `docker ps` first, or to turn on Docker Desktop's start-on-login, rather than to watch for crashes.
+- Verify: 2026-08-05. The owner suite reported `18 skipped` at exit 0 while `docker ps` could not reach the daemon; after starting Docker Desktop and waiting for health, the identical command reported `18 passed (1.7m)`. Cause re-confirmed with the owner 2026-08-10; on that day the daemon ran fifteen hours unattended without stopping.
 
 ## Restarting the Supabase database container breaks every host connection until its dependants restart too
 
@@ -366,14 +383,14 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - Symptom: a user assumes the synthetic UI download can recover the ledger.
 - Cause: confusing an encryption demonstration with the schema-v2 backup contract.
 - Avoid: preserve its `.pldemo` extension and preview labeling; never clear backup staleness from this path.
-- Verify: restore schemas reject it and UI copy calls it a synthetic preview.
+- Verify: 2026-08-10. `.pldemo` is still produced by live code — `lib/download.ts`, `app/recovery-bench.tsx`, `app/import-bench.tsx` and the owner spec all reference it — so the mistake it warns about is still reachable from the running app. It reads like a design note, but the symptom is a person mistaking a demo file for their backup, which is a trap and belongs here.
 
 ## Schema version 1 has no upgrade promise
 
 - Symptom: old pre-release backup files fail schema-v2 restore.
 - Cause: v1 existed before real-data authorization and was retired rather than migrated.
 - Avoid: do not advertise v1 compatibility. Schema v2 is the first supported recovery contract.
-- Verify: docs and validation messages state v1 is unsupported.
+- Verify: 2026-08-10, checked against the database rather than the docs. `restore_backup` refuses anything outside `('2','3','4','5')`, so no v1 file can be staged. Note the one place that still says otherwise: `restore_runs_schema_version_check` reads `schema_version = ANY (ARRAY[1,2,3,4,5])`, carried forward unchanged since the foundation migration. Harmless — `restore_backup` is the only writer and it refuses first — but the table and the function disagree on paper, so read the function, not the constraint, when asking which versions are supported.
 
 ## `restore_request` strips nulls inside the chunk, breaking digest binding
 
