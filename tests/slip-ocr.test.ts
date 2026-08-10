@@ -3,6 +3,8 @@ import {
   gregorianFromPrintedYear,
   groupIntoLines,
   findLabelLine,
+  locateAmount,
+  paddedCrop,
   proposeAmount,
   readAmount,
   readPrintedDate,
@@ -358,5 +360,50 @@ describe("reading the printed date", () => {
       today
     );
     expect(read.ok && read.value.iso).toBe("2026-07-14");
+  });
+});
+
+// Locating the amount rather than reading it (D-087). The shipped feature is a crop the owner
+// reads, so these assert a region — never a figure.
+describe("locating the amount for a crop", () => {
+  it("spans the label and the value beside it", () => {
+    const words = line(100, [["จำนวนเงิน", 10, 90], ["1,250.00", 300, 380]]);
+    const found = locateAmount(words, "KTB");
+    expect(found.ok).toBe(true);
+    if (!found.ok) return;
+    // Left edge is the label's, not the value's: a crop of a bare number asks the owner to
+    // trust the targeting, where one showing the label says which field it is.
+    expect(found.value).toEqual({ left: 10, top: 100, right: 380, bottom: 120 });
+  });
+
+  it("spans two lines on the layout that prints its value below the label", () => {
+    const words = [...line(100, [["จำนวน:", 10, 90]]), ...line(140, [["4,000.00", 250, 340], ["บาท", 350, 390]])];
+    const found = locateAmount(words, "KBANK");
+    expect(found.ok && found.value).toEqual({ left: 10, top: 100, right: 390, bottom: 160 });
+  });
+
+  // The property that makes this worth shipping where reading is not: it answers on images
+  // whose digits do not parse, which are exactly the ones a person needs to see enlarged.
+  it("locates a value that could never be read as money", () => {
+    const words = line(100, [["จำนวนเงิน", 10, 90], ["l,2SO.OO", 300, 380]]);
+    expect(readAmount(line(100, [["l,2SO.OO", 300, 380]])).ok).toBe(false);
+    expect(locateAmount(words, "KTB").ok).toBe(true);
+  });
+
+  it("refuses when the label is not there, rather than offering an arbitrary region", () => {
+    const found = locateAmount(line(100, [["ค่าธรรมเนียม", 10, 90], ["0.00", 300, 380]]), "KTB");
+    expect(found.ok).toBe(false);
+    if (found.ok) return;
+    expect(found.code).toBe("LABEL_NOT_FOUND");
+  });
+
+  it("pads proportionally and never leaves the image", () => {
+    const box = { left: 100, top: 100, right: 200, bottom: 120 };
+    const padded = paddedCrop(box, { width: 1000, height: 1000 });
+    expect(padded).toEqual({ left: 65, top: 93, right: 235, bottom: 127 });
+
+    // Clamped at every edge, so a label near a margin cannot produce a negative crop.
+    const corner = paddedCrop({ left: 0, top: 0, right: 100, bottom: 20 }, { width: 90, height: 15 });
+    expect(corner).toEqual({ left: 0, top: 0, right: 90, bottom: 15 });
   });
 });

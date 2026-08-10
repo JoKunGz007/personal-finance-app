@@ -125,11 +125,15 @@ slip** is Buddhist and always does. The two sources disagree by 543 years on the
   those the label anchoring and the money grammar returned a usable amount — so where OCR
   reads the label, the rest of the path works. The 3 failures are the engine not recognising
   the label, not a targeting fault.
-- **A retry ladder is the obvious next thing to try, and is untested.** D-053 measured that 3
-  of 23 samples do not decode their QR at native resolution and need a 2× upscale; the amount
-  label also failed on 3. Whether they are the same 3 low-resolution images is unmeasured and
-  would be the first thing to check, because `lib/slip-scan.ts` already owns exactly that
-  ladder for the QR and the OCR path would want the same one.
+- ~~**A retry ladder is the obvious next thing to try, and is untested.**~~ **Measured
+  2026-08-10, and the answer is no: the ladder does not transfer, and upscaling makes OCR
+  worse.** Over all 23 samples, Thai-only reads 13 amounts at native resolution and **11** at
+  2×; of the 10 that failed at native, a 2× cubic upscale recovered 1 and **broke 3 that had
+  been working**. With English added, 2× recovered 1 and broke 1. This is the opposite of
+  D-053, where 2× recovered 3 QRs that would not decode at all — and the reason is that the two
+  are different problems: a QR decoder needs module size above a threshold, while a text
+  recogniser needs glyph shapes close to what it was trained on, and interpolation adds no
+  information while disturbing the shapes. **Do not reuse `lib/slip-scan.ts`'s ladder for OCR.**
 - ~~**The month tokens are unrecorded, and that blocks the printed date.**~~ **Measured
   2026-08-10** — see § The month vocabulary above. All three layouts print the abbreviated Thai
   form, so one table serves them all, and the finding that matters is that three of the twelve
@@ -146,9 +150,33 @@ slip** is Buddhist and always does. The two sources disagree by 543 years on the
   heuristic — the identical argument that made the four-digit case safe. If more than one
   candidate survives, it must fail closed. **Not implemented, and it is a decision rather than
   an oversight** (`PLAN.md` task 21).
-- **Digit confusability is unmeasured.** Thai slips print money in a proportional face, and
-  `0`/`o`, `1`/`7` and a comma against a full stop are the errors that would silently change
-  an amount. A digit whitelist and a mandatory per-field review against the source image are
-  already required by `PLAN.md` task 21; nothing here relaxes that.
+- **Digit confusability: measured as stability on 2026-08-10, and stability is not accuracy.**
+  Across the four configurations tried (Thai-only and `tha+eng`, at native and 2×), 14 images
+  were read by more than one configuration and **agreed on all 14 but one**. That one
+  disagreement means at least one configuration returned a figure that **passed the money
+  grammar and was wrong** — so a wrong amount can reach the form, which is exactly the hazard
+  a digit whitelist and mandatory per-field review exist for. **What was not measured is
+  correctness**: establishing it needs every amount read by eye and compared, which was not
+  done, so no accuracy rate should be quoted from this. What can be said is that ~1 in 15 of
+  the readable slips is unstable across configurations.
+
+- **The ceiling is the Thai label, not the digits, and no language choice moves it.** Best
+  outcome per image over all 23, at native resolution: Thai-only `OK=13 LABEL_NOT_FOUND=7
+  VALUE_NOT_MONEY=2 VALUE_AMBIGUOUS=1`; with English `OK=15 LABEL_NOT_FOUND=7
+  VALUE_AMBIGUOUS=1`. **`LABEL_NOT_FOUND=7` is identical either way** — the engine simply does
+  not recognise the Thai label on 7 of 23 images, and adding English cannot help that. What
+  English does buy is the *figure*: it converts both `VALUE_NOT_MONEY` cases, which is coherent
+  because the amount is Latin digits. **So the realistic ceiling is 15 of 23 (~65%)**, and
+  about one slip in three is typed regardless. Note this is a different and larger denominator
+  than D-066's 11 of 14, which covered only the samples whose QR carries a date — the two rates
+  are not comparable and neither is a regression on the other.
+
+- **Measured payload, on disk, as tesseract.js actually fetches it:** `tha.traineddata`
+  **1,072,730 bytes**, `eng.traineddata` **5,199,098 bytes**, and the smallest usable core
+  (`tesseract-core-simd-lstm.wasm`) **2,871,377 bytes**. Thai-only is therefore ~3.8 MB and
+  `tha+eng` ~8.7 MB — so **English costs about 5 MB and buys two slips in twenty-three**. For
+  scale, `public/zxing_reader.wasm` is 1,065,866 bytes and is already loaded on demand (D-057).
+  `PLAN.md`'s longstanding "roughly 10–15 MB" estimate was too high for Thai-only and about
+  right for both languages.
 - **Counterparty extraction is not sized.** The name lines are structurally clear, but a
   counterparty is free text in two scripts and is the field least suited to a whitelist.

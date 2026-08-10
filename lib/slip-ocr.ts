@@ -296,6 +296,77 @@ export function gregorianFromPrintedYear(year: number, today: Date): number | nu
   return converted;
 }
 
+/** A region of the source image, in the same pixel space the words are reported in. */
+export type Box = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * Where the amount sits, so the form can show it rather than type it (D-087).
+ *
+ * **This is the whole reason an engine is worth shipping, and it is a much weaker claim than
+ * reading the figure.** It answers "which part of this image is the amount" and stops there;
+ * the owner reads the digits. No machine-read digit enters the ledger, so the ~1-in-15
+ * cross-configuration instability measured on 2026-08-10 — at least one of which passed the
+ * money grammar while being wrong — cannot reach a stored value at all.
+ *
+ * It also covers **more** slips than reading would. `proposeAmount` needs the figure to parse
+ * as money; this needs only the label to be found and something to sit beside it. On the 23
+ * real samples the label was found on 16–17 while the amount parsed on 13–15, so the weaker
+ * question is answerable on strictly more images — and on exactly the images where reading
+ * failed for digit reasons, which are the ones a person most needs to see enlarged.
+ *
+ * The label is included in the box on purpose: a crop showing `จำนวนเงิน` above the figure says
+ * which field it is, where a bare number crop asks the owner to trust the targeting.
+ */
+export function locateAmount(words: readonly OcrWord[], bank: BankCode): OcrRead<Box> {
+  const lines = groupIntoLines(words);
+  const anchor = SLIP_FIELD_ANCHORS[bank].amount;
+  const found = findLabelLine(lines, anchor.label);
+  if (!found.ok) {
+    return {
+      ok: false,
+      code: found.code,
+      message: found.code === "LABEL_NOT_FOUND"
+        ? "The amount's label could not be found on this image."
+        : "That label appears more than once, so which line carries the amount is not decidable."
+    };
+  }
+  const value = valueWordsFor(lines, found, anchor.position);
+  if (value.length === 0) {
+    return { ok: false, code: "NO_VALUE_BESIDE_LABEL", message: "Nothing sits beside that label to show." };
+  }
+  // The label's own line and the value together, so the crop is self-describing whether the
+  // value sits beside the label (Krungthai, SCB) or under it (KBANK).
+  const region = [...(lines[found.index] ?? []), ...value];
+  return {
+    ok: true,
+    value: {
+      left: Math.min(...region.map((word) => word.left)),
+      top: Math.min(...region.map((word) => word.top)),
+      right: Math.max(...region.map((word) => word.right)),
+      bottom: Math.max(...region.map((word) => word.bottom))
+    },
+    source: anchor.label
+  };
+}
+
+/**
+ * The region to actually crop: `locateAmount`'s box with breathing room, clamped to the image.
+ *
+ * Padding is proportional to the box rather than fixed, because these images arrive at whatever
+ * resolution the owner's phone screenshotted at — a 12-pixel margin is generous on one and
+ * invisible on another.
+ */
+export function paddedCrop(box: Box, image: { width: number; height: number }, ratio = 0.35): Box {
+  const padX = (box.right - box.left) * ratio;
+  const padY = (box.bottom - box.top) * ratio;
+  return {
+    left: Math.max(0, Math.round(box.left - padX)),
+    top: Math.max(0, Math.round(box.top - padY)),
+    right: Math.min(image.width, Math.round(box.right + padX)),
+    bottom: Math.min(image.height, Math.round(box.bottom + padY))
+  };
+}
+
 /**
  * The month vocabulary, measured across all three layouts on 2026-08-10.
  *

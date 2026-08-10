@@ -62,3 +62,9 @@ live/supabase/.temp/
 # a 1.1 MB binary in git is an unreviewable surface, and copying pins it to the installed
 # package version rather than to whatever was checked in.
 public/zxing_reader.wasm
+
+# Copied from node_modules at build time by scripts/copy-tesseract-assets.mjs, never
+# committed: ~3.8 MB of core, worker and Thai language data, for the same two reasons as the
+# reader above — a binary in git is a review surface nobody can read, and it would drift from
+# the package version it has to match (D-087).
+public/tesseract/
