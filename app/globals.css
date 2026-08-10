@@ -142,6 +142,11 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .slip-identity dd { margin: 0; font-size: 14px; }
 .slip-identity .mono { font-family: var(--font-data); font-size: 13px; word-break: break-all; }
 .slip-preview { display: block; max-width: 320px; width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.amount-finder { display: grid; gap: 10px; justify-items: start; }
+.amount-finder button { justify-self: start; }
+/* Wider than the slip preview on purpose: this crop exists to be read, and it is the one
+   image on the page whose whole job is legibility rather than context. */
+.amount-crop { display: block; max-width: 100%; width: auto; height: auto; image-rendering: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); }
 .slip-fields { display: grid; grid-template-columns: repeat(2, minmax(200px, 1fr)); gap: 16px; }
 .slip-fields label, .slip-note { display: grid; gap: 7px; }
 .slip-fields label > span, .slip-note > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }

@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-Ninety-six traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -26,6 +26,9 @@ Ninety-six traps, grouped on 2026-08-09 into the eight sections below and added 
 - A `.ps1` written as UTF-8 without a BOM is read as ANSI, so the script's own punctuation corrupts
 - Redirecting a native command's stderr in PowerShell 5.1 reports failure at exit 0
 - PowerShell prepends a UTF-8 BOM when piping into a native command
+- `pnpm add` fails with `ERR_PNPM_UNEXPECTED_STORE`, and the suggested fix is the expensive one
+- PowerShell eats a scoped package name before pnpm ever runs
+- tesseract.js caches its language data into the process working directory
 
 ### Docker and the local Supabase projects
 
@@ -83,6 +86,7 @@ Ninety-six traps, grouped on 2026-08-09 into the eight sections below and added 
 - A cross-checked statement can still fail the balance chain
 - A payload that carries the repaired data reconciles clean, so the surface that should report the repair reports nothing
 - A WebAssembly decoder resolves its binary next to the bundled chunk, so it 404s and fails silently
+- A WASM core path naming a directory makes the engine ask for a file the build never copied
 
 ### Real data, masking and privacy
 
@@ -233,6 +237,27 @@ Ninety-six traps, grouped on 2026-08-09 into the eight sections below and added 
 - Cause: `"secret" | node script.mjs` sends `EF BB BF` before the text. Verified directly — the received bytes are `239,187,191,97,98,99,13,10` for `"abc"`, so the script reads `"﻿secret"`. The same hazard as the `Get-Content`/`Set-Content` mojibake entry, in the opposite direction: PowerShell adding bytes rather than mangling them.
 - Avoid: strip a leading `﻿` in any stdin password reader. `scripts/mask-statement.mjs` did not and does now — its header documents piping as supported, so a piped statement password would silently have failed against a document that would have opened. Better still, type the password rather than piping it; nothing then reaches the shell history.
 - Verify: a Node harness that spawns the script and writes to its stdin directly passes where the PowerShell pipe fails — driving stdin from Node bypasses the encoding entirely and is the reliable way to test these. Dated 2026-07-25, the same day as the commit-message trap above and from the same evidence — `eae44df` and `910dc8b` still carry the BOM.
+
+## `pnpm add` fails with `ERR_PNPM_UNEXPECTED_STORE`, and the suggested fix is the expensive one
+
+- Symptom: any `pnpm add` refuses before resolving anything, reporting that `node_modules` was created with a different store and advising `pnpm install`.
+- Cause: `node_modules` is linked from a **project-local** `.pnpm-store\v11`, while pnpm now resolves its default store to the drive root — `D:\.pnpm-store\v11`. There is no `.npmrc` in the repo or the profile and `store-dir` is set nowhere, so nothing in the tree records the choice that produced the existing links; the discrepancy is between what the tree was built with and what a fresh pnpm computes today.
+- Avoid: pass `--store-dir ".pnpm-store"` on the command. It matches the existing links, adds the one package and touches nothing else. Do **not** follow the error's own advice: `pnpm install` re-links the entire tree against the new store, which is a large and unnecessary change to a working install for the sake of a single dependency — and this repo's install is deliberately offline and frozen. If the project-local store is ever meant to be permanent, record it in an `.npmrc` rather than passing the flag each time; that is a decision nobody has made.
+- Verify: 2026-08-10. `pnpm store path` reports `D:\.pnpm-store\v11` while `node_modules/.modules.yaml` records `storeDir: D:\Projects\personal-finance-app\.pnpm-store\v11` — the two disagree, which is the whole trap. Adding the tesseract.js dependency with `--store-dir ".pnpm-store"` succeeded and left the rest of the tree untouched.
+
+## PowerShell eats a scoped package name before pnpm ever runs
+
+- Symptom: `pnpm add @scope/pkg` fails with `SplattingNotPermitted` and never reaches pnpm, so the error mentions neither pnpm nor the package.
+- Cause: `@` is PowerShell's splatting operator, so `@scope/pkg` parses as a splatted variable reference rather than an argument. This is a parse-time failure in the shell — the reason the message says nothing about package management is that no package manager was started.
+- Avoid: quote the name — `pnpm add '@tesseract.js-data/tha'`. Single quotes, since the name may also contain characters PowerShell would otherwise expand. The same applies to every scoped package and to any argument that begins with `@`, including `--filter @scope/app`.
+- Verify: 2026-08-10, met while installing the OCR dependency. The unquoted form fails with `SplattingNotPermitted` and the quoted form installs, with no other change to the command.
+
+## tesseract.js caches its language data into the process working directory
+
+- Symptom: `tha.traineddata` and `eng.traineddata` appear untracked at the repository root after an OCR harness runs, each a few megabytes and neither written by any code in this repo.
+- Cause: tesseract.js caches downloaded or read language data relative to the **process's** working directory, not to the module that loaded it, so a harness run from the repo root deposits them there. A harness under `.runtime/` is not protected by its own location — what matters is where the process was started.
+- Avoid: run any OCR harness with its working directory inside `.runtime/`, or set the library's cache path explicitly. Then check for both files afterwards regardless: this is the same class of leak `.runtime/` exists to contain, and a stray multi-megabyte binary in the root is exactly the sort of thing that ends up in a commit. The shipped browser path is unaffected — `public/tesseract/` is populated by `prebuild` from `scripts/copy-tesseract-assets.mjs` and is gitignored (D-087).
+- Verify: 2026-08-10. Both files were found at the project root after the 23-sample measurement and deleted; `git status --short` lists them as `??` while `git diff` shows nothing, which is the untracked-file trap above compounding this one. The root is clean as of this entry.
 
 ### Docker and the local Supabase projects
 
@@ -556,6 +581,14 @@ Ninety-six traps, grouped on 2026-08-09 into the eight sections below and added 
 - Avoid: serve the binary from your own origin and say so explicitly — `prepareZXingModule({ overrides: { locateFile: … } })` pointing at a copy in `public/`, put there at build time by `scripts/copy-zxing-wasm.mjs` (`prebuild`). Do not reach for a CDN; `default-src 'self'` is deliberate. Do not commit the binary either — copying from `node_modules` keeps it pinned to the installed version.
 - The generalisation worth keeping: when a WASM-backed library "works in a test script and not in the app", suspect asset resolution before suspecting the CSP. The bundler moved the module; the asset did not move with it.
 - Verify: 2026-07-30. Five owner-session specs failed with the form never rendering, and passed once `locateFile` pointed at `/zxing_reader.wasm`. `public/zxing_reader.wasm` is gitignored and present after any `pnpm build`.
+
+## A WASM core path naming a directory makes the engine ask for a file the build never copied
+
+- Symptom: the OCR amount finder reports that it could not start, and the network log shows a 404 for `tesseract-core-simd-lstm.wasm.js` — a file name that appears nowhere in this repository. The CSP is the obvious suspect and is not involved.
+- Cause: given a **directory**, tesseract.js feature-detects SIMD and composes its own file name, landing on `tesseract-core-simd-lstm.wasm.js`. That is the ~3.9 MB single-file variant with the WebAssembly inlined. `scripts/copy-tesseract-assets.mjs` copies the other packaging — the 89 KB `tesseract-core-simd-lstm.js` loader plus its separate 2.9 MB `.wasm` — so the composed name has nothing behind it. Both variants exist in `tesseract.js-core`, differ by one `.wasm` infix, and only one is served.
+- Avoid: give `corePath` the **exact file**, not the directory. A path ending in `js` is taken verbatim and skips detection entirely, which is what makes the build's copy list and the runtime's request the same decision instead of two that must be kept in agreement. The same rule is why `langPath` is a directory and safe: there the file name is composed from the language code and `gzip`, both of which the build also controls.
+- The generalisation, and it is the same one the ZXing entry above reaches by a different route: a library that composes an asset name at runtime has a second, invisible copy of your build's file list. Name the file, or make a test compare the two lists.
+- Verify: 2026-08-10. `tests/privacy.test.ts` ("asks the build for exactly the assets the engine loads") compares every `/tesseract/<file>` the engine names against the copy script's `to:` list; pointing `corePath` at the directory-resolved name fails exactly that assertion and nothing else. The owner browser spec then asserts all four files are actually requested from the app's own origin, which is the half a string comparison cannot reach.
 
 ### Real data, masking and privacy
 

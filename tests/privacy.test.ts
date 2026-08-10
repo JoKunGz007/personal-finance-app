@@ -438,12 +438,84 @@ describe("privacy guardrails", () => {
     }
   });
 
+  it("serves the OCR engine from this origin and never from a CDN", () => {
+    const engine = readFileSync("lib/slip-ocr-engine.ts", "utf8");
+    // tesseract.js resolves its worker, core and language data from jsdelivr when left alone.
+    // `connect-src` would block that (D-058), but the policy is the backstop rather than the
+    // reason: a finance app fetching executable code and a language model from a third party
+    // at runtime has handed that party the page. No absolute URL may appear in this module at
+    // all — not in a default, not in a comment, not as a fallback.
+    expect(engine).not.toMatch(/https?:\/\//u);
+    for (const option of ["workerPath", "corePath", "langPath"]) {
+      expect(engine, `${option} must be set, or tesseract falls back to its CDN`)
+        .toMatch(new RegExp(`${option}:\\s*"/tesseract`, "u"));
+    }
+    // The engine is the only file that may know tesseract exists, and it may only reach it
+    // through a dynamic import — a static one would put 3.9 MB of core and language data into
+    // the bundle of a page that mostly does not use it (the D-057 argument, at four times the
+    // size). A value import elsewhere would defeat both properties.
+    expect(engine).toMatch(/await import\("tesseract\.js"\)/u);
+    expect(engine).not.toMatch(/^\s*import\s+\{[^}]*\}\s+from\s+"tesseract\.js"/mu);
+    for (const file of ["app/slip-capture.tsx", "lib/slip-ocr.ts", "lib/slip-scan.ts"]) {
+      expect(readFileSync(file, "utf8"), `${file} must not reach the engine directly`)
+        .not.toMatch(/tesseract\.js/u);
+    }
+  });
+
+  it("stores nothing on the device for OCR, language model included", () => {
+    const engine = readFileSync("lib/slip-ocr-engine.ts", "utf8");
+    // Left at its default, tesseract writes the traineddata into IndexedDB. It is not slip
+    // content, but it is still client storage, and this app has none — the same rule that
+    // makes the captured image itself transient (D-050).
+    expect(engine).toMatch(/cacheMethod:\s*"none"/u);
+    expect(engine).not.toMatch(/indexedDB|localStorage|sessionStorage|document\.cookie/u);
+  });
+
+  it("asks the build for exactly the assets the engine loads", () => {
+    const engine = readFileSync("lib/slip-ocr-engine.ts", "utf8");
+    const copy = readFileSync("scripts/copy-tesseract-assets.mjs", "utf8");
+    const copied = [...copy.matchAll(/to:\s*"([^"]+)"/gu)].map((match) => match[1]!);
+    expect(copied.length).toBeGreaterThan(0);
+
+    // The trap this exists for: given a *directory*, tesseract feature-detects SIMD and asks
+    // for `tesseract-core-simd-lstm.wasm.js`, a single-file variant the build does not copy —
+    // a 404 on a file nobody named, at the point where the obvious suspect is the CSP. The
+    // engine names the core file outright to skip detection, so the two lists must agree.
+    const named = [...engine.matchAll(/"\/tesseract\/([^"]+)"/gu)].map((match) => match[1]!);
+    expect(named.length).toBeGreaterThan(0);
+    for (const asset of named) {
+      expect(copied, `the engine loads ${asset}, which the build does not copy`).toContain(asset);
+    }
+    // `langPath` is a directory, and `gzip: true` makes the request `<lang>.traineddata.gz`.
+    expect(engine).toMatch(/gzip:\s*true/u);
+    expect(copied).toContain("tha.traineddata.gz");
+  });
+
+  it("never lets a machine-read digit reach the amount field", () => {
+    const form = readFileSync("app/slip-capture.tsx", "utf8");
+    const finder = /async function findAmountOnImage\(\)[\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(finder).toContain("locateAmount(");
+    // **The decision D-087 turns on.** Digits came back unstable about one time in fifteen
+    // across configurations, and at least one wrong figure passed the strict money grammar —
+    // so a pre-filled amount would be indistinguishable from a correct one. The feature locates
+    // the amount and the owner reads it. "Pre-fill it, they can always check" is the plausible
+    // change that would quietly undo that, which is why it is asserted rather than commented.
+    expect(finder).not.toMatch(/setAmount\(/u);
+    expect(finder).not.toMatch(/proposeAmount|readAmount/u);
+    // And the reader that returns a figure is not imported by the form at all.
+    expect(form).not.toMatch(/proposeAmount/u);
+  });
+
   it("keeps masked dumps out of git", () => {
     const ignored = readFileSync(".gitignore", "utf8");
     // A dump is value-free but describes a real document, so committing one would make
     // every fixture written afterwards non-invented (docs/FIXTURE_POLICY.md).
     expect(ignored).toMatch(/^masked-dumps\/$/mu);
     expect(ignored).toMatch(/^private-statements\/$/mu);
+    // The tesseract assets are ~3.8 MB of binaries copied from node_modules at build time. In
+    // git they would be a review surface nobody can read and would drift from the package
+    // version they must match; the copy makes that match structural instead.
+    expect(ignored).toMatch(/^public\/tesseract\/$/mu);
   });
 
   it("reduces the account number to its last four digits inside every parser", () => {

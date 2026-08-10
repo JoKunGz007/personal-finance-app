@@ -986,3 +986,71 @@ test("slip capture has no automatically detectable accessibility violations", as
   const results = await new AxeBuilder({ page }).include(".slip-bench").analyze();
   expect(results.violations).toEqual([]);
 });
+
+// The OCR engine in a real browser, which is the one thing no unit test can reach (D-087).
+//
+// **What this proves is the CSP, not the recognition.** `lib/slip-ocr-engine.ts` loads a
+// worker, compiles a WebAssembly core and fetches a language model, and all three are governed
+// by directives that exist to be strict: `worker-src`, `script-src`'s `'wasm-unsafe-eval'`,
+// and a `connect-src` naming `'self'` and the Supabase origin alone (D-058). Every one of them
+// fails at runtime only — a build cannot tell you the browser will refuse.
+//
+// The generated QR carries no Thai amount label, so the honest outcome is `LABEL_NOT_FOUND`.
+// **That refusal is the evidence**: the policy layer only produces it after the engine ran and
+// returned words, so a message naming the label is proof the whole chain worked. The other
+// refusal — "could not start in this browser" — is what a blocked asset would produce, and it
+// is a different sentence on purpose.
+//
+// **The success path is deliberately not asserted here, and that is a design choice rather
+// than a shortfall.** Making the crop appear would mean rendering a Thai amount label into the
+// fixture and requiring the engine to recognise it — and the measured finding this whole
+// feature rests on is that the label is *missed* on 7 of 23 real slips (D-087). A green run
+// that depended on recognition succeeding would be flaky by construction, and would be
+// asserting the engine's accuracy, which no test in this repository claims. What produces the
+// crop is covered where it is deterministic: `locateAmount` and `paddedCrop` in
+// `tests/slip-ocr.test.ts`, and the engine seam in `tests/slip-ocr-engine.test.ts`.
+test("loads the OCR engine in a real browser under the strict CSP", async ({ page }) => {
+  test.setTimeout(180_000);
+
+  const refusals: string[] = [];
+  const requested: string[] = [];
+  const failed: string[] = [];
+  // Registered before anything loads: a policy violation during hydration would otherwise be
+  // missed, and that is exactly the failure mode a build cannot see.
+  page.on("console", (message) => {
+    if (message.type() === "error" && /Content Security Policy|Refused to/iu.test(message.text())) {
+      refusals.push(message.text());
+    }
+  });
+  page.on("request", (request) => requested.push(request.url()));
+  page.on("requestfailed", (request) => failed.push(`${request.url()} — ${request.failure()?.errorText ?? "failed"}`));
+
+  await signIn(page, "/slips");
+  const bench = page.locator(".slip-bench");
+  await chooseSlipImage(page);
+  await expect(bench.getByText(SLIP_REFERENCE)).toBeVisible();
+
+  await bench.getByRole("button", { name: "Enlarge the amount" }).click();
+  await expect(bench.getByText("The amount's label could not be found on this image."))
+    .toBeVisible({ timeout: 150_000 });
+
+  expect(refusals, `the browser refused something: ${refusals.join(" | ")}`).toEqual([]);
+  // Scoped deliberately. Next's router cancels its own RSC prefetches on navigation and those
+  // arrive here as `ERR_ABORTED` — routine, unrelated, and not something this spec should fail
+  // on. What must never happen is an asset this feature needs failing, or anything at all being
+  // blocked by the policy.
+  expect(failed.filter((entry) => entry.includes("/tesseract/")), `an OCR asset failed: ${failed.join(" | ")}`).toEqual([]);
+  expect(failed.filter((entry) => /BLOCKED_BY/u.test(entry)), `a request was blocked: ${failed.join(" | ")}`).toEqual([]);
+
+  // All four assets, from this origin, and the exact core variant the build copies — the one
+  // static tests can only compare as strings. Given a directory instead of a file, tesseract
+  // feature-detects and asks for `tesseract-core-simd-lstm.wasm.js`, which is not copied.
+  const origin = new URL(page.url()).origin;
+  for (const asset of ["worker.min.js", "tesseract-core-simd-lstm.js", "tesseract-core-simd-lstm.wasm", "tha.traineddata.gz"]) {
+    expect(requested, `never requested ${asset}`).toContain(`${origin}/tesseract/${asset}`);
+  }
+  // Nothing reached a third party. The engine's defaults are CDN URLs, so this is the
+  // assertion that the overrides actually took rather than merely being present in the source.
+  expect(requested.filter((url) => /jsdelivr|unpkg|googleapis|cdn\./iu.test(url))).toEqual([]);
+  expect(requested.filter((url) => url.includes("tesseract") && !url.startsWith(origin))).toEqual([]);
+});
