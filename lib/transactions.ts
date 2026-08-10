@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema, type MinorUnitString } from "@/lib/money";
 import type { CapturedSlip } from "@/lib/slips";
+import type { CashEntry } from "@/lib/cash";
 
 // Wire contract for GET /api/v1/accounts/[id]/transactions, which returns
 // `public.list_account_transactions` verbatim. Column names stay as the database
@@ -205,5 +206,19 @@ export function matchesSlipQuery(slip: CapturedSlip, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();
   if (needle === "") return true;
   const haystack = [slip.slip_reference, slip.counterparty, slip.note, slip.bank_code];
+  return haystack.some((field) => field !== null && field.toLocaleLowerCase().includes(needle));
+}
+
+/**
+ * The same filter over a cash entry, which has less to search than either of the others.
+ *
+ * No description, no bank, no reference: a cash payment has no statement and no QR behind it,
+ * so the counterparty and the note the owner typed are the only text it carries. That is a
+ * property of the record rather than a gap to fill later — there is nothing else to add.
+ */
+export function matchesCashQuery(entry: CashEntry, query: string): boolean {
+  const needle = query.trim().toLocaleLowerCase();
+  if (needle === "") return true;
+  const haystack = [entry.counterparty, entry.note];
   return haystack.some((field) => field !== null && field.toLocaleLowerCase().includes(needle));
 }

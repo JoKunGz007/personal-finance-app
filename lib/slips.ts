@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema, toMinorAmount } from "@/lib/money";
+import { applyCorrection, correctionFields, refineCorrection } from "@/lib/corrections";
 import { BANK_CODES } from "@/lib/statement-frame";
 import { readSlipQr } from "@/lib/slip-qr";
 
@@ -97,20 +98,64 @@ export const slipMatchDecisionSchema = z.object({
 export type SlipMatchDecision = z.infer<typeof slipMatchDecisionSchema>;
 
 /**
- * Slips and their decisions travel together, on one response, deliberately.
+ * A correction the owner stored against one slip (migration 013, PLAN task 22).
+ *
+ * The correctable half is what the owner typed; `bank_code`, `slip_reference` and the QR
+ * payload are absent from the overlay entirely, because those came from the QR under its own
+ * CRC and a correctable identity would let one slip be re-typed into another's.
+ *
+ * The shared shape and the null-means-uncorrected rule are in `lib/corrections.ts`.
+ */
+export const slipCorrectionSchema = z.object({
+  slip_id: z.string().uuid(),
+  ...correctionFields
+}).strict().superRefine(refineCorrection);
+
+export type SlipCorrection = z.infer<typeof slipCorrectionSchema>;
+
+export const slipCorrectionResponseSchema = z.object({ correction: slipCorrectionSchema }).strict();
+
+/**
+ * Slips, their decisions and their corrections travel together, on one response, deliberately.
  *
  * A decision is meaningless without its slip, and two endpoints mean two failure modes — the
  * dangerous one being slips arriving while their decisions do not, which shows the owner a
  * pairing they have already overruled and reports it as the rule's own. One response cannot
  * half-arrive: the ledger view already treats a slips failure as "no slips shown", and that
  * degradation stays honest only while a decision cannot go missing on its own.
+ *
+ * Corrections are on the same response for a sharper version of the same argument. A slip
+ * whose correction went missing shows its **original** amount, and the ledger would then
+ * reconcile, total and offer candidates on a figure the owner has already replaced — which is
+ * exactly the defect migration 014 had to fix on the write side, arriving through the read.
  */
 export const slipListSchema = z.object({
   slips: z.array(capturedSlipSchema),
-  matches: z.array(slipMatchDecisionSchema)
+  matches: z.array(slipMatchDecisionSchema),
+  corrections: z.array(slipCorrectionSchema)
 }).strict();
 
 export type CapturedSlip = z.infer<typeof capturedSlipSchema>;
+
+/**
+ * Each slip as it stands after its correction, resolved once at the edge of the read path.
+ *
+ * Everything downstream — the match rule, the manual candidate list, the totals and the row
+ * itself — then reads the figure in force without having to remember to ask. Migration 014 is
+ * the argument: on the write side, comparing a slip's *original* amount against a statement row
+ * both refused correct pairings and accepted wrong ones, and a read path that resolved
+ * corrections in some places and not others would reproduce that silently.
+ *
+ * The originals are not lost — they are still `slips`, and the overlay is still `corrections`,
+ * so a view that wants to say "you corrected this" has both halves to compare.
+ */
+export function slipsInForce(
+  slips: readonly CapturedSlip[],
+  corrections: readonly SlipCorrection[] = []
+): CapturedSlip[] {
+  const bySlip = new Map(corrections.map((correction) => [correction.slip_id, correction]));
+  return slips.map((slip) => applyCorrection(slip, bySlip.get(slip.id)));
+}
 
 /**
  * The write contract for `PUT /api/v1/slips/[id]/match`, mirroring `set_slip_match`.

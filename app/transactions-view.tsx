@@ -5,6 +5,7 @@ import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { formatThb } from "@/lib/money";
 import {
   combinedBalanceByTransaction,
+  matchesCashQuery,
   matchesQuery,
   matchesSlipQuery,
   movementMinor,
@@ -17,20 +18,32 @@ import {
   reconcileLedger,
   summarizeRows,
   type ReconciledRow,
-  type SlipMatchStatus
+  type RowStatus
 } from "@/lib/slip-reconcile";
 import {
+  slipCorrectionResponseSchema,
   slipListSchema,
   slipMatchResponseSchema,
+  slipsInForce,
   type CapturedSlip,
+  type SlipCorrection,
   type SlipMatchDecision
 } from "@/lib/slips";
+import {
+  cashCorrectionResponseSchema,
+  cashInForce,
+  cashListSchema,
+  type CashCorrection,
+  type CashEntry
+} from "@/lib/cash";
+import { CashEntryForm } from "@/app/cash-entry";
+import { CorrectionForm } from "@/app/correction-form";
 import { readError } from "@/lib/wire";
 
 const ALL_ACCOUNTS = "all";
 const ALL_STATUSES = "all";
 type Order = "newest" | "oldest";
-type StatusFilter = typeof ALL_STATUSES | SlipMatchStatus;
+type StatusFilter = typeof ALL_STATUSES | RowStatus;
 
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
@@ -51,7 +64,13 @@ export function TransactionsView() {
   const [transactions, setTransactions] = useState<AccountTransaction[] | null>(null);
   const [slips, setSlips] = useState<CapturedSlip[]>([]);
   const [matches, setMatches] = useState<SlipMatchDecision[]>([]);
+  const [slipCorrections, setSlipCorrections] = useState<SlipCorrection[]>([]);
   const [slipsError, setSlipsError] = useState<string | null>(null);
+  // Cash entries and their corrections, loaded and failing on the same terms as slips: the
+  // confirmed ledger is the authority and a cash outage must not hide it.
+  const [cash, setCash] = useState<CashEntry[]>([]);
+  const [cashCorrections, setCashCorrections] = useState<CashCorrection[]>([]);
+  const [cashError, setCashError] = useState<string | null>(null);
   // Which slip is being decided, so one row's control can be busy without disabling the rest.
   const [deciding, setDeciding] = useState<string | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
@@ -65,6 +84,10 @@ export function TransactionsView() {
   // Which pair is expanded, by transaction id. A matched pair collapses to one row, so without
   // this the ledger can say a row is verified but never say what by (D-075).
   const [openPair, setOpenPair] = useState<string | null>(null);
+  // Which record is being corrected, by its own id. One at a time: two open forms would let
+  // the owner start a second correction against a revision the first is about to move past.
+  const [correcting, setCorrecting] = useState<string | null>(null);
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string>(ALL_ACCOUNTS);
   const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
@@ -77,9 +100,63 @@ export function TransactionsView() {
     [accounts]
   );
 
+  /**
+   * Slips and cash entries **as they stand**, corrections applied once here rather than at
+   * each place that reads an amount.
+   *
+   * This is the read-side counterpart of migration 014. The database's own guard once compared
+   * a slip's original figure against a statement row and both refused correct pairings and
+   * accepted wrong ones; a view that reconciled on the original while displaying the correction
+   * would be the same mistake with nothing to raise it. The uncorrected records stay in `slips`
+   * and `cash`, so the detail panels can still show what was first typed.
+   */
+  const currentSlips = useMemo(() => slipsInForce(slips, slipCorrections), [slips, slipCorrections]);
+  const currentCash = useMemo(() => cashInForce(cash, cashCorrections), [cash, cashCorrections]);
+
+  // Keyed by the record they correct, so a row can ask for its own overlay — both to say
+  // "corrected by you" and to hand the form the revision it must send back.
+  const slipCorrectionBySlip = useMemo(
+    () => new Map(slipCorrections.map((correction) => [correction.slip_id, correction])),
+    [slipCorrections]
+  );
+  const cashCorrectionByEntry = useMemo(
+    () => new Map(cashCorrections.map((correction) => [correction.cash_entry_id, correction])),
+    [cashCorrections]
+  );
+  // The records as first typed, which is what a correction is measured against.
+  const originalSlips = useMemo(() => new Map(slips.map((slip) => [slip.id, slip])), [slips]);
+  const originalCash = useMemo(() => new Map(cash.map((entry) => [entry.id, entry])), [cash]);
+
+  /**
+   * A stored correction, folded back into state rather than triggering a reload.
+   *
+   * The whole reconciled view is derived from these lists, so replacing one overlay re-runs
+   * the rule, the totals and any other slip that was competing for a row — with the revision
+   * the database actually stored, which is the one the next write must send.
+   */
+  function storeSlipCorrection(slipId: string, saved: unknown) {
+    const parsed = slipCorrectionResponseSchema.safeParse({ correction: saved });
+    if (!parsed.success) {
+      setCorrectionError("The correction was saved but did not come back in its published shape. Reload before trusting this view.");
+      return;
+    }
+    setSlipCorrections((current) => [...current.filter((correction) => correction.slip_id !== slipId), parsed.data.correction]);
+    setCorrecting(null);
+  }
+
+  function storeCashCorrection(entryId: string, saved: unknown) {
+    const parsed = cashCorrectionResponseSchema.safeParse({ correction: saved });
+    if (!parsed.success) {
+      setCorrectionError("The correction was saved but did not come back in its published shape. Reload before trusting this view.");
+      return;
+    }
+    setCashCorrections((current) => [...current.filter((correction) => correction.cash_entry_id !== entryId), parsed.data.correction]);
+    setCorrecting(null);
+  }
+
   const matchingSlip = useMemo(
-    () => (matching === null ? null : slips.find((slip) => slip.id === matching) ?? null),
-    [matching, slips]
+    () => (matching === null ? null : currentSlips.find((slip) => slip.id === matching) ?? null),
+    [matching, currentSlips]
   );
 
   /**
@@ -120,8 +197,8 @@ export function TransactionsView() {
   // filtered subset would let choosing an account or typing in the search box silently
   // unmatch a pair and change the totals (D-063).
   const reconciled = useMemo(
-    () => reconcileLedger(transactions ?? [], slips, accounts ?? [], matches),
-    [transactions, slips, accounts, matches]
+    () => reconcileLedger(transactions ?? [], currentSlips, accounts ?? [], matches, currentCash),
+    [transactions, currentSlips, accounts, matches, currentCash]
   );
 
   const decisionBySlip = useMemo(
@@ -153,7 +230,12 @@ export function TransactionsView() {
   // only, and the status line says why (D-056 still holds — the QR names a bank).
   const inAccount = useMemo(() => (row: ReconciledRow) => {
     if (selected === ALL_ACCOUNTS) return true;
-    return row.kind === "confirmed" ? row.transaction.account_id === selected : row.account?.id === selected;
+    if (row.kind === "confirmed") return row.transaction.account_id === selected;
+    // A cash payment never belongs to an account — it has no bank and no statement, so there
+    // is no attribution to derive and none to guess at. It belongs to the all-accounts view,
+    // the same place a slip goes when its bank holds two of them.
+    if (row.kind === "cash") return false;
+    return row.account?.id === selected;
   }, [selected]);
 
   const visibleRows = useMemo(() => {
@@ -162,8 +244,12 @@ export function TransactionsView() {
     // left on. Those are suspended rather than obeyed, because a filter set earlier could
     // otherwise hide the very row the owner is looking for and read as "it is not there".
     if (picking) {
-      const candidates = reconciled.rows.filter((row) =>
-        row.kind === "provisional" ? row.slip.id === matching : offered.has(row.transaction.id));
+      const candidates = reconciled.rows.filter((row) => {
+        if (row.kind === "provisional") return row.slip.id === matching;
+        // Cash is not a statement row and can never be one, so it is never on offer.
+        if (row.kind === "cash") return false;
+        return offered.has(row.transaction.id);
+      });
       candidates.sort(compareRows);
       if (order === "oldest") candidates.reverse();
       return candidates;
@@ -179,6 +265,7 @@ export function TransactionsView() {
       if (row.kind === "confirmed") {
         return matchesQuery(row.transaction, query) || (row.slip !== null && matchesSlipQuery(row.slip, query));
       }
+      if (row.kind === "cash") return matchesCashQuery(row.entry, query);
       return matchesSlipQuery(row.slip, query);
     });
     filtered.sort(compareRows);
@@ -244,6 +331,7 @@ export function TransactionsView() {
       // failure here is reported beside the rows instead of replacing them.
       setSlipsError(null);
       setSlips([]);
+      setSlipCorrections([]);
       // Decisions travel with the slips and are cleared with them. Keeping stale ones while
       // the slips they belong to failed to load would reconcile against records no longer on
       // screen; keeping none while the slips loaded would present an overruled pairing as the
@@ -259,7 +347,28 @@ export function TransactionsView() {
         if (parsedSlips.success) {
           setSlips(parsedSlips.data.slips);
           setMatches(parsedSlips.data.matches);
+          setSlipCorrections(parsedSlips.data.corrections);
         } else setSlipsError("The slips response did not match its contract, so none are shown.");
+      }
+
+      // Cash entries, on the same terms: the confirmed ledger is the authority, so a failure
+      // here is reported beside the rows rather than replacing them. Corrections arrive on the
+      // same response as the entries they correct, and are cleared with them — showing an
+      // entry whose correction went missing would put a figure the owner has already replaced
+      // into the ledger and into its totals.
+      setCashError(null);
+      setCash([]);
+      setCashCorrections([]);
+      const cashResponse = await fetch("/api/v1/cash", { cache: "no-store" });
+      const cashBody: unknown = await cashResponse.json().catch(() => null);
+      if (!cashResponse.ok) {
+        setCashError(readError(cashBody, "Cash entries could not be loaded, so none are shown."));
+      } else {
+        const parsedCash = cashListSchema.safeParse(cashBody);
+        if (parsedCash.success) {
+          setCash(parsedCash.data.entries);
+          setCashCorrections(parsedCash.data.corrections);
+        } else setCashError("The cash response did not match its contract, so none are shown.");
       }
 
       setAccounts(parsedAccounts.data.accounts);
@@ -316,6 +425,12 @@ export function TransactionsView() {
   }
 
   return (
+    <>
+    {/* A sibling of the ledger rather than a child of it, so the page keeps a flat outline —
+        but rendered from here, because recording a cash payment must refresh the rows below
+        and a capture is an event, not something an effect should react to (D-075). Nothing
+        reloads unless the ledger has already been asked for once. */}
+    <CashEntryForm onRecorded={() => { if (transactions !== null) void load(); }} />
     <section className="ledger-band" aria-labelledby="ledger-title">
       <div className="bench-heading">
         <p className="section-index">Ledger</p>
@@ -367,6 +482,7 @@ export function TransactionsView() {
                 <option value="awaiting-statement">Awaiting statement</option>
                 <option value="needs-review">Needs review</option>
                 <option value="statement-only">Statement only</option>
+                <option value="cash">Cash</option>
               </select>
             </label>
             <label className="account-control">
@@ -421,7 +537,10 @@ export function TransactionsView() {
                   row. The provisional count travels with the figure so it discloses how much of
                   itself the bank has not confirmed (D-063). */}
               <dl className="statement-strip ledger-strip">
-                <div><dt>Rows</dt><dd>{totals.rows}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}</dd></div>
+                {/* Cash is counted apart from `provisional`: a slip is waiting for a statement,
+                    while a cash payment has no bank behind it and never will, so folding the
+                    two together would say the total is waiting on something never coming. */}
+                <div><dt>Rows</dt><dd>{totals.rows}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}{totals.cash > 0 ? <small> · {totals.cash} cash</small> : null}</dd></div>
                 <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}</dd></div>
                 <div><dt>Withdrawals</dt><dd>{formatThb(totals.withdrawals)}</dd></div>
                 <div><dt>Net movement</dt><dd>{formatThb(totals.net)}</dd></div>
@@ -440,6 +559,10 @@ export function TransactionsView() {
             <p className="ledger-status" role="status">{slipsError}</p>
           ) : null}
 
+          {cashError ? (
+            <p className="ledger-status" role="status">{cashError}</p>
+          ) : null}
+
           {/* A refused decision is reported where it can be read against the row it was about,
               and as an alert: the owner has just pressed something, and silence would read as
               success. Every message here is one the database refused for a reason the owner
@@ -448,6 +571,13 @@ export function TransactionsView() {
             <div className="warning error" role="alert">
               <strong>Not saved</strong>
               <span>{decisionError}</span>
+            </div>
+          ) : null}
+
+          {correctionError ? (
+            <div className="warning error" role="alert">
+              <strong>Correction</strong>
+              <span>{correctionError}</span>
             </div>
           ) : null}
 
@@ -491,16 +621,94 @@ export function TransactionsView() {
                 </thead>
                 <tbody>
                   {visibleRows.map((row) => {
+                    if (row.kind === "cash") {
+                      const entry = row.entry;
+                      const amount = BigInt(entry.amount_minor);
+                      const original = originalCash.get(entry.id);
+                      return (
+                        <Fragment key={entry.id}>
+                        {/* Marked in the row itself for the reason a slip is: the difference
+                            between a bank's record and one the owner typed is the most important
+                            thing this table says, and it has to survive a screenshot and a
+                            screen reader rather than living in a colour. */}
+                        <tr className="cash-row">
+                          <td data-label="Date">
+                            <time dateTime={entry.occurred_on}>{formatDate(entry.occurred_on)}</time>
+                            <small>{entry.occurred_at_time ?? "—"}</small>
+                          </td>
+                          <td data-label="Description">
+                            <strong>Cash</strong>
+                            <span>{entry.counterparty ?? "No counterparty recorded"}</span>
+                            {entry.note ? <em>{entry.note}</em> : null}
+                          </td>
+                          <td data-label="Status">
+                            <em className="status-chip cash">Cash · no statement</em>
+                            {/* Said in words rather than implied by the chip. A corrected figure
+                                and an uncorrected one look identical on the row, and which one
+                                is on screen is exactly what the owner needs to know. */}
+                            {cashCorrectionByEntry.has(entry.id) ? <small className="decision-mark">Corrected by you</small> : null}
+                            {/* The only way to change a cash entry, because the row itself
+                                cannot be changed: `cash_entries_immutable` refuses an update
+                                outright, so this writes an overlay beside it and keeps both. */}
+                            {original ? (
+                              <div className="match-control">
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  aria-expanded={correcting === entry.id}
+                                  aria-label={`Correct the cash entry dated ${formatDate(entry.occurred_on)}`}
+                                  disabled={correcting !== null && correcting !== entry.id}
+                                  onClick={() => { setCorrectionError(null); setCorrecting((current) => current === entry.id ? null : entry.id); }}
+                                >
+                                  {correcting === entry.id ? "Stop correcting" : "Correct"}
+                                </button>
+                              </div>
+                            ) : null}
+                          </td>
+                          <td data-label={showCombined ? "Account" : "Reference"}>
+                            <span>No account · cash</span>
+                          </td>
+                          <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>
+                            {amount > 0n ? "+" : ""}{formatThb(entry.amount_minor)}
+                          </td>
+                          {/* No balance, in either column, and for a stronger reason than a
+                              slip's: cash is in no bank's balance chain at all, so there is not
+                              even a later statement that could supply one. */}
+                          <td data-label={showCombined ? "Account balance" : "Balance"} className="numeric">
+                            <span aria-label="No balance: cash is in no statement's balance chain">—</span>
+                          </td>
+                          {showCombined ? <td data-label="All accounts" className="numeric combined-balance">—</td> : null}
+                        </tr>
+                        {original && correcting === entry.id ? (
+                          <tr className="correction-row">
+                            <td colSpan={showCombined ? 7 : 6}>
+                              <CorrectionForm
+                                base={original}
+                                overlay={cashCorrectionByEntry.get(entry.id) ?? null}
+                                endpoint={`/api/v1/cash/${entry.id}/correction`}
+                                title="Correct this cash entry"
+                                onSaved={(saved) => storeCashCorrection(entry.id, saved)}
+                                onCancel={() => setCorrecting(null)}
+                              />
+                            </td>
+                          </tr>
+                        ) : null}
+                        </Fragment>
+                      );
+                    }
+
                     if (row.kind === "provisional") {
                       const slip = row.slip;
                       const amount = BigInt(slip.amount_minor);
                       const candidates = candidatesBySlip.get(slip.id) ?? [];
+                      const originalSlip = originalSlips.get(slip.id);
                       return (
-                        // Marked in the row itself, not only by colour: the difference between
-                        // a bank's record and one the owner typed is the most important thing
-                        // this table says, and it has to survive a screenshot, a print and a
-                        // screen reader.
-                        <tr key={slip.id} className="provisional-row">
+                        <Fragment key={slip.id}>
+                        {/* Marked in the row itself, not only by colour: the difference between
+                            a bank's record and one the owner typed is the most important thing
+                            this table says, and it has to survive a screenshot, a print and a
+                            screen reader. */}
+                        <tr className="provisional-row">
                           <td data-label="Date">
                             <time dateTime={slip.occurred_on}>{formatDate(slip.occurred_on)}</time>
                             <small>{slip.occurred_at_time ?? "—"}</small>
@@ -519,6 +727,10 @@ export function TransactionsView() {
                                 this is on no statement" look identical otherwise, and the
                                 second is a decision the owner may want to take back. */}
                             {row.ownerDecided ? <small className="decision-mark">Your decision · on no statement row</small> : null}
+                            {/* A corrected slip matches on the figure in force, so the amount in
+                                this row is not necessarily the one captured. Saying so is what
+                                keeps "no row carries this exact amount" checkable. */}
+                            {slipCorrectionBySlip.has(slip.id) ? <small className="decision-mark">Corrected by you</small> : null}
                             {/* Not a dropdown (D-069). Candidate rows share a bank, an amount
                                 and usually a date and a wording, so an option label repeating
                                 the first two of those cannot tell them apart — the printed time
@@ -543,6 +755,24 @@ export function TransactionsView() {
                                 No {slip.bank_code} row carries this exact amount, so there is nothing to match it to.
                               </small>
                             )}
+                            {/* Offered beside "nothing matches this amount" on purpose: a
+                                mistyped amount is the likeliest reason a slip has no candidate,
+                                and correcting it is the fix. What the QR carried — the bank and
+                                the reference — is not correctable and is not in the form. */}
+                            {originalSlip ? (
+                              <div className="match-control">
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  aria-expanded={correcting === slip.id}
+                                  aria-label={`Correct what you typed for the slip dated ${formatDate(slip.occurred_on)}`}
+                                  disabled={picking || (correcting !== null && correcting !== slip.id)}
+                                  onClick={() => { setCorrectionError(null); setCorrecting((current) => current === slip.id ? null : slip.id); }}
+                                >
+                                  {correcting === slip.id ? "Stop correcting" : "Correct what you typed"}
+                                </button>
+                              </div>
+                            ) : null}
                           </td>
                           <td data-label={showCombined ? "Account" : "Reference"}>
                             {showCombined
@@ -560,6 +790,21 @@ export function TransactionsView() {
                           </td>
                           {showCombined ? <td data-label="All accounts" className="numeric combined-balance">—</td> : null}
                         </tr>
+                        {originalSlip && correcting === slip.id ? (
+                          <tr className="correction-row">
+                            <td colSpan={showCombined ? 7 : 6}>
+                              <CorrectionForm
+                                base={originalSlip}
+                                overlay={slipCorrectionBySlip.get(slip.id) ?? null}
+                                endpoint={`/api/v1/slips/${slip.id}/correction`}
+                                title={`Correct what you typed for this ${slip.bank_code} slip`}
+                                onSaved={(saved) => storeSlipCorrection(slip.id, saved)}
+                                onCancel={() => setCorrecting(null)}
+                              />
+                            </td>
+                          </tr>
+                        ) : null}
+                        </Fragment>
                       );
                     }
 
@@ -703,7 +948,13 @@ export function TransactionsView() {
                               {/* Shown because it is the match: the slip's amount and the row's
                                   movement are equal to the minor unit, or this pairing could not
                                   exist. Seeing both is what makes the claim checkable. */}
-                              <div><dt>Slip amount</dt><dd>{formatThb(pair.amount_minor)}</dd></div>
+                              <div>
+                                <dt>Slip amount</dt>
+                                <dd>
+                                  {formatThb(pair.amount_minor)}
+                                  {slipCorrectionBySlip.has(pair.id) ? " · corrected by you, and it is this figure the match was checked against" : null}
+                                </dd>
+                              </div>
                               <div><dt>Counterparty on the slip</dt><dd>{pair.counterparty ?? "none recorded"}</dd></div>
                               {pair.note ? <div><dt>Note</dt><dd>{pair.note}</dd></div> : null}
                               <div>
@@ -731,5 +982,6 @@ export function TransactionsView() {
         </>
       ) : null}
     </section>
+    </>
   );
 }

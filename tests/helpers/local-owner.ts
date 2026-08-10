@@ -180,7 +180,18 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     -- later as a slip that arrives already decided (migration 012).
     delete from public.slip_match_revisions where owner_id = '${owner}';
     delete from public.slip_match_overlays where owner_id = '${owner}';
+    -- Corrections are the same hazard as decisions and are listed for the same reason
+    -- (migration 013): with the FK triggers disabled, a correction outliving its slip does not
+    -- fail, it just sits there — and shows up much later as a captured slip that arrives
+    -- already carrying an amount nobody in this run typed.
+    delete from public.slip_correction_revisions where owner_id = '${owner}';
+    delete from public.slip_correction_overlays where owner_id = '${owner}';
     delete from public.slips where owner_id = '${owner}';
+    -- Cash entries hang off no account, so nothing else here removes them and a leftover one
+    -- would be counted into the next run's ledger totals as money that moved.
+    delete from public.cash_entry_revisions where owner_id = '${owner}';
+    delete from public.cash_entry_overlays where owner_id = '${owner}';
+    delete from public.cash_entries where owner_id = '${owner}';
     delete from public.import_batch_rows where owner_id = '${owner}';
     delete from public.source_components where owner_id = '${owner}';
     delete from public.source_transactions where owner_id = '${owner}';

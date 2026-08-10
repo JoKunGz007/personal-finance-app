@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   combinedBalanceByTransaction,
   compareTransactions,
+  matchesCashQuery,
   matchesQuery,
   matchesSlipQuery,
   movementMinor,
@@ -11,6 +12,7 @@ import {
   type LedgerTransaction
 } from "@/lib/transactions";
 import { slipListSchema, type CapturedSlip } from "@/lib/slips";
+import { cashListSchema, type CashEntry } from "@/lib/cash";
 
 const FINGERPRINT = "a".repeat(64);
 
@@ -232,6 +234,50 @@ describe("captured slips in the ledger view", () => {
     ...overrides
   });
 
+  // The uncorrected overlay — every correctable field null — because that is the row the
+  // database writes when the owner corrects only a note, and the common shape on the wire.
+  const correction = (overrides: Record<string, unknown> = {}) => ({
+    slip_id: "33333333-3333-4333-8333-333333333333",
+    kind: null,
+    amount_minor: null,
+    occurred_on: null,
+    occurred_at_time: null,
+    counterparty: null,
+    category_id: null,
+    note: null,
+    revision: 1,
+    updated_at: "2026-06-03T05:00:00Z",
+    ...overrides
+  });
+
+  const cash = (overrides: Partial<CashEntry> = {}): CashEntry => ({
+    id: "55555555-5555-4555-8555-555555555555",
+    kind: "withdrawal",
+    amount_minor: "-2500",
+    currency: "THB",
+    occurred_on: "2026-06-02",
+    occurred_at_time: "12:15",
+    counterparty: "Invented market stall",
+    category_id: null,
+    note: null,
+    created_at: "2026-06-02T05:15:00Z",
+    ...overrides
+  });
+
+  const cashCorrection = (overrides: Record<string, unknown> = {}) => ({
+    cash_entry_id: "55555555-5555-4555-8555-555555555555",
+    kind: null,
+    amount_minor: null,
+    occurred_on: null,
+    occurred_at_time: null,
+    counterparty: null,
+    category_id: null,
+    note: null,
+    revision: 1,
+    updated_at: "2026-06-03T05:00:00Z",
+    ...overrides
+  });
+
   it("keeps slips out of the balance derivation entirely", () => {
     // `combinedBalanceByTransaction` takes confirmed rows only — there is no overload that
     // accepts a slip, which is the type system carrying the invariant rather than a comment.
@@ -256,29 +302,68 @@ describe("captured slips in the ledger view", () => {
   });
 
   it("accepts the shape GET /api/v1/slips returns, and rejects an unknown column", () => {
-    expect(slipListSchema.safeParse({ slips: [slip()], matches: [] }).success).toBe(true);
+    expect(slipListSchema.safeParse({ slips: [slip()], matches: [], corrections: [] }).success).toBe(true);
     // Strict, so a migration adding a column fails here loudly rather than being ignored.
-    expect(slipListSchema.safeParse({ slips: [{ ...slip(), reconciled_transaction_id: null }], matches: [] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [{ ...slip(), reconciled_transaction_id: null }], matches: [], corrections: [] }).success).toBe(false);
     // Money must arrive as canonical text; a JSON number is the one way a float could enter.
-    expect(slipListSchema.safeParse({ slips: [{ ...slip(), amount_minor: -25000 }], matches: [] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [{ ...slip(), amount_minor: -25000 }], matches: [], corrections: [] }).success).toBe(false);
   });
 
   it("requires the stored decisions to arrive with the slips rather than separately", () => {
     // The two are one response on purpose (D-067): slips arriving without their decisions would
     // show a pairing the owner has already overruled and call it the rule's. A response missing
     // the key is a contract failure, not an empty list.
-    expect(slipListSchema.safeParse({ slips: [] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [], corrections: [] }).success).toBe(false);
     const decision = {
       slip_id: "33333333-3333-4333-8333-333333333333",
       decision: "matched",
       transaction_id: "44444444-4444-4444-8444-444444444444",
       revision: 1
     };
-    expect(slipListSchema.safeParse({ slips: [slip()], matches: [decision] }).success).toBe(true);
+    expect(slipListSchema.safeParse({ slips: [slip()], matches: [decision], corrections: [] }).success).toBe(true);
     // `unmatched` carries no row, and a vocabulary this schema does not know is not a decision.
-    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, decision: "unmatched", transaction_id: null }] }).success).toBe(true);
-    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, decision: "maybe" }] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, decision: "unmatched", transaction_id: null }], corrections: [] }).success).toBe(true);
+    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, decision: "maybe" }], corrections: [] }).success).toBe(false);
     // The owner id and timestamp the table also holds are not part of the published shape.
-    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, owner_id: "x" }] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [], matches: [{ ...decision, owner_id: "x" }], corrections: [] }).success).toBe(false);
+  });
+
+  it("requires the corrections to arrive with the slips too, for a sharper reason", () => {
+    // A slip whose correction went missing shows the figure the owner replaced, and the ledger
+    // would reconcile and total on it — the read-side twin of what migration 014 fixed.
+    expect(slipListSchema.safeParse({ slips: [slip()], matches: [] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [slip()], matches: [], corrections: [correction()] }).success).toBe(true);
+  });
+
+  it("holds a correction to the same coupling the database does", () => {
+    // Both CHECKs migration 013 puts on the overlay. A row violating either would put a
+    // withdrawal on screen as a positive number and into a total in the wrong direction.
+    expect(slipListSchema.safeParse({ slips: [], matches: [], corrections: [correction({ kind: "deposit", amount_minor: null })] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [], matches: [], corrections: [correction({ kind: null, amount_minor: "-2500" })] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [], matches: [], corrections: [correction({ kind: "deposit", amount_minor: "-2500" })] }).success).toBe(false);
+    expect(slipListSchema.safeParse({ slips: [], matches: [], corrections: [correction({ kind: "withdrawal", amount_minor: "2500" })] }).success).toBe(false);
+    // Money as a JSON number, the one way a float could enter, is refused on a correction too.
+    expect(slipListSchema.safeParse({ slips: [], matches: [], corrections: [correction({ kind: "withdrawal", amount_minor: -2500 })] }).success).toBe(false);
+    // And the uncorrected case, which is the common one: nulls all the way down.
+    expect(slipListSchema.safeParse({ slips: [], matches: [], corrections: [correction()] }).success).toBe(true);
+  });
+
+  it("accepts the shape GET /api/v1/cash returns, and rejects an unknown column", () => {
+    expect(cashListSchema.safeParse({ entries: [cash()], corrections: [] }).success).toBe(true);
+    expect(cashListSchema.safeParse({ entries: [{ ...cash(), account_id: null }], corrections: [] }).success).toBe(false);
+    expect(cashListSchema.safeParse({ entries: [{ ...cash(), amount_minor: -2500 }], corrections: [] }).success).toBe(false);
+    // Entries and their corrections are one response, for the reason slips and decisions are.
+    expect(cashListSchema.safeParse({ entries: [cash()] }).success).toBe(false);
+    expect(cashListSchema.safeParse({ entries: [], corrections: [{ ...cashCorrection(), owner_id: "x" }] }).success).toBe(false);
+    expect(cashListSchema.safeParse({ entries: [], corrections: [cashCorrection({ kind: "deposit", amount_minor: "-2500" })] }).success).toBe(false);
+  });
+
+  it("searches a cash entry by the only text it has", () => {
+    expect(matchesCashQuery(cash(), "market")).toBe(true);
+    expect(matchesCashQuery(cash({ note: "Invented note" }), "note")).toBe(true);
+    expect(matchesCashQuery(cash(), "")).toBe(true);
+    expect(matchesCashQuery(cash({ counterparty: null, note: null }), "anything")).toBe(false);
+    // Not the id, and not the currency: neither is something a person recognises a row by.
+    expect(matchesCashQuery(cash(), cash().id)).toBe(false);
   });
 });

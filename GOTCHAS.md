@@ -4,7 +4,7 @@ Last reviewed: 2026-07-31
 
 Record only repeatable, non-obvious traps. Each item states the symptom, cause, prevention, and verification.
 
-Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+Ninety-five traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -48,6 +48,7 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - An id remapped in every column can still survive inside jsonb
 - Per-slip mutable state cannot be a column on `public.slips`
 - A replica-mode wipe deletes parent rows without complaining about their children
+- `create_cash_entry` bounds no date, while `capture_slip` bounds one
 
 ### Backup, restore and recovery
 
@@ -124,6 +125,7 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - A second `role="status"` in the shell makes every existing status assertion ambiguous
 - An `aria-label` replaces a button's words rather than adding to them, and axe says nothing
 - A control that disables itself takes the focus with it
+- `readError` takes a parsed body, so handing it a `Response` silently shows the fallback
 
 ## Traps
 
@@ -361,6 +363,14 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - Cause: `resetOwnerImportSurface` and the mid-test wipes run under `session_replication_role = replica`, which is there to get past the append-only triggers — but it disables **foreign-key** triggers too. Deleting `public.slips` while `public.slip_match_overlays` still references it therefore succeeds and orphans the children, where the same delete in ordinary mode would have failed loudly and told you exactly which table you forgot. The gap arrived with migration 012 and could not surface until something wrote a decision from a test.
 - Avoid: when a migration adds a table referencing an existing one, add its delete to every wipe **above** the parent's, in child-first order, in the same change as the migration. Do not rely on the delete failing to remind you — under replica mode it cannot. `restore_backup`'s emptiness check is the other half of the cost: it counts every owner-record table, including ones a wipe forgot.
 - Verify: 2026-08-07. `tests/helpers/local-owner.ts` now deletes `slip_match_revisions` then `slip_match_overlays` then `slips`; `tests/slip-match-route.test.ts` writes decisions and leaves none behind, and the owner browser suite passes 19/19 with the restore specs running after it in the same file.
+- **Met again on 2026-08-10**, exactly as predicted, for migration 013's five tables — the two correction overlays, their two revision tables, and `cash_entries`. The wipe now deletes all five, corrections above `slips` and cash in its own child-first group. Note the second half of the cost that 012 did not have: **a cash entry hangs off no account**, so `assertOnlyDisposableLedgerData` cannot see one — its whole signal is an unrecognised row in `public.accounts` — and a leftover cash entry would simply be counted into the next run's ledger totals as money that moved.
+
+## `create_cash_entry` bounds no date, while `capture_slip` bounds one
+
+- Symptom: a cash entry dated 2569 is accepted by the database without complaint, and appears in the ledger 543 years out. The equivalent slip is refused server-side with `outside the plausible window`.
+- Cause: `capture_slip` (migration 011) checks the date against a plausibility window precisely because Thai receipts print Buddhist-era years; `create_cash_entry` (migration 013) checks only that the date is **not null**. The asymmetry is easy to miss because the two RPCs are otherwise near-twins, and easy to assume away because the form does bound it — `CASH_MAX_AGE_YEARS` in `lib/cash.ts` sets `min`/`max` on the date input and the API route trusts what zod parsed.
+- Avoid: treat `app/cash-entry.tsx` as the **only** guard there is, and do not add a second caller of `POST /api/v1/cash` that skips it. Closing it properly means a new migration — 013 is applied and published, and this repository does not edit an applied artifact (D-084, and the same reason 014 exists rather than 013 being amended).
+- Verify: 2026-08-10, by reading both RPCs side by side while writing the cash form. Not covered by any test: the suites go through the form or through a zod-validated route, so neither reaches the unbounded path.
 
 ### Backup, restore and recovery
 
@@ -813,3 +823,10 @@ Ninety-one traps, grouped on 2026-08-09 into the eight sections below. The group
 - Cause: a browser blurs an element that becomes `disabled`, and focus falls to `<body>`. Any control whose own click disables it does this: `onClick={() => setMatching(id)}` on a button whose `disabled` prop reads the same state. An `aria-live` announcement does **not** restore a position in the tab order — it says what happened and leaves the user nowhere.
 - Avoid: when an interaction replaces the controls on screen, move focus deliberately to a control that is certainly present in the new state — the way out of the mode is usually the right one. A `ref` plus a `useEffect` on the mode flag is enough. Assert it: `await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused()`.
 - Verify: 2026-08-07. `app/transactions-view.tsx` focuses the picking mode's `Cancel`; `tests/e2e/owner-session.spec.ts` asserts it. Found by review, not by the suite — the axe passes over that exact screen were green before and after.
+
+## `readError` takes a parsed body, so handing it a `Response` silently shows the fallback
+
+- Symptom: a route's carefully worded refusal never reaches the screen. The user sees the generic sentence the caller passed as a fallback, every time, for every failure — which reads as "the server said nothing useful" rather than as a bug.
+- Cause: `readError(body, fallback)` in `lib/wire.ts` looks for an `error` key on an already-parsed object. A `Response` has no such key, so the check falls through to the fallback and nothing throws. `await readError(response, …)` compiles, runs, and is wrong: `await` on a non-promise is a no-op, and TypeScript accepts it because the parameter is `unknown`. The correct call is two lines — `const body: unknown = await response.json().catch(() => null)` and then `readError(body, …)`.
+- Avoid: read the signature rather than the name. Every other caller in `app/` does it correctly, which is what makes the one that does not hard to spot by eye; grep for `readError(response` before trusting an error path you have not seen fire.
+- Verify: 2026-08-10, found while writing `app/cash-entry.tsx` by copying the pattern from `app/slip-capture.tsx`, and **fixed in that file the same day**. What it had been hiding: the capture route words two refusals specifically — a Buddhist-era date and an unknown category — and neither had ever reached the screen. No test caught it and none does now; the suites assert the success path, and the two refusals are reachable only from a real form. `grep -rn "readError(response"` returns nothing, which is the check worth repeating.

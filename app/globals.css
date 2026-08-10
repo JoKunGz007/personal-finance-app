@@ -129,7 +129,10 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 /* Slip capture. Provisional by design, so it reads lighter than the import bench: the
    statement is still the authority, and nothing here is cross-checked against printed
    totals the way an import is. */
-.slip-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
+/* The cash bench sits on the ledger page and shares the slip bench's shape without sharing its
+   class: a locator written for one must never find the other, and `.slip-bench input[type=file]`
+   is exactly the kind that would. */
+.slip-bench, .cash-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
 .slip-controls { margin: 26px 0 0 167px; display: flex; flex-wrap: wrap; gap: 18px; align-items: end; }
 .slip-controls .file-control { min-width: 280px; }
 .slip-form { margin: 22px 0 0 167px; display: grid; gap: 18px; max-width: 720px; }
@@ -146,8 +149,14 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .slip-fields input, .slip-fields select { height: 47px; }
 .field-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .slip-form button[type="submit"] { justify-self: start; }
+.slip-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+/* The cash form's opening control sits where the slip bench's file picker does, so the two
+   benches line up rather than each starting at a different indent. */
+.cash-bench > .secondary-button { margin-left: 167px; }
 .slip-bench .status, .slip-bench .notice { margin: 18px 0 0 167px; color: var(--muted); font-size: 13px; }
 .slip-bench .status.error { color: var(--red); }
+.cash-bench .status { margin: 0; color: var(--muted); font-size: 13px; }
+.cash-bench .status.error { color: var(--red); }
 
 /* Recovery reads as infrastructure rather than as part of the import flow, because the
    day it is needed there is no import in progress. */
@@ -244,14 +253,19 @@ footer p { margin: 0; }
 .provisional-row { background: color-mix(in srgb, var(--saffron-wash) 55%, transparent); }
 .provisional-row td:first-child { box-shadow: inset 3px 0 var(--saffron); }
 .verified-row td:first-child { box-shadow: inset 3px 0 #278263; }
+/* Cash is the owner's record too, and deliberately not saffron: saffron is this app's "not
+   settled yet", and a cash payment is settled — it simply has no bank behind it and never
+   will. A rule without a wash says "owner's record, complete" rather than "waiting". */
+.cash-row td:first-child { box-shadow: inset 3px 0 var(--muted); }
 .ledger-table .mono { font-family: var(--font-data); font-size: 12px; word-break: break-all; }
 
-/* Four states, and the row says which in words rather than by colour alone — the difference
+/* Five states, and the row says which in words rather than by colour alone — the difference
    between the bank's record and the owner's is the most important thing this table says. */
 .status-chip { display: inline-block; padding: 3px 7px; border: 1px solid currentColor; border-radius: 3px; font: 500 9px/1.35 var(--font-data); font-style: normal; text-transform: uppercase; letter-spacing: .05em; }
 .status-chip.verified { color: #1d6a52; }
 .status-chip.awaiting { color: #60410b; }
 .status-chip.needs-review { color: var(--red); }
+.status-chip.cash { color: var(--muted); }
 .status-none { color: var(--muted); }
 
 /* The owner's say over a match, on the row it is about (D-067). Deliberately quiet: a match is
@@ -273,6 +287,13 @@ footer p { margin: 0; }
 .pair-detail dt { color: var(--muted); font-size: 11px; }
 .pair-detail dd { margin: 3px 0 0; color: var(--navy); font: 500 13px/1.4 var(--font-data); overflow-wrap: anywhere; }
 .pair-detail p { margin: 14px 0 0; padding: 0 20px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+
+/* Correcting a slip or a cash entry (migration 013), opened from the row it is about. Its own
+   wash rather than the pair detail's: that panel explains a pairing, this one writes. */
+.correction-row > td { padding: 4px 0 20px; background: color-mix(in srgb, var(--mist) 70%, transparent); }
+.correction-form { margin: 0; padding: 16px 20px 0; display: grid; gap: 16px; max-width: 720px; }
+.correction-title { margin: 0; color: var(--navy); font-size: 13px; }
+.correction-form .status.error { margin: 0; color: var(--red); font-size: 13px; }
 
 /* Captured slips, listed on the page that captures them (D-075). */
 .captured-slips { padding: 44px 0 12px; border-top: 1px solid var(--line); }
@@ -315,8 +336,9 @@ footer p { margin: 0; }
   .status-line { margin-left: 0; }
   /* Capture is phone-first by definition — share-to-app means sharing from a phone — so
      these lose the heading gutter earlier than they strictly need to. */
-  .slip-controls, .slip-form { margin-left: 0; }
+  .slip-controls, .slip-form, .cash-bench .slip-form { margin-left: 0; }
   .slip-bench .status, .slip-bench .notice { margin-left: 0; }
+  .cash-bench > .secondary-button { margin-left: 0; }
   .or-rule { display: none; }
   .ledger-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .ledger-controls > button { grid-column: 1 / -1; }

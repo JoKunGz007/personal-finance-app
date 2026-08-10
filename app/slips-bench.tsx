@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import { CapturedSlips } from "@/app/captured-slips";
 import { SlipCapture } from "@/app/slip-capture";
-import { slipListSchema, type CapturedSlip } from "@/lib/slips";
+import { slipListSchema, slipsInForce, type CapturedSlip } from "@/lib/slips";
 import { readError } from "@/lib/wire";
 
 /**
@@ -39,7 +39,10 @@ export function SlipsBench() {
         setError("The slips response did not match its contract, so none are shown.");
         return;
       }
-      setSlips(parsed.data.slips);
+      // Shown as they stand, corrections applied. A list that displayed the captured figure
+      // beside a ledger showing the corrected one would make the two surfaces disagree about
+      // the same slip, and the one to trust would not be the one that looks authoritative.
+      setSlips(slipsInForce(parsed.data.slips, parsed.data.corrections));
       setDecided(new Set(parsed.data.matches.map((match) => match.slip_id)));
     } catch {
       setError("The ledger could not be reached, so captured slips are not shown.");

@@ -890,6 +890,95 @@ test("says a statement row is already another slip's before letting this one tak
   expect(psql(`select count(*) from public.slip_match_overlays where owner_id = '${owner}';`).output.trim()).toBe("1");
 });
 
+// Cash and corrections in the ledger view (migration 013, the rest of PLAN task 22). The same
+// shape of gap as D-063 and D-067 twice over: three RPCs shipped with no route and no UI, so
+// nothing built in 013 could be reached from the app. This is that path driven end to end.
+test("records a cash payment into the ledger and corrects it without losing what was typed", async ({ page }) => {
+  await signIn(page, "/ledger");
+
+  const cash = page.locator("section.cash-bench");
+  await cash.getByRole("button", { name: "Record a cash payment" }).click();
+  await cash.getByLabel("Amount (THB)").fill("250.00");
+  await cash.getByLabel("Date", { exact: true }).fill("2026-01-09");
+  await cash.getByLabel("Counterparty (optional)").fill("Browser synthetic stall");
+  await cash.getByRole("button", { name: "Record this payment" }).click();
+  // The words say the thing the owner most needs to know about this table: it is append-only.
+  await expect(cash.getByText(/cannot be deleted/)).toBeVisible({ timeout: 15_000 });
+
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+
+  const row = ledger.locator("tr.cash-row");
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await expect(row.getByText("Cash · no statement")).toBeVisible();
+  await expect(row.locator('td[data-label="Movement"]')).toHaveText(formatThb("-25000"));
+  // No balance in either money column, and for a stronger reason than a slip's: cash is in no
+  // bank's balance chain at all, so there is not even a later statement that could supply one.
+  await expect(row.locator('td[data-label="Account balance"]')).toHaveText("—");
+  // Counted apart from `provisional`: a slip is waiting for a statement, and this never will be.
+  await expect(ledger.locator(".ledger-strip dd").first()).toContainText("1 cash");
+
+  const owner = ownerId();
+  expect(psql(`select count(*) from public.cash_entries where owner_id = '${owner}';`).output.trim()).toBe("1");
+
+  // Correcting it. The entry itself cannot be changed — `cash_entries_immutable` refuses an
+  // update outright — so this writes an overlay beside it and keeps both figures.
+  await row.getByRole("button", { name: /^Correct/u }).click();
+  const form = ledger.locator("form.correction-form");
+  await form.getByLabel("Amount (THB)").fill("260.00");
+  await form.getByRole("button", { name: "Save the correction" }).click();
+
+  await expect(ledger.locator("tr.cash-row").locator('td[data-label="Movement"]'))
+    .toHaveText(formatThb("-26000"), { timeout: 15_000 });
+  await expect(ledger.locator("tr.cash-row").getByText("Corrected by you")).toBeVisible();
+
+  // What was first typed is still there, which is the entire argument for an overlay rather
+  // than an update: cash has no statement behind it, so both figures are the only record.
+  expect(psql(`select amount_minor from public.cash_entries where owner_id = '${owner}';`).output.trim()).toBe("-25000");
+  expect(psql(`select amount_minor from public.cash_entry_overlays where owner_id = '${owner}';`).output.trim()).toBe("-26000");
+  expect(psql(`select count(*) from public.cash_entry_revisions where owner_id = '${owner}';`).output.trim()).toBe("1");
+
+  expect((await new AxeBuilder({ page }).include("section.ledger-band").analyze()).violations).toEqual([]);
+});
+
+test("matches a slip only after the amount is corrected to the one the statement carries", async ({ page }) => {
+  // The read-side half of migration 014, driven through the browser. The captured amount
+  // matches no row; the corrected one matches exactly one. If the view reconciled on the
+  // figure first typed — which is precisely what `set_slip_match` did before 014 — this slip
+  // would stay provisional after a correction that makes it pair.
+  await signIn(page, "/slips");
+  await captureSlip(page, { slip: KTB_SLIP, amount: "505.00", date: "2026-01-09", counterparty: "Browser synthetic payee" });
+
+  await page.goto("/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+
+  // Five rows: nothing carries 505.00, so the slip is its own row.
+  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  const provisional = ledger.locator("tr.provisional-row");
+  await expect(provisional).toHaveCount(1);
+
+  await provisional.getByRole("button", { name: /^Correct what you typed/u }).click();
+  const form = ledger.locator("form.correction-form");
+  await form.getByLabel("Amount (THB)").fill("500.00");
+  await form.getByRole("button", { name: "Save the correction" }).click();
+
+  // Four rows: the corrected figure equals the row's movement to the satang, so the pair
+  // collapses and the payment is counted once.
+  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 15_000 });
+  await expect(ledger.locator("tr.verified-row")).toHaveCount(1);
+
+  // The identity the QR carried is untouched, and the original amount survives beside the
+  // correction — what the owner typed is what the owner may correct, and nothing more.
+  const owner = ownerId();
+  expect(psql(`select amount_minor from public.slips where owner_id = '${owner}';`).output.trim()).toBe("-50500");
+  expect(psql(`select slip_reference from public.slips where owner_id = '${owner}';`).output.trim()).toBe(KTB_SLIP.reference);
+  expect(psql(`select amount_minor from public.slip_correction_overlays where owner_id = '${owner}';`).output.trim()).toBe("-50000");
+});
+
 test("slip capture has no automatically detectable accessibility violations", async ({ page }) => {
   await signIn(page, "/slips");
   await chooseSlipImage(page);

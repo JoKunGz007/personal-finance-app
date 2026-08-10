@@ -22,11 +22,29 @@ export async function GET() {
     .select("slip_id,decision,transaction_id,revision");
   if (matches.error) return routeError("Slips could not be loaded.", 400);
 
+  // Corrections travel with the slips for a sharper version of the same argument (migration
+  // 013). A slip whose correction failed to arrive shows its **original** amount, and the
+  // ledger would then reconcile and total on a figure the owner has already replaced — the
+  // read-side twin of the defect migration 014 had to fix.
+  const corrections = await auth.supabase
+    .from("slip_correction_overlays")
+    .select("slip_id,kind,amount_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision,updated_at");
+  if (corrections.error) return routeError("Slips could not be loaded.", 400);
+
   // bigint arrives as a JS number from PostgREST unless it is cast, so the amount is
   // stringified here rather than trusted to survive JSON. Every money value in this app
-  // crosses the wire as canonical text (D-018).
+  // crosses the wire as canonical text (D-018). A correction's amount is nullable and a null
+  // stays null — the overlay reads that as "not corrected", and a string would be a
+  // correction the owner never made.
   const slips = (data ?? []).map((slip) => ({ ...slip, amount_minor: String(slip.amount_minor) }));
-  return Response.json({ slips, matches: matches.data ?? [] }, { headers: noStoreHeaders });
+  const overlays = (corrections.data ?? []).map((correction) => ({
+    ...correction,
+    amount_minor: correction.amount_minor === null ? null : String(correction.amount_minor)
+  }));
+  return Response.json(
+    { slips, matches: matches.data ?? [], corrections: overlays },
+    { headers: noStoreHeaders }
+  );
 }
 
 export async function POST(request: Request) {

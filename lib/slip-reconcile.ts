@@ -1,4 +1,5 @@
 import type { CapturedSlip, SlipMatchDecision } from "@/lib/slips";
+import type { CashEntry } from "@/lib/cash";
 import type { LedgerAccount } from "@/lib/accounts";
 import { movementMinor, type AccountTransaction } from "@/lib/transactions";
 
@@ -34,6 +35,12 @@ import { movementMinor, type AccountTransaction } from "@/lib/transactions";
  * iteration order would pair two identical transfers with whichever row came first and look
  * confident doing it — and that case is not hypothetical: the real ledger holds a same-bank,
  * same-day pair of equal amount.
+ *
+ * **Every slip reaching this module is the slip in force**, corrections already applied by
+ * `slipsInForce`. Migration 014 is the reason that is a rule rather than a convention: the
+ * database's own guard compared a slip's *original* amount against a statement row, and both
+ * refused correct pairings and accepted wrong ones. A rule matching on a figure the owner has
+ * replaced would be the same defect with nothing to raise it.
  */
 
 /**
@@ -59,6 +66,16 @@ import { movementMinor, type AccountTransaction } from "@/lib/transactions";
 export const MATCH_WINDOW_DAYS = 1;
 
 export type SlipMatchStatus = "verified" | "awaiting-statement" | "needs-review" | "statement-only";
+
+/**
+ * What a ledger row can say about itself, once cash is in the view.
+ *
+ * `cash` is not a fifth reconciliation state, and treating it as one would be the mistake. The
+ * four above are stages of a slip's relationship with a statement; a cash payment has no
+ * statement and never will, so it is not awaiting anything and cannot be verified by anything.
+ * It sits in the same list because it is money that moved, which is what the list is for.
+ */
+export type RowStatus = SlipMatchStatus | "cash";
 
 function dayNumber(date: string): number {
   return Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))) / 86_400_000;
@@ -301,13 +318,33 @@ export type ReconciledRow =
       slip: CapturedSlip;
       account: LedgerAccount | null;
       ownerDecided: boolean;
+    }
+  | {
+      /**
+       * A cash payment (migration 013). Its own row always, and deliberately not a third
+       * reconciliation state: there is no statement row it could collapse onto, so it is
+       * neither provisional nor confirmed by a bank — it is the owner's own record of money
+       * that moved, and the only evidence the figure has.
+       */
+      kind: "cash";
+      id: string;
+      date: string;
+      time: string | null;
+      status: Extract<RowStatus, "cash">;
+      entry: CashEntry;
     };
 
+/**
+ * Slips and cash entries arrive **already corrected** — `slipsInForce` and `cashInForce` do
+ * that at the edge of the read path, so nothing below has to remember to ask which amount is
+ * the real one. Migration 014 is why that resolution happens once rather than per-caller.
+ */
 export function reconcileLedger(
   transactions: readonly AccountTransaction[],
   slips: readonly CapturedSlip[],
   accounts: readonly LedgerAccount[],
-  decisions: readonly SlipMatchDecision[] = []
+  decisions: readonly SlipMatchDecision[] = [],
+  cash: readonly CashEntry[] = []
 ): { rows: ReconciledRow[]; matches: SlipMatches } {
   const matches = proposeSlipMatches(transactions, slips, accounts, decisions);
 
@@ -339,6 +376,20 @@ export function reconcileLedger(
     });
   }
 
+  // Appended without passing through the rule at all. A cash entry has no bank, so the first
+  // of the rule's three facts has nothing to compare, and there is no statement row it could
+  // be paired with — matching it would be inventing a relationship rather than proposing one.
+  for (const entry of cash) {
+    rows.push({
+      kind: "cash" as const,
+      id: entry.id,
+      date: entry.occurred_on,
+      time: entry.occurred_at_time,
+      status: "cash" as const,
+      entry
+    });
+  }
+
   return { rows, matches };
 }
 
@@ -355,7 +406,9 @@ export function compareRows(a: ReconciledRow, b: ReconciledRow): number {
 
 /** The signed movement of a row, whichever kind it is. */
 export function rowMovementMinor(row: ReconciledRow): string {
-  return row.kind === "confirmed" ? movementMinor(row.transaction) : row.slip.amount_minor;
+  if (row.kind === "confirmed") return movementMinor(row.transaction);
+  if (row.kind === "cash") return row.entry.amount_minor;
+  return row.slip.amount_minor;
 }
 
 export type LedgerTotals = {
@@ -365,6 +418,15 @@ export type LedgerTotals = {
   net: string;
   /** How many of those rows are provisional, so the figure can say what it rests on. */
   provisional: number;
+  /**
+   * How many are cash — counted separately from `provisional` rather than folded into it.
+   *
+   * "Provisional" means a bank has not confirmed it *yet*; a cash payment has no bank and
+   * never will, so counting it there would say the total is waiting on something that is
+   * never coming. Both numbers travel with the figure for the same reason: a total over
+   * records of different standing should disclose what it is made of.
+   */
+  cash: number;
 };
 
 /**
@@ -380,25 +442,31 @@ export function summarizeRows(rows: readonly ReconciledRow[]): LedgerTotals {
   let deposits = 0n;
   let withdrawals = 0n;
   let provisional = 0;
+  let cash = 0;
   for (const row of rows) {
-    if (row.kind === "provisional") provisional += 1;
     if (row.kind === "confirmed") {
       for (const component of row.transaction.source_components) {
         const amount = BigInt(component.amount_minor);
         if (component.kind === "deposit") deposits += amount;
         else withdrawals += amount;
       }
-    } else {
-      const amount = BigInt(row.slip.amount_minor);
-      if (row.slip.kind === "deposit") deposits += amount;
-      else withdrawals += amount;
+      continue;
     }
+    // Both remaining kinds carry one signed amount and its direction, so they add the same
+    // way. What differs is only what the count above them means.
+    const record = row.kind === "cash" ? row.entry : row.slip;
+    if (row.kind === "cash") cash += 1;
+    else provisional += 1;
+    const amount = BigInt(record.amount_minor);
+    if (record.kind === "deposit") deposits += amount;
+    else withdrawals += amount;
   }
   return {
     rows: rows.length,
     deposits: deposits.toString(),
     withdrawals: withdrawals.toString(),
     net: (deposits + withdrawals).toString(),
-    provisional
+    provisional,
+    cash
   };
 }

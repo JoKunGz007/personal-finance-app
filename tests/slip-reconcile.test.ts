@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LedgerAccount } from "@/lib/accounts";
-import { slipMatchRequestSchema, type CapturedSlip } from "@/lib/slips";
+import { slipMatchRequestSchema, slipsInForce, type CapturedSlip, type SlipCorrection } from "@/lib/slips";
+import { cashInForce, type CashCorrection, type CashEntry } from "@/lib/cash";
 import type { AccountTransaction, LedgerTransaction } from "@/lib/transactions";
 import {
   MATCH_WINDOW_DAYS,
@@ -9,7 +10,8 @@ import {
   proposeSlipMatches,
   reconcileLedger,
   slipAccount,
-  summarizeRows
+  summarizeRows,
+  type ReconciledRow
 } from "@/lib/slip-reconcile";
 
 // Reconciling captured slips against confirmed statement rows (PLAN task 22, D-063).
@@ -66,7 +68,31 @@ function slip(overrides: Partial<CapturedSlip> = {}): CapturedSlip {
   };
 }
 
+function cashEntry(overrides: Partial<CashEntry> = {}): CashEntry {
+  return {
+    id: "eeeeeeee-0000-4000-8000-000000000001",
+    kind: "withdrawal",
+    amount_minor: "-2500",
+    currency: "THB",
+    occurred_on: "2026-06-10",
+    occurred_at_time: "12:15",
+    counterparty: "Invented market stall",
+    category_id: null,
+    note: null,
+    created_at: "2026-06-10T05:15:00Z",
+    ...overrides
+  };
+}
+
 const ACCOUNTS = [KTB_ACCOUNT, SCB_ACCOUNT];
+
+/**
+ * The rows reconciliation is about. A cash row carries no pairing — it has no bank and no
+ * statement — so narrowing it out is how a test says it is asking about slips.
+ */
+function reconciledSlipRows(rows: readonly ReconciledRow[]): Exclude<ReconciledRow, { kind: "cash" }>[] {
+  return rows.filter((entry): entry is Exclude<ReconciledRow, { kind: "cash" }> => entry.kind !== "cash");
+}
 
 describe("matching a slip to a statement row", () => {
   it("matches on bank, exact amount and a date inside the window", () => {
@@ -241,12 +267,12 @@ describe("the owner's stored decision, which outranks the rule", () => {
 
   it("says which pairings are the owner's and which are the rule's", () => {
     const automatic = reconcileLedger([row()], [slip()], ACCOUNTS);
-    expect(automatic.rows[0]!.ownerDecided).toBe(false);
+    expect(reconciledSlipRows(automatic.rows)[0]!.ownerDecided).toBe(false);
 
     const manual = reconcileLedger([row()], [slip()], ACCOUNTS, [
       { slip_id: slip().id, decision: "matched", transaction_id: row().id, revision: 1 }
     ]);
-    expect(manual.rows[0]!.ownerDecided).toBe(true);
+    expect(reconciledSlipRows(manual.rows)[0]!.ownerDecided).toBe(true);
   });
 
   it("ignores a decision about a slip that is not loaded", () => {
@@ -338,17 +364,17 @@ describe("totals over a reconciled ledger", () => {
   // every row counts every payment exactly once.
   it("counts a matched payment once, not twice", () => {
     const { rows } = reconcileLedger([row()], [slip()], ACCOUNTS);
-    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "0", withdrawals: "-9000", net: "-9000", provisional: 0 });
+    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "0", withdrawals: "-9000", net: "-9000", provisional: 0, cash: 0 });
   });
 
   it("counts an unmatched slip as money that moved, and says it is provisional", () => {
     const { rows } = reconcileLedger([row()], [slip({ occurred_on: "2026-06-20", amount_minor: "-2500", slip_reference: "A00000000000000003" })], ACCOUNTS);
-    expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-11500", net: "-11500", provisional: 1 });
+    expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-11500", net: "-11500", provisional: 1, cash: 0 });
   });
 
   it("adds a deposit slip to deposits, with its sign respected", () => {
     const { rows } = reconcileLedger([], [slip({ kind: "deposit", amount_minor: "45000" })], ACCOUNTS);
-    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "45000", withdrawals: "0", net: "45000", provisional: 1 });
+    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "45000", withdrawals: "0", net: "45000", provisional: 1, cash: 0 });
   });
 
   it("stays exact past 2^53", () => {
@@ -360,7 +386,179 @@ describe("totals over a reconciled ledger", () => {
   });
 
   it("is empty and zero for an empty ledger rather than failing", () => {
-    expect(summarizeRows([])).toEqual({ rows: 0, deposits: "0", withdrawals: "0", net: "0", provisional: 0 });
+    expect(summarizeRows([])).toEqual({ rows: 0, deposits: "0", withdrawals: "0", net: "0", provisional: 0, cash: 0 });
+  });
+
+  it("counts cash apart from provisional, because it is not waiting for a statement", () => {
+    const { rows } = reconcileLedger([row()], [], ACCOUNTS, [], [cashEntry()]);
+    expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-11500", net: "-11500", provisional: 0, cash: 1 });
+  });
+
+  it("adds a cash deposit to deposits, with its sign respected", () => {
+    const { rows } = reconcileLedger([], [], ACCOUNTS, [], [cashEntry({ kind: "deposit", amount_minor: "30000" })]);
+    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "30000", withdrawals: "0", net: "30000", provisional: 0, cash: 1 });
+  });
+
+  it("keeps cash exact past 2^53, like every other amount here", () => {
+    const huge = "9007199254740993";
+    const { rows } = reconcileLedger([], [], ACCOUNTS, [], [cashEntry({ kind: "deposit", amount_minor: huge })]);
+    expect(summarizeRows(rows).net).toBe(huge);
+  });
+});
+
+describe("cash entries in the ledger", () => {
+  it("is its own row and is never matched to a statement row", () => {
+    // Same bank-less amount and day as the statement row: a slip on these facts would pair
+    // with it, and cash must not, because there is no bank to be the first of the three facts.
+    const { rows, matches } = reconcileLedger([row()], [], ACCOUNTS, [], [cashEntry({ amount_minor: "-9000" })]);
+    expect(rows).toHaveLength(2);
+    expect(matches.bySlip.size).toBe(0);
+    expect(matches.byTransaction.size).toBe(0);
+    const cashRow = rows.find((entry) => entry.kind === "cash");
+    expect(cashRow?.status).toBe("cash");
+  });
+
+  it("does not consume a statement row a slip is entitled to", () => {
+    const { rows, matches } = reconcileLedger([row()], [slip()], ACCOUNTS, [], [cashEntry({ amount_minor: "-9000" })]);
+    expect(matches.bySlip.get(slip().id)).toBe(row().id);
+    expect(rows).toHaveLength(2); // the collapsed pair, and the cash entry
+  });
+
+  it("sorts into one sequence with the other kinds", () => {
+    const { rows } = reconcileLedger(
+      [row({ source_date: "2026-06-09" })],
+      [slip({ occurred_on: "2026-06-11", amount_minor: "-700", slip_reference: "A00000000000000009" })],
+      ACCOUNTS,
+      [],
+      [cashEntry({ occurred_on: "2026-06-10" })]
+    );
+    expect([...rows].sort(compareRows).map((entry) => entry.date)).toEqual(["2026-06-11", "2026-06-10", "2026-06-09"]);
+  });
+
+  it("carries no account, because there is none to derive", () => {
+    const { rows } = reconcileLedger([], [], ACCOUNTS, [], [cashEntry()]);
+    const cashRow = rows[0]!;
+    expect(cashRow.kind).toBe("cash");
+    expect("account" in cashRow).toBe(false);
+  });
+});
+
+describe("corrections, applied before anything reads an amount", () => {
+  const correction = (overrides: Partial<SlipCorrection> = {}): SlipCorrection => ({
+    slip_id: slip().id,
+    kind: null,
+    amount_minor: null,
+    occurred_on: null,
+    occurred_at_time: null,
+    counterparty: null,
+    category_id: null,
+    note: null,
+    revision: 1,
+    updated_at: "2026-06-11T02:00:00Z",
+    ...overrides
+  });
+
+  it("leaves a slip alone when it has no correction", () => {
+    expect(slipsInForce([slip()], [])).toEqual([slip()]);
+  });
+
+  it("replaces only the fields the correction states", () => {
+    const [corrected] = slipsInForce([slip()], [correction({ counterparty: "Invented other payee" })]);
+    expect(corrected!.counterparty).toBe("Invented other payee");
+    expect(corrected!.amount_minor).toBe(slip().amount_minor);
+    expect(corrected!.occurred_on).toBe(slip().occurred_on);
+  });
+
+  it("never rewrites the identity the QR carried", () => {
+    const [corrected] = slipsInForce([slip()], [correction({ amount_minor: "-4200", kind: "withdrawal" })]);
+    expect(corrected!.bank_code).toBe(slip().bank_code);
+    expect(corrected!.slip_reference).toBe(slip().slip_reference);
+    expect(corrected!.id).toBe(slip().id);
+  });
+
+  // The read-side half of migration 014. The uncorrected amount matches the statement row and
+  // the corrected one does not, so a rule reading the original would pair two figures the
+  // owner has said are different — which is the pairing 014 stopped the database accepting.
+  it("refuses a pairing the correction has falsified", () => {
+    const uncorrected = proposeSlipMatches([row()], [slip()], ACCOUNTS);
+    expect(uncorrected.bySlip.get(slip().id)).toBe(row().id);
+
+    const corrected = proposeSlipMatches(
+      [row()],
+      slipsInForce([slip()], [correction({ kind: "withdrawal", amount_minor: "-4200" })]),
+      ACCOUNTS
+    );
+    expect(corrected.bySlip.size).toBe(0);
+  });
+
+  // And the other direction, which is the one that produced a *wrong* pairing rather than a
+  // refused one: the captured figure disagrees with the row and the corrected figure agrees.
+  it("allows a pairing only the correction makes true", () => {
+    const uncorrected = proposeSlipMatches([row()], [slip({ amount_minor: "-4200" })], ACCOUNTS);
+    expect(uncorrected.bySlip.size).toBe(0);
+
+    const corrected = proposeSlipMatches(
+      [row()],
+      slipsInForce([slip({ amount_minor: "-4200" })], [correction({ kind: "withdrawal", amount_minor: "-9000" })]),
+      ACCOUNTS
+    );
+    expect(corrected.bySlip.get(slip().id)).toBe(row().id);
+  });
+
+  it("moves the date the match window is measured from", () => {
+    const outside = proposeSlipMatches([row({ source_date: "2026-06-14" })], [slip()], ACCOUNTS);
+    expect(outside.bySlip.size).toBe(0);
+
+    const inside = proposeSlipMatches(
+      [row({ source_date: "2026-06-14" })],
+      slipsInForce([slip()], [correction({ occurred_on: "2026-06-13" })]),
+      ACCOUNTS
+    );
+    expect(inside.bySlip.get(slip().id)).toBe(row().id);
+  });
+
+  it("offers manual candidates against the corrected amount too", () => {
+    const candidates = matchCandidates(
+      slipsInForce([slip({ amount_minor: "-4200" })], [correction({ kind: "withdrawal", amount_minor: "-9000" })])[0]!,
+      [row()],
+      ACCOUNTS
+    );
+    expect(candidates.map((candidate) => candidate.id)).toEqual([row().id]);
+  });
+
+  it("totals the corrected amount, not the captured one", () => {
+    const { rows } = reconcileLedger(
+      [],
+      slipsInForce([slip()], [correction({ kind: "withdrawal", amount_minor: "-4200" })]),
+      ACCOUNTS
+    );
+    expect(summarizeRows(rows).net).toBe("-4200");
+  });
+
+  it("applies the same rule to a cash entry", () => {
+    const cashCorrection: CashCorrection = {
+      cash_entry_id: cashEntry().id,
+      kind: "withdrawal",
+      amount_minor: "-3300",
+      occurred_on: "2026-06-12",
+      occurred_at_time: null,
+      counterparty: null,
+      category_id: null,
+      note: null,
+      revision: 1,
+      updated_at: "2026-06-12T02:00:00Z"
+    };
+    const [corrected] = cashInForce([cashEntry()], [cashCorrection]);
+    expect(corrected!.amount_minor).toBe("-3300");
+    expect(corrected!.occurred_on).toBe("2026-06-12");
+    // Null means "not corrected": the entry's own time and counterparty stand.
+    expect(corrected!.occurred_at_time).toBe(cashEntry().occurred_at_time);
+    expect(corrected!.counterparty).toBe(cashEntry().counterparty);
+  });
+
+  it("ignores a correction whose record is not loaded", () => {
+    expect(slipsInForce([slip()], [correction({ slip_id: "dddddddd-0000-4000-8000-00000000dead", counterparty: "Invented ghost" })]))
+      .toEqual([slip()]);
   });
 });
 

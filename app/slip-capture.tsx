@@ -281,7 +281,12 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
         })
       });
       if (!response.ok) {
-        setError(await readError(response, "The slip could not be captured."));
+        // The body, not the response. `readError` looks for an `error` key on an already-parsed
+        // object, so handing it a `Response` silently falls through to the fallback and this
+        // form showed the generic sentence for every refusal — including the two the capture
+        // route words specifically, the Buddhist-era date and the unknown category (GOTCHAS).
+        const failure: unknown = await response.json().catch(() => null);
+        setError(readError(failure, "The slip could not be captured."));
         return;
       }
       const body = await response.json();
