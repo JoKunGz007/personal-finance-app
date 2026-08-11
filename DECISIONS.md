@@ -111,6 +111,7 @@ This file carries **D-060 onward**. Entries **D-001 … D-059** are settled and 
 - **D-092** — The hosted project refuses `anon` at the grant layer, because its schema manages its own grants
 - **D-093** — Strong access needs one TOTP factor, not two, because the second never bought what it claimed
 - **D-094** — The real ledger lives in the hosted project, moved by the restore path rather than by reimporting
+- **D-095** — `pnpm-workspace.yaml` is committed, because a hosted build clones `HEAD`
 
 ## D-060 — Three real slip references reached the test fixtures, and the entries claiming otherwise are wrong
 
@@ -572,3 +573,14 @@ This file carries **D-060 onward**. Entries **D-001 … D-059** are settled and 
 - A caution that is now real rather than theoretical: the project is on the free plan, which **pauses after 7 days idle**. A paused project means the app is down until it is resumed from the dashboard, and the ledger it holds is now the only one.
 - Evidence: read from the hosted database through `supabase db query` under a link the owner made himself, then unlinked again. `PLAN.md` task 19.
 - Evidence for D-092 follows this entry. Evidence: `lib/owner-access.ts`, `lib/browser/supabase.ts`, `app/owner-access.tsx`, `app/auth/callback/route.ts`, `app/site-header.tsx`, `app/api/v1/dev/session/route.ts`. Vitest **417 passed / 7 skipped across 24 files** (9 in the new `tests/owner-access.test.ts`, 2 in `tests/privacy.test.ts`, 2 in `tests/dev-session.test.ts`). Owner browser suite **25/25**, up from 23 by the two specs in `tests/e2e/owner-access.spec.ts`; isolated suite unchanged at **18/18**.
+
+## D-095 — `pnpm-workspace.yaml` is committed, because a hosted build clones `HEAD`
+
+- Date: 2026-08-11
+- Status: **Done and verified**, on the owner's explicit instruction. It settles the second of the four open questions the 2026-08-11 handoff listed, and it settles it for one file only.
+- **What changed.** `pnpm-workspace.yaml` moves out of the deliberately local-only set and into the repository, carrying the `allowBuilds` map: `esbuild`, `sharp`, `supabase` and `unrs-resolver` allowed, `tesseract.js` denied. The two remaining local-only files, `eslint.config.mjs` and `playwright.config.ts`, are untouched and stay local — nothing here generalises to them, and the reason each was held back is unchanged.
+- **Why it stopped being a tidiness question.** Task 19's remaining half is a Vercel deployment, and a hosted build starts by cloning `HEAD` and running a frozen install. So the gap between the working copy and `HEAD` was no longer a fresh-clone inconvenience — it was the first thing the deployment would hit.
+- **Measured rather than assumed**, because the trap it fixes is one that had already carried a wrong provenance line once (GOTCHAS). A clone of `HEAD` installed under the pinned pnpm 11.17.0 exits 1 with `ERR_PNPM_IGNORED_BUILDS` naming **`esbuild@0.28.1`, `sharp@0.34.5`, `tesseract.js@7.0.0`, `unrs-resolver@1.12.2`** — four packages against the three the committed `onlyBuiltDependencies` named, which is why the older key could not have been silently equivalent.
+- **The denial is deliberate and is the part worth not re-deriving.** `tesseract.js: false` is an explicit `false`, not an omission: its lifecycle script is `opencollective-postinstall`, a donation notice that nothing about reading a slip depends on. Under pnpm 11 an explicit `false` is what stops an ignored build from failing the install rather than merely warning, so the denial has to be stated to be effective. Never widen this to allow all dependency builds; the allowlist is a supply-chain control, not a convenience.
+- **Consequence for the deployment**, and it is the only one: the install step can now succeed on Vercel. Nothing else about task 19 is unblocked by this — the Vercel project, its Node 24 setting, its region, its three environment variables and the Supabase redirect allowlist are all still ahead, and the deployment itself remains unauthorized.
+- Evidence: `pnpm-workspace.yaml`; a frozen install on a clone of `HEAD` failing before this commit and succeeding after it, both under `.runtime/node-v24.18.0-win-x64` and pnpm 11.17.0. `docs/LOCAL_DEV.md`, `GOTCHAS.md` § pnpm 11 requires an explicit build-script allowlist, `PLAN.md` task 19.

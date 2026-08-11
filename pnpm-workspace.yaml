@@ -1,7 +1,12 @@
 packages:
   - "."
 
-onlyBuiltDependencies:
-  - esbuild
-  - sharp
-  - supabase
+allowBuilds:
+  esbuild: true
+  sharp: true
+  supabase: true
+  # Denied deliberately: the script is `opencollective-postinstall`, a donation notice, and
+  # nothing about reading a slip depends on it. An explicit false is what stops
+  # ERR_PNPM_IGNORED_BUILDS failing the install rather than merely warning.
+  tesseract.js: false
+  unrs-resolver: true
