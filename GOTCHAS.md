@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-One hundred and six traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred and seven traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -15,6 +15,7 @@ One hundred and six traps, grouped on 2026-08-09 into the eight sections below a
 - Windows project ownership can block safe edits
 - System Node is too old
 - pnpm 11 requires an explicit build-script allowlist
+- A hosted build succeeds without its environment variables
 - Silent Python installers can outlive the calling shell
 - The skill validator inherits the Windows locale encoding
 - Untracked files are absent from ordinary diffs
@@ -166,6 +167,13 @@ One hundred and six traps, grouped on 2026-08-09 into the eight sections below a
 - Verify: `pnpm install --frozen-lockfile --offline` succeeds and `pnpm ignored-builds` reports none.
 - **Fixed for a fresh clone on 2026-08-11 (D-095).** The `allowBuilds` map is now committed, so this trap is closed everywhere rather than only on this machine. Until then the file's single commit `9203a87` carried pnpm 10's `onlyBuiltDependencies` naming three packages, and the map — which adds `unrs-resolver` and denies `tesseract.js` — lived only in the deliberately uncommitted working copy. **What proved it was a real blocker rather than a tidiness issue:** a frozen install on a clone of `HEAD` under pnpm 11.17.0 exits 1 with `ERR_PNPM_IGNORED_BUILDS` naming `esbuild@0.28.1`, `sharp@0.34.5`, `tesseract.js@7.0.0`, `unrs-resolver@1.12.2`. A hosted build clones `HEAD`, so it met exactly that.
 - Note on the older provenance, kept because the correction is the lesson: this line once read `Dated 2026-07-25 from 5e4c5bb, the commit that introduced the named allowBuilds allowlist`. `git show 5e4c5bb -- pnpm-workspace.yaml` is empty, and no commit introduced `allowBuilds` until this one.
+
+## A hosted build succeeds without its environment variables
+
+- Symptom: a deployment builds green and the app loads, but nothing it shows ever comes from the database, and the browser console reports the requests as blocked by the content security policy rather than as failures anyone would trace to configuration.
+- Cause: `next.config.ts` derives `connect-src` from `NEXT_PUBLIC_SUPABASE_URL` at build time, and `lib/security-headers.ts` fails **narrower** when that value is missing — `connect-src` becomes `'self'` alone. That is the correct direction to fail, but it is silent: nothing in `next build` requires the variable, so a build with no Supabase configuration at all is a successful build. `NEXT_PUBLIC_*` are inlined at build time, so the mistake is baked into the artifact rather than fixable by restarting anything.
+- Avoid: set the variables **before the first deployment**, not after it, and treat a changed value as requiring a rebuild rather than a redeploy. Read the deployed `Content-Security-Policy` header and confirm `connect-src` names the intended Supabase origin and its `wss:` counterpart — the header is the only place the build's opinion of its own configuration is visible from outside.
+- Verify: `curl -I <deployed-url>` and read `connect-src`. Confirmed 2026-08-12 against the hosted deployment, where it correctly named the hosted origin and its socket counterpart (D-096). The failure direction was confirmed separately the same day: a clone with no Supabase environment at all built to exit 0 and emitted the full route list.
 
 ## Silent Python installers can outlive the calling shell
 
