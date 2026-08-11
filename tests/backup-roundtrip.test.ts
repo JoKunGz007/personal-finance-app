@@ -39,7 +39,7 @@ function psql(sql: string): { ok: boolean; output: string } {
 const reachable = psql("select 1;").ok;
 
 // The owner gate is enforced inside the RPCs, so every session must present the
-// same claims pgTAP does: two verified TOTP factors and an aal2 JWT.
+// same claims pgTAP does: a verified TOTP factor and an aal2 JWT.
 const AS_OWNER = `
 set local session_replication_role = replica;
 insert into auth.mfa_factors(id, user_id, friendly_name, factor_type, status, secret, created_at, updated_at)

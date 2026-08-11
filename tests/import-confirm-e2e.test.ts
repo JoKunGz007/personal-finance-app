@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { confirmationDigest, rowFingerprint } from "@/lib/canonical";
 import { assembleImportPayload } from "@/lib/import-assembly";
 import { extractStatement } from "@/lib/krungthai-layout";
+import { REQUIRED_FACTORS } from "@/lib/owner-access";
 import { validStatement } from "./fixtures/krungthai-layout-v1";
 import {
   CONTAINER, api, containerReachable, ownerId as lookupOwnerId,
@@ -82,11 +83,13 @@ describe.skipIf(!reachable)("authenticated import confirmation", () => {
     resetOwnerImportSurface(ownerId, [ACCOUNT_ID]);
   });
 
-  it("reaches aal2 with two verified TOTP factors", () => {
+  it("reaches aal2 with a verified TOTP factor", () => {
     const claims = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString("utf8"));
     expect(claims.aal).toBe("aal2");
     const factors = psql(`select count(*) from auth.mfa_factors where user_id = '${ownerId}' and status = 'verified';`);
-    expect(factors.output.trim()).toBe("2");
+    // Against the shared constant, not a literal, so this cannot drift from
+    // `private.has_strong_owner_access` without one of them failing (D-093).
+    expect(factors.output.trim()).toBe(String(REQUIRED_FACTORS));
   });
 
   it("accepts client-computed fingerprints and digest over HTTP", async () => {

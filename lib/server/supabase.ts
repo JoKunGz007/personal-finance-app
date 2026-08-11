@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { REQUIRED_FACTORS } from "@/lib/owner-access";
 
 function localConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -26,9 +27,13 @@ export async function strongOwnerClient() {
     supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
     supabase.auth.mfa.listFactors()
   ]);
+  // One verified factor, matching `private.has_strong_owner_access` exactly (D-093,
+  // migration 015). These two checks must agree: the SQL one is what actually guards every
+  // RPC, and this one exists so a refusal arrives as a 403 with a sentence rather than as a
+  // PostgreSQL exception from inside a function.
   const verifiedTotp = factors.data?.totp.filter((factor) => factor.status === "verified").length ?? 0;
-  if (aal.data?.currentLevel !== "aal2" || verifiedTotp < 2) {
-    return { ok: false as const, status: 403, message: "AAL2 and two verified TOTP factors are required." };
+  if (aal.data?.currentLevel !== "aal2" || verifiedTotp < REQUIRED_FACTORS) {
+    return { ok: false as const, status: 403, message: "AAL2 and a verified TOTP factor are required." };
   }
   return { ok: true as const, supabase, user };
 }

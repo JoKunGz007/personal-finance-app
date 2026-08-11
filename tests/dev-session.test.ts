@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync, unlinkSync } from "node:fs";
 import { API, OWNER_EMAIL, PUBLISHABLE, containerReachable, ownerId, psql } from "./helpers/local-owner";
+import { REQUIRED_FACTORS } from "@/lib/owner-access";
 
 // The development sign-in route is an authentication bypass that lives in the
 // repository, so these tests are about its guards first and its behaviour second.
@@ -124,7 +125,7 @@ describe("development sign-in guards", () => {
 const reachable = containerReachable();
 
 describe.skipIf(!reachable)("development sign-in against the live stack", () => {
-  it("mints a session at aal2 with two verified factors", async () => {
+  it("mints a session at aal2 with a verified factor", async () => {
     vi.stubEnv("NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION", "1");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", API);
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", PUBLISHABLE);
@@ -147,15 +148,16 @@ describe.skipIf(!reachable)("development sign-in against the live stack", () => 
     const body = await response.json();
     expect(response.status, JSON.stringify(body)).toBe(200);
     expect(body.level).toBe("aal2");
-    expect(body.verifiedFactors).toBe(2);
+    expect(body.verifiedFactors).toBe(REQUIRED_FACTORS);
     expect(body.warning).toBeUndefined();
 
     // The database gate is the thing that actually matters, so assert on it rather than
-    // on the route's own report of itself.
+    // on the route's own report of itself. Asserted against the shared constant so this
+    // cannot drift from `private.has_strong_owner_access` without one of them failing.
     const verified = psql(
       `select count(*) from auth.mfa_factors where user_id = '${ownerId()}' and status = 'verified';`
     );
-    expect(verified.output.trim()).toBe("2");
+    expect(verified.output.trim()).toBe(String(REQUIRED_FACTORS));
 
     vi.unstubAllEnvs();
     vi.resetModules();

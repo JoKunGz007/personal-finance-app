@@ -24,7 +24,7 @@ Source transactions, components, row provenance, artifacts, batches, overlay rev
 Backup export is one advisory-locked database snapshot with explicit stable table ordering and canonical text for every `bigint`. Restore content is authenticated twice: the encrypted envelope protects the file, while the staged manifest binds the ordered table kinds, counts, chunk digests, aggregate digest, and snapshot sequence before atomic application.
 Snapshot retrieval does not mark a backup current. A separate acknowledgement may do that only after client-side encryption and download handoff, and only while the mutation sequence still matches. The synthetic `.pldemo` path is explicitly non-restorable and never acknowledges backup freshness.
 
-Strong access means the bound owner UUID, JWT `aal2`, and at least two verified TOTP factors. Owner binding is service-role-only, advisory locked, Google-provider verified, and permanently single-owner.
+Strong access means the bound owner UUID, JWT `aal2`, and at least one verified TOTP factor (D-093, migration 015; it was two until 2026-08-11). Owner binding is service-role-only, advisory locked, Google-provider verified, and permanently single-owner.
 
 ## Caching and observation
 

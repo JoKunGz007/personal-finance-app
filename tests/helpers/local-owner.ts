@@ -4,7 +4,7 @@ import { totp } from "@/lib/dev/totp";
 // Shared local-stack harness for the suites that need a really authenticated owner.
 //
 // The owner gate compares an email string and never inspects the auth provider, so a
-// local password user with two verified TOTP factors satisfies it exactly as a Google
+// local password user with a verified TOTP factor satisfies it exactly as a Google
 // identity would (DECISIONS D-020). No hosted Supabase or OAuth resources are involved.
 export const CONTAINER = "supabase_db_private-ledger-local";
 export const API = "http://127.0.0.1:54321";
@@ -63,10 +63,13 @@ export async function api(path: string, init: RequestInit & { token?: string; ba
 
 export type OwnerSession = { access_token: string; refresh_token: string };
 
-// Signs in and climbs to aal2 by enrolling and verifying two TOTP factors, which is
-// exactly what private.has_strong_owner_access requires. Parameterised by API base and
-// credentials so the recovery destination — a different project with a different bound
-// owner — reaches aal2 the same way rather than through a second implementation.
+// Signs in and climbs to aal2 by enrolling and verifying one TOTP factor, which is exactly
+// what private.has_strong_owner_access requires (D-093; it was two until 2026-08-11).
+// Deliberately the *minimum* rather than a comfortable margin: a helper that enrolled more
+// than the gate demands would mean no suite ever exercised the real bar, and the day the
+// bar moved every test would still pass. Parameterised by API base and credentials so the
+// recovery destination — a different project with a different bound owner — reaches aal2
+// the same way rather than through a second implementation.
 export async function sessionAt(base: string, email: string, password: string): Promise<OwnerSession> {
   const signIn = await api("/auth/v1/token?grant_type=password", {
     base,
@@ -76,7 +79,7 @@ export async function sessionAt(base: string, email: string, password: string): 
   if (signIn.status !== 200) throw new Error(`sign-in failed: ${signIn.body}`);
   let session = signIn.json() as OwnerSession;
 
-  for (const friendlyName of ["synthetic one", "synthetic two"]) {
+  for (const friendlyName of ["synthetic one"]) {
     const enrolled = await api("/auth/v1/factors", {
       base,
       method: "POST",

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { readFileSync, unlinkSync } from "node:fs";
 import { totp } from "../../lib/dev/totp";
+import { REQUIRED_FACTORS } from "../../lib/owner-access";
 import { containerReachable, ownerId, psql } from "../helpers/local-owner";
 
 // The real sign-in surface, in a real browser (PLAN task 19, step one).
@@ -73,86 +74,76 @@ function clearFactors() {
 test.beforeEach(clearFactors);
 test.afterEach(clearFactors);
 
-test("enrols both factors from the app, and the ledger stays shut until the second one lands", async ({ page }) => {
+const ENROL_PANEL = "Set up your authenticator";
+const CHALLENGE_PANEL = "Enter a code from your authenticator";
+
+test("enrols a factor from the app, and the ledger stays shut until it lands", async ({ page }) => {
   await page.goto("/ledger");
   await signInAtAal1(page);
   expect(verifiedFactorCount(), "this test must start from no factors at all").toBe(0);
 
-  const panel = page.getByRole("region", { name: "Two authenticator codes are required" });
+  const panel = page.getByRole("region", { name: ENROL_PANEL });
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("0 of 2");
 
-  const secrets: string[] = [];
-  for (const factor of [1, 2]) {
-    await panel.getByRole("button", { name: factor === 1 ? "Set up the first factor" : "Set up the second factor" }).click();
+  await panel.getByRole("button", { name: ENROL_PANEL }).click();
 
-    // The square and the typed key are both offered. The key is what makes this usable
-    // without a camera, and it is what this test reads — a QR is not machine-readable here
-    // for the same reason it is not screen-reader-readable.
-    await expect(panel.locator(".owner-access-qr")).toBeVisible();
-    const secret = (await panel.locator(".owner-access-secret code").innerText()).trim();
-    expect(secret.length).toBeGreaterThan(0);
-    expect(secrets, "each factor must get its own secret").not.toContain(secret);
-    secrets.push(secret);
+  // The square and the typed key are both offered. The key is what makes this usable
+  // without a camera, and it is what this test reads — a QR is not machine-readable here
+  // for the same reason it is not screen-reader-readable.
+  await expect(panel.locator(".owner-access-qr")).toBeVisible();
+  const secret = (await panel.locator(".owner-access-secret code").innerText()).trim();
+  expect(secret.length).toBeGreaterThan(0);
 
-    if (factor === 1) {
-      // The accessibility pass runs while the panel is at its fullest — image, key, label
-      // and field all present. It is the only automatic check this surface has.
-      const results = await new AxeBuilder({ page }).include(".owner-access-panel").analyze();
-      expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+  // The accessibility pass runs while the panel is at its fullest — image, key, label and
+  // field all present. It is the only automatic check this surface has.
+  const results = await new AxeBuilder({ page }).include(".owner-access-panel").analyze();
+  expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
 
-      // Focus is on the field the owner has to type into, without a click. D-070 found
-      // exactly this defect in the match chooser, where no axe pass could see it.
-      await expect(page.locator("#owner-access-code")).toBeFocused();
-    }
+  // Focus is on the field the owner has to type into, without a click. D-070 found exactly
+  // this defect in the match chooser, where no axe pass could see it.
+  await expect(page.locator("#owner-access-code")).toBeFocused();
 
-    await page.locator("#owner-access-code").fill(totp(secret));
-    await panel.getByRole("button", { name: "Confirm this factor" }).click();
+  // Nothing is verified yet, so the gate is still shut with an enrolment half-made — the
+  // state that would be invisible if this only checked the end.
+  expect(verifiedFactorCount()).toBe(0);
 
-    // Asserted on the message rather than on what disappears next. A rejected code leaves
-    // the panel looking almost identical — same heading, same count — so a later assertion
-    // would report the count it found and say nothing about why the code failed.
-    await expect(page.locator(".owner-access-message")).toContainText("Accepted.");
+  await page.locator("#owner-access-code").fill(totp(secret));
+  await panel.getByRole("button", { name: "Confirm this factor" }).click();
 
-    if (factor === 1) {
-      // **The state this whole module exists for.** One verified factor already puts the
-      // session at Supabase's own `aal2`, and the app still refuses to show anything —
-      // so the panel must still be here, now asking for the second.
-      await expect(panel).toContainText("1 of 2");
-      await expect(panel.getByRole("button", { name: "Set up the second factor" })).toBeVisible();
-      expect(verifiedFactorCount()).toBe(1);
-    }
-  }
+  // Asserted on the message rather than on what disappears next. A rejected code leaves the
+  // panel looking almost identical, so a later assertion would report what it found and say
+  // nothing about why the code failed.
+  await expect(page.locator(".owner-access-message")).toContainText("Accepted.");
 
-  // Both factors in, and the panel is gone rather than merely quiet.
+  // In, and the panel is gone rather than merely quiet.
   await expect(page.getByText("Signed in as")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Two authenticator codes are required" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: ENROL_PANEL })).toHaveCount(0);
 
   // Asserted against the database, not the component's own report of itself — this is the
   // count `private.has_strong_owner_access` reads.
-  expect(verifiedFactorCount()).toBe(2);
+  expect(verifiedFactorCount()).toBe(REQUIRED_FACTORS);
 });
 
-test("asks a returning owner for one code, and refuses a wrong one without losing the session", async ({ page }) => {
-  // Enrol through the development route's ordinary path, which records each factor's secret
-  // where this test can read it — the returning-owner case starts from factors that already
-  // exist, which is exactly what the enrolment test does not leave behind.
+test("asks a returning owner for a code, and refuses a wrong one without losing the session", async ({ page }) => {
+  // Enrol through the development route's ordinary path, which records the factor's secret
+  // where this test can read it — the returning-owner case starts from a factor that already
+  // exists, which is exactly what the enrolment test does not leave behind.
   await page.goto("/ledger");
   const minted = await devSignIn(page);
   expect(minted.level, "the ordinary path must reach aal2").toBe("aal2");
   const stored: Array<{ factorId: string; secret: string }> = JSON.parse(readFileSync(SECRET_STORE, "utf8"));
-  expect(verifiedFactorCount()).toBe(2);
+  expect(verifiedFactorCount()).toBe(REQUIRED_FACTORS);
 
   // Signing out is the path a returning owner takes, and it is also what drops this session
-  // back to nothing so the next one starts at aal1 with both factors already in place.
+  // back to nothing so the next one starts at aal1 with the factor already in place.
   await page.reload();
   await page.getByRole("button", { name: "Sign out" }).first().click();
   await signInAtAal1(page);
 
-  const panel = page.getByRole("region", { name: "Enter a code from your authenticator" });
+  const panel = page.getByRole("region", { name: CHALLENGE_PANEL });
   await expect(panel).toBeVisible();
-  // No enrolment offered: both factors exist, so the only thing missing is proof.
-  await expect(page.getByRole("region", { name: "Two authenticator codes are required" })).toHaveCount(0);
+  // No enrolment offered: the factor exists, so the only thing missing is proof.
+  await expect(page.getByRole("region", { name: ENROL_PANEL })).toHaveCount(0);
   await expect(page.locator("#owner-access-code")).toBeFocused();
 
   // A wrong code is refused and says so, and the panel survives it. A challenge screen that
@@ -171,7 +162,7 @@ test("asks a returning owner for one code, and refuses a wrong one without losin
   await panel.getByRole("button", { name: "Continue" }).click();
 
   await expect(page.getByText("Signed in as")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Enter a code from your authenticator" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: CHALLENGE_PANEL })).toHaveCount(0);
   // Nothing was enrolled to get here — a challenge proves a factor, it does not add one.
-  expect(verifiedFactorCount()).toBe(2);
+  expect(verifiedFactorCount()).toBe(REQUIRED_FACTORS);
 });

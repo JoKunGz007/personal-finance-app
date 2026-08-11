@@ -14,7 +14,11 @@ select ok(not private.is_canonical_int64_text('-0'), 'negative zero is rejected'
 select ok(not private.is_canonical_int64_text('-1', true), 'negative value is rejected for nonnegative text');
 select ok(not private.is_canonical_int64_text(null), 'null is rejected');
 
--- Strong access requires the bound owner, aal2, and two verified TOTP factors.
+-- Strong access requires the bound owner, aal2, and a verified TOTP factor (D-093,
+-- migration 015; two until 2026-08-11). The cases below build up one condition at a time so
+-- a failure names which one broke, and the three refusals — wrong owner, aal1, and no
+-- verified TOTP factor — are the contract. The count is the part that changed; nothing else
+-- here did.
 select set_config(
   'request.jwt.claims',
   '{"sub":"22222222-2222-4222-8222-222222222222","role":"authenticated","aal":"aal2"}',
@@ -66,9 +70,11 @@ values (
   '2026-01-01 00:00:00+00',
   '2026-01-01 00:00:00+00'
 );
+-- The bar itself. Everything above this line is still refused; this is the first state that
+-- is accepted, and it is exactly one verified TOTP factor on a bound owner at aal2.
 select ok(
-  not private.has_strong_owner_access('11111111-1111-4111-8111-111111111111'),
-  'one verified TOTP factor is rejected'
+  private.has_strong_owner_access('11111111-1111-4111-8111-111111111111'),
+  'one verified TOTP factor grants strong owner access'
 );
 
 insert into auth.mfa_factors(id, user_id, friendly_name, factor_type, status, secret, created_at, updated_at)
@@ -82,9 +88,11 @@ values (
   '2026-01-01 00:00:00+00',
   '2026-01-01 00:00:00+00'
 );
+-- And a second factor neither adds nor removes anything, which is the property that made
+-- requiring two pointless: the gate counts factors, so more of them changes no outcome.
 select ok(
   private.has_strong_owner_access('11111111-1111-4111-8111-111111111111'),
-  'two verified TOTP factors grant strong owner access'
+  'a second verified TOTP factor is still accepted and changes nothing'
 );
 
 create temporary table contract_results(name text primary key, value uuid);
@@ -482,7 +490,10 @@ select throws_ok(
   $$select public.mutate_account('create', null, 'KTB', 'Weak session', 'current', '9913')$$,
   'P0001',
   'strong owner access required',
-  'a single-factor session cannot create an account'
+  -- Named for what it sets, which is aal1. It read "a single-factor session cannot create
+  -- an account" until 2026-08-11 — a label describing a factor count while the fixture
+  -- above it changes only the assurance level. The test was always about aal1.
+  'an aal1 session cannot create an account'
 );
 
 select * from finish();

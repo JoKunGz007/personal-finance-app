@@ -172,11 +172,14 @@ export function OwnerAccess() {
 
       {state.kind === "enrol" ? (
         <section className="owner-access-panel" aria-labelledby="owner-access-enrol">
-          <h2 id="owner-access-enrol">Two authenticator codes are required</h2>
+          {/* Worded for the one factor `REQUIRED_FACTORS` currently asks for, but it does not
+              hard-code that: the sentence about how many are left appears only when more than
+              one is outstanding, so raising the constant changes the words rather than making
+              them false. */}
+          <h2 id="owner-access-enrol">Set up your authenticator</h2>
           <p>
-            This ledger needs {REQUIRED_FACTORS} authenticator factors before it will show any
-            financial record. {state.verified} of {REQUIRED_FACTORS} are set up
-            {state.remaining === REQUIRED_FACTORS ? "" : `, so ${state.remaining} to go`}.
+            This ledger shows no financial record until an authenticator app is set up.
+            {state.remaining > 1 ? ` ${state.verified} of ${REQUIRED_FACTORS} are done.` : ""}
           </p>
 
           {enrolment ? (
@@ -214,7 +217,7 @@ export function OwnerAccess() {
             </>
           ) : (
             <button className="primary-button" type="button" onClick={beginEnrolment} disabled={busy}>
-              Set up {state.verified === 0 ? "the first" : "the second"} factor
+              {state.verified === 0 ? "Set up your authenticator" : "Add another factor"}
             </button>
           )}
 

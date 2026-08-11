@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-One hundred and five traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred and six traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -123,6 +123,7 @@ One hundred and five traps, grouped on 2026-08-09 into the eight sections below 
 - The default config gives `prebuild` and a full `next build` the 60-second webServer default
 - `fullyParallel: false` serialises a file, not a suite, and looks serial while there is one file
 - A config that ignores one spec file by name is a list of one, not a rule
+- A 200 from the app proves a server is running, not that it is the one you just started
 
 ### App, auth, routing and accessibility
 
@@ -710,6 +711,13 @@ One hundred and five traps, grouped on 2026-08-09 into the eight sections below 
 - **The tell that separates this from an ordinary flake**: the reporter's `[n/total]` indices interleave the two files (`[1]` access, `[2]` session, `[3]` session, `[4]` access). Under one worker the indices for a file are adjacent. Read the interleaving, not the failure.
 - Avoid: set `workers: 1` explicitly on any config whose specs share one database identity. `fullyParallel: false` is not that guarantee and never was. `playwright.owner.config.ts` now sets both.
 - Verify: with `workers: 1` the same 25 tests pass and the two files' indices are adjacent; removing it reproduces two failures in `owner-access.spec.ts` alone, both of which pass when that file is run by itself. Dated 2026-08-10.
+
+## A 200 from the app proves a server is running, not that it is the one you just started
+
+- Symptom: a server is started in the background, a health check answers `HTTP 200` with the expected headers, and the app being driven is nonetheless the *previous* build — old wording, old constants, old behaviour. The background task quietly reports failure some time later, long after the check appeared to succeed.
+- Cause: `next start` cannot bind a port another `next start` already holds, so the second one dies with `EADDRINUSE` while the first keeps serving. Every response still looks right, because the CSP, the route list and the status code are identical across builds — the differences are in a client chunk nobody fetched. On 2026-08-11 a server from 16:58 served a check against a build made at 17:52.
+- Avoid: stop the old server before starting a new one, and **verify by timestamp rather than by response**. `Get-NetTCPConnection -LocalPort 3000 -State Listen` gives the pid, `(Get-Process -Id <pid>).StartTime` its age, and `(Get-Item .next\BUILD_ID).LastWriteTime` the build's — the server must be the newer of the two. This is the same lesson as the `reuseExistingServer` entry above, arriving by a different route: there Playwright reused someone else's server, here a new one failed to displace it.
+- Verify: with the stale process killed and the server restarted, `StartTime` is later than `BUILD_ID`'s mtime. Dated 2026-08-11.
 
 ## A config that ignores one spec file by name is a list of one, not a rule
 

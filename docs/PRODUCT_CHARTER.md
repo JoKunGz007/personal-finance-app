@@ -14,6 +14,6 @@ Build a private single-owner ledger that imports only a verified Krungthai PDF c
 
 ## Later milestones
 
-Only after local acceptance: create an empty Singapore Supabase Free project, dry-run and apply committed migrations, configure Google OAuth, bind the owner, enroll two TOTP factors, deploy a Vercel preview in Singapore, run hosted security/recovery smoke tests, and promote the exact verified revision.
+Only after local acceptance: create an empty Singapore Supabase Free project, dry-run and apply committed migrations, configure Google OAuth, bind the owner, enroll a TOTP factor, deploy a Vercel preview in Singapore, run hosted security/recovery smoke tests, and promote the exact verified revision.
 
 No schema changes are made in a hosted dashboard. Migrations are the source of truth. No synthetic database rows move to hosted environments.

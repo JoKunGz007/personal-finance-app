@@ -1,20 +1,32 @@
 // What the owner still has to do before any owner-bound route will answer, as a pure
 // function of what Supabase reports (PLAN task 19).
 //
-// **The rule this module exists to state once.** `lib/server/supabase.ts` refuses every
-// owner-bound route unless the session is `aal2` *and* carries **two** verified TOTP
-// factors. Supabase's own `aal2` is a weaker bar than that: verifying a single freshly
-// enrolled factor already elevates a session, so an owner with one factor is `aal2` by
-// Supabase's reckoning and still refused by this app's gate. Anything reading only the
-// assurance level would therefore show a signed-in owner every route rejects, with nothing
-// on screen to say why — so the factor count is checked first and the level second.
+// **The rule this module exists to state once.** An owner-bound route needs `aal2` *and* a
+// verified TOTP factor, and the factor count is checked **before** the assurance level.
+// That order is load-bearing rather than stylistic: enrolment and elevation are separate
+// events, so an owner can hold a session Supabase already calls `aal2` while carrying no
+// verified factor at all — a factor deleted from the dashboard leaves exactly that state,
+// because the `aal` claim lives in a JWT that does not change until it is refreshed.
+// Reading the level first would show a signed-in owner every route rejects, with nothing on
+// screen to say why.
 //
 // Kept apart from `app/owner-access.tsx` for the same reason `lib/slip-ocr.ts` is kept
 // apart from its engine: every rule about what the owner is allowed to do next is decided
 // here and is testable without a browser, a redirect or a live Supabase.
 
-/** Both of them, and the count `private.has_strong_owner_access` enforces in SQL. */
-export const REQUIRED_FACTORS = 2;
+/**
+ * One, and the count `private.has_strong_owner_access` enforces in SQL (D-093, migration
+ * 015). **The only place TypeScript states this number** — `lib/server/supabase.ts` and
+ * `app/api/v1/dev/session/route.ts` both import it, so the app cannot disagree with itself
+ * about the bar. It can still disagree with the database, which is what the pgTAP contract
+ * in `supabase/tests/002_security_contracts.sql` is for.
+ *
+ * It was two until 2026-08-11, on a rationale that did not survive being questioned: the
+ * gate counts enrolled factors rather than proved ones, so the second bought no strength at
+ * sign-in, and recovery comes from storing a secret independently rather than from the
+ * count. D-004 required two and never said why; D-093 supersedes it.
+ */
+export const REQUIRED_FACTORS = 1;
 
 /** The shape of a Supabase TOTP factor, structurally rather than by import. */
 export type TotpFactor = { id: string; status: string };
@@ -41,8 +53,8 @@ export function ownerAccessState(input: {
     return { kind: "enrol", verified: verified.length, remaining: REQUIRED_FACTORS - verified.length };
   }
 
-  // Ordered after the count deliberately — see the header. A one-factor owner reaches
-  // `aal2` and must still enrol, so the level can never be the first thing consulted.
+  // Ordered after the count deliberately — see the header. A stale `aal2` claim can outlive
+  // the factor that earned it, so the level can never be the first thing consulted.
   if (input.level !== "aal2") return { kind: "challenge", factorId: verified[0]!.id };
 
   return { kind: "ready" };

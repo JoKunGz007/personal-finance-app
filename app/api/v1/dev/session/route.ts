@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { totp } from "@/lib/dev/totp";
+import { REQUIRED_FACTORS } from "@/lib/owner-access";
 import { noStoreHeaders, routeError } from "@/lib/server/supabase";
 
 // Development-only sign-in. Mints the aal2 cookie session that every owner-bound route
@@ -42,7 +43,6 @@ const OWNER_EMAIL = "synthetic.owner@example.invalid";
 // Set by `supabase/seed.sql`. Synthetic, local, and useless anywhere else — the name
 // says so, and it is committed in the seed already.
 const OWNER_PASSWORD = "local-synthetic-login-disabled";
-const REQUIRED_FACTORS = 2;
 
 // Supabase returns a factor's secret only at enrolment, so a later sign-in cannot
 // produce a code for a factor it did not create. These are kept in the gitignored
