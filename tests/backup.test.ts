@@ -6,6 +6,10 @@ import {
   BACKUP_TABLE_KINDS_V2,
   BACKUP_TABLE_KINDS_V3,
   BACKUP_TABLE_KINDS_V4,
+  backupDataSchema,
+  backupDataSchemaV2,
+  backupDataSchemaV3,
+  backupDataSchemaV4,
   backupSnapshotSchema,
   describeBackupSnapshot,
   restoreActionSchemas,
@@ -189,5 +193,66 @@ describe("restore manifest", () => {
       ...common,
       chunk: { kind: "source_transactions", rows: [invalidRow] }
     }).success).toBe(false);
+  });
+});
+
+// The rule these two tests exist to hold is D-097: **new owner data goes in a new table,
+// never in a new column on an existing one.**
+//
+// Why it is worth a test rather than a note. `export_backup_snapshot` serialises whole rows
+// with `to_jsonb`, so a column added by a migration travels into the file whether or not
+// anyone updates the export — and every row schema here is `.strict()`, so that file then
+// fails its own validation. The loud half of that is fine; the dangerous half is the obvious
+// fix, which is to add the key to the shared row schema. That silently breaks **every older
+// version**, because v2…v5 deliberately share one row schema per table. These tests fail at
+// exactly that moment, with a reason, instead of the next export failing without one.
+//
+// Both are structural rather than fixture-based on purpose: they need no valid row for any of
+// the nineteen tables, so they cannot rot as the row contracts change.
+describe("backup row shapes are shared by every version that carries the table", () => {
+  function rowSchemaOf(dataSchema: unknown, table: string): unknown {
+    const shape = (dataSchema as { shape?: Record<string, unknown> }).shape;
+    const field = shape?.[table];
+    return field === undefined ? undefined : (field as { element?: unknown }).element;
+  }
+
+  const versions = [
+    { name: "v2", data: backupDataSchemaV2, kinds: BACKUP_TABLE_KINDS_V2 },
+    { name: "v3", data: backupDataSchemaV3, kinds: BACKUP_TABLE_KINDS_V3 },
+    { name: "v4", data: backupDataSchemaV4, kinds: BACKUP_TABLE_KINDS_V4 },
+    { name: "v5", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
+  ] as const;
+
+  it("uses one row schema per table across every version, so a column cannot diverge them", () => {
+    const first = new Map<string, unknown>();
+    const divergent: string[] = [];
+    for (const version of versions) {
+      for (const table of version.kinds) {
+        const row = rowSchemaOf(version.data, table);
+        expect(row, `${version.name} carries no row schema for ${table}`).toBeDefined();
+        if (!first.has(table)) {
+          first.set(table, row);
+        } else if (first.get(table) !== row) {
+          divergent.push(`${table} diverges at ${version.name}`);
+        }
+      }
+    }
+    // Reference equality, not deep equality: the versions are built by spreading the previous
+    // shape, so a shared table must be the *same* schema object. Rewriting one version's entry
+    // to a look-alike is the change this catches.
+    expect(divergent).toEqual([]);
+    expect(first.size).toBe(BACKUP_TABLE_KINDS.length);
+  });
+
+  it("grows only by appending tables, so no version ever drops or reorders one", () => {
+    for (let index = 1; index < versions.length; index += 1) {
+      const older = versions[index - 1]!;
+      const newer = versions[index]!;
+      expect(
+        newer.kinds.slice(0, older.kinds.length),
+        `${newer.name} does not begin with ${older.name}'s table list`
+      ).toEqual([...older.kinds]);
+      expect(newer.kinds.length).toBeGreaterThan(older.kinds.length);
+    }
   });
 });
