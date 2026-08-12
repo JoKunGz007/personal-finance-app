@@ -42,6 +42,7 @@ Detailed contracts:
 - [docs/SCB_CONTRACT.md](docs/SCB_CONTRACT.md)
 - [docs/KBANK_CONTRACT.md](docs/KBANK_CONTRACT.md)
 - [docs/SLIP_CONTRACT.md](docs/SLIP_CONTRACT.md)
+- [docs/NOTIFICATION_CARD_CONTRACT.md](docs/NOTIFICATION_CARD_CONTRACT.md)
 - [docs/FIXTURE_POLICY.md](docs/FIXTURE_POLICY.md)
 - [docs/RECOVERY.md](docs/RECOVERY.md)
 
