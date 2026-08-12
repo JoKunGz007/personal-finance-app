@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-One hundred and seven traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred and ten traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -41,6 +41,7 @@ One hundred and seven traps, grouped on 2026-08-09 into the eight sections below
 - `supabase db push --db-url` cannot reach a local container
 - A stopped Docker makes the browser gate print all 18 test names and exit 0 without running one
 - Restarting the Supabase database container breaks every host connection until its dependants restart too
+- `supabase start` reports "already running" while its database container has exited
 
 ### Database, migrations and pgTAP
 
@@ -55,6 +56,7 @@ One hundred and seven traps, grouped on 2026-08-09 into the eight sections below
 - Per-slip mutable state cannot be a column on `public.slips`
 - A replica-mode wipe deletes parent rows without complaining about their children
 - `create_cash_entry` bounds no date, while `capture_slip` bounds one
+- `supabase db query --linked` can answer from the local database, and the CLI names neither
 
 ### Backup, restore and recovery
 
@@ -67,6 +69,7 @@ One hundred and seven traps, grouped on 2026-08-09 into the eight sections below
 - A wiped ledger and a wiped session look the same from a failing restore
 - A cleanup helper that predates a migration makes the next restore fail, at commit, naming no table
 - A wrong backup password and a corrupted backup file report identically
+- A recovery destination can start non-empty, which makes portable recovery fail rather than skip
 
 ### Statement and slip parsing
 
@@ -336,6 +339,13 @@ One hundred and seven traps, grouped on 2026-08-09 into the eight sections below
 - Note the trap inside the trap: the in-container `psql` check that "proves the database is fine" is the one path that does not use the host proxy or a pooled service connection, so it succeeds in exactly the situation being diagnosed. It rules out data loss, not connectivity.
 - Verify: 2026-07-30. Restarting `supabase_db_private-ledger-local` alone left `pnpm supabase:test` failing; restarting the six service containers restored it to 129/129. The identical failure appeared later on port 54331 and was fixed the same way against `private-ledger-recovery`.
 
+## `supabase start` reports "already running" while its database container has exited
+
+- Symptom: `supabase start` prints that the project is already running and exits successfully; the next command fails with `supabase_db_<project> container is not running: exited`. Nothing about the first message suggests anything is wrong, so the natural next step is to re-run it with `--debug` and read a longer version of the same wrong answer.
+- Cause: the CLI decides "already running" from the presence of the project's containers rather than from their state, so an exited database satisfies it. The two halves of the check disagree, and only the second one talks to Postgres.
+- Avoid: `supabase stop` then `supabase start`. Not `--debug`, and not `docker start` on the database alone — that leaves the service containers holding dead connections, which is the trap directly above this one.
+- Verify: 2026-08-12. Hit on **both** the main project and the recovery destination in the same session, which is what makes it a trap rather than a one-off; `docker ps -a --filter name=supabase_db_` shows the exited container while `supabase start` still claims the project is up. CLI v2.109.1.
+
 ### Database, migrations and pgTAP
 
 ## `trigger_is` argument count is easy to misread
@@ -416,6 +426,13 @@ One hundred and seven traps, grouped on 2026-08-09 into the eight sections below
 - Avoid: treat `app/cash-entry.tsx` as the **only** guard there is, and do not add a second caller of `POST /api/v1/cash` that skips it. Closing it properly means a new migration — 013 is applied and published, and this repository does not edit an applied artifact (D-084, and the same reason 014 exists rather than 013 being amended).
 - Verify: 2026-08-10, by reading both RPCs side by side while writing the cash form. Not covered by any test: the suites go through the form or through a zod-validated route, so neither reaches the unbounded path.
 
+## `supabase db query --linked` can answer from the local database, and the CLI names neither
+
+- Symptom: a query meant for the hosted project returns correct-looking numbers that are actually the local project's. The output carries no indication of which database answered.
+- Cause: the CLI falls back to the local database when the SQL spans multiple lines, and `--linked` after the SQL argument is not always honoured. Worse, the tell is gone: an earlier version printed `Connecting to remote database...` on the working path, and **v2.109.1 prints `Initialising login role...` and names neither remote nor local**. So the one-word check that used to distinguish them no longer exists.
+- Avoid: pass the SQL as a **single line** with `--linked` **before** it, and then prove the destination rather than trusting the invocation. Three independent proofs, all cheap: `inet_server_addr()` returns a public address rather than a loopback or Docker one; the row counts match what the intended ledger holds; and `docker ps` says whether any local project could have answered at all — a stopped daemon rules them out entirely.
+- Verify: 2026-08-12. All three were used to establish that the hosted backup verification read the hosted database, and the daemon happened to be down at the time, which is the strongest of the three. The missing tell was found by looking for it and reading a different first line.
+
 ### Backup, restore and recovery
 
 ## Snapshot generation is not backup custody
@@ -481,6 +498,13 @@ One hundred and seven traps, grouped on 2026-08-09 into the eight sections below
 - Cause: AES-256-GCM authenticates ciphertext and key together, so a wrong PBKDF2 key and a tampered ciphertext both surface as one auth-tag failure. The hedged wording is honest rather than evasive.
 - Avoid: diagnose the envelope separately before suspecting the file. `lib/backup.ts` wraps the ciphertext in plain JSON — header, base64 salt and nonce — and corruption from a move, a sync client or a re-encode breaks *that* long before it reaches the cipher. If the JSON parses, the header matches exactly, the salt is 16 bytes and the nonce is 12, the file is intact and the password is the remaining explanation. This reads no plaintext and needs no password.
 - Verify: done on the real 2026-07-28 backup after a failed restore — 14,784 bytes, envelope structurally perfect, so the file was exonerated without anyone typing a password. Moving a file between volumes copies its bytes; it cannot change them.
+
+## A recovery destination can start non-empty, which makes portable recovery fail rather than skip
+
+- Symptom: `node scripts/recovery-destination.mjs up` reports `This project is NOT empty — a restore into it will be refused`, and `tests/recovery-portability.test.ts` then fails rather than skipping. This is a **third** reading of that gate row, and the one nobody expects: the two documented outcomes are "ran" and "skipped", and both of those are readings of a destination that is either up or down.
+- Cause: `up` starts and migrates the project; it does not discard what an earlier run left in it. `restore_backup` refuses a destination holding any owner record, so leftovers from a previous run make every restore fail at commit — after every chunk has been accepted, with a message about emptiness that names no table.
+- Avoid: `down` then `up`, always, before a run that matters. `up` alone is only safe on a destination nothing has ever restored into.
+- Verify: 2026-08-12, twice. First met with 4 ledger accounts left behind, where `down` then `up` gave a clean destination on migration 015; met again the same day taking the destination to 016, where `down` then `up` was run pre-emptively and reported `Ledger accounts: 0`.
 
 ### Statement and slip parsing
 

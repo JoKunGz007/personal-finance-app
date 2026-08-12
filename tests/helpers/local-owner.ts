@@ -195,6 +195,11 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     delete from public.cash_entry_revisions where owner_id = '${owner}';
     delete from public.cash_entry_overlays where owner_id = '${owner}';
     delete from public.cash_entries where owner_id = '${owner}';
+    -- Before the accounts they reference, and for the same reason as the two blocks above:
+    -- with the FK triggers disabled a card outliving its account does not fail, it sits there
+    -- — and the next run sees a captured payment against an account nobody created (migration
+    -- 016).
+    delete from public.notification_cards where owner_id = '${owner}';
     delete from public.import_batch_rows where owner_id = '${owner}';
     delete from public.source_components where owner_id = '${owner}';
     delete from public.source_transactions where owner_id = '${owner}';

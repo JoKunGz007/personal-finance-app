@@ -6,17 +6,20 @@ import {
   BACKUP_TABLE_KINDS_V2,
   BACKUP_TABLE_KINDS_V3,
   BACKUP_TABLE_KINDS_V4,
+  BACKUP_TABLE_KINDS_V5,
   backupDataSchema,
   backupDataSchemaV2,
   backupDataSchemaV3,
   backupDataSchemaV4,
+  backupDataSchemaV5,
   backupSnapshotSchema,
   describeBackupSnapshot,
   restoreActionSchemas,
   restoreManifestSchema,
   restoreManifestSchemaV2,
   restoreManifestSchemaV3,
-  restoreManifestSchemaV4
+  restoreManifestSchemaV4,
+  restoreManifestSchemaV5
 } from "@/lib/backup-contract";
 
 describe("portable encrypted backup", () => {
@@ -49,7 +52,7 @@ function manifestOver(kinds: readonly string[]) {
 describe("restore manifest", () => {
   it("requires the exact ordered table set and canonical snapshot sequence", () => {
     const manifest = manifestOver(BACKUP_TABLE_KINDS);
-    expect(restoreManifestSchema.parse(manifest).chunks).toHaveLength(19);
+    expect(restoreManifestSchema.parse(manifest).chunks).toHaveLength(20);
     expect(() => restoreManifestSchema.parse({ ...manifest, snapshotSequence: "01" })).toThrow();
     expect(() => restoreManifestSchema.parse({ ...manifest, chunks: [...manifest.chunks].reverse() })).toThrow();
   });
@@ -57,24 +60,29 @@ describe("restore manifest", () => {
   it("keeps reading a v2 manifest, and refuses to read any version as another", () => {
     // The owner holds one backup covering the whole ledger and it is **still** a v2 file. If
     // this test ever goes red, that file has become unrestorable — which is the specific harm
-    // the multi-version contract exists to prevent, and neither migration 012 nor 013 changes
-    // it. The owner also now holds a v3 file (D-073), which the same reasoning covers.
+    // the multi-version contract exists to prevent, and no migration since has changed it. The
+    // owner also holds a v3 file (D-073) and now a v5 one taken from the hosted project, both
+    // covered by the same reasoning.
     const v2 = manifestOver(BACKUP_TABLE_KINDS_V2);
     const v3 = manifestOver(BACKUP_TABLE_KINDS_V3);
     const v4 = manifestOver(BACKUP_TABLE_KINDS_V4);
-    const v5 = manifestOver(BACKUP_TABLE_KINDS);
+    const v5 = manifestOver(BACKUP_TABLE_KINDS_V5);
+    const v6 = manifestOver(BACKUP_TABLE_KINDS);
     expect(restoreManifestSchemaV2.parse(v2).chunks).toHaveLength(11);
     expect(restoreManifestSchemaV3.parse(v3).chunks).toHaveLength(12);
     expect(restoreManifestSchemaV4.parse(v4).chunks).toHaveLength(14);
+    expect(restoreManifestSchemaV5.parse(v5).chunks).toHaveLength(19);
 
     // Accepting an old version must not mean accepting anything. Each version pins its own
     // table count, so no manifest passes as another.
     expect(restoreManifestSchemaV2.safeParse(v3).success).toBe(false);
     expect(restoreManifestSchemaV3.safeParse(v4).success).toBe(false);
     expect(restoreManifestSchemaV4.safeParse(v5).success).toBe(false);
+    expect(restoreManifestSchemaV5.safeParse(v6).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v2).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v3).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v4).success).toBe(false);
+    expect(restoreManifestSchema.safeParse(v5).success).toBe(false);
   });
 
   it("binds a staged manifest to the version declared alongside it", () => {
@@ -86,7 +94,8 @@ describe("restore manifest", () => {
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 2, manifest: manifestOver(BACKUP_TABLE_KINDS_V2) }).success).toBe(true);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 3, manifest: manifestOver(BACKUP_TABLE_KINDS_V3) }).success).toBe(true);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 4, manifest: manifestOver(BACKUP_TABLE_KINDS_V4) }).success).toBe(true);
-    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 5, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 5, manifest: manifestOver(BACKUP_TABLE_KINDS_V5) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 6, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
     // The pairing is the point: a version and a manifest that disagree about how many
     // tables exist cannot both be right, and the server would otherwise stage one and
     // then refuse chunks against the other.
@@ -94,6 +103,8 @@ describe("restore manifest", () => {
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 2, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 4, manifest: manifestOver(BACKUP_TABLE_KINDS_V3) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 5, manifest: manifestOver(BACKUP_TABLE_KINDS_V4) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 6, manifest: manifestOver(BACKUP_TABLE_KINDS_V5) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 5, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 4, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
   });
 
@@ -128,7 +139,7 @@ describe("restore manifest", () => {
     const parsed = backupSnapshotSchema.parse({
       schemaVersion: BACKUP_SCHEMA_VERSION, exportedAt: "2026-07-24T00:00:00.000Z", snapshotSequence: "9223372036854775807", tableCounts, data
     });
-    expect(parsed.schemaVersion).toBe(5);
+    expect(parsed.schemaVersion).toBe(6);
     expect(parsed.data.source_transactions).toHaveLength(1001);
     expect(parsed.data.source_transactions[0]).toMatchObject({ post_balance_minor: "-9223372036854775808" });
     expect(parsed.data.source_transactions[1000]).toMatchObject({ post_balance_minor: "9223372036854775807" });
@@ -154,9 +165,17 @@ describe("restore manifest", () => {
     // newest length would be D-074 repeating itself rather than a new defect.
     expect(v4).not.toContain(`${BACKUP_TABLE_KINDS.length} tables`);
 
-    const v5 = describeBackupSnapshot({ schemaVersion: 5, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
-    expect(v5).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    const v5 = describeBackupSnapshot({ schemaVersion: 5, tableCounts: countsFor(BACKUP_TABLE_KINDS_V5) });
+    expect(v5).toContain(`${BACKUP_TABLE_KINDS_V5.length} tables`);
     expect(v5).toContain("schema version 5");
+    // v5 is now an older list too — and it is the version the owner's newest file is in, taken
+    // from the hosted project, so getting this one wrong would misdescribe the backup that
+    // matters most.
+    expect(v5).not.toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+
+    const v6 = describeBackupSnapshot({ schemaVersion: 6, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
+    expect(v6).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    expect(v6).toContain("schema version 6");
 
     // Rows are summed from the counts, so the sentence cannot claim rows the file lacks.
     const rows = BACKUP_TABLE_KINDS_V3.reduce((sum, _kind, index) => sum + index, 0);
@@ -204,11 +223,11 @@ describe("restore manifest", () => {
 // anyone updates the export — and every row schema here is `.strict()`, so that file then
 // fails its own validation. The loud half of that is fine; the dangerous half is the obvious
 // fix, which is to add the key to the shared row schema. That silently breaks **every older
-// version**, because v2…v5 deliberately share one row schema per table. These tests fail at
+// version**, because v2…v6 deliberately share one row schema per table. These tests fail at
 // exactly that moment, with a reason, instead of the next export failing without one.
 //
 // Both are structural rather than fixture-based on purpose: they need no valid row for any of
-// the nineteen tables, so they cannot rot as the row contracts change.
+// the twenty tables, so they cannot rot as the row contracts change.
 describe("backup row shapes are shared by every version that carries the table", () => {
   function rowSchemaOf(dataSchema: unknown, table: string): unknown {
     const shape = (dataSchema as { shape?: Record<string, unknown> }).shape;
@@ -220,7 +239,8 @@ describe("backup row shapes are shared by every version that carries the table",
     { name: "v2", data: backupDataSchemaV2, kinds: BACKUP_TABLE_KINDS_V2 },
     { name: "v3", data: backupDataSchemaV3, kinds: BACKUP_TABLE_KINDS_V3 },
     { name: "v4", data: backupDataSchemaV4, kinds: BACKUP_TABLE_KINDS_V4 },
-    { name: "v5", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
+    { name: "v5", data: backupDataSchemaV5, kinds: BACKUP_TABLE_KINDS_V5 },
+    { name: "v6", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
   ] as const;
 
   it("uses one row schema per table across every version, so a column cannot diverge them", () => {

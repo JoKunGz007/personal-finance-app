@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(49);
+select plan(50);
 
 -- Canonical signed-int64 text boundaries.
 select ok(private.is_canonical_int64_text('-9223372036854775808'), 'signed int64 minimum is canonical');
@@ -254,8 +254,8 @@ create temporary table snapshot_result as
 select public.export_backup_snapshot() as value;
 select is(
   (select value->>'schemaVersion' from snapshot_result),
-  '5',
-  'snapshot export succeeds with schema version 5'
+  '6',
+  'snapshot export succeeds with schema version 6'
 );
 -- Each new table has to be *in* the export, not merely permitted by it. A version bump that
 -- forgot to emit the new key would still read as the right version here and would silently
@@ -287,6 +287,14 @@ select ok(
     and (select value#>'{data,slip_correction_revisions}' is not null from snapshot_result)
     and (select value#>'{tableCounts,slip_correction_revisions}' is not null from snapshot_result),
   'snapshot export carries the cash and correction tables and their counts'
+);
+-- A card is the only record of a payment that produced no e-slip, so a backup that omitted it
+-- would lose those payments outright — and both its money columns have to survive, since the
+-- printed balance is what tells a card apart from another of the same amount and minute.
+select ok(
+  (select value#>'{data,notification_cards}' is not null from snapshot_result)
+    and (select value#>'{tableCounts,notification_cards}' is not null from snapshot_result),
+  'snapshot export carries the notification card table and its count'
 );
 select is(
   public.mark_backup_exported(
