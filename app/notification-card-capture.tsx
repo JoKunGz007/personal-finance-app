@@ -1,0 +1,690 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { formatThb, parseThb } from "@/lib/money";
+import { BUDDHIST_ERA_OFFSET, paddedCrop, type Box } from "@/lib/slip-ocr";
+import { readSlipWords, releaseSlipOcr } from "@/lib/slip-ocr-engine";
+import {
+  NOTIFICATION_CARD_LAYOUTS,
+  kindForDirection,
+  layoutForChannel,
+  matchAccountDigits,
+  readDirection,
+  type CardDirection,
+  type NotificationCardLayout
+} from "@/lib/notification-card";
+import {
+  CARD_FIELDS,
+  cardText,
+  findCards,
+  locateCardFields,
+  type CardFieldName,
+  type CardRegion,
+  type OcrWord
+} from "@/lib/notification-card-ocr";
+import { notificationCardDateWindow } from "@/lib/notification-cards";
+import { readError } from "@/lib/wire";
+
+type Category = { id: string; name: string; archived: boolean };
+type LedgerAccount = { id: string; bank_code: string; label: string; last_four: string };
+type Channel = NotificationCardLayout["channel"];
+
+// Same crop sizing as slip capture, and the same reason: an enlargement is only useful if it is
+// legible on the phone the card is being read on.
+const CROP_TARGET_WIDTH = 720;
+const CROP_MAX_SCALE = 4;
+
+async function cropRegion(file: File, box: Box): Promise<string | null> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const crop = paddedCrop(box, { width: bitmap.width, height: bitmap.height });
+    const width = crop.right - crop.left;
+    const height = crop.bottom - crop.top;
+    if (width <= 0 || height <= 0) return null;
+    const scale = Math.min(CROP_MAX_SCALE, Math.max(1, CROP_TARGET_WIDTH / width));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(bitmap, crop.left, crop.top, width, height, 0, 0, canvas.width, canvas.height);
+    // A data URL rather than an object URL: bounded by the crop, needs no revoking, and dies
+    // with the component state. `img-src` already permits `data:` (D-058).
+    return canvas.toDataURL("image/png");
+  } finally {
+    bitmap.close();
+  }
+}
+
+const FIELD_LABELS: Record<CardFieldName, string> = {
+  amount: "Amount",
+  balance: "Balance after",
+  occurredAt: "Date and time",
+  ownAccount: "Your account",
+  counterpartyName: "Other party",
+  counterpartyAccount: "Their account"
+};
+
+/**
+ * Capturing a bank's LINE push notification (PLAN task 27, migration 016).
+ *
+ * **Nothing here fills a value in from the image**, and that is the design rather than a stage
+ * it has not reached. D-087 measured digits unstable about one time in fifteen, with at least
+ * one wrong figure passing the strict money grammar — so a pre-filled value would be
+ * indistinguishable from a correct one. It binds wider on a card than on a slip, because a card
+ * stores four digit-bearing fields rather than one: the amount, the balance, the timestamp and
+ * the account digits are all typed. The reader's job is to say *where* each one is, and this
+ * form shows that as a cropped enlargement beside its input.
+ *
+ * **The channel comes from you, not from the card.** SCB Connect and KBank Live print the
+ * identical incoming title, so no rule can tell those two apart from the card body (D-099) — the
+ * LINE conversation the screenshot came from is the only thing that can.
+ *
+ * **Direction is read twice and refuses when the two disagree.** The card names its direction in
+ * words *and* signs its amount. This form takes the words from the image and the sign from the
+ * control you set, which keeps the two signals genuinely independent; `readDirection` compares
+ * them and a contradiction blocks the save. A card stored on the surviving signal would be a
+ * payment recorded backwards, and `notification_cards` is append-only.
+ */
+export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => void }) {
+  const window_ = useMemo(() => notificationCardDateWindow(new Date()), []);
+  const [open, setOpen] = useState(false);
+  const [channel, setChannel] = useState<Channel | "">("");
+  const [image, setImage] = useState<File | null>(null);
+  const [regions, setRegions] = useState<CardRegion[] | null>(null);
+  const [chosen, setChosen] = useState(0);
+  const [crops, setCrops] = useState<Partial<Record<CardFieldName, string>>>({});
+  const [notes, setNotes] = useState<Partial<Record<CardFieldName, string>>>({});
+  const [reading, setReading] = useState(false);
+  const [readerNote, setReaderNote] = useState<string | null>(null);
+
+  const [direction, setDirection] = useState<CardDirection | "">("");
+  const [amount, setAmount] = useState("");
+  const [balance, setBalance] = useState("");
+  const [printedDigits, setPrintedDigits] = useState("");
+  const [occurredOn, setOccurredOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [occurredAtTime, setOccurredAtTime] = useState("");
+  const [counterparty, setCounterparty] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [note, setNote] = useState("");
+
+  const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  /**
+   * Which crop pass is the current one.
+   *
+   * Cropping a card means one `createImageBitmap` of the whole screenshot per field, up to six,
+   * so a pass takes long enough for the owner to switch cards while it is still running. Two
+   * passes then race and the later `setCrops` wins — which is **not** necessarily the later
+   * pass, because the two do different amounts of work when the cards face different directions.
+   * The failure is silent and expensive: the crops on screen belong to one card while everything
+   * submitted belongs to the other, and the row it writes is append-only.
+   */
+  const cropPass = useRef(0);
+
+  // The worker is a module-scope singleton shared with slip capture, which now sits on this same
+  // page — so releasing it here on *close* would terminate a worker the slip form might be
+  // mid-`recognize` on, and that surfaces there as "the amount finder could not start in this
+  // browser", the message reserved for an engine that is unavailable. Released on unmount only,
+  // exactly as `app/slip-capture.tsx` does it, which is also what keeps a reopen from re-fetching
+  // 3.9 MB the worker reuse exists to avoid.
+  useEffect(() => () => { void releaseSlipOcr(); }, []);
+
+  const layout = channel === "" ? null : layoutForChannel(channel);
+  const region = regions?.[chosen] ?? null;
+
+  /** The typed amount as signed minor units, with the sign coming from the direction control. */
+  const parsedAmount = useMemo(() => {
+    if (amount.trim() === "" || direction === "") return null;
+    try {
+      const magnitude = BigInt(parseThb(amount).minor);
+      const absolute = magnitude < 0n ? -magnitude : magnitude;
+      if (absolute === 0n) return { ok: false as const, message: "No card prints a movement of nothing." };
+      return { ok: true as const, minor: (direction === "out" ? -absolute : absolute).toString() };
+    } catch {
+      return { ok: false as const, message: "Enter a plain amount such as 250 or 250.75." };
+    }
+  }, [amount, direction]);
+
+  /** The balance is a position rather than a movement: zero is ordinary and negative is an overdraft. */
+  const parsedBalance = useMemo(() => {
+    if (balance.trim() === "") return null;
+    try {
+      return { ok: true as const, minor: BigInt(parseThb(balance).minor).toString() };
+    } catch {
+      return { ok: false as const, message: "Enter the balance as printed, such as 9310 or 9310.00." };
+    }
+  }, [balance]);
+
+  /**
+   * The two direction signals, compared.
+   *
+   * The words come from the image and the sign from the control above, so this is a real
+   * cross-check rather than a value compared against itself.
+   */
+  const directionCheck = useMemo(() => {
+    if (!layout || !region || !parsedAmount?.ok) return null;
+    return readDirection(layout, cardText(region.words), BigInt(parsedAmount.minor));
+  }, [layout, region, parsedAmount]);
+
+  /** Which of the owner's accounts the printed digits name, under this layout's mask. */
+  const boundAccount = useMemo(() => {
+    if (!layout || !/^[0-9]{4}$/.test(printedDigits)) return null;
+    const mine = accounts.filter((account) => account.bank_code === layout.bankCode);
+    const match = matchAccountDigits(layout, printedDigits, mine.map((account) => account.last_four));
+    if (match.outcome === "matched") {
+      return { ok: true as const, account: mine.find((account) => account.last_four === match.lastFour)! };
+    }
+    if (match.outcome === "none") {
+      return { ok: false as const, message: `No ${layout.bankCode} account of yours prints those digits.` };
+    }
+    // Only reachable on KBank Live, which pins down three digits rather than four — two accounts
+    // differing only in the masked digit are indistinguishable from the card. Fail closed.
+    return {
+      ok: false as const,
+      message: "Those digits fit more than one of your accounts, and this layout masks the digit that would tell them apart. Say which account yourself."
+    };
+  }, [layout, printedDigits, accounts]);
+
+  /** What the card should print for the date chosen, as a check against the crop. */
+  const printedDateHint = useMemo(() => {
+    if (!layout || !/^\d{4}-\d{2}-\d{2}$/.test(occurredOn)) return null;
+    const [year, month, day] = occurredOn.split("-");
+    return layout.yearFormat === "gregorian-4"
+      ? `${day}/${month}/${year}`
+      : `${day}/${month}/${String(Number(year) + BUDDHIST_ERA_OFFSET).slice(-2)}`;
+  }, [layout, occurredOn]);
+
+  /**
+   * The accounts and categories the form needs, and it says so when it cannot get them.
+   *
+   * A silent failure here is worse than it looks: with `accounts` empty, every set of digits the
+   * owner types reads as "no account of yours prints those digits" — the form blaming the one
+   * field whose refusal is supposed to be trustworthy for what is really a network failure.
+   */
+  async function loadReferenceData() {
+    try {
+      const [accountsResponse, categoriesResponse] = await Promise.all([
+        fetch("/api/v1/accounts", { headers: { accept: "application/json" } }),
+        fetch("/api/v1/categories", { headers: { accept: "application/json" } })
+      ]);
+      if (!accountsResponse.ok) {
+        setError("Your accounts could not be loaded, so a card cannot be bound to one yet. Reload and try again.");
+        return;
+      }
+      const accountsBody = await accountsResponse.json().catch(() => null);
+      if (!accountsBody || !Array.isArray(accountsBody.accounts)) {
+        setError("The accounts response did not match its contract, so a card cannot be bound to one.");
+        return;
+      }
+      setAccounts(accountsBody.accounts);
+      // Categories are optional on a card, so failing to load them is not worth blocking on.
+      if (categoriesResponse.ok) {
+        const body = await categoriesResponse.json().catch(() => null);
+        if (body && Array.isArray(body.categories)) setCategories(body.categories.filter((c: Category) => !c.archived));
+      }
+    } catch {
+      setError("The ledger could not be reached, so your accounts are not loaded.");
+    }
+  }
+
+  async function showCard(file: File, found: CardRegion[], index: number) {
+    const picked = found[index];
+    if (!layout || !picked) return;
+    const pass = ++cropPass.current;
+    const located = locateCardFields(picked.words, layout, picked.direction);
+    const nextCrops: Partial<Record<CardFieldName, string>> = {};
+    const nextNotes: Partial<Record<CardFieldName, string>> = {};
+    for (const field of CARD_FIELDS) {
+      const read = located[field];
+      if (!read.ok) {
+        // The reader's own words. Its refusals tell "this layout never prints it" apart from
+        // "it should be here and was not found", and both are more use than a blank space.
+        if (read.code !== "NOT_PRINTED") nextNotes[field] = read.message;
+        continue;
+      }
+      const crop = await cropRegion(file, read.value);
+      // Checked inside the loop as well as after it: a superseded pass should stop decoding
+      // full-size bitmaps rather than finish the work and throw it away.
+      if (pass !== cropPass.current) return;
+      if (crop === null) nextNotes[field] = "That region could not be cut out of this image.";
+      else nextCrops[field] = crop;
+    }
+    if (pass !== cropPass.current) return;
+    setCrops(nextCrops);
+    setNotes(nextNotes);
+  }
+
+  /**
+   * Reads the screenshot and splits it into cards. **It fills nothing in.**
+   *
+   * `setAmount`, `setBalance`, `setPrintedDigits`, `setOccurredOn` and `setOccurredAtTime` are
+   * all deliberately absent from this function, and `tests/privacy.test.ts` asserts they stay
+   * absent — "pre-fill it, the owner can always check" is the reasonable-sounding change that
+   * would quietly undo D-087.
+   */
+  async function readImage(file: File) {
+    if (!layout) return;
+    setReading(true);
+    setReaderNote(null);
+    setRegions(null);
+    setCrops({});
+    setNotes({});
+    try {
+      const words: OcrWord[] | null = await readSlipWords(file);
+      if (!words) {
+        setReaderNote("The card reader could not start in this browser. Read the card yourself and type the values.");
+        return;
+      }
+      const found = findCards(words, layout);
+      if (found.length === 0) {
+        setReaderNote(
+          `No ${layout.channel} card was found on this image. Check the channel above is the conversation this screenshot came from — an in-app transaction list is not a card and is not captured here.`
+        );
+        return;
+      }
+      setRegions(found);
+      setChosen(0);
+      await showCard(file, found, 0);
+    } catch {
+      setReaderNote("This image could not be read. Type the values from the card yourself.");
+    } finally {
+      setReading(false);
+    }
+  }
+
+  function resetTyped() {
+    setDirection("");
+    setAmount("");
+    setBalance("");
+    setPrintedDigits("");
+    setOccurredAtTime("");
+    setCounterparty("");
+    setCategoryId("");
+    setNote("");
+  }
+
+  function closeForm() {
+    cropPass.current += 1;
+    setOpen(false);
+    setChannel("");
+    setImage(null);
+    setRegions(null);
+    setCrops({});
+    setNotes({});
+    setReaderNote(null);
+    setError(null);
+    resetTyped();
+  }
+
+  /**
+   * The second direction signal, required whenever there **is** one.
+   *
+   * `!== "contradicted"` was not enough, and the gap is not theoretical: `directionCheck` is null
+   * whenever no card region is in hand, and null is not "contradicted" — so the cross-check
+   * silently stopped applying while the form stayed submittable. D-099's whole point is that a
+   * card is never stored on one signal.
+   *
+   * With no region there genuinely is no second signal, because nothing read the card's words.
+   * That path stays open — the owner can always type a card the engine could not read — and the
+   * form says which of the two situations it is in rather than looking equally confident in both.
+   */
+  const directionAgrees = region === null || directionCheck?.outcome === "read";
+
+  const ready =
+    layout !== null &&
+    direction !== "" &&
+    parsedAmount?.ok === true &&
+    parsedBalance?.ok === true &&
+    boundAccount?.ok === true &&
+    occurredAtTime !== "" &&
+    directionAgrees;
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    // Every condition restated rather than deferring to `ready`, which only disables the button.
+    // A submit can still arrive by other routes, and this is the last gate before an append-only
+    // row — the contradiction check most of all.
+    if (!layout || direction === "" || occurredAtTime === "") return;
+    if (!parsedAmount?.ok || !parsedBalance?.ok || !boundAccount?.ok) return;
+    if (!directionAgrees) return;
+    setBusy(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const response = await fetch("/api/v1/notification-cards", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          accountId: boundAccount.account.id,
+          channel: layout.channel,
+          printedAccountDigits: printedDigits,
+          kind: kindForDirection(direction),
+          amountMinor: parsedAmount.minor,
+          balanceMinor: parsedBalance.minor,
+          occurredOn,
+          occurredAtTime,
+          counterparty: counterparty.trim() || null,
+          categoryId: categoryId || null,
+          note: note.trim() || null
+        })
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        setError(readError(body, "The card could not be captured."));
+        return;
+      }
+      const captured = (body as { captured?: boolean } | null)?.captured === true;
+      setStatus(
+        captured
+          ? "Captured. A card cannot be deleted or edited once saved."
+          : "This exact card was already captured, so nothing was added."
+      );
+      resetTyped();
+      onCaptured?.();
+    } catch {
+      setError("The ledger could not be reached, so nothing was captured.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card-bench" aria-labelledby="card-title">
+      <div className="bench-heading">
+        <p className="section-index">Notification</p>
+        <div>
+          <h2 id="card-title">Capture a bank notification</h2>
+          <p>
+            When a payment leaves no slip, the bank&rsquo;s LINE channel still posts a card
+            carrying it. Screenshot that card and read it here. The reader shows you where each
+            field sits; you read the figures and type them.
+          </p>
+        </div>
+      </div>
+
+      {!open ? (
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => { setOpen(true); setStatus(null); void loadReferenceData(); }}
+        >
+          Capture a notification card
+        </button>
+      ) : (
+        <form className="slip-form" onSubmit={(event) => void submit(event)}>
+          <div className="slip-fields">
+            <label>
+              <span>Which channel</span>
+              <select
+                value={channel}
+                disabled={busy || reading}
+                onChange={(event) => {
+                  // The image goes with the channel, and clearing the input's own value is the
+                  // load-bearing half: Chrome fires no `change` event when the *same* file is
+                  // picked again, so leaving the filename on screen would strand the owner with
+                  // a form that shows a chosen file and no way to re-read it.
+                  setChannel(event.target.value as Channel | "");
+                  setImage(null);
+                  if (fileInput.current) fileInput.current.value = "";
+                  cropPass.current += 1;
+                  setRegions(null);
+                  setCrops({});
+                  setNotes({});
+                  setReaderNote(null);
+                }}
+                aria-describedby="card-channel-help"
+              >
+                <option value="">Choose the LINE conversation</option>
+                {NOTIFICATION_CARD_LAYOUTS.map((each) => (
+                  <option key={each.channel} value={each.channel}>{each.channel}</option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              <span>Screenshot</span>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/*"
+                disabled={busy || reading || layout === null}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setImage(file);
+                  if (file) void readImage(file);
+                }}
+              />
+            </label>
+          </div>
+
+          <p id="card-channel-help" className="field-help">
+            The card itself cannot tell us this. SCB Connect and KBank Live print the same title
+            on an incoming card, so the conversation you took the screenshot in is the only thing
+            that says which bank it is — and getting it wrong reads the account digits with the
+            wrong rule.
+          </p>
+
+          {reading && <p className="status" role="status">Reading the card&hellip;</p>}
+          {readerNote && <p className="status" role="status">{readerNote}</p>}
+
+          {regions && regions.length > 1 && (
+            <label>
+              <span>Which card on this screenshot</span>
+              <select
+                value={chosen}
+                disabled={busy || reading}
+                onChange={(event) => {
+                  const index = Number(event.target.value);
+                  setChosen(index);
+                  resetTyped();
+                  // Guarded, unlike the call inside `readImage`: `cropRegion` can reject on an
+                  // image the decoder will not take, and an unhandled rejection here would leave
+                  // the previous card's crops on screen as though they were this one's.
+                  if (image && regions) {
+                    void showCard(image, regions, index).catch(() => {
+                      setNotes({ amount: "This card's fields could not be cut out of the image. Read them from the card itself." });
+                      setCrops({});
+                    });
+                  }
+                }}
+              >
+                {regions.map((each, index) => (
+                  <option key={index} value={index}>
+                    Card {index + 1} of {regions.length} — money {each.direction === "in" ? "in" : "out"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {region && (
+            <div className="card-crops">
+              {CARD_FIELDS.map((field) => {
+                const crop = crops[field];
+                const missing = notes[field];
+                if (!crop && !missing) return null;
+                return (
+                  <figure key={field} className="card-crop">
+                    <figcaption>{FIELD_LABELS[field]}</figcaption>
+                    {crop
+                      ? (
+                        // A data URL cut from an image that never leaves the device. `next/image`
+                        // would want a loader and a remote pattern for something that is neither.
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={crop} alt={`The ${FIELD_LABELS[field].toLowerCase()} as printed on the card`} />
+                      )
+                      : <p className="field-help">{missing}</p>}
+                  </figure>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="slip-fields">
+            <label>
+              <span>Direction</span>
+              <select
+                value={direction}
+                disabled={busy}
+                onChange={(event) => setDirection(event.target.value as CardDirection | "")}
+                aria-describedby="card-direction-help"
+                required
+              >
+                <option value="">Read it off the card</option>
+                <option value="out">Money out</option>
+                <option value="in">Money in</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Amount (THB)</span>
+              <input
+                inputMode="decimal"
+                value={amount}
+                disabled={busy}
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder="200.00"
+                required
+                aria-describedby="card-amount-help"
+              />
+            </label>
+
+            <label>
+              <span>Balance after (THB)</span>
+              <input
+                inputMode="decimal"
+                value={balance}
+                disabled={busy}
+                onChange={(event) => setBalance(event.target.value)}
+                placeholder="731.00"
+                required
+                aria-describedby="card-balance-help"
+              />
+            </label>
+
+            <label>
+              <span>Account digits as printed</span>
+              <input
+                inputMode="numeric"
+                value={printedDigits}
+                maxLength={4}
+                pattern="[0-9]{4}"
+                disabled={busy}
+                onChange={(event) => setPrintedDigits(event.target.value.replace(/\D/gu, "").slice(0, 4))}
+                required
+                aria-describedby="card-digits-help"
+              />
+            </label>
+
+            <label>
+              <span>Date</span>
+              <input
+                type="date"
+                value={occurredOn}
+                min={window_.earliest}
+                max={window_.latest}
+                disabled={busy}
+                onChange={(event) => setOccurredOn(event.target.value)}
+                required
+                aria-describedby="card-date-help"
+              />
+            </label>
+
+            <label>
+              <span>Time</span>
+              <input
+                type="time"
+                value={occurredAtTime}
+                disabled={busy}
+                onChange={(event) => setOccurredAtTime(event.target.value)}
+                required
+                aria-describedby="card-time-help"
+              />
+            </label>
+
+            <label>
+              <span>Other party (optional)</span>
+              <input value={counterparty} maxLength={240} disabled={busy} onChange={(event) => setCounterparty(event.target.value)} />
+            </label>
+
+            <label>
+              <span>Category (optional)</span>
+              <select value={categoryId} disabled={busy} onChange={(event) => setCategoryId(event.target.value)}>
+                <option value="">Uncategorised</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>{category.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <p id="card-direction-help" className="field-help">
+            {directionCheck?.outcome === "contradicted"
+              ? `The card's own words say money ${directionCheck.byWords === "in" ? "in" : "out"} and you have chosen money ${directionCheck.bySign === "in" ? "in" : "out"}. One of the two was misread, so nothing will be saved until they agree.`
+              : directionCheck?.outcome === "read"
+                ? "This agrees with the direction printed on the card."
+                : region === null
+                  // Said plainly rather than left to look the same as a passing check: with no
+                  // card read from the image there is no second signal, so this one is on you.
+                  ? "No card was read from an image, so this is the only reading of the direction. Check it against the card itself."
+                  : "Read the direction off the card. It is checked against the words the card printed."}
+          </p>
+          <p id="card-amount-help" className="field-help">
+            {parsedAmount === null
+              ? "Type the amount as printed; the direction above carries the sign."
+              : parsedAmount.ok
+                ? `Will be recorded as ${formatThb(parsedAmount.minor)}.`
+                : parsedAmount.message}
+          </p>
+          <p id="card-balance-help" className="field-help">
+            {parsedBalance === null
+              ? "The account balance the card prints under the amount. It is what pairs this card with its statement row later."
+              : parsedBalance.ok
+                ? `Will be recorded as ${formatThb(parsedBalance.minor)}.`
+                : parsedBalance.message}
+          </p>
+          <p id="card-digits-help" className="field-help">
+            {boundAccount === null
+              ? "The four digits this card prints, exactly as printed."
+              : boundAccount.ok
+                ? `Reads as ${boundAccount.account.label}.`
+                : boundAccount.message}
+          </p>
+          <p id="card-date-help" className="field-help">
+            Enter the Gregorian year.
+            {printedDateHint && ` For this date the card should print ${printedDateHint} — check that against the crop.`}
+          </p>
+          <p id="card-time-help" className="field-help">
+            Take the time from inside the card, not the one LINE prints beside the message. They
+            are different clocks, and only the card&rsquo;s matches the statement.
+          </p>
+
+          <label className="slip-note">
+            <span>Note (optional)</span>
+            <textarea value={note} maxLength={2000} rows={2} disabled={busy} onChange={(event) => setNote(event.target.value)} />
+          </label>
+
+          {status && <p className="status" role="status">{status}</p>}
+          {error && <p className="status error" role="alert">{error}</p>}
+
+          <div className="slip-actions">
+            <button type="submit" className="primary-button" disabled={busy || !ready}>
+              {busy ? "Capturing…" : "Capture this card"}
+            </button>
+            <button type="button" className="secondary-button" disabled={busy} onClick={closeForm}>
+              Close
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}

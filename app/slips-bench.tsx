@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { CapturedSlips } from "@/app/captured-slips";
+import { NotificationCardCapture } from "@/app/notification-card-capture";
 import { SlipCapture } from "@/app/slip-capture";
 import { slipListSchema, slipsInForce, type CapturedSlip } from "@/lib/slips";
 import { readError } from "@/lib/wire";
@@ -54,6 +55,13 @@ export function SlipsBench() {
   return (
     <>
       <SlipCapture onCaptured={() => { if (slips !== null) void load(); }} />
+      {/* A card sits on this route rather than the ledger's, and the difference from cash is the
+          reason. Cash is a ledger fact the moment it is typed and is never reconciled; a card is
+          a bank transaction with a printed running balance, so like a slip it is **provisional
+          until the statement it belongs to arrives** (migration 016). It does not refresh the
+          slip list, because a card is not a slip — the ledger view is where the two meet, and
+          that is still ahead (PLAN task 27). */}
+      <NotificationCardCapture />
       <CapturedSlips slips={slips} decided={decided} busy={busy} error={error} onLoad={() => void load()} />
     </>
   );

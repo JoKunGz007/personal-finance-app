@@ -1,6 +1,29 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { securityHeaders } from "@/lib/security-headers";
+
+/**
+ * Every `.tsx` under `app/`, found rather than listed.
+ *
+ * The service-worker test below used to carry a hardcoded array described in its own comment as
+ * "every client component in `app/`". It had drifted — `app/cash-entry.tsx` and
+ * `app/correction-form.tsx` were both added without joining it — so the test was checking a
+ * shrinking fraction of the surface while claiming to check all of it. A list that has to be
+ * maintained by hand to stay true is the same defect that comment was written about.
+ */
+function appComponents(): string[] {
+  const found: string[] = [];
+  const walk = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith(".tsx")) found.push(full.split(path.sep).join("/"));
+    }
+  };
+  walk("app");
+  return found.sort();
+}
 
 describe("privacy guardrails", () => {
   it("does not expose statement password environment variables", () => {
@@ -29,13 +52,12 @@ describe("privacy guardrails", () => {
     //
     // Routing moved the registration from the capture form to the shell so that any visited
     // route arms the share interceptor, not only the one a share lands on — the rule is one
-    // registration site, and it is still one. The candidate list is every client component
-    // in `app/`, so a second registration anywhere fails this rather than hiding.
-    const registrations = [
-      "app/site-header.tsx", "app/slip-capture.tsx", "app/import-bench.tsx",
-      "app/recovery-bench.tsx", "app/transactions-view.tsx", "app/layout.tsx",
-      "app/captured-slips.tsx", "app/slips-bench.tsx", "app/owner-access.tsx"
-    ].filter((file) => readFileSync(file, "utf8").includes("serviceWorker.register"));
+    // registration site, and it is still one. The candidate list is **found** rather than
+    // written down, so a second registration anywhere under `app/` fails this rather than
+    // hiding in a file nobody remembered to add.
+    const candidates = appComponents();
+    expect(candidates.length, "no components found — the walk is looking in the wrong place").toBeGreaterThan(5);
+    const registrations = candidates.filter((file) => readFileSync(file, "utf8").includes("serviceWorker.register"));
     expect(registrations).toEqual(["app/site-header.tsx"]);
 
     const worker = readFileSync("public/share-slip-sw.js", "utf8");
@@ -504,6 +526,62 @@ describe("privacy guardrails", () => {
     expect(finder).not.toMatch(/proposeAmount|readAmount/u);
     // And the reader that returns a figure is not imported by the form at all.
     expect(form).not.toMatch(/proposeAmount/u);
+  });
+
+  it("never lets a machine-read digit reach any of a card's four stored figures", () => {
+    const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+    const reader = /async function readImage\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(reader, "readImage must exist for this test to mean anything").toContain("findCards(");
+
+    // D-087's rule binds **wider** here than on a slip. A slip stores one digit-bearing field
+    // and a card stores four — the amount, the balance, the timestamp and the account digits —
+    // so all four are typed and none may be filled in from the image. The reader says where each
+    // one is; the owner reads it. "Pre-fill it, they can always check" is the plausible change
+    // that would quietly undo the decision, so it is asserted rather than commented (D-100).
+    for (const setter of ["setAmount", "setBalance", "setPrintedDigits", "setOccurredOn", "setOccurredAtTime"]) {
+      expect(reader, `${setter} must not be reachable from the reader`).not.toMatch(new RegExp(`${setter}\\(`, "u"));
+    }
+    // `showCard` is the other half of the same path — it crops, and cropping is all it does.
+    const shower = /async function showCard\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(shower).toContain("locateCardFields(");
+    for (const setter of ["setAmount", "setBalance", "setPrintedDigits", "setOccurredOn", "setOccurredAtTime"]) {
+      expect(shower, `${setter} must not be reachable from the crop path`).not.toMatch(new RegExp(`${setter}\\(`, "u"));
+    }
+  });
+
+  it("keeps a card's two direction signals from collapsing into one", () => {
+    const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+
+    // D-099 stores a card only when the words the card printed and the sign the owner chose
+    // agree. Two ways of writing the gate look identical and are not: `!== "contradicted"` also
+    // passes when there is no reading at all, so the cross-check retires itself the moment no
+    // card region is in hand and the form stays submittable on one signal.
+    expect(form, "the readiness gate must require agreement, not merely the absence of a contradiction")
+      .toMatch(/directionAgrees/u);
+    expect(form).toMatch(/directionCheck\?\.outcome === "read"/u);
+    expect(form, 'a bare `!== "contradicted"` gate is the shape this test exists to prevent')
+      .not.toMatch(/directionCheck\?\.outcome !== "contradicted"/u);
+
+    // And the direction control must not be pre-set from the image, or the "second" signal is
+    // the first one wearing a different name.
+    const reader = /async function readImage\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(reader).not.toMatch(/setDirection\(/u);
+  });
+
+  it("does not terminate an OCR worker that the slip form on the same page is sharing", () => {
+    const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+    const bench = readFileSync("app/slips-bench.tsx", "utf8");
+    // The two capture forms now sit on one route, and `lib/slip-ocr-engine.ts` holds a single
+    // module-scope worker. Releasing it on *close* rather than on unmount would terminate a
+    // worker the slip form might be mid-recognise on, which surfaces there as "the amount finder
+    // could not start in this browser" — the message reserved for an unavailable engine.
+    expect(bench).toContain("NotificationCardCapture");
+    expect(bench).toContain("SlipCapture");
+    const close = /function closeForm\(\)[\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(close, "closeForm must exist for this test to mean anything").toContain("setOpen(false)");
+    expect(close).not.toMatch(/releaseSlipOcr/u);
+    // Released on unmount, exactly as `app/slip-capture.tsx` does it.
+    expect(form).toMatch(/useEffect\(\(\) => \(\) => \{ void releaseSlipOcr\(\); \}, \[\]\)/u);
   });
 
   it("keeps the session in cookies, which is the only client storage this app has", () => {

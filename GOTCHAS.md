@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-One hundred and ten traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred and eleven traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -111,6 +111,7 @@ One hundred and ten traps, grouped on 2026-08-09 into the eight sections below a
 - Playwright reuses a server someone else started, so browser runs can test stale code
 - A unit suite that feeds the layout reader fixtures proves nothing about reading a PDF
 - Database-driving tests race each other under Vitest file parallelism
+- Re-seeding the Supabase cookie jar per `describe` block makes every later test 403
 - Leftover test accounts collide on a unique constraint in another suite
 - `pnpm test` deletes every row the owner has, not just the test's own
 - A bare tag locator is a contract only while the page holds one of that tag
@@ -958,3 +959,10 @@ One hundred and ten traps, grouped on 2026-08-09 into the eight sections below a
 - Cause: `normalise` in `lib/slip-ocr.ts` removes all whitespace before matching, because Thai has no inter-word spaces and where an OCR engine breaks a run is its business. Krungthai and SCB separate the year from the time with a hyphen, so `2569 - 09:05` survives as `2569-09:05` and reads correctly. **KBANK separates them with spaces alone**, so `69  11:38 น.` arrives as `6911:38น.` and a greedy `\d{2,4}` takes the year as `6911`. That converts to an implausible era year, fails closed, and the line is discarded as "not a date" — a correct-looking refusal reached for the wrong reason.
 - Avoid: anchor the tail. Requiring the match to consume to the end of the line makes the four-digit reading fail and the two-digit one succeed by backtracking, which is the correct split rather than a lucky one. The general rule is the part worth carrying: **once whitespace is stripped, every field boundary has to come from the grammar**, because the only thing separating two numbers is gone. Any `\d{n,m}` sitting next to another numeric field is this bug waiting.
 - Verify: 2026-08-10, found while building `readPrintedDate` and caught by the KBANK test asserting `DATE_YEAR_UNRESOLVED` rather than merely `ok === false`. That assertion *is* the check: before the anchor the call returned `DATE_NOT_FOUND`, which a test on `ok` alone cannot distinguish.
+
+## Re-seeding the Supabase cookie jar per `describe` block makes every later test 403
+
+- Symptom: a route suite passes its first group and then returns **403 on every test after it**, including tests that assert a pure zod refusal and never reach the database. The failures read as an authorisation regression in the route, which is exactly what they are not — the first group proves the same route authorises fine.
+- Cause: the helper pattern stores one `OwnerSession` in a module-level variable and replays it into `@supabase/ssr`'s cookie writer. **The requests in the first group rotate the tokens.** Calling `setSession` again with the original pair therefore writes a jar built from a refresh token that has already been used, and `strongOwnerClient` refuses it. `seedCookieJar` does not throw, because `setSession` reports no error and the jar is not empty — so nothing points at the cause.
+- Avoid: **one `beforeAll` per file**, with the groups nested inside it as plain `describe` blocks. Seeding per group looks tidier and buys nothing; the jar is module state and there is only ever one of it. `tests/cash-and-correction-routes.test.ts` was already written this way, which is why it never met this.
+- Verify: 2026-08-12, found while writing `tests/notification-card-routes.test.ts`. The tell is the shape rather than the count: **a 403 on a test whose assertion is a 422 from zod** means the request never got past auth, so the boundary being exercised is not the one that failed. Restructuring to a single `beforeAll` took the file from 9 failed / 5 passed to 14 passed with no change to the route.

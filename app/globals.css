@@ -154,7 +154,7 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 /* The cash bench sits on the ledger page and shares the slip bench's shape without sharing its
    class: a locator written for one must never find the other, and `.slip-bench input[type=file]`
    is exactly the kind that would. */
-.slip-bench, .cash-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
+.slip-bench, .cash-bench, .card-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
 .slip-controls { margin: 26px 0 0 167px; display: flex; flex-wrap: wrap; gap: 18px; align-items: end; }
 .slip-controls .file-control { min-width: 280px; }
 .slip-form { margin: 22px 0 0 167px; display: grid; gap: 18px; max-width: 720px; }
@@ -184,6 +184,16 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .slip-bench .status.error { color: var(--red); }
 .cash-bench .status { margin: 0; color: var(--muted); font-size: 13px; }
 .cash-bench .status.error { color: var(--red); }
+.card-bench > .secondary-button { margin-left: 167px; }
+.card-bench .status { margin: 0; color: var(--muted); font-size: 13px; }
+.card-bench .status.error { color: var(--red); }
+/* One crop per field, side by side and each one legible on its own. A card carries up to six
+   fields where a slip's finder shows one, so these wrap into a grid rather than stacking into a
+   column longer than the form they sit above. */
+.card-crops { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.card-crop { margin: 0; display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); }
+.card-crop figcaption { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.card-crop img { display: block; max-width: 100%; height: auto; border-radius: var(--radius); }
 
 /* Recovery reads as infrastructure rather than as part of the import flow, because the
    day it is needed there is no import in progress. */
@@ -363,9 +373,9 @@ footer p { margin: 0; }
   .status-line { margin-left: 0; }
   /* Capture is phone-first by definition — share-to-app means sharing from a phone — so
      these lose the heading gutter earlier than they strictly need to. */
-  .slip-controls, .slip-form, .cash-bench .slip-form { margin-left: 0; }
+  .slip-controls, .slip-form, .cash-bench .slip-form, .card-bench .slip-form { margin-left: 0; }
   .slip-bench .status, .slip-bench .notice { margin-left: 0; }
-  .cash-bench > .secondary-button { margin-left: 0; }
+  .cash-bench > .secondary-button, .card-bench > .secondary-button { margin-left: 0; }
   .or-rule { display: none; }
   .ledger-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .ledger-controls > button { grid-column: 1 / -1; }

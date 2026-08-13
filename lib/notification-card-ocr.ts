@@ -205,11 +205,24 @@ function findCardLabelLine(
  * channel must come from the LINE conversation the screenshot was taken in**, which means the
  * owner, not the image. Asserted by a test rather than left implicit.
  */
+/**
+ * The card's words as every direction check in this repo compares them.
+ *
+ * Exported so the capture form can run `readDirection`'s **second** signal against exactly the
+ * text this module read the first one from. The alternative — joining the raw OCR words at the
+ * call site — silently differs: `normalise` strips the spaces an engine puts inside a Thai run,
+ * so an unnormalised title fails a comparison the reader passes, and the form would report a
+ * contradiction that is really a whitespace difference.
+ */
+export function cardText(words: readonly OcrWord[]): string {
+  return groupIntoLines(words).map(lineText).join("\n");
+}
+
 export function readCardDirection(
   words: readonly OcrWord[],
   layout: NotificationCardLayout
 ): CardOcrRead<CardDirection> {
-  const text = groupIntoLines(words).map(lineText).join("\n");
+  const text = cardText(words);
   const reading = readDirectionWord(layout, text);
   if (reading.outcome !== "read") {
     return refuse(
