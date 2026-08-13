@@ -87,11 +87,15 @@ function cashEntry(overrides: Partial<CashEntry> = {}): CashEntry {
 const ACCOUNTS = [KTB_ACCOUNT, SCB_ACCOUNT];
 
 /**
- * The rows reconciliation is about. A cash row carries no pairing — it has no bank and no
- * statement — so narrowing it out is how a test says it is asking about slips.
+ * The rows *slip* reconciliation is about. A cash row carries no pairing at all — it has no bank
+ * and no statement — and an unmatched notification card carries one this module does not own:
+ * its rule is `lib/notification-card-reconcile.ts` and its pairing cannot be overruled, so it has
+ * no `ownerDecided` to ask about. Narrowing both out is how a test says it is asking about slips.
  */
-function reconciledSlipRows(rows: readonly ReconciledRow[]): Exclude<ReconciledRow, { kind: "cash" }>[] {
-  return rows.filter((entry): entry is Exclude<ReconciledRow, { kind: "cash" }> => entry.kind !== "cash");
+function reconciledSlipRows(rows: readonly ReconciledRow[]): Exclude<ReconciledRow, { kind: "cash" | "card" }>[] {
+  return rows.filter(
+    (entry): entry is Exclude<ReconciledRow, { kind: "cash" | "card" }> => entry.kind !== "cash" && entry.kind !== "card"
+  );
 }
 
 describe("matching a slip to a statement row", () => {
@@ -364,17 +368,17 @@ describe("totals over a reconciled ledger", () => {
   // every row counts every payment exactly once.
   it("counts a matched payment once, not twice", () => {
     const { rows } = reconcileLedger([row()], [slip()], ACCOUNTS);
-    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "0", withdrawals: "-9000", net: "-9000", provisional: 0, cash: 0 });
+    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "0", withdrawals: "-9000", net: "-9000", provisional: 0, cash: 0, cards: 0 });
   });
 
   it("counts an unmatched slip as money that moved, and says it is provisional", () => {
     const { rows } = reconcileLedger([row()], [slip({ occurred_on: "2026-06-20", amount_minor: "-2500", slip_reference: "A00000000000000003" })], ACCOUNTS);
-    expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-11500", net: "-11500", provisional: 1, cash: 0 });
+    expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-11500", net: "-11500", provisional: 1, cash: 0, cards: 0 });
   });
 
   it("adds a deposit slip to deposits, with its sign respected", () => {
     const { rows } = reconcileLedger([], [slip({ kind: "deposit", amount_minor: "45000" })], ACCOUNTS);
-    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "45000", withdrawals: "0", net: "45000", provisional: 1, cash: 0 });
+    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "45000", withdrawals: "0", net: "45000", provisional: 1, cash: 0, cards: 0 });
   });
 
   it("stays exact past 2^53", () => {
@@ -386,17 +390,17 @@ describe("totals over a reconciled ledger", () => {
   });
 
   it("is empty and zero for an empty ledger rather than failing", () => {
-    expect(summarizeRows([])).toEqual({ rows: 0, deposits: "0", withdrawals: "0", net: "0", provisional: 0, cash: 0 });
+    expect(summarizeRows([])).toEqual({ rows: 0, deposits: "0", withdrawals: "0", net: "0", provisional: 0, cash: 0, cards: 0 });
   });
 
   it("counts cash apart from provisional, because it is not waiting for a statement", () => {
     const { rows } = reconcileLedger([row()], [], ACCOUNTS, [], [cashEntry()]);
-    expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-11500", net: "-11500", provisional: 0, cash: 1 });
+    expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-11500", net: "-11500", provisional: 0, cash: 1, cards: 0 });
   });
 
   it("adds a cash deposit to deposits, with its sign respected", () => {
     const { rows } = reconcileLedger([], [], ACCOUNTS, [], [cashEntry({ kind: "deposit", amount_minor: "30000" })]);
-    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "30000", withdrawals: "0", net: "30000", provisional: 0, cash: 1 });
+    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "30000", withdrawals: "0", net: "30000", provisional: 0, cash: 1, cards: 0 });
   });
 
   it("keeps cash exact past 2^53, like every other amount here", () => {

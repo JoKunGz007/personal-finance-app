@@ -61,6 +61,22 @@ export function resolveStatementEra(twoDigitYear: number, currentYear: number): 
   throw new Error("A two-digit statement year is ambiguous between the Gregorian and Buddhist calendars.");
 }
 
+/**
+ * An ISO date as a whole number of days, so two dates can be subtracted.
+ *
+ * Built from `Date.UTC` on the date parts alone rather than by parsing the string, so no local
+ * time zone can shift it across a day boundary — the reconciliation rules compare a captured
+ * record's date with a statement row's, and a rule that read differently in two time zones
+ * would move a match without anything saying so.
+ *
+ * Shared by `lib/slip-reconcile.ts` and `lib/notification-card-reconcile.ts`, which both measure
+ * a date distance against a window. Two hand-kept copies of this would be two chances to
+ * disagree about what "one day apart" means.
+ */
+export function dayNumber(date: string): number {
+  return Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))) / 86_400_000;
+}
+
 export function bangkokInstant(date: string, time: string | null): string {
   isoDateSchema.parse(date);
   const normalizedTime = time ?? "00:00:00";

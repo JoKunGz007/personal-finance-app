@@ -3,6 +3,7 @@ import { isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema, type MinorUnitString } from "@/lib/money";
 import type { CapturedSlip } from "@/lib/slips";
 import type { CashEntry } from "@/lib/cash";
+import type { NotificationCard } from "@/lib/notification-cards";
 
 // Wire contract for GET /api/v1/accounts/[id]/transactions, which returns
 // `public.list_account_transactions` verbatim. Column names stay as the database
@@ -220,5 +221,21 @@ export function matchesCashQuery(entry: CashEntry, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();
   if (needle === "") return true;
   const haystack = [entry.counterparty, entry.note];
+  return haystack.some((field) => field !== null && field.toLocaleLowerCase().includes(needle));
+}
+
+/**
+ * The same filter over a notification card.
+ *
+ * A card has no reference to search — no layout prints one, which is the whole reason migration
+ * 016 identifies a card by a fingerprint the database computes. What it does carry that the
+ * others do not is the **channel** it came from and the **digits it printed**, so both are
+ * searched: the channel is how the owner thinks of the card ("the KBank one"), and the digits are
+ * what he can read off the screenshot when he is looking for a particular card.
+ */
+export function matchesCardQuery(card: NotificationCard, query: string): boolean {
+  const needle = query.trim().toLocaleLowerCase();
+  if (needle === "") return true;
+  const haystack = [card.counterparty, card.note, card.channel, card.printed_account_digits];
   return haystack.some((field) => field !== null && field.toLocaleLowerCase().includes(needle));
 }

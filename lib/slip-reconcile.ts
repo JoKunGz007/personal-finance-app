@@ -1,6 +1,9 @@
 import type { CapturedSlip, SlipMatchDecision } from "@/lib/slips";
 import type { CashEntry } from "@/lib/cash";
 import type { LedgerAccount } from "@/lib/accounts";
+import type { NotificationCard } from "@/lib/notification-cards";
+import { cardAccount, cardStatus, proposeCardMatches, type CardMatches } from "@/lib/notification-card-reconcile";
+import { dayNumber } from "@/lib/dates";
 import { movementMinor, type AccountTransaction } from "@/lib/transactions";
 
 /**
@@ -68,18 +71,24 @@ export const MATCH_WINDOW_DAYS = 1;
 export type SlipMatchStatus = "verified" | "awaiting-statement" | "needs-review" | "statement-only";
 
 /**
- * What a ledger row can say about itself, once cash is in the view.
+ * What a ledger row can say about itself, once cash and notification cards are in the view.
  *
  * `cash` is not a fifth reconciliation state, and treating it as one would be the mistake. The
  * four above are stages of a slip's relationship with a statement; a cash payment has no
  * statement and never will, so it is not awaiting anything and cannot be verified by anything.
  * It sits in the same list because it is money that moved, which is what the list is for.
+ *
+ * `balance-conflict` **is** a reconciliation state, and only a card can be in it. It means rows
+ * fitted the card on account, amount and date and every one of them printed a different running
+ * balance — so the card refused to pair rather than pairing on the facts that agreed
+ * (`lib/notification-card-reconcile.ts`). A slip can never reach it, because a slip prints no
+ * balance to contradict anything with.
+ *
+ * The other three card states reuse the slip names deliberately: `verified`,
+ * `awaiting-statement` and `needs-review` describe a record's relationship to the statement,
+ * not which kind of record it is, so the Status control asks one question rather than two.
  */
-export type RowStatus = SlipMatchStatus | "cash";
-
-function dayNumber(date: string): number {
-  return Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))) / 86_400_000;
-}
+export type RowStatus = SlipMatchStatus | "cash" | "balance-conflict";
 
 /**
  * The account a slip is shown against, derived and never stored.
@@ -296,6 +305,11 @@ export function matchCandidates(
  * the immutable source facts, and takes the slip's counterparty, category and note as
  * detail. The slip does not also appear — that is the whole point, and it is what makes the
  * confirmed totals safe to include slips in.
+ *
+ * **A statement row can carry a slip and a card at once**, and that is not a conflict to resolve.
+ * One payment can produce both an e-slip and a bank's LINE push, in which case both records are
+ * evidence for the same movement and both collapse onto it. The row is still one row and is still
+ * counted once.
  */
 export type ReconciledRow =
   | {
@@ -306,6 +320,11 @@ export type ReconciledRow =
       status: Extract<SlipMatchStatus, "verified" | "statement-only">;
       transaction: AccountTransaction;
       slip: CapturedSlip | null;
+      /**
+       * The notification card matched to this row, if one was. Independent of `slip`: either,
+       * both or neither may be present, and `status` is `verified` when at least one is.
+       */
+      card: NotificationCard | null;
       /** True when this pairing is the owner's stored decision rather than the rule's proposal. */
       ownerDecided: boolean;
     }
@@ -332,6 +351,28 @@ export type ReconciledRow =
       time: string | null;
       status: Extract<RowStatus, "cash">;
       entry: CashEntry;
+    }
+  | {
+      /**
+       * A captured notification card that has not collapsed onto a statement row (migration 016).
+       *
+       * Its own row for the reason an unmatched slip gets one: it is money that moved and the
+       * ledger must show it. What it is **not** is a fourth flavour of provisional — the three
+       * states it can be in are not all "waiting". `awaiting-statement` is waiting;
+       * `needs-review` is an ambiguity; `balance-conflict` is a card whose printed balance
+       * contradicts every row that otherwise fits, which is a disagreement to look at rather
+       * than a delay to sit out.
+       *
+       * Unlike a slip, its account is a stored fact rather than a derivation, so this row always
+       * knows which account it belongs to.
+       */
+      kind: "card";
+      id: string;
+      date: string;
+      time: string | null;
+      status: Extract<RowStatus, "awaiting-statement" | "needs-review" | "balance-conflict">;
+      card: NotificationCard;
+      account: LedgerAccount | null;
     };
 
 /**
@@ -344,20 +385,30 @@ export function reconcileLedger(
   slips: readonly CapturedSlip[],
   accounts: readonly LedgerAccount[],
   decisions: readonly SlipMatchDecision[] = [],
-  cash: readonly CashEntry[] = []
-): { rows: ReconciledRow[]; matches: SlipMatches } {
+  cash: readonly CashEntry[] = [],
+  cards: readonly NotificationCard[] = []
+): { rows: ReconciledRow[]; matches: SlipMatches; cardMatches: CardMatches } {
   const matches = proposeSlipMatches(transactions, slips, accounts, decisions);
+  // Run over the same transactions without removing what the slip rule claimed. The two rules
+  // are independent because their records are not rivals: one payment can produce both an e-slip
+  // and a LINE push, and a row is allowed to carry both as evidence of the same movement.
+  const cardMatches = proposeCardMatches(transactions, cards);
 
   const rows: ReconciledRow[] = transactions.map((transaction) => {
     const slip = matches.byTransaction.get(transaction.id) ?? null;
+    const card = cardMatches.byTransaction.get(transaction.id) ?? null;
     return {
       kind: "confirmed" as const,
       id: transaction.id,
       date: transaction.source_date,
       time: transaction.source_time,
-      status: slip ? ("verified" as const) : ("statement-only" as const),
+      // Either record verifies the row. A row carrying only a card is as confirmed as one
+      // carrying only a slip — more so, arguably, since the card's balance was checked against
+      // the row's and a slip has no balance to check.
+      status: slip !== null || card !== null ? ("verified" as const) : ("statement-only" as const),
       transaction,
       slip,
+      card,
       ownerDecided: slip !== null && matches.decided.has(slip.id)
     };
   });
@@ -390,7 +441,25 @@ export function reconcileLedger(
     });
   }
 
-  return { rows, matches };
+  for (const card of cards) {
+    // Asked once, of the module that owns the rule. Deciding it a second time here would let the
+    // chip on the row and the Status control disagree about the same card after one of the two
+    // was changed — and `verified` is the same answer as "already shown as its statement row",
+    // so this is one question rather than two.
+    const status = cardStatus(card, cardMatches);
+    if (status === "verified") continue;
+    rows.push({
+      kind: "card" as const,
+      id: card.id,
+      date: card.occurred_on,
+      time: card.occurred_at_time,
+      status,
+      card,
+      account: cardAccount(card, accounts)
+    });
+  }
+
+  return { rows, matches, cardMatches };
 }
 
 /** `compareTransactions`' rule over reconciled rows, so both kinds sort into one sequence. */
@@ -408,6 +477,7 @@ export function compareRows(a: ReconciledRow, b: ReconciledRow): number {
 export function rowMovementMinor(row: ReconciledRow): string {
   if (row.kind === "confirmed") return movementMinor(row.transaction);
   if (row.kind === "cash") return row.entry.amount_minor;
+  if (row.kind === "card") return row.card.amount_minor;
   return row.slip.amount_minor;
 }
 
@@ -427,6 +497,16 @@ export type LedgerTotals = {
    * records of different standing should disclose what it is made of.
    */
   cash: number;
+  /**
+   * How many are unmatched notification cards, counted apart from `provisional` for the same
+   * disclosure reason and because a card's standing is genuinely its own.
+   *
+   * A slip is a third party's receipt and a cash entry is the owner's own typing; a card is the
+   * **bank's** record, pushed by the bank at the moment of the transaction. So an unmatched card
+   * is not weak evidence that a payment happened — it is good evidence that has not met its
+   * statement row yet. Folding it into `provisional` would say less than the number is worth.
+   */
+  cards: number;
 };
 
 /**
@@ -443,6 +523,7 @@ export function summarizeRows(rows: readonly ReconciledRow[]): LedgerTotals {
   let withdrawals = 0n;
   let provisional = 0;
   let cash = 0;
+  let cards = 0;
   for (const row of rows) {
     if (row.kind === "confirmed") {
       for (const component of row.transaction.source_components) {
@@ -452,10 +533,11 @@ export function summarizeRows(rows: readonly ReconciledRow[]): LedgerTotals {
       }
       continue;
     }
-    // Both remaining kinds carry one signed amount and its direction, so they add the same
+    // All three remaining kinds carry one signed amount and its direction, so they add the same
     // way. What differs is only what the count above them means.
-    const record = row.kind === "cash" ? row.entry : row.slip;
+    const record = row.kind === "cash" ? row.entry : row.kind === "card" ? row.card : row.slip;
     if (row.kind === "cash") cash += 1;
+    else if (row.kind === "card") cards += 1;
     else provisional += 1;
     const amount = BigInt(record.amount_minor);
     if (record.kind === "deposit") deposits += amount;
@@ -467,6 +549,7 @@ export function summarizeRows(rows: readonly ReconciledRow[]): LedgerTotals {
     withdrawals: withdrawals.toString(),
     net: (deposits + withdrawals).toString(),
     provisional,
-    cash
+    cash,
+    cards
   };
 }

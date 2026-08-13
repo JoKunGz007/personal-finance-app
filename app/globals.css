@@ -294,6 +294,12 @@ footer p { margin: 0; }
    settled yet", and a cash payment is settled — it simply has no bank behind it and never
    will. A rule without a wash says "owner's record, complete" rather than "waiting". */
 .cash-row td:first-child { box-shadow: inset 3px 0 var(--muted); }
+/* An unmatched notification card carries the same saffron "not settled yet" wash as a slip,
+   because that is exactly what it is: a payment the bank has pushed but whose statement has not
+   arrived. The chip and the sentence beneath it are what distinguish its three states — awaiting,
+   needing review, and a balance that disagrees — since colour alone could not. */
+.card-row { background: color-mix(in srgb, var(--saffron-wash) 55%, transparent); }
+.card-row td:first-child { box-shadow: inset 3px 0 var(--saffron); }
 .ledger-table .mono { font-family: var(--font-data); font-size: 12px; word-break: break-all; }
 
 /* Five states, and the row says which in words rather than by colour alone — the difference

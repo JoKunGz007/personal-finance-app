@@ -979,6 +979,127 @@ test("matches a slip only after the amount is corrected to the one the statement
   expect(psql(`select amount_minor from public.slip_correction_overlays where owner_id = '${owner}';`).output.trim()).toBe("-50000");
 });
 
+/**
+ * Capturing a notification card **through its real route** rather than through its form.
+ *
+ * The form is deliberately not driven here, and that is the same gap D-088 left for the OCR
+ * amount finder: reaching the submit button needs the engine to recognise a rendered Thai label,
+ * and the measured finding is that labels are missed often enough to make that flaky by
+ * construction. The *ledger view* has no such dependency, so it is tested — this posts the card
+ * through `POST /api/v1/notification-cards` under the browser's own signed-in session, which
+ * exercises every check the route makes, including the per-layout account binding.
+ *
+ * `page.request` shares the page's cookie jar, so this is the owner's real aal2 session rather
+ * than a second one.
+ */
+async function captureCard(
+  page: import("@playwright/test").Page,
+  card: { amountMinor: string; balanceMinor: string; occurredOn: string; occurredAtTime: string }
+) {
+  const response = await page.request.post("/api/v1/notification-cards", {
+    data: {
+      accountId: MATCHING_ACCOUNT,
+      channel: "Krungthai Connext",
+      // Krungthai prints the account's last four, which is what `accounts.last_four` holds — so
+      // the route's binding check passes on the value itself rather than on an offset (D-101).
+      printedAccountDigits: "7890",
+      kind: "withdrawal",
+      amountMinor: card.amountMinor,
+      balanceMinor: card.balanceMinor,
+      occurredOn: card.occurredOn,
+      occurredAtTime: card.occurredAtTime,
+      counterparty: "Browser synthetic card payee",
+      categoryId: null,
+      note: null
+    }
+  });
+  expect(response.status(), await response.text()).toBe(201);
+}
+
+test("collapses a notification card onto its statement row, and the printed balance is what paired them", async ({ page }) => {
+  await signIn(page, "/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  // 500.00 out on 09/01/69 is one row of the Krungthai fixture, and it leaves the account at
+  // 10,249.50 — so this card carries the amount **and** the balance that row prints.
+  await captureCard(page, {
+    amountMinor: "-50000",
+    balanceMinor: "1024950",
+    occurredOn: "2026-01-09",
+    occurredAtTime: "09:30"
+  });
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+
+  // Four rows, not five: the pair is one payment, exactly as a matched slip is.
+  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 30_000 });
+  await expect(ledger.locator("tr.card-row")).toHaveCount(0);
+
+  const verified = ledger.locator("tr.verified-row");
+  await expect(verified).toHaveCount(1);
+  await expect(verified.getByText("Verified by card")).toBeVisible();
+  await expect(verified.locator('td[data-label="Account balance"]')).toHaveText(formatThb("1024950"));
+  // Attributed to the card, not to a slip. This row has no slip, so "(from slip)" would name a
+  // record that is not here — and the two are corrected in different places.
+  await expect(verified.getByText("Browser synthetic card payee (from card)")).toBeVisible();
+
+  // The pair collapsed onto the statement row, so the card is on screen nowhere until this is
+  // opened — and the panel is what makes "verified by card" checkable rather than trusted.
+  await verified.getByRole("button", { name: /^Show card/u }).click();
+  const detail = ledger.locator("tr.pair-detail");
+  await expect(detail.getByText("Krungthai Connext")).toBeVisible();
+  await expect(detail.getByText(/equal to this row's printed balance, which is what paired them/u)).toBeVisible();
+  await expect(detail.getByText(/same account, same amount to the satang, within one day, and the same printed balance/u)).toBeVisible();
+
+  await expect(ledger.locator(".ledger-strip dd").first()).toHaveText("4");
+  await expect(ledger.getByText("1 verified")).toBeVisible();
+
+  // And the authoritative ledger is untouched: the card did not become a statement row.
+  const owner = ownerId();
+  expect(psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`).output.trim()).toBe("4");
+  expect(psql(`select count(*) from public.notification_cards where owner_id = '${owner}';`).output.trim()).toBe("1");
+});
+
+/**
+ * The fail-closed half, in a real browser. This is the case a slip cannot even have: a slip prints
+ * no balance, so nothing about it can contradict the row it otherwise fits.
+ */
+test("refuses to pair a card whose printed balance contradicts the row that otherwise fits", async ({ page }) => {
+  await signIn(page, "/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  // The same amount and the same day as the row above, and a balance that row does not carry.
+  await captureCard(page, {
+    amountMinor: "-50000",
+    balanceMinor: "999999",
+    occurredOn: "2026-01-09",
+    occurredAtTime: "09:30"
+  });
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+
+  // Five rows, not four: refusing to pair means the card stays its own row and the statement row
+  // stays unclaimed. Both halves are asserted, because a rule that dropped the card instead would
+  // also produce four.
+  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tr.verified-row")).toHaveCount(0);
+
+  const cardRow = ledger.locator("tr.card-row");
+  await expect(cardRow).toHaveCount(1);
+  await expect(cardRow.getByText("Balance disagrees")).toBeVisible();
+  // It says what was measured rather than that something went wrong, and the count is the number
+  // of rows that fitted on everything but the balance.
+  await expect(cardRow.getByText(/1 statement row on this account carries this exact amount within a day/u)).toBeVisible();
+  // The balance it printed is shown, marked as the card's own rather than the statement's.
+  await expect(cardRow.locator('td[data-label="Account balance"]')).toContainText(formatThb("999999"));
+
+  await expect(ledger.getByText(/1 whose balance disagrees/u)).toBeVisible();
+});
+
 test("slip capture has no automatically detectable accessibility violations", async ({ page }) => {
   await signIn(page, "/slips");
   await chooseSlipImage(page);

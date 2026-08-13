@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-One hundred and eleven traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred and twelve traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -30,6 +30,7 @@ One hundred and eleven traps, grouped on 2026-08-09 into the eight sections belo
 - `pnpm add` fails with `ERR_PNPM_UNEXPECTED_STORE`, and the suggested fix is the expensive one
 - PowerShell eats a scoped package name before pnpm ever runs
 - tesseract.js caches its language data into the process working directory
+- A PowerShell `**` path glob does not recurse, so the build's target check silently under-counts
 
 ### Docker and the local Supabase projects
 
@@ -966,3 +967,10 @@ One hundred and eleven traps, grouped on 2026-08-09 into the eight sections belo
 - Cause: the helper pattern stores one `OwnerSession` in a module-level variable and replays it into `@supabase/ssr`'s cookie writer. **The requests in the first group rotate the tokens.** Calling `setSession` again with the original pair therefore writes a jar built from a refresh token that has already been used, and `strongOwnerClient` refuses it. `seedCookieJar` does not throw, because `setSession` reports no error and the jar is not empty — so nothing points at the cause.
 - Avoid: **one `beforeAll` per file**, with the groups nested inside it as plain `describe` blocks. Seeding per group looks tidier and buys nothing; the jar is module state and there is only ever one of it. `tests/cash-and-correction-routes.test.ts` was already written this way, which is why it never met this.
 - Verify: 2026-08-12, found while writing `tests/notification-card-routes.test.ts`. The tell is the shape rather than the count: **a 403 on a test whose assertion is a 422 from zod** means the request never got past auth, so the boundary being exercised is not the one that failed. Restructuring to a single `beforeAll` took the file from 9 failed / 5 passed to 14 passed with no change to the route.
+
+## A PowerShell `**` path glob does not recurse, so the build's target check silently under-counts
+
+- Symptom: the `.next` resting-state check reads **three** chunks carrying the synthetic project's port where every previous run recorded four. Nothing errors. The safety-relevant halves — zero chunks carrying the hosted ref, zero carrying the historical live port — read correctly, so the artifact looks *almost* right and the missing chunk reads as a build that changed rather than a search that missed.
+- Cause: `Select-String -Path .next\server\**\*.js` treats `**` as a single-level wildcard. It matches `.next/server/chunks/*.js` and stops; `.next/server/chunks/ssr/*.js` is one level deeper and is never opened. The count is therefore a function of how the bundler happened to nest the chunks, not of what the build targets.
+- Avoid: enumerate the files first and pipe them in — `Get-ChildItem -Path .next\server -Recurse -Filter *.js -File | Select-String -Pattern … -List`. Print the file count alongside the match count, so a search that scanned the wrong tree is visible rather than inferred: 147 files scanned is a plausible `.next/server`, and a number far below that is the tell.
+- Verify: 2026-08-13, during the D-102 gate. The glob reported 3 and the recursive enumeration reported 4, from the same build, with the fourth match in `.next/server/chunks/ssr/`. **The failure direction is the dangerous one**: this check exists to prove no chunk carries the hosted project, and a search that quietly skips a directory would report zero for a chunk it never opened. Read the file count, not only the match count.
