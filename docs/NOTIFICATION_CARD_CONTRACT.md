@@ -136,6 +136,28 @@ keyed to one label reads one variant and silently misses the other, so both are 
 The `ประเภท` value is free text and **is not always Thai** — one measured card reads
 `Education Loan`. It is not stored; it is recorded because it occupies a row.
 
+**And it can contain the direction word**, which makes it more than a row that occupies space.
+One measured outgoing phrase carries `เงินออก` inside a longer run, and Thai has no separator to
+mark where that run begins. A reader that tested for the direction word anywhere on a row would
+therefore find one here and treat this row as the start of a card — measured 2026-08-12, where it
+split a real card in two and aimed the amount's crop at this row instead of the amount's. **Match
+the direction word, and every label, only at the start of its row** (D-100).
+
+## A screenshot holds more than one card
+
+Measured 2026-08-12 over all eight screenshots: the six that carry cards carry **two each**, which
+is the twelve cards this document is written from. Both cards in a screenshot share an account and
+a day.
+
+**A card begins at its direction word**, which is what makes them separable and is a property of
+all three layouts rather than a convenience: SCB Connect and KBank Live print their title first,
+and Krungthai Connext's first row *is* the amount, whose label is the direction word. A card runs
+to the line before the next one starts.
+
+The remaining two screenshots are the in-app lists this task excludes, and they yield **no** card
+under this rule — their row titles contain a direction word but never begin with one. So the
+exclusion holds in the reader as well as in the design.
+
 ## Balance wording is not uniform, and the difference may matter
 
 Two layouts print an **available** balance (`ยอดเงินที่ใช้ได้`, `ยอดที่ใช้ได้`) and one prints a

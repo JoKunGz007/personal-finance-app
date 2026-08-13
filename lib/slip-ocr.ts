@@ -121,7 +121,14 @@ function arabicDigits(text: string): string {
   return out;
 }
 
-function normalise(text: string): string {
+/**
+ * The one text normalisation every label comparison in this repo goes through.
+ *
+ * Exported because `lib/notification-card-ocr.ts` compares labels against the same OCR words
+ * and must normalise them identically — two normalisers that drift apart would make a label
+ * match on a slip and miss on a card for reasons no test would name.
+ */
+export function normalise(text: string): string {
   return arabicDigits(text.normalize("NFKC")).replace(/\s+/g, "");
 }
 

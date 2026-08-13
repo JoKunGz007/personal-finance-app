@@ -330,6 +330,40 @@ const DIRECTION_WORDS: readonly DirectionWord[] = Object.entries(FIELD_MAPS).fla
   }))
 );
 
+export type CardDirectionWordReading =
+  | { readonly outcome: "read"; readonly direction: CardDirection }
+  | { readonly outcome: "unrecognised" };
+
+/**
+ * The direction the card's *words* say, with no reference to the amount.
+ *
+ * Split out of `readDirection` so the reader can select a field map before any amount exists:
+ * the grammar is looked up per layout **and per direction**, so the direction has to be known
+ * first, while the amount is typed by the owner at the end (D-087). `readDirection` then runs
+ * the same reading against the typed sign as the cross-check D-099 requires. **One
+ * implementation, deliberately** — the nesting rule below is a defect this module already had
+ * once, and a second copy of it is a second chance to lose it.
+ */
+export function readDirectionWord(layout: NotificationCardLayout, printedWords: string): CardDirectionWordReading {
+  const mine = DIRECTION_WORDS.filter((entry) => entry.channel === layout.channel && printedWords.includes(entry.word));
+  // Exactly one of this layout's words must appear. "The first one found" is deliberately not
+  // the rule: text matching both directions was misread and text matching neither is a layout
+  // that has changed, and both are refusals rather than a direction chosen on a tie-break.
+  if (mine.length !== 1) return { outcome: "unrecognised" };
+  const reading = mine[0]!;
+  // Then reject a match that is really part of a longer word belonging to another layout, and
+  // note that this is not tidiness. **Thai has no word separator**, so a plain substring test
+  // cannot tell a word from part of a longer one: KBank Live's incoming title `รายการเงินเข้า`
+  // *contains* Krungthai Connext's incoming word `เงินเข้า`. Without this, Krungthai's grammar
+  // reads a KBank card happily — and the account digits are then matched with the wrong mask,
+  // which is the failure this whole module exists to prevent.
+  const eclipsed = DIRECTION_WORDS.some(
+    (other) => other.word !== reading.word && other.word.includes(reading.word) && printedWords.includes(other.word)
+  );
+  if (eclipsed) return { outcome: "unrecognised" };
+  return { outcome: "read", direction: reading.direction };
+}
+
 export type CardDirectionReading =
   | { readonly outcome: "read"; readonly direction: CardDirection; readonly kind: "deposit" | "withdrawal" }
   | { readonly outcome: "unrecognised" }
@@ -359,24 +393,10 @@ export function readDirection(
   printedWords: string,
   signedAmountMinor: bigint
 ): CardDirectionReading {
-  const mine = DIRECTION_WORDS.filter((entry) => entry.channel === layout.channel && printedWords.includes(entry.word));
-  // Exactly one of this layout's words must appear. "The first one found" is deliberately not
-  // the rule: text matching both directions was misread and text matching neither is a layout
-  // that has changed, and both are refusals rather than a direction chosen on a tie-break.
-  if (mine.length !== 1) return { outcome: "unrecognised" };
-  const reading = mine[0]!;
-  // Then reject a match that is really part of a longer word belonging to another layout, and
-  // note that this is not tidiness. **Thai has no word separator**, so a plain substring test
-  // cannot tell a word from part of a longer one: KBank Live's incoming title `รายการเงินเข้า`
-  // *contains* Krungthai Connext's incoming word `เงินเข้า`. Without this, Krungthai's grammar
-  // reads a KBank card happily — and the account digits are then matched with the wrong mask,
-  // which is the failure this whole module exists to prevent.
-  const eclipsed = DIRECTION_WORDS.some(
-    (other) => other.word !== reading.word && other.word.includes(reading.word) && printedWords.includes(other.word)
-  );
-  if (eclipsed) return { outcome: "unrecognised" };
+  const byWords = readDirectionWord(layout, printedWords);
+  if (byWords.outcome !== "read") return { outcome: "unrecognised" };
   if (signedAmountMinor === 0n) return { outcome: "unrecognised" };
   const bySign: CardDirection = signedAmountMinor > 0n ? "in" : "out";
-  if (reading.direction !== bySign) return { outcome: "contradicted", byWords: reading.direction, bySign };
+  if (byWords.direction !== bySign) return { outcome: "contradicted", byWords: byWords.direction, bySign };
   return { outcome: "read", direction: bySign, kind: kindForDirection(bySign) };
 }
