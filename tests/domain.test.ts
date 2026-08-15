@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { bangkokInstant, gregorianYearFrom, resolveStatementEra } from "@/lib/dates";
+import { bangkokInstant, bangkokToday, gregorianYearFrom, resolveStatementEra } from "@/lib/dates";
 import { canonicalJson, confirmationDigest, normalizeSourceText, rowFingerprint } from "@/lib/canonical";
 import { sourceRowCandidateSchema, type ImportPayload } from "@/lib/statement";
 import { MAX_INT64, MIN_INT64, minor, minorUnitStringSchema, parseThb } from "@/lib/money";
@@ -35,6 +35,24 @@ describe("dates and canonical identity", () => {
     expect(gregorianYearFrom(69, 2026, "buddhist")).toBe(2026);
     expect(gregorianYearFrom(26, 2026, "gregorian")).toBe(2026);
     expect(bangkokInstant("2026-06-01", "23:59")).toBe("2026-06-01T23:59:00+07:00");
+  });
+
+  it("reads today in Bangkok rather than in UTC, which is a different day for seven hours", () => {
+    // 17:30 UTC is 00:30 the NEXT day in Bangkok. This is the hour that mattered: two capture
+    // forms defaulted their date with `toISOString().slice(0, 10)` and so offered yesterday to
+    // anyone entering a payment before 07:00 local (D-110). Asserted against the UTC answer
+    // explicitly, because the two agree for seventeen hours a day and a test written at any
+    // other instant would pass while the defect stood.
+    const earlyMorning = new Date("2026-08-15T17:30:00Z");
+    expect(bangkokToday(earlyMorning)).toBe("2026-08-16");
+    expect(earlyMorning.toISOString().slice(0, 10)).toBe("2026-08-15");
+
+    // The boundary itself, from either side: 16:59:59 UTC is still the 15th in Bangkok.
+    expect(bangkokToday(new Date("2026-08-15T16:59:59Z"))).toBe("2026-08-15");
+    expect(bangkokToday(new Date("2026-08-15T17:00:00Z"))).toBe("2026-08-16");
+
+    // Zero-padded, because a date input reads `YYYY-MM-DD` and nothing else.
+    expect(bangkokToday(new Date("2026-01-05T04:00:00Z"))).toBe("2026-01-05");
   });
 
   it("decides the statement era from its period end, refusing an implausible year", () => {

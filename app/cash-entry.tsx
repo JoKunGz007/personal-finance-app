@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { formatThb, parseThb } from "@/lib/money";
 import { cashDateWindow, CASH_KINDS } from "@/lib/cash";
+import { bangkokToday } from "@/lib/dates";
 import { readError } from "@/lib/wire";
 
 type Category = { id: string; name: string; archived: boolean };
@@ -27,7 +28,9 @@ export function CashEntryForm({ onRecorded }: { onRecorded?: () => void }) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<Kind>("withdrawal");
   const [amount, setAmount] = useState("");
-  const [occurredOn, setOccurredOn] = useState(() => new Date().toISOString().slice(0, 10));
+  // Bangkok, not UTC — see `bangkokToday`. The same defect as the card form's, found with it
+  // and fixed with it, because both hand-rolled the same line (D-110).
+  const [occurredOn, setOccurredOn] = useState(() => bangkokToday());
   const [occurredAtTime, setOccurredAtTime] = useState("");
   const [counterparty, setCounterparty] = useState("");
   const [categoryId, setCategoryId] = useState("");

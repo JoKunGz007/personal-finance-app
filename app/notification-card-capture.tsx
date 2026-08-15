@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { bangkokToday } from "@/lib/dates";
 import { formatThb, parseThb } from "@/lib/money";
 import { BUDDHIST_ERA_OFFSET, paddedCrop, type Box } from "@/lib/slip-ocr";
 import { readSlipWords, releaseSlipOcr } from "@/lib/slip-ocr-engine";
@@ -104,7 +105,10 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
   const [amount, setAmount] = useState("");
   const [balance, setBalance] = useState("");
   const [printedDigits, setPrintedDigits] = useState("");
-  const [occurredOn, setOccurredOn] = useState(() => new Date().toISOString().slice(0, 10));
+  // Bangkok, not UTC. `toISOString()` here named yesterday between midnight and 07:00 local,
+  // and a card matches on a one-day window, so the default silently narrowed the pairing for
+  // seven hours a day (D-110).
+  const [occurredOn, setOccurredOn] = useState(() => bangkokToday());
   const [occurredAtTime, setOccurredAtTime] = useState("");
   const [counterparty, setCounterparty] = useState("");
   const [categoryId, setCategoryId] = useState("");

@@ -77,6 +77,34 @@ export function dayNumber(date: string): number {
   return Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10))) / 86_400_000;
 }
 
+/**
+ * Today's date in `Asia/Bangkok`, as `YYYY-MM-DD`.
+ *
+ * Exists because `new Date().toISOString().slice(0, 10)` is **UTC**, and Bangkok is UTC+7 — so
+ * between midnight and 07:00 local it names *yesterday*. Two capture forms defaulted their date
+ * that way and were wrong for seven hours a day (D-110). The failure is quiet by construction:
+ * a date one day early still looks plausible, the field is pre-filled rather than blank so
+ * nobody is prompted to check it, and a card matches its statement row on a **one-day** window,
+ * so starting a day out narrows or misses the pairing it was meant to make.
+ *
+ * `SPEC.md` already required this — derived instants and reporting boundaries use `Asia/Bangkok`
+ * — and `bangkokInstant` below has always honoured it. This is the same rule for the other half
+ * of a date, which had no helper and so got hand-rolled twice.
+ *
+ * Built from `formatToParts` rather than an `en-CA` format string: the latter happens to emit
+ * `YYYY-MM-DD` today, and that is a property of a locale rather than a guarantee.
+ */
+export function bangkokToday(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
 export function bangkokInstant(date: string, time: string | null): string {
   isoDateSchema.parse(date);
   const normalizedTime = time ?? "00:00:00";

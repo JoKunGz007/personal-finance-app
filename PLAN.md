@@ -366,6 +366,14 @@ Tasks 1–12, 14, 15 and 16 are complete and verified for statements. Remaining 
 
     **The owner chose to write it before the hosted push**, so 016, 017 and 018 now travel together. **Still not verified on the hosted project**: the standing read grant there covers counts and migration versions only, and a privilege audit is neither — so whether the hosted project carries the same gap is inferred from having the same bootstrap and the same migrations, not measured. Migration 018 closes it there when it is pushed either way, since it revokes unconditionally.
 
+32. **`findCards` finds only the first card on a multi-card image.** Reported by the owner on 2026-08-16 against a real LINE **Capture** image carrying five cards, of which the reader found one. **Not diagnosed and not fixed.**
+
+    **Two hypotheses are already dead**, both ruled out by reading rather than guessing. The direction-word match is correct: SCB Connect's `directionWord` is the full title phrase `รายการเงินออก`, so `text.startsWith(...)` in `findCards` matches a real title line — an earlier worry that it required a bare `เงินออก` against a title beginning `รายการ` was wrong. And nothing downscales the image before OCR: `app/notification-card-capture.tsx` passes the raw `File` to `readSlipWords`, and the only scaling in that file is `CROP_TARGET_WIDTH`, which applies to the crops shown to the owner *after* the read.
+
+    **What is left is the engine**, and it needs a measurement rather than more reading: run the OCR over the image in a throwaway harness under `.runtime/` and count how many lines are recognised as starting with the direction word, printing **counts and line positions only** — never text, as D-100's harness did. If the lower titles are simply not recognised, that is the known label-miss rate meeting a tall image, and the fix is about how the image is fed to the engine rather than about `findCards` at all.
+
+    **This got more important on the same day it was found** (D-111). LINE Capture is a better OCR input than a hand-taken screenshot and naturally produces images carrying several cards, so multi-card is becoming the normal case rather than the awkward one.
+
 Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slips; paper receipts from cash purchases are entered by hand rather than read.
 
 13. **Receipts, as a separate build** — see tasks 20–22, which supersede the OCR-first framing below. The CSP question it was blocked on is answered: `next.config.ts` already allows `'wasm-unsafe-eval'` and `worker-src blob:`, which is what tesseract.js needs, provided its worker, core and language files are bundled locally rather than fetched from a CDN.
