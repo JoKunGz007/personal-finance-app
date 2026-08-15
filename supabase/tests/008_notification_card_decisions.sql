@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(38);
 
 -- A card's correction overlay, its stored decision, and retirement (migration 017, PLAN task 29).
 --
@@ -119,26 +119,47 @@ select ok(
     and not has_table_privilege('authenticated', 'public.notification_card_decision_revisions', 'delete'),
   'authenticated holds no direct write on either card revisions table'
 );
--- Reads as well as writes for `anon`: it has no business reading a card's correction history
--- either, and a blanket grant added later would show up here first. Sixteen checks in one
--- assertion, which is the cross join.
+-- The three below are migration 018's contract (D-106, PLAN task 31), and they are deliberately
+-- **not** scoped to migration 017's four tables. The defect they exist for was schema-wide and
+-- invisible precisely because every test asked about the tables the migration in hand had added:
+-- `anon` held `truncate` on all thirteen tables created after migration 002, and `update` on the
+-- audit sequence. A per-table assertion would have passed on the day it was written and gone stale
+-- the next time anyone added a table, which is how this survived six migrations.
 --
--- **`truncate` is deliberately absent from that list, and the reason is a finding rather than an
--- oversight** (D-106). `anon` and `authenticated` *do* hold `truncate` on these four tables, and
--- on all thirteen added since migration 002 — Supabase's own `alter default privileges` grants
--- `Dxtm` (truncate, references, trigger, maintain) on every new table in `public`, and migration
--- 002's `revoke all on all tables in schema public from anon, authenticated` only ever reached the
--- tables existing when it ran. No migration since has repeated it. Asserting `truncate` here would
--- go red against a real gap that needs its own migration to close, so this assertion states what is
--- true today and `PLAN.md` task 31 carries the fix. Widen it to `truncate` in the same change.
+-- They read the catalog rather than calling `has_table_privilege` over a named privilege list, for
+-- the same reason migration 018 writes `revoke all` rather than naming the four: the privilege set
+-- is version-dependent — `maintain` does not exist before PostgreSQL 17 — so a list hard-codes an
+-- assumption about the server. "Holds nothing" and "holds only select" are version-agnostic and
+-- cannot go stale.
 select ok(
-  (select bool_and(not has_table_privilege('anon', t, p))
-     from unnest(array['public.notification_card_correction_overlays',
-                       'public.notification_card_correction_revisions',
-                       'public.notification_card_decision_overlays',
-                       'public.notification_card_decision_revisions']) t,
-          unnest(array['select','insert','update','delete']) p),
-  'anon holds no read or write privilege on the four tables migration 017 added'
+  not exists (
+    select 1 from pg_class c, aclexplode(c.relacl) a
+     where c.relnamespace = 'public'::regnamespace
+       and c.relkind in ('r','S')
+       and a.grantee = 'anon'::regrole
+  ),
+  'anon holds no privilege of any kind on any table or sequence in public'
+);
+select ok(
+  (select coalesce(bool_and(a.privilege_type = 'SELECT'), true)
+     from pg_class c, aclexplode(c.relacl) a
+    where c.relnamespace = 'public'::regnamespace
+      and c.relkind in ('r','S')
+      and a.grantee = 'authenticated'::regrole),
+  'authenticated holds select and nothing else across public'
+);
+-- The half that stops it recurring. Scoped to `postgres` because that is the role migrations create
+-- objects as, and therefore the only default ACL that governs a table this repository adds —
+-- `supabase_admin` keeps its own defaults for objects it creates and migration 018 does not touch
+-- them, so asserting across every `defaclrole` would fail on something out of scope.
+select ok(
+  not exists (
+    select 1 from pg_default_acl d, aclexplode(d.defaclacl) a
+     where d.defaclnamespace = 'public'::regnamespace
+       and d.defaclrole = 'postgres'::regrole
+       and a.grantee in ('anon'::regrole, 'authenticated'::regrole)
+  ),
+  'no postgres default privilege in public grants anon or authenticated anything on a future object'
 );
 
 -- A card to decide about: -90.00 out on 2026-07-20 at 09:00, balance 4,910.00. It fits both of
