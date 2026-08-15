@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(33);
+select plan(36);
 
 -- A card's correction overlay, its stored decision, and retirement (migration 017, PLAN task 29).
 --
@@ -96,6 +96,49 @@ select ok(
                   'public.notification_card_decision_overlays'::regclass,
                   'public.notification_card_decision_revisions'::regclass)),
   'all four card overlay tables have row level security enabled and forced'
+);
+
+-- The three below close a gap the security review found (D-105, PLAN task 30): the assertions
+-- above prove the overlays and left the two **revisions** tables and the `anon` role unasserted.
+-- Migration 017 revokes correctly on all four, so nothing was ever exposed — what was missing is
+-- the test that goes red if a later migration grants a write back. The revisions tables carry a
+-- `private.reject_change()` trigger as well, and that is deliberately not the thing proved here:
+-- a trigger refuses a statement the caller was allowed to attempt, while the grant refuses the
+-- attempt, and only the second is least privilege.
+select ok(
+  has_table_privilege('authenticated', 'public.notification_card_correction_revisions', 'select')
+    and has_table_privilege('authenticated', 'public.notification_card_decision_revisions', 'select'),
+  'authenticated may read its own card correction and decision history'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.notification_card_correction_revisions', 'insert')
+    and not has_table_privilege('authenticated', 'public.notification_card_correction_revisions', 'update')
+    and not has_table_privilege('authenticated', 'public.notification_card_correction_revisions', 'delete')
+    and not has_table_privilege('authenticated', 'public.notification_card_decision_revisions', 'insert')
+    and not has_table_privilege('authenticated', 'public.notification_card_decision_revisions', 'update')
+    and not has_table_privilege('authenticated', 'public.notification_card_decision_revisions', 'delete'),
+  'authenticated holds no direct write on either card revisions table'
+);
+-- Reads as well as writes for `anon`: it has no business reading a card's correction history
+-- either, and a blanket grant added later would show up here first. Sixteen checks in one
+-- assertion, which is the cross join.
+--
+-- **`truncate` is deliberately absent from that list, and the reason is a finding rather than an
+-- oversight** (D-106). `anon` and `authenticated` *do* hold `truncate` on these four tables, and
+-- on all thirteen added since migration 002 — Supabase's own `alter default privileges` grants
+-- `Dxtm` (truncate, references, trigger, maintain) on every new table in `public`, and migration
+-- 002's `revoke all on all tables in schema public from anon, authenticated` only ever reached the
+-- tables existing when it ran. No migration since has repeated it. Asserting `truncate` here would
+-- go red against a real gap that needs its own migration to close, so this assertion states what is
+-- true today and `PLAN.md` task 31 carries the fix. Widen it to `truncate` in the same change.
+select ok(
+  (select bool_and(not has_table_privilege('anon', t, p))
+     from unnest(array['public.notification_card_correction_overlays',
+                       'public.notification_card_correction_revisions',
+                       'public.notification_card_decision_overlays',
+                       'public.notification_card_decision_revisions']) t,
+          unnest(array['select','insert','update','delete']) p),
+  'anon holds no read or write privilege on the four tables migration 017 added'
 );
 
 -- A card to decide about: -90.00 out on 2026-07-20 at 09:00, balance 4,910.00. It fits both of
