@@ -3,6 +3,7 @@ import { canonicalJson } from "@/lib/canonical";
 import { decryptBackup, encryptBackup } from "@/lib/backup";
 import {
   backupSnapshotSchema, backupSnapshotSchemaV4, backupSnapshotSchemaV5, backupSnapshotSchemaV6,
+  BACKUP_SCHEMA_VERSION,
   BACKUP_TABLE_KINDS, BACKUP_TABLE_KINDS_V4, BACKUP_TABLE_KINDS_V5, BACKUP_TABLE_KINDS_V6
 } from "@/lib/backup-contract";
 import { buildRestorePlan } from "@/lib/restore-plan";
@@ -340,7 +341,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
   // Note what this does *not* need: any access to the live ledger. The version being
   // rehearsed is a property of the file format, not of the data, so synthetic rows through
   // the real export, the real plan builder and the real RPC answer the question exactly.
-  it("restores a v4 file into a v5 ledger, which is the version pair hosting will use", async () => {
+  it("restores a v4 file into the current ledger, whatever version that now is", async () => {
     assertOnlyDisposableLedgerData([ID(1)]);
 
     clearFactors(CONTAINER, SOURCE_OWNER);
@@ -357,7 +358,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const exported = await rpc(API, sourceSession, "export_backup_snapshot");
       expect(exported.status, exported.body).toBe(200);
       const current = exported.json() as Snapshot;
-      expect(current.schemaVersion, "the source is on the newest migration and must write the newest version").toBe(7);
+      expect(current.schemaVersion, "the source is on the newest migration and must write the newest version").toBe(BACKUP_SCHEMA_VERSION);
 
       // Without this the "downgrade" would be silently dropping rows, and every assertion
       // below would pass while testing a file no ledger could ever have produced.
@@ -406,7 +407,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const reExported = await rpc(DESTINATION_API, destinationSession, "export_backup_snapshot");
       expect(reExported.status, reExported.body).toBe(200);
       const landed = reExported.json() as Snapshot;
-      expect(landed.schemaVersion, "the destination writes its own version, not the file's").toBe(7);
+      expect(landed.schemaVersion, "the destination writes its own version, not the file's").toBe(BACKUP_SCHEMA_VERSION);
       expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
 
       for (const kind of BACKUP_TABLE_KINDS_V4.filter((table) => table !== "mutation_sequences")) {
@@ -436,7 +437,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
   // Note what it does *not* need: any access to the hosted ledger. The version being rehearsed
   // is a property of the file format rather than of the data, so synthetic rows through the
   // real export, the real plan builder and the real RPC answer the question exactly.
-  it("restores a v5 file into a v6 ledger, which is the version pair the owner's newest backup will use", async () => {
+  it("restores a v5 file into the current ledger, which is what the hosted project still writes", async () => {
     assertOnlyDisposableLedgerData([ID(1)]);
 
     clearFactors(CONTAINER, SOURCE_OWNER);
@@ -453,7 +454,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const exported = await rpc(API, sourceSession, "export_backup_snapshot");
       expect(exported.status, exported.body).toBe(200);
       const current = exported.json() as Snapshot;
-      expect(current.schemaVersion, "the source is on 017 and must write the newest version").toBe(7);
+      expect(current.schemaVersion, "the source is on the newest migration and must write the newest version").toBe(BACKUP_SCHEMA_VERSION);
 
       for (const kind of NEWER_THAN_V5) {
         expect(current.tableCounts[kind], `${kind} must be empty for the downgrade to be lossless`).toBe(0);
@@ -493,7 +494,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const reExported = await rpc(DESTINATION_API, destinationSession, "export_backup_snapshot");
       expect(reExported.status, reExported.body).toBe(200);
       const landed = reExported.json() as Snapshot;
-      expect(landed.schemaVersion, "the destination writes its own version, not the file's").toBe(7);
+      expect(landed.schemaVersion, "the destination writes its own version, not the file's").toBe(BACKUP_SCHEMA_VERSION);
       expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
 
       for (const kind of BACKUP_TABLE_KINDS_V5.filter((table) => table !== "mutation_sequences")) {
@@ -510,6 +511,14 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
     }
   }, 180_000);
 
+  // **Why these three name a file version and not a destination version.** Each of them restores
+  // into whatever the newest migration writes, so a title naming the destination goes stale at
+  // the next version bump while the assertions underneath are quietly updated — which is exactly
+  // what happened to the two above when migration 017 landed: they still said "into a v5 ledger"
+  // and "into a v6 ledger" while both were restoring into a v7 one. A reader checking whether
+  // their own file restores would have read the wrong answer. The file version is the fact being
+  // tested and it is stable; the destination is `BACKUP_SCHEMA_VERSION` and is asserted as such.
+  //
   // The pair the next restore of this ledger will use, proven before anything depends on it —
   // the same argument D-089 made one version earlier and D-098 made the version after that.
   //
@@ -522,7 +531,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
   // This is also the first version pair whose older side carries a **card**, since v6 is the
   // first version that has one — so the downgrade is lossless only because the four tables 017
   // adds are empty, which is asserted rather than assumed.
-  it("restores a v6 file into a v7 ledger, which is the version pair the next recovery will use", async () => {
+  it("restores a v6 file into the current ledger, which is what the hosted project writes once 016 lands", async () => {
     assertOnlyDisposableLedgerData([ID(1)]);
 
     clearFactors(CONTAINER, SOURCE_OWNER);
@@ -539,7 +548,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const exported = await rpc(API, sourceSession, "export_backup_snapshot");
       expect(exported.status, exported.body).toBe(200);
       const current = exported.json() as Snapshot;
-      expect(current.schemaVersion, "the source is on 017 and must write the newest version").toBe(7);
+      expect(current.schemaVersion, "the source is on the newest migration and must write the newest version").toBe(BACKUP_SCHEMA_VERSION);
 
       for (const kind of NEWER_THAN_V6) {
         expect(current.tableCounts[kind], `${kind} must be empty for the downgrade to be lossless`).toBe(0);
@@ -579,7 +588,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const reExported = await rpc(DESTINATION_API, destinationSession, "export_backup_snapshot");
       expect(reExported.status, reExported.body).toBe(200);
       const landed = reExported.json() as Snapshot;
-      expect(landed.schemaVersion, "the destination writes its own version, not the file's").toBe(7);
+      expect(landed.schemaVersion, "the destination writes its own version, not the file's").toBe(BACKUP_SCHEMA_VERSION);
       expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
 
       for (const kind of BACKUP_TABLE_KINDS_V6.filter((table) => table !== "mutation_sequences")) {
