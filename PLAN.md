@@ -392,6 +392,19 @@ Tasks 1–12, 14, 15 and 16 are complete and verified for statements. Remaining 
 
     **This got more important on 2026-08-16** (D-111). LINE Capture is a better OCR input than a hand-taken screenshot and naturally produces images carrying several cards, so multi-card is becoming the normal case rather than the awkward one — and more cards per session is more typing, which is what makes the question worth settling rather than deferring.
 
+34. **Trial OCR pre-fill on a card, with the statistics that will decide whether it stays.** The owner's decision on 2026-08-16 (D-114), taken instead of choosing for or against D-087. **Nothing built.** This is the next substantive piece of work.
+
+    **Four parts, in this order.**
+
+    1. **`lib/notification-card-prefill.ts`** — pure, tested, ported from the throwaway harness that measured it: repair characters carrying no value (`|`/`!` → `/`, a leading `=` or dash → `-`, a detached thousands comma rejoined), **discard the repair whenever the digit sequence changes**, run the existing `parseThb`, and **return nothing rather than a guess** when it fails. The digit guard is the load-bearing part and deserves its own test, including one asserting a repair that would alter a digit is thrown away.
+    2. **The form fills the four digit-bearing fields** from it — amount, balance, date and time, account digits — leaving blank whatever refuses, and **remembers what it offered** so a change can be detected at submit.
+    3. **Migration 019** gives `capture_notification_card` a parameter carrying two arrays of **field names**: offered, and changed before submitting. They join the audit detail the RPC already writes. **Structure, never values** — no amount, balance, date or digit, exactly as that row is built today. **No new table and no new column, so the backup stays at v7** and nothing is stranded.
+    4. **The route passes them through**, validated as a closed set of field names rather than free text.
+
+    **What the statistics can and cannot say, and this is the part not to re-derive.** The obvious measure is how often a pre-filled value gets edited, and **a low edit rate is consistent with two opposite worlds** — the engine is right, or the owner stopped looking. It cannot distinguish them. **The independent check is the statement**: a card pairs on the exact amount, a one-day window and the printed balance, so a wrongly pre-filled figure fails to pair and surfaces as `AWAITING STATEMENT` without anyone auditing anything. **Compare the pairing rate of pre-filled cards against typed ones** — that measure does not depend on the owner having looked.
+
+    **Expected fill rates, measured on 19 real cards** (D-113): amount **89%**, balance **79%**, own account **58%**, date and time **53%**. A field that refuses is left blank and typed as it is today, so the trial can only reduce typing, never add it.
+
 Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slips; paper receipts from cash purchases are entered by hand rather than read.
 
 13. **Receipts, as a separate build** — see tasks 20–22, which supersede the OCR-first framing below. The CSP question it was blocked on is answered: `next.config.ts` already allows `'wasm-unsafe-eval'` and `worker-src blob:`, which is what tesseract.js needs, provided its worker, core and language files are bundled locally rather than fetched from a CDN.
