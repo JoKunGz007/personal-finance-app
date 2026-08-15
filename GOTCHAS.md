@@ -61,6 +61,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - `supabase db query --linked` can answer from the local database, and the CLI names neither
 - A new table is NOT born with zero privileges, and grepping the migrations cannot tell you what it holds
 - A version or count written into `SPEC.md` is a claim no gate re-reads
+- Every push to `main` is a production deployment, including a docs-only one
 
 ### Backup, restore and recovery
 
@@ -446,6 +447,14 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Avoid: when adding a table, do not reason from the migration text. The defaults are handled now, so a new table starts with nothing — but confirm that from the catalog rather than from this sentence. Do not write `revoke insert, update, delete` and believe it did something; it did not before 018 and it does not after.
 - Verify: **query the database, never the repository.** `select grantee, table_name, privilege_type from information_schema.role_table_grants where table_schema='public' and grantee in ('anon','authenticated')`, and `select defaclrole::regrole, defaclnamespace::regnamespace, defaclacl from pg_default_acl` for the defaults that produced it. Confirmed 2026-08-15 by actually doing it: `set local role anon; truncate public.notification_card_decision_revisions;` **succeeded**, inside a transaction that was then rolled back.
 - **The meta-lesson, which cost a wrong entry in this very file.** The security review of migration 017 (D-105) grepped the migrations for `alter default privileges`, found none, and concluded that a new table starts with no privileges. That is a conclusion about the **database** drawn from a search of the **repository**, and it was wrong — the platform sets defaults the repository never mentions. D-106 records the correction. A grant question is a database question and only a database can answer it.
+
+## Every push to `main` is a production deployment, including a docs-only one
+
+- Symptom: the live app changes version without anyone deciding to deploy. Worse, the app can go live expecting tables the hosted database does not have yet — the exact inversion of the "migrations before the app" ordering rule — and the only symptom is a form that fails for whoever is using the ledger from their phone.
+- Cause: the Vercel project is connected to this GitHub repository and builds on every push to `main`. **There is no separate deploy step to forget, and no separate deploy step to sequence.** Nothing in this repository shows it: there is no `.vercel` directory, no `vercel.json`, no Vercel dependency, and no `.github/workflows`. The wiring lives entirely in the Vercel dashboard, so grepping the repo says "nothing deploys" and is wrong. **A documentation-only commit deploys the code beside it**, which is how a push that changes no source can still put new source in front of the owner.
+- Avoid: treat `git push origin main` as a deployment, because it is one. **The ordering rule therefore binds the push, not a later button**: migrations reach the hosted database *before* the commit that needs them reaches `main`, and if that ordering slips the remedy is Instant Rollback in the dashboard rather than a revert-and-push, which would itself be another deployment.
+- Verify: read the Production Deployment panel in the Vercel dashboard — `Source` names the branch and the exact commit. Confirmed 2026-08-15 (D-109), where it read `main 943e143` minutes after that commit was pushed. **Do not read it off the deployment list**, which shows older builds beside the current one and is easy to misread as production; the Overview panel is the one that names what is serving.
+- **What it cost before it was written down.** `HANDOFF.md` claimed for three days that production served the 2026-08-12 build, and nothing had ever checked. In fact every push since had deployed, so the card work went live on 2026-08-14 against a database still on migration 015 and stayed that way until 2026-08-15 — the ordering trap firing unobserved, in the window where card capture would simply have failed.
 
 ## A version or count written into `SPEC.md` is a claim no gate re-reads
 
