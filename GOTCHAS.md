@@ -59,6 +59,8 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A replica-mode wipe deletes parent rows without complaining about their children
 - `create_cash_entry` bounds no date, while `capture_slip` bounds one
 - `supabase db query --linked` can answer from the local database, and the CLI names neither
+- `grant select on all tables in schema public` covers only the tables that existed when it ran
+- A version or count written into `SPEC.md` is a claim no gate re-reads
 
 ### Backup, restore and recovery
 
@@ -435,6 +437,20 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: the CLI falls back to the local database when the SQL spans multiple lines, and `--linked` after the SQL argument is not always honoured. Worse, the tell is gone: an earlier version printed `Connecting to remote database...` on the working path, and **v2.109.1 prints `Initialising login role...` and names neither remote nor local**. So the one-word check that used to distinguish them no longer exists.
 - Avoid: pass the SQL as a **single line** with `--linked` **before** it, and then prove the destination rather than trusting the invocation. Three independent proofs, all cheap: `inet_server_addr()` returns a public address rather than a loopback or Docker one; the row counts match what the intended ledger holds; and `docker ps` says whether any local project could have answered at all — a stopped daemon rules them out entirely.
 - Verify: 2026-08-12. All three were used to establish that the hosted backup verification read the hosted database, and the daemon happened to be down at the time, which is the strongest of the three. The missing tell was found by looking for it and reading a different first line.
+
+## `grant select on all tables in schema public` covers only the tables that existed when it ran
+
+- Symptom: two opposite mistakes from one misreading. A new table added by a migration is unreadable through PostgREST despite the blanket grant sitting in migration 002 — or, in the other direction, a reviewer sees that blanket grant and concludes a new table is silently exposed when it is not.
+- Cause: `grant ... on all tables in schema public` is expanded by PostgreSQL **at execution time** into one grant per table then existing. It is not a standing rule and it does not reach into the future. `alter default privileges` is the form that would, and this repository does not use it anywhere — verified by searching every migration, not assumed. So a table created by migration 017 starts with **no** privileges for any role and holds exactly what its own migration gives it.
+- Avoid: give every new table its own explicit `grant select ... to authenticated` **and** its own `revoke insert, update, delete ... from authenticated, anon`, as migrations 010 through 017 each do. State the revoke even though the default is already no-privilege: it is what stops a future blanket grant from quietly opening a path around the RPCs, which is the whole reason those migrations say it out loud.
+- Verify: 2026-08-15, during the security review of migration 017 (D-105). `grep -rnE "grant .*(all tables|default privileges)|to anon" supabase/migrations/` returns exactly one line — migration 002's blanket select to `authenticated` — and nothing granting anything to `anon`.
+
+## A version or count written into `SPEC.md` is a claim no gate re-reads
+
+- Symptom: every check is green and an invariant in `SPEC.md` contradicts the database. It has happened twice. On 2026-08-12 the strong-access rule said two verified TOTP factors where migration 015 had made it one, and it was wrong for a day. On 2026-08-15 gate 6 declared the backup contract as reading v2 … v6 and writing v6, which migration 017 had falsified when it landed.
+- Cause: `check:docs --strict` reads **structure** — that files exist, that links resolve, that sections are present. It does not read meaning, and no automated check compares a number written in prose against the source that owns it. So a version, a count or a threshold in `SPEC.md` decays silently and the failure is invisible to the gate by construction.
+- Avoid: when a migration moves a number that `SPEC.md` states, edit `SPEC.md` in the same commit as the migration. When reading `SPEC.md` later, treat every number in it as a claim to check rather than a fact to use — the owning source is `lib/backup-contract.ts` for backup versions, `lib/owner-access.ts` and `private.has_strong_owner_access` for the factor count. This is the same failure as a test title naming a destination that moves (`955253c`), and the same remedy: name the thing that does not move, or assert against the constant.
+- Verify: 2026-08-15. Both instances were found by a human-style read — the first by a continuity sync, the second by a security review — and neither by any command. That is the point of the entry: there is no command to add.
 
 ### Backup, restore and recovery
 
