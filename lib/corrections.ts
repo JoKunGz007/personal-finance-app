@@ -74,7 +74,7 @@ export function refineCorrection(
  * a legitimate request — it clears the correction and lets the original figure stand again,
  * which is what makes a mistaken correction itself correctable.
  */
-export const correctionRequestSchema = z.object({
+export const correctionRequestFields = {
   expectedRevision: z.number().int().nonnegative(),
   kind: z.enum(["deposit", "withdrawal"]).nullable(),
   amountMinor: minorUnitStringSchema.nullable(),
@@ -83,7 +83,21 @@ export const correctionRequestSchema = z.object({
   counterparty: z.string().trim().min(1).max(240).nullable(),
   categoryId: z.string().uuid().nullable(),
   note: z.string().trim().min(1).max(2000).nullable()
-}).strict().superRefine((correction, context) => {
+} as const;
+
+/**
+ * The amount/direction coupling and sign rule, as a reusable refinement.
+ *
+ * Exported beside the shape above so a record with an **extra** correctable field can build its
+ * own strict object without restating either rule — a notification card adds `balanceMinor`,
+ * which no other correctable record has (migration 017). A `.strict()` object carrying a
+ * `superRefine` cannot be `.extend()`ed, so the shape and the rule are exported rather than the
+ * finished schema alone.
+ */
+export function refineCorrectionRequest(
+  correction: { kind: string | null; amountMinor: string | null },
+  context: z.RefinementCtx
+): void {
   if ((correction.kind === null) !== (correction.amountMinor === null)) {
     context.addIssue({
       code: "custom",
@@ -101,7 +115,9 @@ export const correctionRequestSchema = z.object({
       path: ["amountMinor"]
     });
   }
-});
+}
+
+export const correctionRequestSchema = z.object(correctionRequestFields).strict().superRefine(refineCorrectionRequest);
 
 export type CorrectionRequest = z.infer<typeof correctionRequestSchema>;
 

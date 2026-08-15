@@ -254,8 +254,8 @@ create temporary table snapshot_result as
 select public.export_backup_snapshot() as value;
 select is(
   (select value->>'schemaVersion' from snapshot_result),
-  '6',
-  'snapshot export succeeds with schema version 6'
+  '7',
+  'snapshot export succeeds with schema version 7'
 );
 -- Each new table has to be *in* the export, not merely permitted by it. A version bump that
 -- forgot to emit the new key would still read as the right version here and would silently

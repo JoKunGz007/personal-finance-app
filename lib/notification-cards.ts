@@ -2,6 +2,13 @@ import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema, toMinorAmount } from "@/lib/money";
 import { NOTIFICATION_CARD_LAYOUTS } from "@/lib/notification-card";
+import {
+  applyCorrection,
+  correctionFields,
+  correctionRequestFields,
+  refineCorrection,
+  refineCorrectionRequest
+} from "@/lib/corrections";
 
 // The wire contract for capturing a bank's LINE push notification (PLAN task 27,
 // migration 016).
@@ -132,7 +139,149 @@ export const notificationCardSchema = z.object({
 
 export type NotificationCard = z.infer<typeof notificationCardSchema>;
 
-export const notificationCardListSchema = z.object({ cards: z.array(notificationCardSchema) }).strict();
+/**
+ * A card's correction overlay (migration 017, PLAN task 29).
+ *
+ * The shared seven columns plus `balance_minor`, which is the one field no other correctable
+ * record has — a slip and a cash entry print no balance, so there was never a second figure to
+ * correct. Null in any column means **not corrected**, and the base row's value stands.
+ */
+export const notificationCardCorrectionSchema = z.object({
+  card_id: z.string().uuid(),
+  balance_minor: minorUnitStringSchema.nullable(),
+  ...correctionFields
+}).strict().superRefine(refineCorrection);
+
+export type NotificationCardCorrection = z.infer<typeof notificationCardCorrectionSchema>;
+
+/**
+ * A card's stored decision (migration 017).
+ *
+ * Three values where a slip's match overlay has two. `not-a-payment` retires the card: it leaves
+ * the ledger rows and the totals while staying in its append-only table, because nothing here is
+ * ever deleted. That is the remedy for a card captured against the wrong account or captured
+ * twice — the binding itself cannot be re-made after capture (D-101, D-103).
+ *
+ * `accepted_balance_mismatch` is the owner's acknowledgement, recorded at the moment the decision
+ * was made, that the card's balance and the row's disagree. **Not a live comparison**: re-deriving
+ * it at read time would change its answer the moment the balance is corrected, and this is a fact
+ * about a decision rather than about the two figures as they now stand.
+ */
+export const NOTIFICATION_CARD_DECISIONS = ["matched", "unmatched", "not-a-payment"] as const;
+
+export const notificationCardDecisionSchema = z.object({
+  card_id: z.string().uuid(),
+  decision: z.enum(NOTIFICATION_CARD_DECISIONS),
+  transaction_id: z.string().uuid().nullable(),
+  accepted_balance_mismatch: z.boolean(),
+  revision: z.number().int().nonnegative(),
+  updated_at: z.string()
+}).strict().superRefine((decision, context) => {
+  if ((decision.decision === "matched") !== (decision.transaction_id !== null)) {
+    context.addIssue({
+      code: "custom",
+      message: "A matched decision names a statement row, and the other two do not.",
+      path: ["transaction_id"]
+    });
+  }
+  if (decision.accepted_balance_mismatch && decision.decision !== "matched") {
+    context.addIssue({
+      code: "custom",
+      message: "Only a matched decision can have accepted a balance mismatch.",
+      path: ["accepted_balance_mismatch"]
+    });
+  }
+});
+
+export type NotificationCardDecision = z.infer<typeof notificationCardDecisionSchema>;
+
+/**
+ * Cards, their corrections and their decisions travel on **one** response.
+ *
+ * The same argument D-067 makes for slips and migration 013 makes for cash: the dangerous
+ * half-arrival is the facts arriving while the owner's disagreement with them does not. Cards
+ * without corrections would put a figure the owner has already replaced into the ledger and its
+ * totals; cards without decisions would present an overruled pairing as the rule's own, and would
+ * silently un-retire a card the owner had retired.
+ */
+export const notificationCardListSchema = z.object({
+  cards: z.array(notificationCardSchema),
+  corrections: z.array(notificationCardCorrectionSchema),
+  decisions: z.array(notificationCardDecisionSchema)
+}).strict();
+
+/**
+ * The write contract for a card's correction, mirroring `set_notification_card_correction`.
+ *
+ * Built from the shared shape rather than restated, plus `balanceMinor`. The balance carries **no
+ * sign rule**, for the reason the capture contract above gives: a balance is a position rather
+ * than a movement, so zero is ordinary and a negative one is an overdraft.
+ *
+ * Sending every field null is a legitimate request — it clears the correction and lets the
+ * originals stand again, which is what makes a mistaken correction itself correctable.
+ */
+export const notificationCardCorrectionRequestSchema = z.object({
+  ...correctionRequestFields,
+  balanceMinor: minorUnitStringSchema.nullable()
+}).strict().superRefine(refineCorrectionRequest);
+
+export type NotificationCardCorrectionRequest = z.infer<typeof notificationCardCorrectionRequestSchema>;
+
+/**
+ * The write contract for a card's decision, mirroring `set_notification_card_decision`.
+ *
+ * `acceptBalanceMismatch` is the explicit acknowledgement the RPC demands before it will store a
+ * pairing whose balances disagree (D-103). It defaults to false, so the fail-closed posture is
+ * what a caller gets by omission rather than by remembering — a client that forgets the field
+ * gets the refusal, never the override.
+ */
+export const notificationCardDecisionRequestSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  decision: z.enum(NOTIFICATION_CARD_DECISIONS),
+  transactionId: z.string().uuid().nullable(),
+  acceptBalanceMismatch: z.boolean().default(false)
+}).strict().superRefine((request, context) => {
+  if ((request.decision === "matched") !== (request.transactionId !== null)) {
+    context.addIssue({
+      code: "custom",
+      message: "A matched decision names a statement row, and the other two do not.",
+      path: ["transactionId"]
+    });
+  }
+});
+
+export type NotificationCardDecisionRequest = z.infer<typeof notificationCardDecisionRequestSchema>;
+
+export const notificationCardCorrectionResponseSchema = z.object({
+  correction: notificationCardCorrectionSchema
+}).strict();
+
+export const notificationCardDecisionResponseSchema = z.object({
+  decision: notificationCardDecisionSchema
+}).strict();
+
+/**
+ * Each card as it stands after its correction — the card half of `slipsInForce`.
+ *
+ * Two figures resolved rather than one, and the balance is the reason this could not simply reuse
+ * `applyCorrection`: the reconciliation matches on the balance as well as the amount, so a view
+ * that corrected one and not the other would pair on a figure the owner has replaced. Migration
+ * 014 is the record of that defect being paid for once already, on a record with only one figure.
+ */
+export function cardsInForce(
+  cards: readonly NotificationCard[],
+  corrections: readonly NotificationCardCorrection[] = []
+): NotificationCard[] {
+  const byCard = new Map(corrections.map((correction) => [correction.card_id, correction]));
+  return cards.map((card) => {
+    const correction = byCard.get(card.id);
+    if (!correction) return card;
+    const corrected = applyCorrection(card, correction);
+    return correction.balance_minor === null
+      ? corrected
+      : { ...corrected, balance_minor: correction.balance_minor };
+  });
+}
 
 /**
  * The capture response, and the `captured` flag is the whole reason it has a shape of its own.

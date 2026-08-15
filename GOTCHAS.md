@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-One hundred and twelve traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
+One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections below and added to since. The grouping moved entries and changed nothing inside one; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. The index lists every trap, so a reader can find the one that applies without loading the bodies.
 
 ## Index
 
@@ -30,6 +30,7 @@ One hundred and twelve traps, grouped on 2026-08-09 into the eight sections belo
 - `pnpm add` fails with `ERR_PNPM_UNEXPECTED_STORE`, and the suggested fix is the expensive one
 - PowerShell eats a scoped package name before pnpm ever runs
 - tesseract.js caches its language data into the process working directory
+- pgTAP run straight after `pnpm test` fails in `001` on a foreign key, and the change is not the cause
 - A PowerShell `**` path glob does not recurse, so the build's target check silently under-counts
 
 ### Docker and the local Supabase projects
@@ -967,6 +968,13 @@ One hundred and twelve traps, grouped on 2026-08-09 into the eight sections belo
 - Cause: the helper pattern stores one `OwnerSession` in a module-level variable and replays it into `@supabase/ssr`'s cookie writer. **The requests in the first group rotate the tokens.** Calling `setSession` again with the original pair therefore writes a jar built from a refresh token that has already been used, and `strongOwnerClient` refuses it. `seedCookieJar` does not throw, because `setSession` reports no error and the jar is not empty — so nothing points at the cause.
 - Avoid: **one `beforeAll` per file**, with the groups nested inside it as plain `describe` blocks. Seeding per group looks tidier and buys nothing; the jar is module state and there is only ever one of it. `tests/cash-and-correction-routes.test.ts` was already written this way, which is why it never met this.
 - Verify: 2026-08-12, found while writing `tests/notification-card-routes.test.ts`. The tell is the shape rather than the count: **a 403 on a test whose assertion is a 422 from zod** means the request never got past auth, so the boundary being exercised is not the one that failed. Restructuring to a single `beforeAll` took the file from 9 failed / 5 passed to 14 passed with no change to the route.
+
+## pgTAP run straight after `pnpm test` fails in `001` on a foreign key, and the change is not the cause
+
+- Symptom: `pnpm supabase:test` fails almost immediately with `insert or update on table "source_transactions" violates foreign key constraint "source_transactions_account_id_owner_id_fkey"` in `001_security.sql`, then `account not owned` in `002`, then `Bad plan` parse errors as later files run a fraction of their planned tests. It reads as a migration having broken the seed. It has not.
+- Cause: the Vitest suites are owner-scoped rather than test-scoped — `resetOwnerImportSurface` deletes the owner's **accounts** in teardown, including the ones the synthetic seed created. pgTAP's fixtures insert rows against those seeded accounts, so every file that needs one fails on a foreign key against a row `pnpm test` removed twenty seconds earlier.
+- Avoid: run `pnpm supabase:reset` **between** `pnpm test` and `pnpm supabase:test`, which is exactly where `docs/LOCAL_DEV.md` puts it. That position is not tidiness and it is not the same reset a new migration needs: a new migration means resetting *before* `pnpm test` as well, so a run with a new migration resets **twice**.
+- Verify: 2026-08-14, during the migration 017 gate. Read the *first* failing file rather than the count — `001` failing on a foreign key while the newest file passes in isolation is the signature of a missing reset, not of a broken change. Running the new file alone and watching it pass is the cheapest confirmation.
 
 ## A PowerShell `**` path glob does not recurse, so the build's target check silently under-counts
 

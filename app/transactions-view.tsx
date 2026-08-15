@@ -13,7 +13,16 @@ import {
   transactionListSchema,
   type AccountTransaction
 } from "@/lib/transactions";
-import { notificationCardListSchema, type NotificationCard } from "@/lib/notification-cards";
+import {
+  cardsInForce,
+  notificationCardCorrectionResponseSchema,
+  notificationCardDecisionResponseSchema,
+  notificationCardListSchema,
+  type NotificationCard,
+  type NotificationCardCorrection,
+  type NotificationCardDecision
+} from "@/lib/notification-cards";
+import { cardMatchCandidates } from "@/lib/notification-card-reconcile";
 import {
   compareRows,
   matchCandidates,
@@ -78,7 +87,16 @@ export function TransactionsView() {
   // corrections list travels with them, and that is the table's shape rather than an omission —
   // a card has no correction overlay yet (PLAN task 27), so there is no second half to half-arrive.
   const [cards, setCards] = useState<NotificationCard[]>([]);
+  const [cardCorrections, setCardCorrections] = useState<NotificationCardCorrection[]>([]);
+  const [cardDecisions, setCardDecisions] = useState<NotificationCardDecision[]>([]);
   const [cardsError, setCardsError] = useState<string | null>(null);
+  // Which card is being decided, so one row's control can be busy without disabling the rest.
+  const [decidingCard, setDecidingCard] = useState<string | null>(null);
+  // The card currently being matched by hand, if any — the card half of `matching`.
+  const [matchingCard, setMatchingCard] = useState<string | null>(null);
+  // Whether the retired cards are on screen. They are out of the rows and the totals, so without
+  // this a retirement would be irreversible in practice however reversible it is in the database.
+  const [showRetired, setShowRetired] = useState(false);
   // Which matched pair's card detail is open, by transaction id. Separate from `openPair` because
   // a row can carry a slip and a card at once and the two panels are independent questions.
   const [openCard, setOpenCard] = useState<string | null>(null);
@@ -123,6 +141,9 @@ export function TransactionsView() {
    */
   const currentSlips = useMemo(() => slipsInForce(slips, slipCorrections), [slips, slipCorrections]);
   const currentCash = useMemo(() => cashInForce(cash, cashCorrections), [cash, cashCorrections]);
+  // Two figures resolved rather than one: the card reconciles on its balance as well as its
+  // amount, so correcting one and not the other would pair on a figure the owner has replaced.
+  const currentCards = useMemo(() => cardsInForce(cards, cardCorrections), [cards, cardCorrections]);
 
   // Keyed by the record they correct, so a row can ask for its own overlay — both to say
   // "corrected by you" and to hand the form the revision it must send back.
@@ -181,11 +202,20 @@ export function TransactionsView() {
    */
   const picking = matching !== null && matchingSlip !== null;
 
-  // Entering the mode moves focus to Cancel: it is the one control that is certainly present,
+  // The card half of the same pair, declared here rather than beside the card's other derived
+  // values because `showCombined` below reads it during render — a `const` read before its own
+  // declaration is a ReferenceError at runtime, and one that only fires once a card exists.
+  const matchingCardRecord = useMemo(
+    () => (matchingCard === null ? null : currentCards.find((card) => card.id === matchingCard) ?? null),
+    [matchingCard, currentCards]
+  );
+  const pickingCard = matchingCard !== null && matchingCardRecord !== null;
+
+  // Entering either mode moves focus to Cancel: it is the one control that is certainly present,
   // it is the way out, and it sits beside the announcement rather than at the top of the page.
   useEffect(() => {
-    if (picking) cancelMatching.current?.focus();
-  }, [picking]);
+    if (picking || pickingCard) cancelMatching.current?.focus();
+  }, [picking, pickingCard]);
 
   // The account scope, before any text filter. Balances are derived from this rather
   // than from `visible`, because a running total of whatever a search matched would
@@ -201,15 +231,49 @@ export function TransactionsView() {
   // filtered by **bank**, so with two accounts at one bank the offered rows can belong to
   // different accounts — and in the per-account layout nothing on screen would say which. That
   // is the very ambiguity `slipAccount` refuses to guess at (D-056), so the chooser must show it.
-  const showCombined = picking || selected === ALL_ACCOUNTS;
+  const showCombined = picking || pickingCard || selected === ALL_ACCOUNTS;
 
   // Reconciliation runs over the **whole** ledger, before any account or text filter. A
   // match is a fact about two records, not about what is on screen — reconciling the
   // filtered subset would let choosing an account or typing in the search box silently
   // unmatch a pair and change the totals (D-063).
   const reconciled = useMemo(
-    () => reconcileLedger(transactions ?? [], currentSlips, accounts ?? [], matches, currentCash, cards),
-    [transactions, currentSlips, accounts, matches, currentCash, cards]
+    () => reconcileLedger(transactions ?? [], currentSlips, accounts ?? [], matches, currentCash, currentCards, cardDecisions),
+    [transactions, currentSlips, accounts, matches, currentCash, currentCards, cardDecisions]
+  );
+
+  const cardDecisionByCard = useMemo(
+    () => new Map(cardDecisions.map((decision) => [decision.card_id, decision])),
+    [cardDecisions]
+  );
+  const cardCorrectionByCard = useMemo(
+    () => new Map(cardCorrections.map((correction) => [correction.card_id, correction])),
+    [cardCorrections]
+  );
+  // The cards as first typed, which is what a correction is measured against.
+  const originalCards = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
+
+  // Retired cards, kept out of the rows and the totals but reachable, so that retiring stays as
+  // reversible on screen as it is in the database.
+  const retiredCards = useMemo(
+    () => currentCards.filter((card) => reconciled.cardMatches.retired.has(card.id)),
+    [currentCards, reconciled]
+  );
+
+  // The rows a card may be paired with by hand, for the card rows only — a matched card's control
+  // is an undo and needs no list.
+  const candidatesByCard = useMemo(() => {
+    const byCard = new Map<string, AccountTransaction[]>();
+    for (const row of reconciled.rows) {
+      if (row.kind !== "card") continue;
+      byCard.set(row.card.id, cardMatchCandidates(row.card, transactions ?? [], cardDecisions));
+    }
+    return byCard;
+  }, [reconciled, transactions, cardDecisions]);
+
+  const offeredToCard = useMemo(
+    () => new Set((matchingCard === null ? [] : candidatesByCard.get(matchingCard) ?? []).map((candidate) => candidate.id)),
+    [matchingCard, candidatesByCard]
   );
 
   const decisionBySlip = useMemo(
@@ -259,6 +323,19 @@ export function TransactionsView() {
     // matched and every row it could be, whatever the Account, Status and search controls were
     // left on. Those are suspended rather than obeyed, because a filter set earlier could
     // otherwise hide the very row the owner is looking for and read as "it is not there".
+    // The card's own picking mode, on the same terms as the slip's: the card being matched and
+    // every row it could be, with the other controls suspended rather than obeyed.
+    if (pickingCard) {
+      const candidates = reconciled.rows.filter((row) => {
+        if (row.kind === "card") return row.card.id === matchingCard;
+        if (row.kind === "cash" || row.kind === "provisional") return false;
+        return offeredToCard.has(row.transaction.id);
+      });
+      candidates.sort(compareRows);
+      if (order === "oldest") candidates.reverse();
+      return candidates;
+    }
+
     if (picking) {
       const candidates = reconciled.rows.filter((row) => {
         if (row.kind === "provisional") return row.slip.id === matching;
@@ -294,7 +371,7 @@ export function TransactionsView() {
     filtered.sort(compareRows);
     if (order === "oldest") filtered.reverse();
     return filtered;
-  }, [reconciled, inAccount, query, order, status, matching, picking, offered]);
+  }, [reconciled, inAccount, query, order, status, matching, picking, offered, pickingCard, matchingCard, offeredToCard]);
 
   const totals = useMemo(() => summarizeRows(visibleRows), [visibleRows]);
 
@@ -399,14 +476,23 @@ export function TransactionsView() {
       // shorter row count nobody would notice.
       setCardsError(null);
       setCards([]);
+      // Corrections and decisions are cleared with the cards they belong to, for the reason slips
+      // and cash do it: keeping stale ones would reconcile against records no longer on screen,
+      // and keeping none while the cards loaded would present an overruled pairing as the rule's
+      // own and silently un-retire a card the owner had retired.
+      setCardCorrections([]);
+      setCardDecisions([]);
       const cardsResponse = await fetch("/api/v1/notification-cards", { cache: "no-store" });
       const cardsBody: unknown = await cardsResponse.json().catch(() => null);
       if (!cardsResponse.ok) {
         setCardsError(readError(cardsBody, "Captured notification cards could not be loaded, so none are shown."));
       } else {
         const parsedCards = notificationCardListSchema.safeParse(cardsBody);
-        if (parsedCards.success) setCards(parsedCards.data.cards);
-        else setCardsError("The notification cards response did not match its contract, so none are shown.");
+        if (parsedCards.success) {
+          setCards(parsedCards.data.cards);
+          setCardCorrections(parsedCards.data.corrections);
+          setCardDecisions(parsedCards.data.decisions);
+        } else setCardsError("The notification cards response did not match its contract, so none are shown.");
       }
 
       setAccounts(parsedAccounts.data.accounts);
@@ -462,6 +548,63 @@ export function TransactionsView() {
     }
   }
 
+  /**
+   * The owner's say over one card (migration 017). Four cases reach this: naming a statement row,
+   * saying it is on none of them, retiring a card that should never have been captured, and
+   * un-retiring one.
+   *
+   * `acceptBalanceMismatch` defaults to false, so the first attempt at a disagreeing pairing is
+   * refused and the owner is told what disagreed. Pressing again with the acknowledgement is what
+   * stores the consent — the refusal is the design working, not an error to route around.
+   */
+  async function decideCard(
+    cardId: string,
+    decision: "matched" | "unmatched" | "not-a-payment",
+    transactionId: string | null,
+    acceptBalanceMismatch = false
+  ) {
+    setDecidingCard(cardId);
+    setDecisionError(null);
+    try {
+      const response = await fetch(`/api/v1/notification-cards/${cardId}/decision`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedRevision: cardDecisionByCard.get(cardId)?.revision ?? 0,
+          decision,
+          transactionId,
+          acceptBalanceMismatch
+        })
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        setDecisionError(readError(body, "The card decision could not be saved."));
+        return;
+      }
+      const parsed = notificationCardDecisionResponseSchema.safeParse(body);
+      if (!parsed.success) {
+        setDecisionError("The saved decision did not match its contract. Reload before trusting this view.");
+        return;
+      }
+      setCardDecisions((current) => [...current.filter((entry) => entry.card_id !== cardId), parsed.data.decision]);
+      setMatchingCard(null);
+    } catch {
+      setDecisionError("The ledger could not be reached, so the decision was not saved.");
+    } finally {
+      setDecidingCard(null);
+    }
+  }
+
+  function storeCardCorrection(cardId: string, saved: unknown) {
+    const parsed = notificationCardCorrectionResponseSchema.safeParse({ correction: saved });
+    if (!parsed.success) {
+      setCorrectionError("The correction was saved but did not come back in its published shape. Reload before trusting this view.");
+      return;
+    }
+    setCardCorrections((current) => [...current.filter((entry) => entry.card_id !== cardId), parsed.data.correction]);
+    setCorrecting(null);
+  }
+
   return (
     <>
     {/* A sibling of the ledger rather than a child of it, so the page keeps a flat outline —
@@ -486,14 +629,14 @@ export function TransactionsView() {
         {/* Every control here is suspended while a slip is being matched — including Reload,
             which would drop the choice half-made. The mode is a different question about the
             ledger, not a filter of it. */}
-        <button type="button" className="secondary-button" disabled={busy || picking} onClick={load}>
+        <button type="button" className="secondary-button" disabled={busy || picking || pickingCard} onClick={load}>
           {busy ? "Loading…" : transactions ? "Reload" : "Load transactions"}
         </button>
         {transactions ? (
           <>
             <label className="account-control">
               <span>Account</span>
-              <select value={selected} disabled={picking} onChange={(event) => setSelected(event.target.value)}>
+              <select value={selected} disabled={picking || pickingCard} onChange={(event) => setSelected(event.target.value)}>
                 <option value={ALL_ACCOUNTS}>All accounts</option>
                 {(accounts ?? []).map((account) => (
                   <option key={account.id} value={account.id}>
@@ -514,7 +657,7 @@ export function TransactionsView() {
                 (D-064). */}
             <label className="account-control">
               <span>Status</span>
-              <select value={status} disabled={picking} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
+              <select value={status} disabled={picking || pickingCard} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
                 <option value={ALL_STATUSES}>All statuses</option>
                 <option value="verified">Verified by slip</option>
                 <option value="awaiting-statement">Awaiting statement</option>
@@ -533,7 +676,7 @@ export function TransactionsView() {
                 type="search"
                 name="transaction-filter"
                 value={query}
-                disabled={picking}
+                disabled={picking || pickingCard}
                 placeholder="Description, reference, branch…"
                 onChange={(event) => setQuery(event.target.value)}
               />
@@ -551,7 +694,26 @@ export function TransactionsView() {
 
       {transactions ? (
         <>
-          {picking && matchingSlip ? (
+          {pickingCard && matchingCardRecord ? (
+            <div className="matching-banner" aria-live="polite">
+              <div>
+                <strong>Choosing a statement row for a card</strong>
+                <span>
+                  {`${matchingCardRecord.channel} · ${formatDate(matchingCardRecord.occurred_on)} ${matchingCardRecord.occurred_at_time} · ${formatThb(matchingCardRecord.amount_minor)}`}
+                  {` — ${offeredToCard.size} row${offeredToCard.size === 1 ? "" : "s"} on this account carry that exact amount. Rows whose printed balance matches the card are listed first, because that is the one the rule would have taken. Other filters are suspended while you choose.`}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                ref={cancelMatching}
+                disabled={decidingCard !== null}
+                onClick={() => setMatchingCard(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : picking && matchingSlip ? (
             /* The totals are deliberately gone while this is up. What is on screen is a slip
                and the rows it could be, which is not a view of the ledger and has no total
                worth printing — a subtotal of three unrelated rows reads as a figure. */
@@ -759,13 +921,15 @@ export function TransactionsView() {
                       const amount = BigInt(card.amount_minor);
                       const fittingRows = reconciled.cardMatches.balanceConflict.get(card.id) ?? 0;
                       const reviewReason = reconciled.cardMatches.needsReview.get(card.id);
+                      const originalCard = originalCards.get(card.id);
                       return (
-                        /* Marked in the row itself for the reason a slip and a cash entry are:
-                           the difference between a record the bank has confirmed on a statement
-                           and one it has only pushed to a phone is the most important thing this
-                           table says, and it has to survive a screenshot and a screen reader
-                           rather than living in a colour. */
-                        <tr className="card-row" key={card.id}>
+                        <Fragment key={card.id}>
+                        {/* Marked in the row itself for the reason a slip and a cash entry are:
+                            the difference between a record the bank has confirmed on a statement
+                            and one it has only pushed to a phone is the most important thing this
+                            table says, and it has to survive a screenshot and a screen reader
+                            rather than living in a colour. */}
+                        <tr className="card-row">
                           <td data-label="Date">
                             <time dateTime={card.occurred_on}>{formatDate(card.occurred_on)}</time>
                             <small>{card.occurred_at_time}</small>
@@ -805,15 +969,62 @@ export function TransactionsView() {
                                 statement covering this date and it will pair itself.
                               </small>
                             )}
-                            {/* Said plainly rather than left to be discovered by looking for a
-                                button that is not there. A card has no match-decision table and
-                                no correction overlay yet (PLAN task 27), so there is nothing the
-                                owner can store about this row — and a table that silently offers
-                                controls on some kinds of row and not others reads as a defect. */}
-                            <small className="decision-mark">
-                              A card&rsquo;s match is recomputed on every load. You cannot yet overrule it or
-                              correct what you typed — both need their own table.
-                            </small>
+                            {row.ownerDecided ? (
+                              <small className="decision-mark">Your decision · on no statement row</small>
+                            ) : null}
+                            {cardCorrectionByCard.has(card.id) ? (
+                              <small className="decision-mark">Corrected by you</small>
+                            ) : null}
+                            {/* Not a dropdown, for D-069's reason: candidate rows share an account
+                                and an amount, and only the printed time and the running balance
+                                tell them apart. The chooser puts them in the table where both
+                                live, with the balance-agreeing one first. */}
+                            {(candidatesByCard.get(card.id) ?? []).length > 0 ? (
+                              <div className="match-control">
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  aria-label={`Choose a statement row for the card dated ${formatDate(card.occurred_on)}`}
+                                  disabled={decidingCard !== null || matchingCard !== null || matching !== null}
+                                  onClick={() => { setDecisionError(null); setMatchingCard(card.id); }}
+                                >
+                                  Choose a statement row
+                                </button>
+                                <small>
+                                  {(candidatesByCard.get(card.id) ?? []).length} row
+                                  {(candidatesByCard.get(card.id) ?? []).length === 1 ? "" : "s"} could be this payment
+                                </small>
+                              </div>
+                            ) : null}
+                            {/* The remedy for a card that should never have been captured — a
+                                wrong account binding or a second capture. The binding cannot be
+                                re-made and the row cannot be deleted, so retiring is what a wrong
+                                card gets (D-103). Reversible: retired cards stay listed below. */}
+                            <div className="match-control">
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                aria-label={`Not a payment — retire the card dated ${formatDate(card.occurred_on)} and take it out of the ledger`}
+                                disabled={decidingCard !== null || pickingCard}
+                                onClick={() => void decideCard(card.id, "not-a-payment", null)}
+                              >
+                                {decidingCard === card.id ? "Saving…" : "Not a payment"}
+                              </button>
+                            </div>
+                            {originalCards.has(card.id) ? (
+                              <div className="match-control">
+                                <button
+                                  type="button"
+                                  className="secondary-button"
+                                  aria-expanded={correcting === card.id}
+                                  aria-label={`Correct what you typed for the card dated ${formatDate(card.occurred_on)}`}
+                                  disabled={pickingCard || picking || (correcting !== null && correcting !== card.id)}
+                                  onClick={() => { setCorrectionError(null); setCorrecting((current) => current === card.id ? null : card.id); }}
+                                >
+                                  {correcting === card.id ? "Stop correcting" : "Correct what you typed"}
+                                </button>
+                              </div>
+                            ) : null}
                           </td>
                           <td data-label={showCombined ? "Account" : "Reference"}>
                             {/* A card has no reference — no layout prints one, which is why
@@ -844,6 +1055,25 @@ export function TransactionsView() {
                               that is in no statement contributes nothing to it. */}
                           {showCombined ? <td data-label="All accounts" className="numeric combined-balance">—</td> : null}
                         </tr>
+                        {originalCard && correcting === card.id ? (
+                          <tr className="correction-row">
+                            <td colSpan={showCombined ? 7 : 6}>
+                              <CorrectionForm
+                                base={originalCard}
+                                overlay={cardCorrectionByCard.get(card.id) ?? null}
+                                balance={{
+                                  baseMinor: originalCard.balance_minor,
+                                  overlayMinor: cardCorrectionByCard.get(card.id)?.balance_minor ?? null
+                                }}
+                                endpoint={`/api/v1/notification-cards/${card.id}/correction`}
+                                title={`Correct what you typed for this ${card.channel} card`}
+                                onSaved={(saved) => storeCardCorrection(card.id, saved)}
+                                onCancel={() => setCorrecting(null)}
+                              />
+                            </td>
+                          </tr>
+                        ) : null}
+                        </Fragment>
                       );
                     }
 
@@ -997,7 +1227,38 @@ export function TransactionsView() {
                             mean something harder to find. The status is still readable to a
                             screen reader here, and askable through the Status filter (D-064). */}
                         <td data-label="Status">
-                          {picking && matching !== null ? (
+                          {pickingCard && matchingCard !== null && matchingCardRecord !== null ? (
+                            /* Picking a row for a card. The balance is printed on both records,
+                               so the row says whether the two agree — and when they do not, the
+                               button asks for that acknowledgement explicitly rather than
+                               storing a disagreement the owner never saw. */
+                            <div className="match-control">
+                              {row.card ? <em className="status-chip verified">Verified by card</em> : null}
+                              {BigInt(transaction.post_balance_minor) === BigInt(matchingCardRecord.balance_minor) ? (
+                                <small className="decision-mark">Balance agrees with the card</small>
+                              ) : (
+                                <small className="decision-mark warn">
+                                  This row&rsquo;s balance is {formatThb(transaction.post_balance_minor)} and the card printed
+                                  {" "}{formatThb(matchingCardRecord.balance_minor)}. Choosing it records that you accepted the
+                                  disagreement — which is right when a hold was outstanding, and wrong if a figure was mistyped.
+                                </small>
+                              )}
+                              <button
+                                type="button"
+                                className="primary-button"
+                                aria-label={`This is it — ${formatDate(row.date)}${transaction.source_time ? ` at ${transaction.source_time}` : ""}, balance ${formatThb(transaction.post_balance_minor)}`}
+                                disabled={decidingCard !== null}
+                                onClick={() => void decideCard(
+                                  matchingCard,
+                                  "matched",
+                                  transaction.id,
+                                  BigInt(transaction.post_balance_minor) !== BigInt(matchingCardRecord.balance_minor)
+                                )}
+                              >
+                                {decidingCard === matchingCard ? "Saving…" : "This is it"}
+                              </button>
+                            </div>
+                          ) : picking && matching !== null ? (
                             /* Picking mode: this row is one of the candidates, or it would not
                                be on screen. The button is on the row itself, beside the time
                                and the balance that are the only things distinguishing it from
@@ -1106,7 +1367,30 @@ export function TransactionsView() {
                                     >
                                       {openCard === transaction.id ? "Hide card" : "Show card"}
                                     </button>
+                                    {/* The undo, which exists now that a card's decision has a
+                                        table. It stores `unmatched` rather than deleting the
+                                        decision, for the reason the slip's does: the RPC has no
+                                        way to return a card to the automatic rule, and pretending
+                                        otherwise would promise something the database cannot do. */}
+                                    <button
+                                      type="button"
+                                      className="secondary-button"
+                                      aria-label={`Not this card — the row dated ${formatDate(row.date)} is not this payment`}
+                                      disabled={decidingCard !== null}
+                                      onClick={() => void decideCard(cardPair.id, "unmatched", null)}
+                                    >
+                                      {decidingCard === cardPair.id ? "Saving…" : "Not this card"}
+                                    </button>
                                   </div>
+                                  {row.cardOwnerDecided ? <small className="decision-mark">Your match</small> : null}
+                                  {/* Stored consent, shown for as long as the pairing stands. It
+                                      does not go stale after a later correction, because it says
+                                      what the owner accepted rather than what the figures now say. */}
+                                  {row.cardBalanceMismatchAccepted ? (
+                                    <small className="decision-mark warn">
+                                      You matched this despite the card and the row printing different balances.
+                                    </small>
+                                  ) : null}
                                 </>
                               ) : null}
                             </>
@@ -1219,6 +1503,48 @@ export function TransactionsView() {
               </table>
             </div>
           )}
+
+          {/* Retired cards, out of the rows and the totals but never out of reach. Without this
+              the database's reversibility would be theoretical: the row vanishes from the ledger,
+              and there would be nothing on screen to undo it from. */}
+          {retiredCards.length > 0 && !picking && !pickingCard ? (
+            <div className="retired-cards">
+              <button
+                type="button"
+                className="secondary-button"
+                aria-expanded={showRetired}
+                onClick={() => setShowRetired((current) => !current)}
+              >
+                {showRetired ? "Hide retired cards" : `Show ${retiredCards.length} retired card${retiredCards.length === 1 ? "" : "s"}`}
+              </button>
+              <p className="ledger-status">
+                A retired card is one you marked <b>not a payment</b> &mdash; a wrong account, or the same payment
+                captured twice. It is out of the ledger and out of the totals, and it is still in the database, because
+                nothing here is ever deleted. Bringing one back puts it in front of the matching rule again.
+              </p>
+              {showRetired ? (
+                <ul className="retired-list">
+                  {retiredCards.map((card) => (
+                    <li key={card.id}>
+                      <span>
+                        {card.channel} · {formatDate(card.occurred_on)} {card.occurred_at_time} · {formatThb(card.amount_minor)}
+                        {card.counterparty ? ` · ${card.counterparty}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        aria-label={`Bring back the ${card.channel} card dated ${formatDate(card.occurred_on)}`}
+                        disabled={decidingCard !== null}
+                        onClick={() => void decideCard(card.id, "unmatched", null)}
+                      >
+                        {decidingCard === card.id ? "Saving…" : "Bring it back"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
         </>
       ) : null}
     </section>

@@ -33,7 +33,19 @@ export const BACKUP_TABLE_KINDS_V5 = [
 // v6 appends the bank notification cards (migration 016, PLAN task 27). One table and no new
 // column, which is D-097's rule — and the same append-only discipline as every version before
 // it: indices 0..18 keep meaning exactly what they meant in v5.
-export const BACKUP_TABLE_KINDS = [...BACKUP_TABLE_KINDS_V5, "notification_cards"] as const;
+export const BACKUP_TABLE_KINDS_V6 = [...BACKUP_TABLE_KINDS_V5, "notification_cards"] as const;
+
+// v7 appends a card's correction overlay and its stored decision, each with its append-only
+// history (migration 017, PLAN task 29, D-103). Four tables and no new column, and the same rule
+// once more: indices 0..19 keep meaning exactly what they meant in v6. The correction overlays
+// precede the decision overlays because that is the order the restore must insert them in — a
+// decision may reference a transaction, and both reference a card, so nothing here may be
+// reordered even if it read better alphabetically.
+export const BACKUP_TABLE_KINDS = [
+  ...BACKUP_TABLE_KINDS_V6,
+  "notification_card_correction_overlays", "notification_card_correction_revisions",
+  "notification_card_decision_overlays", "notification_card_decision_revisions"
+] as const;
 
 export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
 
@@ -43,14 +55,15 @@ export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
 // been refused at every version since. Nothing about that arithmetic weakens with age: the
 // files the owner holds now span v2 to v5, and each stops being restorable only if this list
 // stops naming it.
-export const BACKUP_SCHEMA_VERSION = 6;
-export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6] as const;
+export const BACKUP_SCHEMA_VERSION = 7;
+export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7] as const;
 
 export function backupTableKindsFor(schemaVersion: number): readonly BackupTableKind[] {
   if (schemaVersion === 2) return BACKUP_TABLE_KINDS_V2;
   if (schemaVersion === 3) return BACKUP_TABLE_KINDS_V3;
   if (schemaVersion === 4) return BACKUP_TABLE_KINDS_V4;
   if (schemaVersion === 5) return BACKUP_TABLE_KINDS_V5;
+  if (schemaVersion === 6) return BACKUP_TABLE_KINDS_V6;
   return BACKUP_TABLE_KINDS;
 }
 
@@ -281,7 +294,17 @@ const cashEntryRowSchema = z.object({
  * Amount and kind are null together or present together, restated from the database CHECK for
  * the same reason the slip-match binding is: a restore must not be able to smuggle past it.
  */
-function correctionOverlaySchema<const Key extends string>(key: Key) {
+/**
+ * `extra` exists for exactly one caller and is not a general extension point: a notification
+ * card's correction overlay carries a second nullable money column, `balance_minor`, which no
+ * other correctable record has because no other record prints a balance (migration 017). Adding
+ * it here rather than writing a fourth near-copy of this schema is what keeps the amount/kind
+ * sign rule below in one place.
+ */
+function correctionOverlaySchema<const Key extends string>(
+  key: Key,
+  extra: Record<string, z.ZodTypeAny> = {}
+) {
   return z.object({
     [key]: uuidSchema,
     owner_id: uuidSchema,
@@ -293,7 +316,8 @@ function correctionOverlaySchema<const Key extends string>(key: Key) {
     category_id: uuidSchema.nullable(),
     note: nullableText,
     revision: z.number().int().nonnegative(),
-    updated_at: timestampSchema
+    updated_at: timestampSchema,
+    ...extra
   } as Record<string, z.ZodTypeAny>).strict().superRefine((overlay, context) => {
     const kind = overlay.kind as "deposit" | "withdrawal" | null;
     const raw = overlay.amount_minor as string | null;
@@ -361,6 +385,38 @@ const cashEntryRevisionRowSchema = correctionRevisionSchema("cash_entry_id");
 const slipCorrectionOverlayRowSchema = correctionOverlaySchema("slip_id");
 const slipCorrectionRevisionRowSchema = correctionRevisionSchema("slip_id");
 
+// A card's correction overlay (migration 017). The extra column is the balance, and it carries
+// **no sign rule** — a balance is a position rather than a movement, so zero is ordinary and a
+// negative one is an overdraft. The amount keeps the sign rule every other overlay has.
+const notificationCardCorrectionOverlayRowSchema = correctionOverlaySchema("card_id", {
+  balance_minor: minorUnitStringSchema.nullable()
+});
+const notificationCardCorrectionRevisionRowSchema = correctionRevisionSchema("card_id");
+
+// A card's stored decision (migration 017). Three values where a slip's has two: `not-a-payment`
+// retires the card, which is why this is a *decision* overlay rather than a *match* one.
+const notificationCardDecisionOverlayRowSchema = z.object({
+  card_id: uuidSchema,
+  owner_id: uuidSchema,
+  decision: z.enum(["matched", "unmatched", "not-a-payment"]),
+  transaction_id: uuidSchema.nullable(),
+  accepted_balance_mismatch: z.boolean(),
+  revision: z.number().int().nonnegative(),
+  updated_at: timestampSchema
+}).strict().superRefine((overlay, context) => {
+  if ((overlay.decision === "matched") !== (overlay.transaction_id !== null)) {
+    context.addIssue({ code: "custom", message: "A matched decision must name a transaction, and the other two must not." });
+  }
+  // Accepting a balance disagreement is meaningless without a row to disagree with, and the
+  // table's own CHECK says the same — a file carrying the pair is a file the database would
+  // refuse, so refusing it here keeps the two contracts from drifting apart.
+  if (overlay.accepted_balance_mismatch && overlay.decision !== "matched") {
+    context.addIssue({ code: "custom", message: "Only a matched decision can accept a balance mismatch." });
+  }
+});
+
+const notificationCardDecisionRevisionRowSchema = correctionRevisionSchema("card_id");
+
 const v2DataShape = {
   accounts: z.array(accountRowSchema),
   categories: z.array(categoryRowSchema),
@@ -397,9 +453,17 @@ const v5DataShape = {
   slip_correction_revisions: z.array(slipCorrectionRevisionRowSchema)
 } as const;
 export const backupDataSchemaV5 = z.object(v5DataShape).strict();
-export const backupDataSchema = z.object({
+const v6DataShape = {
   ...v5DataShape,
   notification_cards: z.array(notificationCardRowSchema)
+} as const;
+export const backupDataSchemaV6 = z.object(v6DataShape).strict();
+export const backupDataSchema = z.object({
+  ...v6DataShape,
+  notification_card_correction_overlays: z.array(notificationCardCorrectionOverlayRowSchema),
+  notification_card_correction_revisions: z.array(notificationCardCorrectionRevisionRowSchema),
+  notification_card_decision_overlays: z.array(notificationCardDecisionOverlayRowSchema),
+  notification_card_decision_revisions: z.array(notificationCardDecisionRevisionRowSchema)
 }).strict();
 
 function chunkSchema<const Kind extends (typeof BACKUP_TABLE_KINDS)[number], Row extends z.ZodType>(
@@ -429,7 +493,11 @@ export const backupChunkSchema = z.discriminatedUnion("kind", [
   chunkSchema("cash_entry_revisions", cashEntryRevisionRowSchema),
   chunkSchema("slip_correction_overlays", slipCorrectionOverlayRowSchema),
   chunkSchema("slip_correction_revisions", slipCorrectionRevisionRowSchema),
-  chunkSchema("notification_cards", notificationCardRowSchema)
+  chunkSchema("notification_cards", notificationCardRowSchema),
+  chunkSchema("notification_card_correction_overlays", notificationCardCorrectionOverlayRowSchema),
+  chunkSchema("notification_card_correction_revisions", notificationCardCorrectionRevisionRowSchema),
+  chunkSchema("notification_card_decision_overlays", notificationCardDecisionOverlayRowSchema),
+  chunkSchema("notification_card_decision_revisions", notificationCardDecisionRevisionRowSchema)
 ]);
 
 function tableCountsFor(kinds: readonly BackupTableKind[]) {
@@ -466,6 +534,7 @@ export const restoreManifestSchemaV2 = manifestFor(BACKUP_TABLE_KINDS_V2);
 export const restoreManifestSchemaV3 = manifestFor(BACKUP_TABLE_KINDS_V3);
 export const restoreManifestSchemaV4 = manifestFor(BACKUP_TABLE_KINDS_V4);
 export const restoreManifestSchemaV5 = manifestFor(BACKUP_TABLE_KINDS_V5);
+export const restoreManifestSchemaV6 = manifestFor(BACKUP_TABLE_KINDS_V6);
 export const restoreManifestSchema = manifestFor(BACKUP_TABLE_KINDS);
 
 // Version is part of the request rather than a constant, and the manifest that travels
@@ -482,6 +551,7 @@ const baseV3 = z.object({ ...identity, schemaVersion: z.literal(3) }).strict();
 const baseV4 = z.object({ ...identity, schemaVersion: z.literal(4) }).strict();
 const baseV5 = z.object({ ...identity, schemaVersion: z.literal(5) }).strict();
 const baseV6 = z.object({ ...identity, schemaVersion: z.literal(6) }).strict();
+const baseV7 = z.object({ ...identity, schemaVersion: z.literal(7) }).strict();
 
 // Each version keeps its own kind list, so a v2 request is still checked against eleven
 // chunks and a v3 against twelve. Widening the union is not the same as relaxing it.
@@ -491,7 +561,8 @@ function actionUnion<Shape extends z.ZodRawShape>(extend: (kinds: readonly Backu
     baseV3.extend(extend(BACKUP_TABLE_KINDS_V3)).strict(),
     baseV4.extend(extend(BACKUP_TABLE_KINDS_V4)).strict(),
     baseV5.extend(extend(BACKUP_TABLE_KINDS_V5)).strict(),
-    baseV6.extend(extend(BACKUP_TABLE_KINDS)).strict()
+    baseV6.extend(extend(BACKUP_TABLE_KINDS_V6)).strict(),
+    baseV7.extend(extend(BACKUP_TABLE_KINDS)).strict()
   ]);
 }
 
@@ -502,8 +573,8 @@ export const restoreActionSchemas = {
     chunkDigest: digestSchema,
     chunk: backupChunkSchema
   })),
-  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6]),
-  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6])
+  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7]),
+  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7])
 } as const;
 
 function snapshotFor<Data extends z.ZodType>(
@@ -536,7 +607,8 @@ export const backupSnapshotSchemaV2 = snapshotFor(2, BACKUP_TABLE_KINDS_V2, back
 export const backupSnapshotSchemaV3 = snapshotFor(3, BACKUP_TABLE_KINDS_V3, backupDataSchemaV3);
 export const backupSnapshotSchemaV4 = snapshotFor(4, BACKUP_TABLE_KINDS_V4, backupDataSchemaV4);
 export const backupSnapshotSchemaV5 = snapshotFor(5, BACKUP_TABLE_KINDS_V5, backupDataSchemaV5);
-export const backupSnapshotSchemaV6 = snapshotFor(6, BACKUP_TABLE_KINDS, backupDataSchema);
+export const backupSnapshotSchemaV6 = snapshotFor(6, BACKUP_TABLE_KINDS_V6, backupDataSchemaV6);
+export const backupSnapshotSchemaV7 = snapshotFor(7, BACKUP_TABLE_KINDS, backupDataSchema);
 
 // What a restore accepts. A snapshot read off disk is one of these and nothing else — the
 // union discriminates on the payload's own declared version rather than sniffing for a
@@ -546,7 +618,8 @@ export const backupSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   backupSnapshotSchemaV3,
   backupSnapshotSchemaV4,
   backupSnapshotSchemaV5,
-  backupSnapshotSchemaV6
+  backupSnapshotSchemaV6,
+  backupSnapshotSchemaV7
 ]);
 
 /**

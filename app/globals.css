@@ -301,6 +301,11 @@ footer p { margin: 0; }
 .card-row { background: color-mix(in srgb, var(--saffron-wash) 55%, transparent); }
 .card-row td:first-child { box-shadow: inset 3px 0 var(--saffron); }
 .ledger-table .mono { font-family: var(--font-data); font-size: 12px; word-break: break-all; }
+/* Retired cards sit below the table rather than in it: they are deliberately not ledger rows and
+   must not read as a section of one. Muted throughout, because nothing here counts. */
+.retired-cards { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--rule); }
+.retired-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.retired-list li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 13px; }
 
 /* Five states, and the row says which in words rather than by colour alone — the difference
    between the bank's record and the owner's is the most important thing this table says. */

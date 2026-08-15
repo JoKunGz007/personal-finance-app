@@ -1,6 +1,6 @@
 import { dayNumber } from "@/lib/dates";
 import type { LedgerAccount } from "@/lib/accounts";
-import type { NotificationCard } from "@/lib/notification-cards";
+import type { NotificationCard, NotificationCardDecision } from "@/lib/notification-cards";
 import { movementMinor, type AccountTransaction } from "@/lib/transactions";
 
 /**
@@ -71,7 +71,7 @@ export const CARD_MATCH_WINDOW_DAYS = 1;
  * the stronger discriminator and is never null, so it carries the whole job and the time stays
  * what it is: a fact stored on the card and shown beside the pairing so the owner can check it.
  */
-export type CardMatchStatus = "verified" | "awaiting-statement" | "needs-review" | "balance-conflict";
+export type CardMatchStatus = "verified" | "awaiting-statement" | "needs-review" | "balance-conflict" | "retired";
 
 /**
  * Why a card needs review, because the two causes ask the owner for different things.
@@ -103,6 +103,17 @@ export type CardMatches = {
    * the view can say what was actually found rather than that something went wrong.
    */
   balanceConflict: Map<string, number>;
+  /** Cards whose relationship to the statement is the owner's stored decision, not the rule's. */
+  decided: Set<string>;
+  /**
+   * Cards the owner has retired (`not-a-payment`, migration 017).
+   *
+   * They leave the ledger rows and the totals entirely, which is what makes this the remedy for a
+   * card captured against the wrong account or captured twice — the binding cannot be re-made
+   * after capture, and the row cannot be deleted (D-103). Reversible: the decision is an overlay
+   * carrying a revision, so deciding something else brings the card back.
+   */
+  retired: Set<string>;
 };
 
 /**
@@ -113,12 +124,42 @@ export type CardMatches = {
  */
 export function proposeCardMatches(
   transactions: readonly AccountTransaction[],
-  cards: readonly NotificationCard[]
+  cards: readonly NotificationCard[],
+  decisions: readonly NotificationCardDecision[] = []
 ): CardMatches {
   const byCard = new Map<string, string>();
   const byTransaction = new Map<string, NotificationCard>();
   const needsReview = new Map<string, CardReviewReason>();
   const balanceConflict = new Map<string, number>();
+  const decided = new Set<string>();
+  const retired = new Set<string>();
+
+  const transactionIds = new Set(transactions.map((transaction) => transaction.id));
+  const cardsById = new Map(cards.map((card) => [card.id, card]));
+  const claimedTransactions = new Set<string>();
+  const decidedPairs: Array<{ card: NotificationCard; transactionId: string }> = [];
+
+  // Decisions are facts and the rule is a proposal, so decisions are applied **first** and the
+  // rule only ever sees what is left. Doing it the other way round — rule first, decisions
+  // layered over the result — would let an automatic pairing consume the very row the owner had
+  // already assigned to another card, and his decision would lose silently to a guess.
+  // `proposeSlipMatches` records the same ordering for the same reason.
+  for (const decision of decisions) {
+    const card = cardsById.get(decision.card_id);
+    if (!card) continue;
+    decided.add(card.id);
+    if (decision.decision === "not-a-payment") {
+      retired.add(card.id);
+      continue;
+    }
+    if (decision.decision !== "matched" || decision.transaction_id === null) continue;
+    // A decision naming a row this ledger no longer holds is ignored rather than obeyed: the card
+    // falls back to its own row, which is visible, instead of pairing with nothing and vanishing
+    // from the totals.
+    if (!transactionIds.has(decision.transaction_id)) continue;
+    claimedTransactions.add(decision.transaction_id);
+    decidedPairs.push({ card, transactionId: decision.transaction_id });
+  }
 
   // Each card's surviving candidates, and every card claiming each transaction. Both are built
   // in full before a single pairing is made.
@@ -126,12 +167,14 @@ export function proposeCardMatches(
   const claimantsByTransaction = new Map<string, string[]>();
 
   for (const card of cards) {
+    if (decided.has(card.id)) continue; // the owner has spoken; the rule does not re-open it
     const cardDay = dayNumber(card.occurred_on);
     const amount = BigInt(card.amount_minor);
     const balance = BigInt(card.balance_minor);
 
     const fitting: AccountTransaction[] = [];
     for (const transaction of transactions) {
+      if (claimedTransactions.has(transaction.id)) continue; // already assigned by the owner
       // The account, not the bank. This is the check a slip cannot make.
       if (transaction.account_id !== card.account_id) continue;
       // Equal to the minor unit, sign included. No tolerance, ever — a near-match on money is
@@ -162,11 +205,15 @@ export function proposeCardMatches(
     }
   }
 
-  const cardsById = new Map(cards.map((card) => [card.id, card]));
+  // Seeded before the rule's own results, so a decision can never be displaced by one.
+  for (const pair of decidedPairs) {
+    byCard.set(pair.card.id, pair.transactionId);
+    byTransaction.set(pair.transactionId, pair.card);
+  }
 
   for (const card of cards) {
     const survivors = survivorsByCard.get(card.id);
-    if (survivors === undefined) continue; // awaiting a statement, or already a balance conflict
+    if (survivors === undefined) continue; // decided, awaiting a statement, or a balance conflict
 
     // More than one row of the same amount **and** the same running balance on one account. This
     // should not occur in a sound balance chain, and it is left as an ambiguity to look at rather
@@ -192,20 +239,79 @@ export function proposeCardMatches(
     byTransaction.set(transactionId, cardsById.get(card.id)!);
   }
 
-  return { byCard, byTransaction, needsReview, balanceConflict };
+  return { byCard, byTransaction, needsReview, balanceConflict, decided, retired };
 }
 
 /**
  * The status a card carries once the rule has run, from the sets above.
  *
  * Derived rather than stored on the card, so there is exactly one place that decides what a card's
- * relationship to the statement is.
+ * relationship to the statement is. **Retirement is checked first**: a retired card is not in any
+ * relationship with the statement, and asking whether it is awaiting one would be the wrong
+ * question rather than a wrong answer.
  */
 export function cardStatus(card: NotificationCard, matches: CardMatches): CardMatchStatus {
+  if (matches.retired.has(card.id)) return "retired";
   if (matches.byCard.has(card.id)) return "verified";
   if (matches.balanceConflict.has(card.id)) return "balance-conflict";
   if (matches.needsReview.has(card.id)) return "needs-review";
   return "awaiting-statement";
+}
+
+/**
+ * The statement rows the owner may pair a card with by hand (migration 017).
+ *
+ * **Deliberately not the automatic rule's surviving set**, for the reason `matchCandidates` gives:
+ * a chooser that only ever offered what the rule had already accepted could resolve nothing the
+ * rule refused, and refusing is exactly what brings the owner here. So two of the rule's four
+ * facts are re-checked and two are not:
+ *
+ *   * the **account** and the **exact amount** are re-checked, because
+ *     `set_notification_card_decision` re-checks both server-side and would refuse anything else;
+ *   * the **date window** is not applied, and neither is the **balance** — the balance being
+ *     offered-but-disagreeing is the whole case this list exists for, and the RPC will still
+ *     demand an explicit acknowledgement before storing it.
+ *
+ * Rows already claimed by another **card's** stored decision are left out, because the partial
+ * unique index makes that write fail. A row claimed by a *slip* is offered: a payment can produce
+ * both records, so that is not a conflict (D-102).
+ *
+ * **Balance-agreeing rows come first**, which is the ordering a card can afford and a slip cannot:
+ * the likeliest answer is the row whose printed balance the card also printed, and putting it at
+ * the top means the ordinary case needs no acknowledgement. Then nearest in date, then id, so the
+ * order is total and a caller that does not re-sort gets a stable list.
+ */
+export function cardMatchCandidates(
+  card: NotificationCard,
+  transactions: readonly AccountTransaction[],
+  decisions: readonly NotificationCardDecision[] = []
+): AccountTransaction[] {
+  const claimed = new Set(
+    decisions
+      .filter((decision) => decision.card_id !== card.id && decision.transaction_id !== null)
+      .map((decision) => decision.transaction_id!)
+  );
+  const cardDay = dayNumber(card.occurred_on);
+  const amount = BigInt(card.amount_minor);
+  const balance = BigInt(card.balance_minor);
+
+  const eligible = transactions.filter((transaction) => {
+    if (claimed.has(transaction.id)) return false;
+    if (transaction.account_id !== card.account_id) return false;
+    return BigInt(movementMinor(transaction)) === amount;
+  });
+
+  eligible.sort((a, b) => {
+    const aAgrees = BigInt(a.post_balance_minor) === balance ? 0 : 1;
+    const bAgrees = BigInt(b.post_balance_minor) === balance ? 0 : 1;
+    if (aAgrees !== bAgrees) return aAgrees - bAgrees;
+    const byDistance = Math.abs(dayNumber(a.source_date) - cardDay) - Math.abs(dayNumber(b.source_date) - cardDay);
+    if (byDistance !== 0) return byDistance;
+    if (a.source_date !== b.source_date) return a.source_date < b.source_date ? 1 : -1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+
+  return eligible;
 }
 
 /**

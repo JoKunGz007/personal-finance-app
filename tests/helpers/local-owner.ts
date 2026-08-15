@@ -199,6 +199,14 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     -- with the FK triggers disabled a card outliving its account does not fail, it sits there
     -- — and the next run sees a captured payment against an account nobody created (migration
     -- 016).
+    -- Before the cards they reference, and for the same reason the slip overlays are listed
+    -- before slips (migration 017). With the FK triggers disabled a decision outliving its card
+    -- does not fail — it sits there, and the next run sees a card that arrives already retired or
+    -- already matched to a statement row nobody in that run imported.
+    delete from public.notification_card_decision_revisions where owner_id = '${owner}';
+    delete from public.notification_card_decision_overlays where owner_id = '${owner}';
+    delete from public.notification_card_correction_revisions where owner_id = '${owner}';
+    delete from public.notification_card_correction_overlays where owner_id = '${owner}';
     delete from public.notification_cards where owner_id = '${owner}';
     delete from public.import_batch_rows where owner_id = '${owner}';
     delete from public.source_components where owner_id = '${owner}';

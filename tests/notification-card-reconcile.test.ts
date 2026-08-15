@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LedgerAccount } from "@/lib/accounts";
-import type { NotificationCard } from "@/lib/notification-cards";
+import type { NotificationCard, NotificationCardDecision } from "@/lib/notification-cards";
 import type { AccountTransaction, LedgerTransaction } from "@/lib/transactions";
 import {
   CARD_MATCH_WINDOW_DAYS,
   cardAccount,
+  cardMatchCandidates,
   cardStatus,
   proposeCardMatches
 } from "@/lib/notification-card-reconcile";
@@ -320,10 +321,178 @@ describe("notification cards in the reconciled ledger", () => {
     expect(confirmed.ownerDecided).toBe(false);
   });
 
+  /**
+   * **The cost of failing closed, asserted rather than hidden.**
+   *
+   * A balance-conflict card sits beside a statement row carrying the same amount on the same day,
+   * and both are counted — so the totals show the payment twice. That is not a defect in the
+   * totals: refusing to pair *means* the ledger does not know these are one payment, and a total
+   * that quietly assumed they were would be the fail-open version of this rule.
+   *
+   * It is also why the row says how many rows fitted and what to check. The remedy is the owner's:
+   * correct the balance, or match the two by hand and accept the disagreement.
+   */
+  it("counts a card whose balance disagrees separately from the row it refused to pair with", () => {
+    const totals = summarizeRows(reconcileLedger([row()], [], ACCOUNTS, [], [], [card({ balance_minor: "123456" })]).rows);
+    expect(totals.rows).toBe(2);
+    expect(totals.cards).toBe(1);
+    expect(totals.withdrawals).toBe("-18000");
+  });
+
   it("gives an unmatched card row the account it was captured against", () => {
     const { rows } = reconcileLedger([], [], ACCOUNTS, [], [], [card({ account_id: SECOND_KTB.id })]);
     const cardRow = rows[0]!;
     if (cardRow.kind !== "card") throw new Error("expected a card row");
     expect(cardRow.account?.id).toBe(SECOND_KTB.id);
+  });
+});
+
+describe("the owner's stored decision about a card", () => {
+  function decision(overrides: Partial<NotificationCardDecision> = {}): NotificationCardDecision {
+    return {
+      card_id: card().id,
+      decision: "matched",
+      transaction_id: row().id,
+      accepted_balance_mismatch: false,
+      revision: 1,
+      updated_at: "2026-06-10T03:00:00Z",
+      ...overrides
+    };
+  }
+
+  /**
+   * **The ordering rule, and it is the one that matters.** Decisions are facts and the rule is a
+   * proposal, so decisions are applied first and the rule only ever sees what is left. Layering
+   * them over the rule's result instead would let an automatic pairing consume the row the owner
+   * had already assigned, and his decision would lose silently to a guess.
+   *
+   * **Red proof:** remove the `decided.has(card.id)` guard from `proposeCardMatches`' first loop
+   * and this test fails — the card is re-proposed against the balance-agreeing row and the
+   * owner's choice is overwritten.
+   */
+  it("pairs a card with the row the owner named, even where the balance would have refused", () => {
+    const first = row({ id: "bbbbbbbb-0000-4000-8000-00000000000a", post_balance_minor: "500000" });
+    const second = row({ id: "bbbbbbbb-0000-4000-8000-00000000000b", post_balance_minor: "491000" });
+    // The rule would take `second`, whose balance the card printed. The owner says `first`.
+    const matches = proposeCardMatches([first, second], [card({ balance_minor: "491000" })], [
+      decision({ transaction_id: first.id, accepted_balance_mismatch: true })
+    ]);
+
+    expect(matches.byCard.get(card().id)).toBe(first.id);
+    expect(matches.byTransaction.get(first.id)?.id).toBe(card().id);
+    expect(matches.decided.has(card().id)).toBe(true);
+  });
+
+  it("leaves a card the owner said is on no statement row as its own row", () => {
+    const matches = proposeCardMatches([row()], [card()], [decision({ decision: "unmatched", transaction_id: null })]);
+    expect(matches.byCard.size).toBe(0);
+    expect(cardStatus(card(), matches)).toBe("awaiting-statement");
+    expect(matches.decided.has(card().id)).toBe(true);
+  });
+
+  it("takes a retired card out of the ledger and out of the totals", () => {
+    const { rows } = reconcileLedger([row()], [], ACCOUNTS, [], [], [card()], [
+      decision({ decision: "not-a-payment", transaction_id: null })
+    ]);
+
+    // One row, and it is the statement's. The card is gone entirely — not shown, not counted.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("confirmed");
+    expect(rows[0]!.status).toBe("statement-only");
+    const totals = summarizeRows(rows);
+    expect(totals.cards).toBe(0);
+    // The statement row's own movement stands; only the card's contribution is gone.
+    expect(totals.withdrawals).toBe("-9000");
+  });
+
+  it("brings a retired card back when the decision changes", () => {
+    const revived = reconcileLedger([row()], [], ACCOUNTS, [], [], [card()], [
+      decision({ decision: "unmatched", transaction_id: null, revision: 2 })
+    ]);
+    expect(revived.cardMatches.retired.size).toBe(0);
+    expect(revived.rows.filter((entry) => entry.kind === "card")).toHaveLength(1);
+  });
+
+  /**
+   * A decision naming a row this ledger no longer holds is ignored rather than obeyed. The card
+   * falls back to its own row, which is visible, instead of pairing with nothing and vanishing
+   * from the totals — the same rule `proposeSlipMatches` applies for the same reason.
+   */
+  it("ignores a decision naming a statement row the ledger no longer holds", () => {
+    const matches = proposeCardMatches([row()], [card()], [
+      decision({ transaction_id: "bbbbbbbb-0000-4000-8000-0000000000ff" })
+    ]);
+    expect(matches.byCard.size).toBe(0);
+    // Still decided, so the rule does not re-open it — the card is not silently re-proposed
+    // against a row the owner has not chosen.
+    expect(matches.decided.has(card().id)).toBe(true);
+  });
+
+  it("keeps a row the owner assigned out of the pool the rule proposes from", () => {
+    const first = row({ id: "bbbbbbbb-0000-4000-8000-00000000000a", post_balance_minor: "491000" });
+    const second = card({ id: "eeeeeeee-0000-4000-8000-00000000000b", occurred_at_time: "09:45" });
+    // The first card owns `first` by decision. The second card would otherwise pair with it.
+    const matches = proposeCardMatches([first], [card({ balance_minor: "491000" }), second], [
+      decision({ transaction_id: first.id })
+    ]);
+
+    expect(matches.byCard.get(card().id)).toBe(first.id);
+    expect(matches.byCard.has(second.id)).toBe(false);
+    // Awaiting a statement rather than needing review: the row it wanted is the owner's answer
+    // for another card, so there is nothing ambiguous left to resolve.
+    expect(cardStatus(second, matches)).toBe("awaiting-statement");
+  });
+
+  it("reports a stored balance overrule on the row it was made about", () => {
+    const { rows } = reconcileLedger([row()], [], ACCOUNTS, [], [], [card({ balance_minor: "123456" })], [
+      decision({ accepted_balance_mismatch: true })
+    ]);
+    const confirmed = rows[0]!;
+    if (confirmed.kind !== "confirmed") throw new Error("expected a confirmed row");
+    expect(confirmed.status).toBe("verified");
+    expect(confirmed.cardOwnerDecided).toBe(true);
+    // Stored consent, not a live comparison — it must survive a later correction that changes
+    // whether the two figures still differ.
+    expect(confirmed.cardBalanceMismatchAccepted).toBe(true);
+  });
+});
+
+describe("the rows a card may be paired with by hand", () => {
+  it("offers rows past the date window, and puts the balance-agreeing one first", () => {
+    const agreeing = row({ id: "bbbbbbbb-0000-4000-8000-00000000000a", source_date: "2026-06-20", post_balance_minor: "491000" });
+    const sameDay = row({ id: "bbbbbbbb-0000-4000-8000-00000000000b", post_balance_minor: "500000" });
+
+    const candidates = cardMatchCandidates(card({ balance_minor: "491000" }), [sameDay, agreeing]);
+
+    // Ten days out and still offered: an override exists to reach past what the rule refused.
+    expect(candidates).toHaveLength(2);
+    // And the balance-agreeing row comes first, because it is the likeliest answer — the
+    // ordering a card can afford and a slip cannot.
+    expect(candidates[0]!.id).toBe(agreeing.id);
+  });
+
+  it("leaves out a row another card's decision already claims, and keeps one a slip claims", () => {
+    const claimed = row({ id: "bbbbbbbb-0000-4000-8000-00000000000a" });
+    const free = row({ id: "bbbbbbbb-0000-4000-8000-00000000000b" });
+
+    const candidates = cardMatchCandidates(card(), [claimed, free], [
+      {
+        card_id: "eeeeeeee-0000-4000-8000-0000000000ff",
+        decision: "matched",
+        transaction_id: claimed.id,
+        accepted_balance_mismatch: false,
+        revision: 1,
+        updated_at: "2026-06-10T03:00:00Z"
+      }
+    ]);
+
+    // Offering a row the partial unique index would refuse is worse than not offering it. A row
+    // a *slip* claims is a different matter and is still offered — that is not a conflict.
+    expect(candidates.map((candidate) => candidate.id)).toEqual([free.id]);
+  });
+
+  it("never offers a row on another account, however well it fits", () => {
+    const elsewhere = row({ id: "bbbbbbbb-0000-4000-8000-00000000000a", account_id: SECOND_KTB.id });
+    expect(cardMatchCandidates(card(), [elsewhere])).toHaveLength(0);
   });
 });

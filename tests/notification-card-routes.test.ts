@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { notificationCardCaptureResponseSchema, notificationCardListSchema } from "@/lib/notification-cards";
+import {
+  notificationCardCaptureResponseSchema,
+  notificationCardCorrectionResponseSchema,
+  notificationCardDecisionResponseSchema,
+  notificationCardListSchema
+} from "@/lib/notification-cards";
 import {
   API, OWNER_EMAIL, PUBLISHABLE, containerReachable, ownerId as lookupOwnerId,
   ownerSession, psql, resetOwnerImportSurface, type OwnerSession
@@ -73,6 +78,48 @@ async function listCards() {
   const { GET } = await import("@/app/api/v1/notification-cards/route");
   const response = await GET();
   return { status: response.status, headers: response.headers, body: await response.json() };
+}
+
+
+async function decideCard(cardId: string, body: unknown) {
+  const { PUT } = await import("@/app/api/v1/notification-cards/[id]/decision/route");
+  const response = await PUT(
+    new Request(`http://localhost/api/v1/notification-cards/${cardId}/decision`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }),
+    { params: Promise.resolve({ id: cardId }) }
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+async function correctCard(cardId: string, body: unknown) {
+  const { PUT } = await import("@/app/api/v1/notification-cards/[id]/correction/route");
+  const response = await PUT(
+    new Request(`http://localhost/api/v1/notification-cards/${cardId}/correction`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }),
+    { params: Promise.resolve({ id: cardId }) }
+  );
+  return { status: response.status, body: await response.json() };
+}
+
+/** A statement row on the KTB account, so a card has something real to be decided against. */
+function seedRow(id: string, amountMinor: string, balanceMinor: string, date = "2026-06-10", time = "09:30") {
+  const written = psql(`
+    set session_replication_role = replica;
+    insert into public.source_transactions(id, owner_id, account_id, fingerprint_version, fingerprint,
+      source_date, source_time, effective_date, transaction_label, description, post_balance_minor, currency)
+    values ('${id}', '${owner}', '${KTB_ACCOUNT}', 'fingerprint-v1', '${id.replace(/-/gu, "").padEnd(64, "0")}',
+      '${date}', '${time}', '${date}', 'Invented label', 'Invented description', '${balanceMinor}', 'THB');
+    insert into public.source_components(id, owner_id, transaction_id, position, kind, amount_minor, currency)
+    values ('cccccccc-2222-4222-8222-${id.slice(-12)}', '${owner}', '${id}', 1, 'withdrawal', ${amountMinor}, 'THB');
+    set session_replication_role = origin;
+  `);
+  expect(written.ok, `row seed failed: ${written.output}`).toBe(true);
 }
 
 /** A Krungthai outgoing card, the shape everything below varies from. */
@@ -292,6 +339,132 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
   it("refuses a field the contract does not name", async () => {
     const extra = await captureCard(card({ fingerprint: "f".repeat(64) }));
     expect(extra.status).toBe(422);
+  });
+  });
+
+  describe("deciding and correcting a card", () => {
+  const AGREEING = "dddddddd-0000-4000-8000-0000000000a1";
+  const DISAGREEING = "dddddddd-0000-4000-8000-0000000000a2";
+
+  it("stores a match, refuses a disagreeing balance, and stores the consent when it is given", async () => {
+    // Two rows on the KTB account, same amount and day, differing only in their printed balance.
+    // The card printed 4,910.00, so one row agrees and the other does not.
+    seedRow(AGREEING, "-9000", "491000");
+    seedRow(DISAGREEING, "-9000", "500000", "2026-06-10", "10:30");
+    const captured = await captureCard(card({ amountMinor: "-9000", balanceMinor: "491000" }));
+    expect(captured.status, JSON.stringify(captured.body)).toBe(201);
+    const cardId = (captured.body as { card: { id: string } }).card.id;
+
+    // The agreeing row pairs with no acknowledgement, and the consent is recorded as false.
+    const agreed = await decideCard(cardId, { expectedRevision: 0, decision: "matched", transactionId: AGREEING });
+    expect(agreed.status, JSON.stringify(agreed.body)).toBe(200);
+    const parsed = notificationCardDecisionResponseSchema.safeParse(agreed.body);
+    expect(parsed.success, JSON.stringify(parsed.error?.flatten())).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.decision.decision).toBe("matched");
+      expect(parsed.data.decision.accepted_balance_mismatch).toBe(false);
+    }
+
+    // **The refusal this route exists to make legible.** The other row fits on account, amount
+    // and date and prints a different balance, so it is refused — and nothing is stored, which
+    // the revision still reading 1 is what proves.
+    const refused = await decideCard(cardId, { expectedRevision: 1, decision: "matched", transactionId: DISAGREEING });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+    expect(JSON.stringify(refused.body)).toMatch(/different balance/u);
+    expect(psql(`select revision from public.notification_card_decision_overlays where card_id = '${cardId}';`).output.trim()).toBe("1");
+
+    // The same request with the acknowledgement is accepted, and the acknowledgement is what is
+    // stored rather than a comparison that would go stale after a later correction.
+    const accepted = await decideCard(cardId, {
+      expectedRevision: 1, decision: "matched", transactionId: DISAGREEING, acceptBalanceMismatch: true
+    });
+    expect(accepted.status, JSON.stringify(accepted.body)).toBe(200);
+    expect((accepted.body as { decision: { accepted_balance_mismatch: boolean } }).decision.accepted_balance_mismatch).toBe(true);
+  });
+
+  it("omitting the acknowledgement is the refusal, never the override", async () => {
+    // The field defaults to false in the schema, so a client that forgets it gets the fail-closed
+    // answer. That is the property worth a test of its own: the safe branch must be the default
+    // rather than something a caller has to remember.
+    const captured = await captureCard(card({ amountMinor: "-9000", balanceMinor: "777700", occurredAtTime: "11:11" }));
+    expect(captured.status, JSON.stringify(captured.body)).toBe(201);
+    const cardId = (captured.body as { card: { id: string } }).card.id;
+
+    const refused = await decideCard(cardId, { expectedRevision: 0, decision: "matched", transactionId: AGREEING });
+    expect(refused.status).toBe(409);
+  });
+
+  it("retires a card and brings it back, without ever touching the card row", async () => {
+    const captured = await captureCard(card({ amountMinor: "-1500", balanceMinor: "480000", occurredAtTime: "12:12" }));
+    expect(captured.status, JSON.stringify(captured.body)).toBe(201);
+    const cardId = (captured.body as { card: { id: string } }).card.id;
+    const before = psql(`select amount_minor from public.notification_cards where id = '${cardId}';`).output.trim();
+
+    const retired = await decideCard(cardId, { expectedRevision: 0, decision: "not-a-payment", transactionId: null });
+    expect(retired.status, JSON.stringify(retired.body)).toBe(200);
+    expect((retired.body as { decision: { decision: string } }).decision.decision).toBe("not-a-payment");
+
+    // Reversible, which is what makes retirement safe on an append-only table.
+    const back = await decideCard(cardId, { expectedRevision: 1, decision: "unmatched", transactionId: null });
+    expect(back.status, JSON.stringify(back.body)).toBe(200);
+    expect((back.body as { decision: { decision: string } }).decision.decision).toBe("unmatched");
+
+    // The card itself never moved. Retirement is a decision beside it, not an edit of it.
+    expect(psql(`select amount_minor from public.notification_cards where id = '${cardId}';`).output.trim()).toBe(before);
+    expect(psql(`select count(*) from public.notification_card_decision_revisions where card_id = '${cardId}';`).output.trim()).toBe("2");
+  });
+
+  it("corrects the balance and returns both money columns as canonical text or null", async () => {
+    const captured = await captureCard(card({ amountMinor: "-2500", balanceMinor: "460000", occurredAtTime: "13:13" }));
+    expect(captured.status, JSON.stringify(captured.body)).toBe(201);
+    const cardId = (captured.body as { card: { id: string } }).card.id;
+
+    const corrected = await correctCard(cardId, {
+      expectedRevision: 0, kind: null, amountMinor: null, balanceMinor: "455000",
+      occurredOn: null, occurredAtTime: null, counterparty: null, categoryId: null, note: null
+    });
+    expect(corrected.status, JSON.stringify(corrected.body)).toBe(200);
+    const parsed = notificationCardCorrectionResponseSchema.safeParse(corrected.body);
+    expect(parsed.success, JSON.stringify(parsed.error?.flatten())).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.correction.balance_minor).toBe("455000");
+    // An uncorrected amount stays **null**, not the string "null" — the overlay reads null as
+    // "not corrected", so stringifying it would record a correction nobody made.
+    expect(parsed.data.correction.amount_minor).toBeNull();
+  });
+
+  it("returns cards, corrections and decisions on one response", async () => {
+    const listed = await listCards();
+    expect(listed.status).toBe(200);
+    const parsed = notificationCardListSchema.safeParse(listed.body);
+    expect(parsed.success, JSON.stringify(parsed.error?.flatten())).toBe(true);
+    if (!parsed.success) return;
+    // The half-arrival this shape exists to prevent: facts without the owner's disagreement.
+    expect(parsed.data.decisions.length).toBeGreaterThan(0);
+    expect(parsed.data.corrections.length).toBeGreaterThan(0);
+  });
+
+  it("refuses a row whose movement is not the card's, and a stale revision", async () => {
+    const captured = await captureCard(card({ amountMinor: "-3500", balanceMinor: "450000", occurredAtTime: "14:14" }));
+    const cardId = (captured.body as { card: { id: string } }).card.id;
+
+    // Same account, different amount — refused on the amount, to the minor unit.
+    const wrongAmount = await decideCard(cardId, { expectedRevision: 0, decision: "matched", transactionId: AGREEING });
+    expect(wrongAmount.status).toBe(422);
+
+    await decideCard(cardId, { expectedRevision: 0, decision: "unmatched", transactionId: null });
+    const stale = await decideCard(cardId, { expectedRevision: 0, decision: "unmatched", transactionId: null });
+    expect(stale.status).toBe(409);
+  });
+
+  it("refuses a decision the contract does not name", async () => {
+    const captured = await captureCard(card({ amountMinor: "-4500", balanceMinor: "440000", occurredAtTime: "15:15" }));
+    const cardId = (captured.body as { card: { id: string } }).card.id;
+    const bad = await decideCard(cardId, { expectedRevision: 0, decision: "retired", transactionId: null });
+    expect(bad.status).toBe(422);
+    // A matched decision must name a row, and the other two must not.
+    const mismatched = await decideCard(cardId, { expectedRevision: 0, decision: "unmatched", transactionId: AGREEING });
+    expect(mismatched.status).toBe(422);
   });
   });
 });

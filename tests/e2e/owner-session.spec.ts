@@ -1100,6 +1100,93 @@ test("refuses to pair a card whose printed balance contradicts the row that othe
   await expect(ledger.getByText(/1 whose balance disagrees/u)).toBeVisible();
 });
 
+/**
+ * Retirement, driven end to end — the remedy for a card captured against the wrong account or
+ * captured twice (D-103). The card row is append-only and the binding cannot be re-made, so this
+ * is the only thing a wrong card can have, and it has to be reversible on screen as well as in
+ * the database. Without the retired-cards list below the table it would not be.
+ */
+test("retires a card out of the ledger and the totals, and brings it back", async ({ page }) => {
+  await signIn(page, "/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  // A card matching nothing, so it is its own row and its amount is in the totals.
+  await captureCard(page, {
+    amountMinor: "-2500",
+    balanceMinor: "880000",
+    occurredOn: "2026-01-09",
+    occurredAtTime: "16:20"
+  });
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tr.card-row")).toHaveCount(1);
+  await expect(ledger.locator(".ledger-strip dd").first()).toContainText("5");
+
+  await ledger.getByRole("button", { name: /^Not a payment/u }).click();
+
+  // Out of the rows and out of the totals — the whole point of `not-a-payment`.
+  await expect(ledger.locator("tbody tr")).toHaveCount(4);
+  await expect(ledger.locator("tr.card-row")).toHaveCount(0);
+  await expect(ledger.locator(".ledger-strip dd").first()).toHaveText("4");
+
+  // And still in the database, because nothing here is ever deleted.
+  const owner = ownerId();
+  expect(psql(`select count(*) from public.notification_cards where owner_id = '${owner}';`).output.trim()).toBe("1");
+  expect(psql(`select decision from public.notification_card_decision_overlays where owner_id = '${owner}';`).output.trim()).toBe("not-a-payment");
+
+  // Reversible on screen, which is what makes retiring safe to offer at all.
+  await ledger.getByRole("button", { name: /^Show 1 retired card/u }).click();
+  await ledger.getByRole("button", { name: /^Bring back/u }).click();
+  await expect(ledger.locator("tr.card-row")).toHaveCount(1);
+  await expect(ledger.locator(".ledger-strip dd").first()).toContainText("5");
+  expect(psql(`select decision from public.notification_card_decision_overlays where owner_id = '${owner}';`).output.trim()).toBe("unmatched");
+});
+
+/**
+ * The balance overrule, driven end to end. The rule refuses this pairing (D-102); the owner may
+ * still make it, and the acknowledgement is what gets stored (D-103). The row must say the
+ * disagreement out loud **before** the click, because after it there is no undo that un-writes an
+ * append-only revision.
+ */
+test("lets the owner match a card whose balance disagrees, after saying so in words", async ({ page }) => {
+  await signIn(page, "/import");
+  await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);
+
+  // The right amount and day for one of the fixture's rows, and a balance that row does not
+  // print — so the automatic rule refuses it and the ledger says the balance disagrees.
+  await captureCard(page, {
+    amountMinor: "-50000",
+    balanceMinor: "111111",
+    occurredOn: "2026-01-09",
+    occurredAtTime: "09:30"
+  });
+
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tr.card-row").getByText("Balance disagrees")).toBeVisible();
+
+  await ledger.getByRole("button", { name: /^Choose a statement row for the card/u }).click();
+
+  // The consequence is named before the click, not after it. This is the assertion that would
+  // fail if the disagreement were ever stored silently.
+  await expect(ledger.getByText(/Choosing it records that you accepted the disagreement/u)).toBeVisible();
+  await ledger.getByRole("button", { name: /^This is it/u }).click();
+
+  // The pair collapses and the row says the overrule stands.
+  await expect(ledger.locator("tbody tr")).toHaveCount(4);
+  await expect(ledger.locator("tr.verified-row").getByText("Verified by card")).toBeVisible();
+  await expect(ledger.getByText(/You matched this despite the card and the row printing different balances/u)).toBeVisible();
+
+  // Stored as the owner's consent rather than as a comparison that could be recomputed.
+  const owner = ownerId();
+  expect(psql(`select accepted_balance_mismatch from public.notification_card_decision_overlays where owner_id = '${owner}';`).output.trim()).toBe("t");
+});
+
 test("slip capture has no automatically detectable accessibility violations", async ({ page }) => {
   await signIn(page, "/slips");
   await chooseSlipImage(page);

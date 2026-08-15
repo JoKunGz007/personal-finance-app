@@ -5,13 +5,14 @@ import { notificationCardCaptureSchema, notificationCardSchema } from "@/lib/not
 export const dynamic = "force-dynamic";
 
 /**
- * The owner's captured notification cards (migration 016, PLAN task 27).
+ * The owner's captured notification cards, their corrections and their decisions (migrations 016
+ * and 017, PLAN tasks 27 and 29).
  *
- * One read and no companion tables, unlike the slips and cash routes. That is not an omission:
- * a card has **no correction overlay and no stored match decision yet** (D-098), so there is no
- * second half that could half-arrive. When either is built this route gains it on the same
- * response, for the reason those two give — the dangerous failure is the facts arriving while
- * the owner's disagreement with them does not.
+ * **All three on one response**, which is the posture D-067 set for slips and migration 013 set
+ * for cash: the dangerous failure is the facts arriving while the owner's disagreement with them
+ * does not. Cards without corrections would put a figure the owner has already replaced into the
+ * ledger and its totals; cards without decisions would present an overruled pairing as the rule's
+ * own, and would silently un-retire a card the owner had retired. One response cannot half-arrive.
  */
 export async function GET() {
   const auth = await strongOwnerClient();
@@ -27,16 +28,38 @@ export async function GET() {
     .order("captured_at", { ascending: false });
   if (error) return routeError("Notification cards could not be loaded.", 400);
 
-  // Both bigints arrive as JS numbers from PostgREST unless they are cast, so both are
-  // stringified here rather than trusted to survive JSON (D-018). The balance is money and is
-  // held to that rule as firmly as the amount, rather than treated as metadata because it
-  // happens not to be the transaction's own value.
+  const corrections = await auth.supabase
+    .from("notification_card_correction_overlays")
+    .select("card_id,kind,amount_minor,balance_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision,updated_at");
+  if (corrections.error) return routeError("Notification cards could not be loaded.", 400);
+
+  const decisions = await auth.supabase
+    .from("notification_card_decision_overlays")
+    .select("card_id,decision,transaction_id,accepted_balance_mismatch,revision,updated_at");
+  if (decisions.error) return routeError("Notification cards could not be loaded.", 400);
+
+  // Every bigint arrives as a JS number from PostgREST unless it is cast, so each is stringified
+  // here rather than trusted to survive JSON (D-018). The balance is money and is held to that
+  // rule as firmly as the amount, rather than treated as metadata because it happens not to be
+  // the transaction's own value — on the correction overlay both are nullable, and null must
+  // stay null rather than becoming the string "null".
   const cards = (data ?? []).map((card) => ({
     ...card,
     amount_minor: String(card.amount_minor),
     balance_minor: String(card.balance_minor)
   }));
-  return Response.json({ cards }, { headers: noStoreHeaders });
+  return Response.json(
+    {
+      cards,
+      corrections: (corrections.data ?? []).map((correction) => ({
+        ...correction,
+        amount_minor: correction.amount_minor === null ? null : String(correction.amount_minor),
+        balance_minor: correction.balance_minor === null ? null : String(correction.balance_minor)
+      })),
+      decisions: decisions.data ?? []
+    },
+    { headers: noStoreHeaders }
+  );
 }
 
 /**

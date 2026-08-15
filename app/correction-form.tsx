@@ -29,6 +29,7 @@ export function CorrectionForm({
   overlay,
   endpoint,
   title,
+  balance,
   onSaved,
   onCancel
 }: {
@@ -36,6 +37,15 @@ export function CorrectionForm({
   overlay: CorrectionOverlay | null;
   endpoint: string;
   title: string;
+  /**
+   * The printed balance, for the one record that has one: a notification card (migration 017).
+   *
+   * Absent for a slip and a cash entry, and the field is then not rendered **and `balanceMinor`
+   * is not sent** — both correction routes parse `.strict()`, so an unexpected key would be a
+   * 422 rather than a value quietly ignored. `baseMinor` is what the owner first typed and
+   * `overlayMinor` is the correction in force, exactly as `base` and `overlay` are for the rest.
+   */
+  balance?: { baseMinor: string; overlayMinor: string | null };
   onSaved: (correction: unknown) => void;
   onCancel: () => void;
 }) {
@@ -52,6 +62,14 @@ export function CorrectionForm({
   const [counterparty, setCounterparty] = useState(inForce.counterparty ?? "");
   const [categoryId, setCategoryId] = useState(inForce.category_id ?? "");
   const [note, setNote] = useState(inForce.note ?? "");
+  // Shown **signed**, unlike the amount, because a balance carries no direction control to hold
+  // its sign: it is a position rather than a movement, so zero is ordinary and a negative one is
+  // an overdraft the owner must be able to type.
+  const [balanceText, setBalanceText] = useState(() => {
+    const minor = BigInt(balance?.overlayMinor ?? balance?.baseMinor ?? "0");
+    const magnitude = minor < 0n ? -minor : minor;
+    return `${minor < 0n ? "-" : ""}${magnitude / 100n}.${(magnitude % 100n).toString().padStart(2, "0")}`;
+  });
   const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,10 +95,26 @@ export function CorrectionForm({
     }
   }, [amount, kind]);
 
+  const parsedBalance = useMemo(() => {
+    if (!balance) return { ok: true as const, minor: null };
+    const raw = balanceText.trim();
+    if (raw === "") return { ok: false as const, message: "A balance is required." };
+    const negative = raw.startsWith("-");
+    try {
+      const money = parseThb(negative ? raw.slice(1) : raw);
+      const magnitude = BigInt(money.minor) < 0n ? -BigInt(money.minor) : BigInt(money.minor);
+      // No zero check and no sign check, which is the deliberate difference from the amount
+      // above: a balance of nothing is an ordinary balance.
+      return { ok: true as const, minor: (negative ? -magnitude : magnitude).toString() };
+    } catch {
+      return { ok: false as const, message: "Enter a plain balance such as 10249.50, or -120 for an overdraft." };
+    }
+  }, [balanceText, balance]);
+
   // What actually changed, against the **original** rather than against what is in force. A
   // field equal to the original is sent as null, which is how the overlay says "not corrected".
   const changes = useMemo(() => {
-    if (!parsedAmount.ok) return null;
+    if (!parsedAmount.ok || !parsedBalance.ok) return null;
     const amountChanged = parsedAmount.minor !== base.amount_minor || kind !== base.kind;
     const time = occurredAtTime === "" ? null : occurredAtTime;
     const trimmedCounterparty = counterparty.trim() === "" ? null : counterparty.trim();
@@ -94,9 +128,12 @@ export function CorrectionForm({
       occurredAtTime: time === base.occurred_at_time?.slice(0, 5) ? null : time,
       counterparty: trimmedCounterparty === base.counterparty ? null : trimmedCounterparty,
       categoryId: (categoryId === "" ? null : categoryId) === base.category_id ? null : (categoryId === "" ? null : categoryId),
-      note: trimmedNote === base.note ? null : trimmedNote
+      note: trimmedNote === base.note ? null : trimmedNote,
+      // Only when this record has a balance at all. The key is absent otherwise, because both
+      // correction routes parse `.strict()`.
+      ...(balance ? { balanceMinor: parsedBalance.minor === balance.baseMinor ? null : parsedBalance.minor } : {})
     };
-  }, [parsedAmount, kind, occurredOn, occurredAtTime, counterparty, categoryId, note, base]);
+  }, [parsedAmount, parsedBalance, kind, occurredOn, occurredAtTime, counterparty, categoryId, note, base, balance]);
 
   /**
    * Null everywhere is a legitimate save, not a no-op: it clears an existing correction. It is
@@ -150,6 +187,18 @@ export function CorrectionForm({
           <span>Amount (THB)</span>
           <input inputMode="decimal" value={amount} disabled={busy} onChange={(event) => setAmount(event.target.value)} required />
         </label>
+        {balance ? (
+          <label>
+            <span>Balance printed on the card (THB)</span>
+            <input
+              inputMode="text"
+              value={balanceText}
+              disabled={busy}
+              onChange={(event) => setBalanceText(event.target.value)}
+              required
+            />
+          </label>
+        ) : null}
         <label>
           <span>Date</span>
           <input type="date" value={occurredOn} disabled={busy} onChange={(event) => setOccurredOn(event.target.value)} required />
@@ -181,6 +230,8 @@ export function CorrectionForm({
       <p className="field-help">
         {!parsedAmount.ok
           ? parsedAmount.message
+          : !parsedBalance.ok
+          ? parsedBalance.message
           : clearsToOriginal
             ? overlay === null
               ? "Nothing here differs from what was first recorded, so there is nothing to correct."

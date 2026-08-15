@@ -1,7 +1,7 @@
 import type { CapturedSlip, SlipMatchDecision } from "@/lib/slips";
 import type { CashEntry } from "@/lib/cash";
 import type { LedgerAccount } from "@/lib/accounts";
-import type { NotificationCard } from "@/lib/notification-cards";
+import type { NotificationCard, NotificationCardDecision } from "@/lib/notification-cards";
 import { cardAccount, cardStatus, proposeCardMatches, type CardMatches } from "@/lib/notification-card-reconcile";
 import { dayNumber } from "@/lib/dates";
 import { movementMinor, type AccountTransaction } from "@/lib/transactions";
@@ -325,8 +325,19 @@ export type ReconciledRow =
        * both or neither may be present, and `status` is `verified` when at least one is.
        */
       card: NotificationCard | null;
-      /** True when this pairing is the owner's stored decision rather than the rule's proposal. */
+      /** True when the **slip** pairing is the owner's stored decision rather than the rule's. */
       ownerDecided: boolean;
+      /**
+       * True when the **card** pairing is the owner's stored decision. Separate from `ownerDecided`
+       * because a row can carry both records and each was decided, or proposed, on its own.
+       */
+      cardOwnerDecided: boolean;
+      /**
+       * True when the owner matched this card to this row **knowing their balances disagree**
+       * (migration 017). Stored consent rather than a live comparison, so it stays true after a
+       * later correction changes whether the two figures still differ.
+       */
+      cardBalanceMismatchAccepted: boolean;
     }
   | {
       kind: "provisional";
@@ -373,6 +384,8 @@ export type ReconciledRow =
       status: Extract<RowStatus, "awaiting-statement" | "needs-review" | "balance-conflict">;
       card: NotificationCard;
       account: LedgerAccount | null;
+      /** True when this card's state is the owner's stored decision rather than the rule's. */
+      ownerDecided: boolean;
     };
 
 /**
@@ -386,13 +399,14 @@ export function reconcileLedger(
   accounts: readonly LedgerAccount[],
   decisions: readonly SlipMatchDecision[] = [],
   cash: readonly CashEntry[] = [],
-  cards: readonly NotificationCard[] = []
+  cards: readonly NotificationCard[] = [],
+  cardDecisions: readonly NotificationCardDecision[] = []
 ): { rows: ReconciledRow[]; matches: SlipMatches; cardMatches: CardMatches } {
   const matches = proposeSlipMatches(transactions, slips, accounts, decisions);
   // Run over the same transactions without removing what the slip rule claimed. The two rules
   // are independent because their records are not rivals: one payment can produce both an e-slip
   // and a LINE push, and a row is allowed to carry both as evidence of the same movement.
-  const cardMatches = proposeCardMatches(transactions, cards);
+  const cardMatches = proposeCardMatches(transactions, cards, cardDecisions);
 
   const rows: ReconciledRow[] = transactions.map((transaction) => {
     const slip = matches.byTransaction.get(transaction.id) ?? null;
@@ -409,7 +423,10 @@ export function reconcileLedger(
       transaction,
       slip,
       card,
-      ownerDecided: slip !== null && matches.decided.has(slip.id)
+      ownerDecided: slip !== null && matches.decided.has(slip.id),
+      cardOwnerDecided: card !== null && cardMatches.decided.has(card.id),
+      cardBalanceMismatchAccepted:
+        card !== null && (cardDecisions.find((decision) => decision.card_id === card.id)?.accepted_balance_mismatch ?? false)
     };
   });
 
@@ -448,6 +465,10 @@ export function reconcileLedger(
     // so this is one question rather than two.
     const status = cardStatus(card, cardMatches);
     if (status === "verified") continue;
+    // A retired card leaves the ledger entirely — no row, and therefore nothing in the totals.
+    // That is the whole point of `not-a-payment`: the row cannot be deleted and the binding
+    // cannot be re-made, so leaving the ledger is the only remedy a wrong card can have (D-103).
+    if (status === "retired") continue;
     rows.push({
       kind: "card" as const,
       id: card.id,
@@ -455,7 +476,8 @@ export function reconcileLedger(
       time: card.occurred_at_time,
       status,
       card,
-      account: cardAccount(card, accounts)
+      account: cardAccount(card, accounts),
+      ownerDecided: cardMatches.decided.has(card.id)
     });
   }
 
