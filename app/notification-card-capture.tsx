@@ -59,6 +59,18 @@ async function cropRegion(file: File, box: Box): Promise<string | null> {
   }
 }
 
+/**
+ * The read fields that show their crop **inside** the input's own label rather than in the block
+ * above it. Every one of them has a box the owner types into; `counterpartyAccount` does not,
+ * which is why it is absent and keeps the block.
+ *
+ * `occurredAt` is listed once and rendered under **Date**, not under Time: the card prints one
+ * date-and-time run, so there is a single crop for two inputs and it sits beneath the first.
+ */
+const INLINE_CROP_FIELDS: readonly CardFieldName[] = [
+  "amount", "balance", "occurredAt", "ownAccount", "counterpartyName"
+];
+
 const FIELD_LABELS: Record<CardFieldName, string> = {
   amount: "Amount",
   balance: "Balance after",
@@ -400,6 +412,32 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     }
   }
 
+  /**
+   * A read field's crop, rendered inside the label of the input it belongs to.
+   *
+   * `alt=""` is deliberate and is the only defensible reading: this is a picture of digits, so it
+   * carries nothing a screen reader could convey, and giving it descriptive alt text inside a
+   * `<label>` would append that text to the input's accessible name — making the name longer
+   * without making it more useful. The refusal note, when the label was not found, **is** words
+   * and stays readable.
+   */
+  function fieldCrop(field: CardFieldName) {
+    if (!region) return null;
+    const crop = crops[field];
+    const missing = notes[field];
+    if (!crop && !missing) return null;
+    return (
+      <span className="field-crop">
+        {crop
+          // A data URL cut from an image that never leaves the device. `next/image` would want a
+          // loader and a remote pattern for something that is neither.
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img src={crop} alt="" />
+          : <span className="field-help">{missing}</span>}
+      </span>
+    );
+  }
+
   return (
     <section className="card-bench" aria-labelledby="card-title">
       <div className="bench-heading">
@@ -509,9 +547,19 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
             </label>
           )}
 
+          {/*
+            * The fields a crop is shown *beside* rather than above, which is what D-087 described
+            * and what the block below had never actually delivered: the crops lived in a grid of
+            * their own, so comparing a read figure with its picture meant looking in two places
+            * and holding one of them in your head. Each crop now sits inside its own label, so
+            * the picture and the box being typed into are one thing on screen.
+            *
+            * `counterpartyAccount` keeps the old block, because it is the one read field with no
+            * input beside it — there is nothing to sit next to.
+            */}
           {region && (
             <div className="card-crops">
-              {CARD_FIELDS.map((field) => {
+              {CARD_FIELDS.filter((field) => !INLINE_CROP_FIELDS.includes(field)).map((field) => {
                 const crop = crops[field];
                 const missing = notes[field];
                 if (!crop && !missing) return null;
@@ -559,6 +607,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                 required
                 aria-describedby="card-amount-help"
               />
+              {fieldCrop("amount")}
             </label>
 
             <label>
@@ -572,6 +621,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                 required
                 aria-describedby="card-balance-help"
               />
+              {fieldCrop("balance")}
             </label>
 
             <label>
@@ -586,6 +636,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                 required
                 aria-describedby="card-digits-help"
               />
+              {fieldCrop("ownAccount")}
             </label>
 
             <label>
@@ -600,6 +651,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                 required
                 aria-describedby="card-date-help"
               />
+              {fieldCrop("occurredAt")}
             </label>
 
             <label>
@@ -617,6 +669,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
             <label>
               <span>Other party (optional)</span>
               <input value={counterparty} maxLength={240} disabled={busy} onChange={(event) => setCounterparty(event.target.value)} />
+              {fieldCrop("counterpartyName")}
             </label>
 
             <label>

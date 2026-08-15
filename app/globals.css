@@ -194,6 +194,11 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .card-crop { margin: 0; display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); }
 .card-crop figcaption { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 .card-crop img { display: block; max-width: 100%; height: auto; border-radius: var(--radius); }
+/* A crop shown inside its own field's label, so the picture and the box being typed into are one
+   thing rather than two places to look. The label is already a grid, so this is a third row and
+   needs no layout of its own. */
+.field-crop { display: block; }
+.field-crop img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius); }
 
 /* Recovery reads as infrastructure rather than as part of the import flow, because the
    day it is needed there is no import in progress. */
