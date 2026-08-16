@@ -97,6 +97,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A payload that carries the repaired data reconciles clean, so the surface that should report the repair reports nothing
 - A WebAssembly decoder resolves its binary next to the bundled chunk, so it 404s and fails silently
 - A WASM core path naming a directory makes the engine ask for a file the build never copied
+- A misread separator hides the label, not just the value, and the field reads as "not printed"
 
 ### Real data, masking and privacy
 
@@ -108,6 +109,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A "value-free" probe leaks values when its allow-list assumes a flat structure
 - A placeholder that looks like a real value reads as a failed autofill
 - A value-free reporting rule guards the print, not the reuse hours later
+- Running the harness config without naming a file re-runs every harness under `.runtime/`
 
 ### Tests, Playwright and the gate
 
@@ -1009,3 +1011,17 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: `Select-String -Path .next\server\**\*.js` treats `**` as a single-level wildcard. It matches `.next/server/chunks/*.js` and stops; `.next/server/chunks/ssr/*.js` is one level deeper and is never opened. The count is therefore a function of how the bundler happened to nest the chunks, not of what the build targets.
 - Avoid: enumerate the files first and pipe them in — `Get-ChildItem -Path .next\server -Recurse -Filter *.js -File | Select-String -Pattern … -List`. Print the file count alongside the match count, so a search that scanned the wrong tree is visible rather than inferred: 147 files scanned is a plausible `.next/server`, and a number far below that is the tell.
 - Verify: 2026-08-13, during the D-102 gate. The glob reported 3 and the recursive enumeration reported 4, from the same build, with the fourth match in `.next/server/chunks/ssr/`. **The failure direction is the dangerous one**: this check exists to prove no chunk carries the hosted project, and a search that quietly skips a directory would report zero for a chunk it never opened. Read the file count, not only the match count.
+
+## A misread separator hides the label, not just the value, and the field reads as "not printed"
+
+- Symptom: a card's timestamp is refused as `LABEL_NOT_FOUND` on most SCB Connect cards, which reads as *this layout does not print a timestamp on this card*. The value grammar is blameless and gets debugged anyway. Measured: **7 of 19 real cards** refused their date this way, against 2 that reached the value grammar and failed there.
+- Cause: D-113 established that `/` comes back as `|` or `!` on essentially every card, and treated it as a problem for a date's **value**. Two of the wordings this grammar anchors on carry a slash themselves — SCB Connect's `วันที่/เวลา` and KBank Live's outgoing title `รายการโอน/ถอน` — so the same misread makes the **anchor** unfindable. `normalise` does not repair it, and a label that does not match is indistinguishable from a label that is not there.
+- Avoid: repair the separator before matching any label or title, not only before parsing a figure (`repairSeparators` in `lib/notification-card-ocr.ts`). It is safe there for a stronger reason than in the value path: that text matches labels only, never builds a crop and never yields a digit, so no substitution can move a pixel or a figure. **Look for this class wherever a label contains punctuation an engine confuses** — the fix belongs at every anchor, not at the one field whose number was being investigated.
+- Verify: 2026-08-16. Date and time went **10/19 → 12/19** on the real sample with amount, balance, own account and the card count all unchanged; five labels remain garbled some other way. A test asserts the crop is identical with and without the misread.
+
+## Running the harness config without naming a file re-runs every harness under `.runtime/`
+
+- Symptom: a measurement run prints results for a harness nobody invoked, and a file of real values that was awaiting the owner's marking is silently rewritten.
+- Cause: `.runtime/vitest.harness.config.ts` includes `.runtime/**/*.harness.ts`, so `pnpm vitest run --config .runtime/vitest.harness.config.ts` collects **every** harness present, not the one being worked on. Harnesses here write their output files unconditionally, so an unrelated one re-running overwrites whatever state that file had accumulated.
+- Avoid: always name the harness file as well as the config. Before running anything under that config, list `.runtime/` and see what else is there — harnesses are deleted after use precisely so this cannot happen, and one left in place is the hazard.
+- Verify: 2026-08-16. A run intended for a new harness also re-ran D-113's and rewrote `.runtime/card-ocr-readings.tsv`; the values were identical but any y/n marks on it were lost, and marking that file is the only open way to establish whether an accepted figure was correct.
