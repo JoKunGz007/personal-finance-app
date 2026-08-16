@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { layoutForChannel } from "@/lib/notification-card";
 import {
   CARD_FIELDS,
+  cardReadingScale,
   findCards,
   locateCardField,
   locateCardFields,
@@ -216,6 +217,48 @@ describe("a separator misread must not make a label unfindable", () => {
     const a = locateCardField(clean, SCB, "out", "occurredAt");
     const b = locateCardField(misread, SCB, "out", "occurredAt");
     expect(a.ok && b.ok && a.value).toEqual(b.ok && b.value);
+  });
+});
+
+// Measured 2026-08-16 over 12 real screenshots and 25 cards: reading a card at 2× fills 70 of 100
+// digit-bearing fields against 62 at native size, with the same 25 cards found and none lost. The
+// cap is what makes it shippable rather than a tidiness bound — the samples are full phone
+// screenshots and a flat 2× asks for a canvas up to 7680px tall, which iOS Safari will not give.
+describe("how much a card screenshot is enlarged before it is read", () => {
+  it("doubles a screenshot small enough to double", () => {
+    expect(cardReadingScale(780, 1582)).toBe(2);
+    expect(cardReadingScale(870, 1882)).toBe(2);
+  });
+
+  // The owner's own phone takes 1170 x 2532, so this is the ordinary case rather than an edge.
+  it("holds a tall screenshot to what a canvas will actually accept", () => {
+    const scale = cardReadingScale(1170, 2532);
+    expect(scale).toBeGreaterThan(1);
+    expect(scale).toBeLessThan(2);
+    expect(2532 * scale).toBeLessThanOrEqual(4096);
+  });
+
+  // One sample is 721 x 3840. Doubling it would ask for 7680px of height.
+  it("barely enlarges a screenshot that is already nearly too tall", () => {
+    const scale = cardReadingScale(721, 3840);
+    expect(3840 * scale).toBeLessThanOrEqual(4096);
+  });
+
+  // **Never below 1.** Shrinking would throw away the detail this exists to recover, and the
+  // engine reads a native-size image acceptably today — so the floor is the current behaviour.
+  it("never shrinks, whatever it is given", () => {
+    expect(cardReadingScale(8000, 8000)).toBe(1);
+    expect(cardReadingScale(20000, 20000)).toBe(1);
+    expect(cardReadingScale(0, 0)).toBe(1);
+    expect(cardReadingScale(-5, 100)).toBe(1);
+  });
+
+  it("keeps every result inside the area a canvas will allocate", () => {
+    for (const [width, height] of [[780, 1582], [870, 1882], [1170, 2532], [721, 3840], [3000, 3000]]) {
+      const scale = cardReadingScale(width!, height!);
+      expect(width! * scale * height! * scale).toBeLessThanOrEqual(16_777_216);
+      expect(Math.max(width! * scale, height! * scale)).toBeLessThanOrEqual(4096);
+    }
   });
 });
 

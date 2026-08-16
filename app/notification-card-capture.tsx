@@ -16,6 +16,7 @@ import {
 } from "@/lib/notification-card";
 import {
   CARD_FIELDS,
+  cardReadingScale,
   cardText,
   findCards,
   locateCardFields,
@@ -37,28 +38,61 @@ type Channel = NotificationCardLayout["channel"];
 const CROP_TARGET_WIDTH = 720;
 const CROP_MAX_SCALE = 4;
 
-async function cropRegion(file: File, box: Box): Promise<string | null> {
+/**
+ * The one image both the reader and the crops work from.
+ *
+ * **They must be the same image, and this type is what stops them drifting apart.** The reader
+ * returns a box in the coordinate space of whatever it read; a crop cut from a *different* image
+ * with that box lands somewhere else entirely. Enlarging for the reader and cropping from the
+ * original file would do exactly that, silently, and the symptom would be crops of the wrong rows
+ * rather than an error.
+ */
+// Narrowed to the two the engine also accepts, so the same value can be read and cropped from
+// without a cast standing between them.
+type CardImage = { readonly source: ImageBitmap | HTMLCanvasElement; readonly width: number; readonly height: number };
+
+/**
+ * Decodes the screenshot and enlarges it if that will help the reader (`cardReadingScale`).
+ *
+ * Card-only by construction: this runs at the card form's call site and `lib/slip-ocr-engine.ts`
+ * is untouched, so slip capture still reads at native size — which is what D-087 measured and what
+ * that entry's ladder warning is about.
+ */
+async function loadCardImage(file: File): Promise<CardImage> {
   const bitmap = await createImageBitmap(file);
-  try {
-    const crop = paddedCrop(box, { width: bitmap.width, height: bitmap.height });
-    const width = crop.right - crop.left;
-    const height = crop.bottom - crop.top;
-    if (width <= 0 || height <= 0) return null;
-    const scale = Math.min(CROP_MAX_SCALE, Math.max(1, CROP_TARGET_WIDTH / width));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(width * scale);
-    canvas.height = Math.round(height * scale);
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-    context.drawImage(bitmap, crop.left, crop.top, width, height, 0, 0, canvas.width, canvas.height);
-    // A data URL rather than an object URL: bounded by the crop, needs no revoking, and dies
-    // with the component state. `img-src` already permits `data:` (D-058).
-    return canvas.toDataURL("image/png");
-  } finally {
-    bitmap.close();
-  }
+  const scale = cardReadingScale(bitmap.width, bitmap.height);
+  if (scale <= 1) return { source: bitmap, width: bitmap.width, height: bitmap.height };
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const context = canvas.getContext("2d");
+  // A canvas this size can be refused. Falling back to the bitmap is the honest outcome — the
+  // reader is simply as good as it was before, rather than the capture failing.
+  if (!context) return { source: bitmap, width: bitmap.width, height: bitmap.height };
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return { source: canvas, width: canvas.width, height: canvas.height };
+}
+
+function cropRegion(image: CardImage, box: Box): string | null {
+  const crop = paddedCrop(box, { width: image.width, height: image.height });
+  const width = crop.right - crop.left;
+  const height = crop.bottom - crop.top;
+  if (width <= 0 || height <= 0) return null;
+  const scale = Math.min(CROP_MAX_SCALE, Math.max(1, CROP_TARGET_WIDTH / width));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image.source, crop.left, crop.top, width, height, 0, 0, canvas.width, canvas.height);
+  // A data URL rather than an object URL: bounded by the crop, needs no revoking, and dies
+  // with the component state. `img-src` already permits `data:` (D-058).
+  return canvas.toDataURL("image/png");
 }
 
 /**
@@ -107,7 +141,9 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
   const window_ = useMemo(() => notificationCardDateWindow(new Date()), []);
   const [open, setOpen] = useState(false);
   const [channel, setChannel] = useState<Channel | "">("");
-  const [image, setImage] = useState<File | null>(null);
+  // No `image` state: the file is read once into `cardImage` below and never needed again.
+  // Holding the `File` as well invited the defect this change exists to prevent — two images in
+  // play, one read and one cropped from, with boxes that only match the first.
   const [regions, setRegions] = useState<CardRegion[] | null>(null);
   const [chosen, setChosen] = useState(0);
   const [crops, setCrops] = useState<Partial<Record<CardFieldName, string>>>({});
@@ -155,6 +191,13 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
    * submitted belongs to the other, and the row it writes is append-only.
    */
   const cropPass = useRef(0);
+
+  /**
+   * The enlarged screenshot the current reading came from, kept so a card switch re-crops from
+   * the **same** image the boxes were measured in. A ref rather than state: nothing renders from
+   * it, and putting a canvas in state would re-render the form on every read.
+   */
+  const cardImage = useRef<CardImage | null>(null);
 
   // The worker is a module-scope singleton shared with slip capture, which now sits on this same
   // page — so releasing it here on *close* would terminate a worker the slip form might be
@@ -314,7 +357,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     setOffered(remembered);
   }
 
-  async function showCard(file: File, found: CardRegion[], index: number) {
+  async function showCard(image: CardImage, found: CardRegion[], index: number) {
     const picked = found[index];
     if (!layout || !picked) return;
     const pass = ++cropPass.current;
@@ -330,9 +373,11 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
         if (read.code !== "NOT_PRINTED") nextNotes[field] = read.message;
         continue;
       }
-      const crop = await cropRegion(file, read.value);
-      // Checked inside the loop as well as after it: a superseded pass should stop decoding
-      // full-size bitmaps rather than finish the work and throw it away.
+      // The box and the image share one coordinate space by construction — `readImage` read
+      // this same `CardImage`, so an enlargement cannot move a crop off its row.
+      const crop = cropRegion(image, read.value);
+      // Checked inside the loop as well as after it: a superseded pass should stop cutting
+      // regions rather than finish the work and throw it away.
       if (pass !== cropPass.current) return;
       if (crop === null) nextNotes[field] = "That region could not be cut out of this image.";
       else nextCrops[field] = crop;
@@ -362,7 +407,11 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     // values, an untouched form would report agreement with a reading of a different card.
     setOffered({});
     try {
-      const words: OcrWord[] | null = await readSlipWords(file);
+      // Enlarged once, then used for both the reading and the crops. Holding it lets a card
+      // switch re-crop without decoding the screenshot again.
+      const card = await loadCardImage(file);
+      cardImage.current = card;
+      const words: OcrWord[] | null = await readSlipWords(card.source);
       if (!words) {
         setReaderNote("The card reader could not start in this browser. Read the card yourself and type the values.");
         return;
@@ -376,7 +425,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
       }
       setRegions(found);
       setChosen(0);
-      await showCard(file, found, 0);
+      await showCard(card, found, 0);
     } catch {
       setReaderNote("This image could not be read. Type the values from the card yourself.");
     } finally {
@@ -402,7 +451,8 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     cropPass.current += 1;
     setOpen(false);
     setChannel("");
-    setImage(null);
+
+    cardImage.current = null;
     setRegions(null);
     setCrops({});
     setNotes({});
@@ -579,7 +629,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                   // picked again, so leaving the filename on screen would strand the owner with
                   // a form that shows a chosen file and no way to re-read it.
                   setChannel(event.target.value as Channel | "");
-                  setImage(null);
+                  cardImage.current = null;
                   if (fileInput.current) fileInput.current.value = "";
                   cropPass.current += 1;
                   setRegions(null);
@@ -605,7 +655,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                 disabled={busy || reading || layout === null}
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
-                  setImage(file);
+
                   if (file) void readImage(file);
                 }}
               />
@@ -632,11 +682,13 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                   const index = Number(event.target.value);
                   setChosen(index);
                   resetTyped();
-                  // Guarded, unlike the call inside `readImage`: `cropRegion` can reject on an
-                  // image the decoder will not take, and an unhandled rejection here would leave
-                  // the previous card's crops on screen as though they were this one's.
-                  if (image && regions) {
-                    void showCard(image, regions, index).catch(() => {
+                  // Guarded, unlike the call inside `readImage`: a crop can still fail on an
+                  // image the decoder mangled, and an unhandled rejection here would leave the
+                  // previous card's crops on screen as though they were this one's. **The held
+                  // image is what makes this correct**, not the file — the boxes were measured in
+                  // its coordinate space, and re-decoding the file would put them off their rows.
+                  if (cardImage.current && regions) {
+                    void showCard(cardImage.current, regions, index).catch(() => {
                       setNotes({ amount: "This card's fields could not be cut out of the image. Read them from the card itself." });
                       setCrops({});
                     });
