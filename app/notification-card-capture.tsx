@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { bangkokToday } from "@/lib/dates";
 import { formatThb, parseThb } from "@/lib/money";
 import { BUDDHIST_ERA_OFFSET, paddedCrop, type Box } from "@/lib/slip-ocr";
-import { readSlipWords, releaseSlipOcr } from "@/lib/slip-ocr-engine";
 import {
   NOTIFICATION_CARD_LAYOUTS,
   kindForDirection,
@@ -16,7 +15,6 @@ import {
 } from "@/lib/notification-card";
 import {
   CARD_FIELDS,
-  cardReadingScale,
   cardText,
   findCards,
   locateCardFields,
@@ -45,35 +43,92 @@ const CROP_MAX_SCALE = 4;
  * returns a box in the coordinate space of whatever it read; a crop cut from a *different* image
  * with that box lands somewhere else entirely. Enlarging for the reader and cropping from the
  * original file would do exactly that, silently, and the symptom would be crops of the wrong rows
- * rather than an error.
+ * rather than an error. Nothing rescales anything now (`loadCardImage`), so the two cannot differ
+ * — but the type stays the one value both go through, because that is what kept them together.
  */
-// Narrowed to the two the engine also accepts, so the same value can be read and cropped from
-// without a cast standing between them.
-type CardImage = { readonly source: ImageBitmap | HTMLCanvasElement; readonly width: number; readonly height: number };
+type CardImage = { readonly source: ImageBitmap; readonly width: number; readonly height: number };
 
 /**
- * Decodes the screenshot and enlarges it if that will help the reader (`cardReadingScale`).
+ * Decodes the screenshot at its native size, which under Vision is all the reader wants.
  *
- * Card-only by construction: this runs at the card form's call site and `lib/slip-ocr-engine.ts`
- * is untouched, so slip capture still reads at native size — which is what D-087 measured and what
- * that entry's ladder warning is about.
+ * **The 2× enlargement is gone with the engine that needed it** (D-117, D-120). It was a tesseract
+ * remedy: reading a card at 2× filled 70 of 100 fields against 62 at native size. Measured again
+ * through the shipped Vision path over the same 12 screenshots, native size finds 25 of 25 cards
+ * and offers 99 of 100 fields — the enlargement buys nothing and would cost up to four times the
+ * bytes uploaded to a third party. Its lesson survives its mechanism: a measurement taken on slips
+ * does not govern cards, which is what D-117 is remembered for.
+ *
+ * Keeping the image at native size also removes the coordinate-space hazard by construction. The
+ * bytes sent to the reader and the pixels the crops are cut from are now the same image at the
+ * same scale, so no box needs rescaling and none can silently land on the wrong row.
  */
 async function loadCardImage(file: File): Promise<CardImage> {
   const bitmap = await createImageBitmap(file);
-  const scale = cardReadingScale(bitmap.width, bitmap.height);
-  if (scale <= 1) return { source: bitmap, width: bitmap.width, height: bitmap.height };
+  return { source: bitmap, width: bitmap.width, height: bitmap.height };
+}
+
+/**
+ * The card as PNG bytes for the reader route.
+ *
+ * **Re-encoded rather than forwarded, and that is what makes the format question go away.** The
+ * file picker accepts `image/*`, so an iPhone can hand this form a HEIC that Vision cannot decode;
+ * anything the *browser* decoded into a bitmap re-encodes to a PNG it can. The pixels are the ones
+ * already decoded, so this changes nothing about what the reader sees — a PNG of a decoded JPEG
+ * carries the same pixels the JPEG did, which is why the measurement over half-JPEG samples
+ * transfers to it unchanged.
+ */
+async function encodeCardForReader(image: CardImage): Promise<Blob | null> {
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
+  canvas.width = image.width;
+  canvas.height = image.height;
   const context = canvas.getContext("2d");
-  // A canvas this size can be refused. Falling back to the bitmap is the honest outcome — the
-  // reader is simply as good as it was before, rather than the capture failing.
-  if (!context) return { source: bitmap, width: bitmap.width, height: bitmap.height };
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return { source: canvas, width: canvas.width, height: canvas.height };
+  if (!context) return null;
+  context.drawImage(image.source, 0, 0);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
+/**
+ * Reads the card's words, through this app's own reader route (`PLAN.md` task 35, D-120).
+ *
+ * **The screenshot leaves the device here, and the form says so on screen** — this is the one place
+ * in the app where that happens, and it is the card path only. Slip capture and statement import
+ * both still read entirely on the device.
+ *
+ * The route relays to Google Cloud Vision, which fills 99 of 100 digit-bearing fields against the
+ * local engine's 70 (D-118, D-119). **There is no local fallback and that is the decision, not an
+ * omission** (D-120): a failure leaves every box blank and the owner types the card, exactly as
+ * before pre-fill existed, and keeping a second engine behind the same grammar would mean measuring
+ * every future grammar change twice.
+ *
+ * A refusal comes back as a sentence rather than a code because it is shown to the owner beside the
+ * form. Every one of them ends the same way — type the values — since that is the remedy in all
+ * cases.
+ */
+type CardWordsRead = { readonly ok: true; readonly words: OcrWord[] } | { readonly ok: false; readonly why: string };
+
+const READER_UNAVAILABLE = "The card reader could not be reached. Read the card yourself and type the values.";
+
+async function readCardWords(image: CardImage): Promise<CardWordsRead> {
+  const encoded = await encodeCardForReader(image);
+  if (!encoded) return { ok: false, why: "This image could not be prepared for the reader. Type the values from the card yourself." };
+
+  let response: Response;
+  try {
+    response = await fetch("/api/v1/notification-cards/read", {
+      method: "POST",
+      headers: { "Content-Type": "image/png" },
+      body: encoded
+    });
+  } catch {
+    return { ok: false, why: READER_UNAVAILABLE };
+  }
+
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) return { ok: false, why: readError(body, READER_UNAVAILABLE) };
+
+  const words = (body as { words?: OcrWord[] } | null)?.words;
+  if (!Array.isArray(words)) return { ok: false, why: READER_UNAVAILABLE };
+  return { ok: true, words };
 }
 
 function cropRegion(image: CardImage, box: Box): string | null {
@@ -193,19 +248,11 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
   const cropPass = useRef(0);
 
   /**
-   * The enlarged screenshot the current reading came from, kept so a card switch re-crops from
-   * the **same** image the boxes were measured in. A ref rather than state: nothing renders from
-   * it, and putting a canvas in state would re-render the form on every read.
+   * The screenshot the current reading came from, kept so a card switch re-crops from the **same**
+   * image the boxes were measured in. A ref rather than state: nothing renders from it, and putting
+   * a bitmap in state would re-render the form on every read.
    */
   const cardImage = useRef<CardImage | null>(null);
-
-  // The worker is a module-scope singleton shared with slip capture, which now sits on this same
-  // page — so releasing it here on *close* would terminate a worker the slip form might be
-  // mid-`recognize` on, and that surfaces there as "the amount finder could not start in this
-  // browser", the message reserved for an engine that is unavailable. Released on unmount only,
-  // exactly as `app/slip-capture.tsx` does it, which is also what keeps a reopen from re-fetching
-  // 3.9 MB the worker reuse exists to avoid.
-  useEffect(() => () => { void releaseSlipOcr(); }, []);
 
   const layout = channel === "" ? null : layoutForChannel(channel);
   const region = regions?.[chosen] ?? null;
@@ -407,16 +454,16 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     // values, an untouched form would report agreement with a reading of a different card.
     setOffered({});
     try {
-      // Enlarged once, then used for both the reading and the crops. Holding it lets a card
-      // switch re-crop without decoding the screenshot again.
+      // Decoded once, then used for both the reading and the crops. Holding it lets a card switch
+      // re-crop without decoding the screenshot again.
       const card = await loadCardImage(file);
       cardImage.current = card;
-      const words: OcrWord[] | null = await readSlipWords(card.source);
-      if (!words) {
-        setReaderNote("The card reader could not start in this browser. Read the card yourself and type the values.");
+      const words = await readCardWords(card);
+      if (!words.ok) {
+        setReaderNote(words.why);
         return;
       }
-      const found = findCards(words, layout);
+      const found = findCards(words.words, layout);
       if (found.length === 0) {
         setReaderNote(
           `No ${layout.channel} card was found on this image. Check the channel above is the conversation this screenshot came from — an in-app transaction list is not a card and is not captured here.`
@@ -667,6 +714,14 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
             on an incoming card, so the conversation you took the screenshot in is the only thing
             that says which bank it is — and getting it wrong reads the account digits with the
             wrong rule.
+          </p>
+
+          {/* Said on the screen where it happens rather than only in a document, because it is the
+              one place in this app where an image leaves the device (D-120). Statement import and
+              slip capture are both still read entirely on the device. */}
+          <p className="field-help">
+            The screenshot is sent to Google Cloud Vision to be read, and is not stored anywhere.
+            Every figure it offers is still yours to check before you save.
           </p>
 
           {reading && <p className="status" role="status">Reading the card&hellip;</p>}

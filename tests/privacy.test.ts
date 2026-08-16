@@ -596,20 +596,53 @@ describe("privacy guardrails", () => {
     expect(reader).not.toMatch(/setDirection\(/u);
   });
 
-  it("does not terminate an OCR worker that the slip form on the same page is sharing", () => {
+  it("sends a card screenshot to this app's own origin and nowhere else", () => {
     const form = readFileSync("app/notification-card-capture.tsx", "utf8");
     const bench = readFileSync("app/slips-bench.tsx", "utf8");
-    // The two capture forms now sit on one route, and `lib/slip-ocr-engine.ts` holds a single
-    // module-scope worker. Releasing it on *close* rather than on unmount would terminate a
-    // worker the slip form might be mid-recognise on, which surfaces there as "the amount finder
-    // could not start in this browser" — the message reserved for an unavailable engine.
+    // D-120 adopted Cloud Vision for the **card** path, and the whole reason there is a route in
+    // front of it is that the browser must not hold the key or name the third party. A `fetch` in
+    // this file with an absolute URL would put both back — the key in a `NEXT_PUBLIC_` value the
+    // page hands to anyone who loads it, and `vision.googleapis.com` in `connect-src`. The CSP
+    // would refuse it today, and the policy is the backstop rather than the reason (D-058).
     expect(bench).toContain("NotificationCardCapture");
     expect(bench).toContain("SlipCapture");
-    const close = /function closeForm\(\)[\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(close, "closeForm must exist for this test to mean anything").toContain("setOpen(false)");
-    expect(close).not.toMatch(/releaseSlipOcr/u);
-    // Released on unmount, exactly as `app/slip-capture.tsx` does it.
-    expect(form).toMatch(/useEffect\(\(\) => \(\) => \{ void releaseSlipOcr\(\); \}, \[\]\)/u);
+    expect(form, "no absolute URL belongs in a capture form").not.toMatch(/https?:\/\//u);
+    expect(form).toMatch(/fetch\("\/api\/v1\/notification-cards\/read"/u);
+    expect(form, "the API key belongs to the route and must never be read in the browser")
+      .not.toMatch(/GOOGLE_VISION_KEY|X-Goog-Api-Key/u);
+
+    // **The local engine is the slip form's alone now.** Keeping a tesseract fallback here was
+    // refused deliberately (D-120), and a re-added one would put two engines behind one grammar
+    // — the trap D-119 names, where `findCards` depends on where an engine breaks a Thai run.
+    // Matched on the identifiers and the import rather than on the word "tesseract", so the note
+    // in `loadCardImage` explaining why the enlargement went away does not fail this.
+    expect(form, "the card path has no local engine and no fallback to one")
+      .not.toMatch(/readSlipWords|releaseSlipOcr|slip-ocr-engine/u);
+    // The slip form still does, unchanged, which is the half of the on-device promise that stands.
+    expect(readFileSync("app/slip-capture.tsx", "utf8")).toMatch(/readSlipWords/u);
+  });
+
+  it("keeps the Vision key out of every file except the one route that uses it", () => {
+    const engine = readFileSync("lib/notification-card-vision.ts", "utf8");
+    const route = readFileSync("app/api/v1/notification-cards/read/route.ts", "utf8");
+
+    // The key is a parameter here, never an environment read, so this module is drivable by a test
+    // and by the measurement harness without either holding a credential — and nothing in it can
+    // log a value it does not have.
+    expect(engine, "the engine module must not read the key from the environment")
+      .not.toMatch(/process\.env/u);
+    expect(engine).toMatch(/apiKey: string/u);
+    // Neither the image nor the recognised words may reach a log. The route relays a screenshot to
+    // a third party, so its own logs are the one place that disclosure could quietly double.
+    for (const [name, source] of [["engine", engine], ["route", route]] as const) {
+      expect(source, `${name} must not log`).not.toMatch(/console\.(log|error|warn|info|debug)/u);
+    }
+    // Vision's own message can quote the image it read, so a refusal is mapped to this app's
+    // words rather than echoed.
+    expect(route).not.toMatch(/error\.message|\.error\?\.message/u);
+    // Read at the point of use, so a deployment adding the key needs no rebuild and a missing one
+    // is a refusal the owner can act on rather than a build failure somewhere unrelated.
+    expect(route).toMatch(/process\.env\.GOOGLE_VISION_KEY/u);
   });
 
   it("keeps the session in cookies, which is the only client storage this app has", () => {

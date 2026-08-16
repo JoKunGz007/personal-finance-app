@@ -535,4 +535,103 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
     expect(mismatched.status).toBe(422);
   });
   });
+
+  // The reader route (D-120, `PLAN.md` task 35), which is the only route in this app that reads a
+  // body which is not JSON and the only one that talks to a third party.
+  //
+  // **What is provable here is the wiring and the guards**, not the recognition: the accuracy claim
+  // is a measurement over real screenshots, and the mapping from a Vision response is covered by
+  // `tests/notification-card-vision.test.ts` with an injected `fetch`. What only this layer can show
+  // is that the guards run *before* anything leaves the machine, and that a missing key refuses
+  // rather than calling out unauthenticated.
+  describe("reading a card screenshot", () => {
+    const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    async function readCard(body: BodyInit, contentType: string) {
+      const { POST } = await import("@/app/api/v1/notification-cards/read/route");
+      const response = await POST(new Request("http://localhost/api/v1/notification-cards/read", {
+        method: "POST",
+        headers: { "Content-Type": contentType },
+        body
+      }));
+      return { status: response.status, body: await response.json().catch(() => null) };
+    }
+
+    it("refuses anything that is not an image Vision decodes", async () => {
+      // The relay is the reason this is stricter than it needs to be: whatever this route accepts,
+      // it forwards to a third party.
+      expect((await readCard("{}", "application/json")).status).toBe(415);
+      expect((await readCard(PNG, "image/heic")).status).toBe(415);
+      expect((await readCard(PNG, "text/plain")).status).toBe(415);
+    });
+
+    it("takes the media type without its parameters", async () => {
+      // A browser sends `image/png` bare, but a `charset` or `boundary` parameter must not turn an
+      // accepted type into a refusal — the failure would look like a broken reader, not a guard.
+      vi.stubEnv("GOOGLE_VISION_KEY", "");
+      expect((await readCard(PNG, "image/png; charset=binary")).status).toBe(503);
+    });
+
+    it("refuses an empty body and one larger than it will forward", async () => {
+      vi.stubEnv("GOOGLE_VISION_KEY", "");
+      expect((await readCard(new Uint8Array(0), "image/png")).status).toBe(422);
+      const tooLarge = new Uint8Array(4 * 1024 * 1024 + 1);
+      const refused = await readCard(tooLarge, "image/png");
+      expect(refused.status).toBe(413);
+    });
+
+    it("refuses without calling out when no key is configured", async () => {
+      // 503 rather than 500: the deployment is missing a value, the owner can still type the card,
+      // and the message says so. The size and type guards above having run first is the point —
+      // nothing was sent anywhere to find this out.
+      vi.stubEnv("GOOGLE_VISION_KEY", "");
+      const refused = await readCard(PNG, "image/png");
+      expect(refused.status).toBe(503);
+      expect((refused.body as { error?: string }).error).toMatch(/not configured/iu);
+    });
+
+    it("sends the image to Vision and returns the words it read", async () => {
+      vi.stubEnv("GOOGLE_VISION_KEY", "test-key-not-a-real-one");
+      const realFetch = globalThis.fetch;
+      let sent: { url: string; headers: Record<string, string>; body: string } | null = null;
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        // Everything that is not Vision — the owner's own session lookup — goes to the real one.
+        if (!url.startsWith("https://vision.googleapis.com")) return realFetch(input as RequestInfo, init);
+        sent = {
+          url,
+          headers: (init?.headers ?? {}) as Record<string, string>,
+          body: String(init?.body ?? "")
+        };
+        return new Response(JSON.stringify({
+          responses: [{
+            fullTextAnnotation: {
+              pages: [{ blocks: [{ paragraphs: [{ words: [{
+                symbols: [{ text: "บ" }, { text: "า" }, { text: "ท" }],
+                boundingBox: { vertices: [{ x: 4, y: 8 }, { x: 40, y: 8 }, { x: 40, y: 30 }, { x: 4, y: 30 }] }
+              }] }] }] }]
+            }
+          }]
+        }), { status: 200 });
+      }) as typeof fetch;
+
+      try {
+        const read = await readCard(PNG, "image/png");
+        expect(read.status).toBe(200);
+        expect((read.body as { words: unknown[] }).words)
+          .toEqual([{ text: "บาท", left: 4, top: 8, right: 40, bottom: 30 }]);
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+
+      const request = sent as unknown as { url: string; headers: Record<string, string>; body: string } | null;
+      expect(request, "the route must have called Vision").not.toBeNull();
+      // The key travels in a header, never in the URL, which is the half that reaches access logs.
+      expect(request!.url).not.toContain("test-key-not-a-real-one");
+      expect(request!.headers["X-Goog-Api-Key"]).toBe("test-key-not-a-real-one");
+      // And the bytes this route was given are the bytes it forwarded, base64 as Vision wants them.
+      const parsed = JSON.parse(request!.body) as { requests: Array<{ image: { content: string } }> };
+      expect(parsed.requests[0]!.image.content).toBe(Buffer.from(PNG).toString("base64"));
+    });
+  });
 });

@@ -57,48 +57,19 @@ import {
 export { paddedCrop, type Box, type OcrWord };
 
 /**
- * How much to enlarge a card screenshot before reading it, and why enlarging helps here when
- * D-087 measured that it hurts on a slip.
+ * **A card is read at its native size, and there is no longer a scale here.**
  *
- * **Measured 2026-08-16 over 12 real screenshots and 25 cards**: reading them at 2× fills
- * **70 of 100** digit-bearing fields against **62** at native size, with the same 25 cards found
- * and none lost. The gain is concentrated where the engine was mangling the account mask — the
- * printed digits went from 3 of 9 to 9 of 9 on Krungthai Connext — and the balance from 17 to 20
- * overall.
+ * `cardReadingScale` lived here from D-117 until D-120 and enlarged a screenshot to a capped 2×
+ * before reading it, which lifted the local engine from 62 of 100 digit-bearing fields to 70. It
+ * went with the engine that needed it: measured through the shipped Vision path over the same 12
+ * screenshots, native size finds 25 of 25 cards and offers 99 of 100, so the enlargement bought
+ * nothing and would have cost up to four times the bytes leaving the device.
  *
- * **This does not contradict D-087, it is bounded away from it.** That entry measured a 2× cubic
- * upscale over 23 real *slips* on tesseract 6 and found it recovered one image and broke three, and
- * `lib/slip-ocr-engine.ts` still says the ladder must not be borrowed. Both remain true: this scale
- * is applied by the **card** form at its own call site, the shared engine is untouched, and slip
- * capture reads at native size exactly as before. A card is a different subject — small grey label
- * text in a screenshot of a phone notification, rather than a photographed receipt.
- *
- * **The cap is what makes it shippable, and it is not a tidiness bound.** The samples are full
- * phone screenshots — 1170×2532 and one 721×3840 — so a flat 2× asks for a canvas up to 7680px
- * tall. iOS Safari refuses or silently degrades a canvas past roughly 4096 on an edge or 16.7M
- * pixels, and the owner captures on an iPhone, so an uncapped scale would fail on the one device
- * this feature exists for. Capping costs **nothing measurable**: the capped rule scored the same
- * 70 of 100, because the images it holds back are the ones whose gain was marginal anyway.
- *
- * Returns 1 when no enlargement is possible or wanted, and a caller reading 1 should pass its
- * image through untouched rather than round-tripping it through a canvas for nothing.
+ * **The lesson outlived the mechanism and is why this note is here rather than only in git.** A
+ * measurement taken on slips does not govern cards — D-087's ladder, its accuracy claim and
+ * D-113's date grammar all failed to transfer — and the reverse holds too: this scale was measured
+ * on one engine and had no meaning for another.
  */
-const CARD_READ_SCALE = 2;
-const MAX_CANVAS_EDGE = 4096;
-const MAX_CANVAS_AREA = 16_777_216;
-
-export function cardReadingScale(width: number, height: number): number {
-  if (!(width > 0) || !(height > 0)) return 1;
-  const scale = Math.min(
-    CARD_READ_SCALE,
-    MAX_CANVAS_EDGE / width,
-    MAX_CANVAS_EDGE / height,
-    Math.sqrt(MAX_CANVAS_AREA / (width * height))
-  );
-  // Never below 1: shrinking an already-huge screenshot would throw away the detail this exists
-  // to recover, and the engine reads a native-size image acceptably today.
-  return scale > 1 ? scale : 1;
-}
 
 export const CARD_FIELDS = [
   "amount",
