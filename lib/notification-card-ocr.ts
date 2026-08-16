@@ -230,6 +230,39 @@ function labelAtLineStart(line: readonly OcrWord[], label: string): number | nul
   return null;
 }
 
+/**
+ * Whether a line **opens with** the given word, tolerating a glyph or two of leading noise.
+ *
+ * **Measured 2026-08-16 under Google Cloud Vision** (D-118): three screenshots yielded no card at
+ * all, and on two of them the direction word was present and began at offset 1 or 3 rather than 0 —
+ * every card layout prints a small icon beside its title, and that engine reads the icon as a
+ * character where tesseract dropped it. A strict `startsWith` therefore means "a line start *this*
+ * engine would produce", which is a dependency nothing declared.
+ *
+ * **Matching anywhere on the line is not the fix, and this is the trap.** A Krungthai `ประเภท` row
+ * carries a free-text transfer-kind phrase that *contains* the direction word `เงินออก`, and Thai
+ * has no separator to say it is part of something else — left unguarded it split one real card in
+ * two and aimed the amount's crop at the type row (`labelAtLineStart`, `findCards`).
+ *
+ * So the allowance is bounded twice, and the second bound is the load-bearing one:
+ *
+ *   * the word must begin within a few characters of the start; and
+ *   * **the characters it skips must contain no Thai consonant**, so what is skipped is an icon or
+ *     a stray mark rather than the beginning of a Thai word. `ประเภท` opens with `ป`, a consonant,
+ *     so a label row is refused outright however short it is — the guard does not rely on the
+ *     length bound to catch it.
+ */
+const THAI_CONSONANT = /[ก-ฮ]/u;
+const MAX_LEADING_GLYPHS = 3;
+
+export function opensWith(line: string, wanted: string): boolean {
+  const at = line.indexOf(wanted);
+  if (at < 0) return false;
+  if (at === 0) return true;
+  if (at > MAX_LEADING_GLYPHS) return false;
+  return !THAI_CONSONANT.test(line.slice(0, at));
+}
+
 type LabelHit = { index: number; labelRight: number };
 
 function findCardLabelLine(
@@ -339,7 +372,7 @@ export function findCards(words: readonly OcrWord[], layout: NotificationCardLay
     // The word has to *begin* the row, not merely appear on it. A Krungthai `ประเภท` row can
     // carry a transfer-kind phrase containing `เงินออก`, and without this it starts a phantom
     // card — see `labelAtLineStart`, which is the same rule for the same reason.
-    if (map === null || !text.startsWith(normalise(map.directionWord))) return;
+    if (map === null || !opensWith(text, normalise(map.directionWord))) return;
     starts.push({ index, direction: reading.direction });
   });
   return starts.map((start, position) => {
@@ -365,7 +398,7 @@ function findTitleLine(
   const map = fieldMapFor(layout, direction);
   if (map === null) return null;
   const wanted = normalise(map.directionWord);
-  const hits = lines.flatMap((line, index) => (lineText(line).startsWith(wanted) ? [index] : []));
+  const hits = lines.flatMap((line, index) => (opensWith(lineText(line), wanted) ? [index] : []));
   // Two title-shaped lines is a refusal rather than a first-match, for the same reason a
   // doubled label is: picking one would be a guess wearing a result's clothing.
   return hits.length === 1 ? hits[0]! : null;

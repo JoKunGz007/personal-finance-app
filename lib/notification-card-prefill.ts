@@ -2,6 +2,7 @@ import { isoDateSchema } from "@/lib/dates";
 import { parseThb } from "@/lib/money";
 import { resolveCardYear, type NotificationCardLayout } from "@/lib/notification-card";
 import type { Box, CardFieldName, CardOcrRead, OcrWord } from "@/lib/notification-card-ocr";
+import { MONTH_ALTERNATION, THAI_MONTH_TOKENS, groupIntoLines, normalise } from "@/lib/slip-ocr";
 
 /**
  * What a card's located fields would offer a form, or why they offer nothing (PLAN task 34 part 1).
@@ -44,13 +45,12 @@ import type { Box, CardFieldName, CardOcrRead, OcrWord } from "@/lib/notificatio
  *
  * ## Two limits worth knowing before reading the numbers
  *
- * **KBank Live's timestamp is not read at all, and adding a reader for it was measured to be worth
- * nothing.** That layout prints a Thai month name rather than a slashed date, so it was the obvious
- * gap; one was built and run against the real samples on 2026-08-16 and filled **0 of 2**, because
- * the month token does not survive recognition. See `readTimestamp` for the detail and for what
- * would justify revisiting it. **The date field's real constraint is upstream of this module**: on
- * the same 19 cards, 7 date refusals are the reader declining to locate the field at all, against 2
- * that reach this module and fail here.
+ * **Both printed date forms are read: slashed, and KBank Live's Thai month name.** The month-name
+ * reader was built, measured at **0 of 2** and removed on 2026-08-16 (D-117) because the local
+ * engine could not see those rows at all — then restored the same day once Cloud Vision read them
+ * and this grammar was what refused them (D-118). That history is the point rather than noise: a
+ * feature that does not work and a feature whose input never arrives look identical from the
+ * outside, and only a measurement separates them.
  *
  * **The money shape wants printed thousands separators.** `MONEY` accepts `1,234.00` and `234.00`
  * but not an ungrouped `1234.00`, because that is how the three layouts print
@@ -132,9 +132,32 @@ function refuse(code: PrefillRefusal, why: string): { ok: false; code: PrefillRe
 
 /** A money magnitude as a card prints it. No sign: that is read separately and reported separately. */
 const MONEY = /^\d{1,3}(?:,\d{3})*(?:\.\d{2})?$/u;
-/** A date as a card prints it, both era forms. **Separators must be real**, which is the point. */
+/** A slashed date, as two of the three layouts print it. **Separators must be real**, the point. */
 const PRINTED_DATE = /^(\d{2})\/(\d{2})\/(\d{2}|\d{4})$/u;
 const PRINTED_TIME = /^([01]\d|2[0-3]):[0-5]\d$/u;
+
+/**
+ * A date printed with a Thai month name, which is KBank Live's form and only its form.
+ *
+ * That layout prints `d <thai-month-abbrev> yy hh:mm` then the marker `น.`, with no label at all
+ * (`docs/NOTIFICATION_CARD_CONTRACT.md`). Nothing slashed appears on it, so a reader knowing only
+ * the slashed form refuses every KBank timestamp.
+ *
+ * **This was built, measured at zero and removed once already the same day** (D-117), because the
+ * local engine could not see those rows at all — the grammar was never what was missing. Cloud
+ * Vision reads them and this grammar then refused them, which is what brings it back (D-118). The
+ * history is worth keeping: it is the difference between a feature that does not work and a feature
+ * whose input never arrived.
+ *
+ * **The tail anchor is load-bearing and is the same one `lib/slip-ocr.ts` documents.** `normalise`
+ * has already removed the spaces this layout separates its parts with, so `… 69  09:41 น.` arrives
+ * as `…6909:41น.` — and an unanchored year group reads `6909` as the year, which then fails the era
+ * rule and reports no date about a card that plainly prints one.
+ */
+const MONTH_NAME_DATE = new RegExp(
+  `(\\d{1,2})(${MONTH_ALTERNATION})(\\d{4}|\\d{2})(?:[-–—]?(\\d{1,2}):(\\d{2}))?(?:น\\.)?$`,
+  "u"
+);
 /** The sign characters a minus is misread as. Also the only characters `repairToken` promotes. */
 const MISREAD_MINUS = /^[=~—–]/u;
 
@@ -290,7 +313,25 @@ function readMoney(tokens: readonly string[], requireSign: boolean): PrefillOffe
     : refuse("NO_DIGITS", "No digits were read here at all.");
 }
 
-/** What the printed form yields, before the era rule and the calendar have had their say. */
+/**
+ * The words inside a located box as whole normalised lines, which is what a month-name date needs.
+ *
+ * A token is the wrong unit for that form: the layout separates a date's parts with spaces,
+ * `normalise` removes them, and the parts then belong to one run rather than to any single OCR
+ * word. Grouped with the same `groupIntoLines` every other reader here uses, so "same line" means
+ * the same thing throughout — it compares vertical *overlap* rather than a shared edge, because
+ * Thai tone marks make two words on one line disagree about both.
+ */
+export function linesIn(words: readonly OcrWord[], box: Box): string[] {
+  const inside = words.filter((word) => {
+    const x = (word.left + word.right) / 2;
+    const y = (word.top + word.bottom) / 2;
+    return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+  });
+  return groupIntoLines(inside).map((line) => normalise(line.map((word) => word.text).join("")));
+}
+
+/** What either printed form yields, before the era rule and the calendar have had their say. */
 type PrintedParts = {
   readonly day: number;
   readonly month: number;
@@ -308,29 +349,57 @@ function slashedParts(repaired: readonly string[]): PrintedParts | null {
 }
 
 /**
+ * The month-name form, read a whole line at a time, as KBank Live prints it.
+ *
+ * A line rather than a token because `normalise` removes the spaces this layout separates its parts
+ * with, so the day, month, year and time arrive as one run and no single OCR word holds a date.
+ */
+function monthNameParts(lines: readonly string[]): PrintedParts | null {
+  for (const line of lines) {
+    const match = MONTH_NAME_DATE.exec(line);
+    if (!match) continue;
+    const month = THAI_MONTH_TOKENS.find(([token]) => token === match[2])?.[1];
+    // Unreachable while the alternation is built from the same table; guarded rather than asserted,
+    // because a token added to one and not the other would otherwise read as an undefined month.
+    if (month === undefined) continue;
+    const hour = match[4];
+    const minute = match[5];
+    const time = hour !== undefined && minute !== undefined ? `${hour.padStart(2, "0")}:${minute}` : null;
+    return {
+      day: Number(match[1]),
+      month,
+      printedYear: Number(match[3]),
+      time: time !== null && PRINTED_TIME.test(time) ? time : null
+    };
+  }
+  return null;
+}
+
+/**
  * The card's own timestamp as the form's two inputs hold it, or the reason there is none.
  *
- * The year is resolved by `resolveCardYear`, **per layout**, which is the rule D-031 exists to
- * enforce: two layouts print a two-digit Buddhist year and one prints a four-digit Gregorian one,
- * and reading one as the other is a silent 43-year error that parses cleanly the whole way. A
- * printed year of the wrong width for the layout is therefore a refusal, not a reinterpretation.
+ * **Both printed forms are tried on every layout, and that is not the global assumption D-031
+ * warns about.** The two grammars are disjoint — a slashed date carries no Thai month token and a
+ * month-name date carries no slash — so neither can be misread as the other, and trying both costs
+ * only an attempt. What stays strictly per layout is the part where the danger actually lives: the
+ * **era**. `resolveCardYear` decides it from the layout alone, so a two-digit year is completed one
+ * way on the two Buddhist layouts and refused outright on the Gregorian one. Reading an era by
+ * analogy is what dated a whole statement 43 years early (D-031), and nothing here does that.
+ *
+ * A printed year of the wrong width for the layout is a refusal, not a reinterpretation.
  *
  * **Date and time refuse together.** A card whose date read and whose time did not offers neither,
  * because the pairing rule uses the instant rather than the day (D-102) and half a timestamp
  * pre-filled beside an empty box is the shape most likely to be submitted unnoticed.
- *
- * **KBank Live's month-name timestamp is deliberately not read, and that is now measured rather
- * than assumed.** That layout prints `d <thai-month-abbrev> yy hh:mm`
- * (`docs/NOTIFICATION_CARD_CONTRACT.md` § KBank Live), and a reader for it was built, tested and
- * run against the real samples on 2026-08-16 under a read grant. It filled **0 of the 2** KBank
- * cards in that sample: the month token does not survive recognition at all, and the printed line
- * comes back carrying a single four-digit run with no separator between the hour and the minute.
- * The grammar was not what was missing, so the code was removed rather than kept as a path that has
- * never once succeeded. Revisit it with a cleaner input — LINE's own Capture, per D-111 — and
- * measure again before adding it back.
  */
-function readTimestamp(tokens: readonly string[], layout: NotificationCardLayout, currentYear: number): PrefillOffer<PrefillTimestamp> {
-  const parts = slashedParts(tokens.map((token) => repairToken(token)));
+function readTimestamp(
+  tokens: readonly string[],
+  lines: readonly string[],
+  layout: NotificationCardLayout,
+  currentYear: number
+): PrefillOffer<PrefillTimestamp> {
+  const parts = slashedParts(tokens.map((token) => repairToken(token)))
+    ?? monthNameParts(lines.map((line) => repairToken(line)));
 
   if (!parts) {
     const anyDigits = tokens.some((token) => /\d/u.test(token));
@@ -409,7 +478,10 @@ export function prefillCardFields(
   return {
     amount: read("amount", (tokens) => readMoney(tokens, true)),
     balance: read("balance", readBalance),
-    occurredAt: read("occurredAt", (tokens) => readTimestamp(tokens, layout, currentYear)),
+    occurredAt: read("occurredAt", (tokens) => {
+      const box = located.occurredAt;
+      return readTimestamp(tokens, box?.ok ? linesIn(words, box.value) : [], layout, currentYear);
+    }),
     ownAccount: read("ownAccount", readAccountDigits)
   };
 }

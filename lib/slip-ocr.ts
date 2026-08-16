@@ -397,9 +397,22 @@ function escapeForPattern(token: string): string {
   return token.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-// Longest first, so a token that is a prefix of another can never shadow it. None currently
-// is, and relying on that would make adding one a silent hazard.
-const MONTH_ALTERNATION = [...THAI_MONTH_TOKENS]
+/**
+ * The month vocabulary as a regular-expression alternation, longest first.
+ *
+ * Longest first, so a token that is a prefix of another can never shadow it. None currently is,
+ * and relying on that would make adding one a silent hazard.
+ *
+ * **Exported so a second reader cannot keep its own copy of that ordering rule.** KBank Live prints
+ * a card's timestamp with the same month tokens a slip uses
+ * (`docs/NOTIFICATION_CARD_CONTRACT.md` § KBank Live), and two hand-kept alternations would be two
+ * chances to disagree about which token shadows which — the argument `dayNumber` in `lib/dates.ts`
+ * makes for sharing rather than copying. **What is deliberately not shared is the era decision**: a
+ * slip refuses a two-digit year because nothing tells it which calendar (D-059), while a card
+ * resolves one from its layout. That difference is the whole of why `readDateLine` below cannot
+ * simply be called by the card reader.
+ */
+export const MONTH_ALTERNATION = [...THAI_MONTH_TOKENS]
   .sort((a, b) => b[0].length - a[0].length)
   .map(([token]) => escapeForPattern(token))
   .join("|");

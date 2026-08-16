@@ -243,19 +243,50 @@ describe("what the timestamp offers, resolved per layout because a global year r
     expect(readField("occurredAt", ["วันที่/เวลา"], SCB).occurredAt).toMatchObject({ ok: false, code: "NO_DIGITS" });
   });
 
-  // **A limit that was tested and then deliberately left in place.** KBank Live prints
-  // `d <thai-month-abbrev> yy hh:mm` (`docs/NOTIFICATION_CARD_CONTRACT.md`), so a month-name reader
-  // was the obvious way to raise D-113's measured 53%. One was built and run against the real
-  // samples on 2026-08-16 and filled **0 of the 2** KBank cards: the month token does not survive
-  // recognition at all, so the grammar was never what was missing. The code came out again rather
-  // than staying as a path that has never once succeeded.
-  //
-  // This test holds that decision in place. If it ever needs changing, re-measure first — and note
-  // that on the same 19 cards the date field loses 7 to the *reader* declining to locate the field
-  // and only 2 here, so this is not where the field's fill rate is won.
-  it("does not read KBank Live's month-name timestamp, which was measured as worth nothing to add", () => {
+  // **Removed once and restored the same day, which is the history worth keeping.** KBank Live
+  // prints `d <thai-month-abbrev> yy hh:mm` (`docs/NOTIFICATION_CARD_CONTRACT.md`). A reader for it
+  // was built, measured at 0 of 2 real cards and deleted (D-117) because the local engine could not
+  // see those rows at all — then restored once Cloud Vision read them and this grammar was what
+  // refused them (D-118). A feature that does not work and a feature whose input never arrives look
+  // identical from outside; only a measurement separates them.
+  it("reads KBank Live's month-name timestamp, which no slashed reader can", () => {
     const { occurredAt } = readField("occurredAt", ["7", "ส.ค.", "69", "09:41", "น."], KBANK);
-    expect(occurredAt).toMatchObject({ ok: false, code: "DATE_NOT_READ" });
+    expect(occurredAt).toEqual({ ok: true, value: { date: "2026-08-07", time: "09:41" } });
+  });
+
+  // **The trap `lib/slip-ocr.ts` names, reached through a card.** `normalise` removes the spaces
+  // this layout separates its parts with, so the year and the time arrive as one run: `…6909:41น.`
+  // An unanchored year group reads `6909`, which then fails the era rule and reports no date about
+  // a card that plainly prints one.
+  it("does not swallow the time into the year when the spaces between them are gone", () => {
+    expect(readField("occurredAt", ["7ส.ค.6909:41น."], KBANK).occurredAt)
+      .toMatchObject({ ok: true, value: { date: "2026-08-07", time: "09:41" } });
+  });
+
+  // A month token carrying a vowel, which is the class a shape-based pattern silently misses:
+  // `[ก-ฮ]\.[ก-ฮ]\.` looks right and fails for March, April and June.
+  it("reads a month token that carries a vowel", () => {
+    expect(readField("occurredAt", ["3", "เม.ย.", "69", "14:05", "น."], KBANK).occurredAt)
+      .toMatchObject({ ok: true, value: { date: "2026-04-03" } });
+    expect(readField("occurredAt", ["3", "มิ.ย.", "69", "14:05", "น."], KBANK).occurredAt)
+      .toMatchObject({ ok: true, value: { date: "2026-06-03" } });
+  });
+
+  // The era rule stays per layout on the month-name form too, which is the half D-031 is about:
+  // the same printed year under SCB's Gregorian rule is refused rather than turned into 0069.
+  it("keeps the era rule per layout on the month-name form too", () => {
+    expect(readField("occurredAt", ["7", "ส.ค.", "69", "09:41", "น."], SCB).occurredAt)
+      .toMatchObject({ ok: false, code: "YEAR_NOT_RESOLVED" });
+  });
+
+  // The two grammars are disjoint, so trying both on every layout cannot make one read as the
+  // other. Asserted so "try both" is not mistaken for a global date assumption.
+  it("does not read a month name out of a slashed date, or a slash out of a month name", () => {
+    expect(readField("occurredAt", ["วันที่ทำรายการ", "07/08/69", "09:41"], KTB).occurredAt)
+      .toMatchObject({ ok: true, value: { date: "2026-08-07" } });
+    // A month-name line with no time refuses on the time rather than inventing one.
+    expect(readField("occurredAt", ["7", "ส.ค.", "69"], KBANK).occurredAt)
+      .toMatchObject({ ok: false, code: "TIME_NOT_READ" });
   });
 });
 

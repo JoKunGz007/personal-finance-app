@@ -6,6 +6,7 @@ import {
   findCards,
   locateCardField,
   locateCardFields,
+  opensWith,
   readCardDirection,
   type OcrWord
 } from "@/lib/notification-card-ocr";
@@ -195,6 +196,39 @@ describe("the timestamp comes from inside the card", () => {
 // for the *anchor*: two of the wordings this grammar matches on carry a slash, so a garbled one
 // makes the field unfindable and the refusal reads as "this card prints no timestamp". Seven SCB
 // cards refused their date that way; two are recovered by repairing the separator before matching.
+// Measured 2026-08-16 under Google Cloud Vision (D-118): three screenshots yielded no card, and on
+// two the direction word was present but began at offset 1 or 3 — every layout prints an icon
+// beside its title, and that engine reads it as a character where tesseract dropped it.
+describe("a card's title survives an icon glyph in front of it", () => {
+  it("opens a card when a stray glyph precedes the direction word", () => {
+    const words = card([["*รายการเงินออก"], ["-1,234.00", "บาท"], ["จากบัญชี", "x-4321"]]);
+    expect(findCards(words, SCB)).toHaveLength(1);
+    expect(readCardDirection(words, SCB)).toMatchObject({ ok: true, value: "out" });
+  });
+
+  // **The trap this must never reopen**, and the reason matching anywhere on the line is wrong: a
+  // Krungthai `ประเภท` row carries a free-text phrase containing the direction word, and Thai has
+  // no separator to say it is part of something else. Left unguarded it split one real card in two.
+  it("still refuses a direction word buried inside a label's own value", () => {
+    const words = card([["เงินออก", "1,234.00"], ["ประเภทเงินออกจากบัญชี"], ["จากบัญชี", "x-4321"]]);
+    // One card, from the first row — not a second one invented by the type row below it.
+    expect(findCards(words, KTB)).toHaveLength(1);
+  });
+
+  // The guard that does the real work is the character class, not the distance: a Thai consonant in
+  // front of the word means a Thai word is starting, however few characters precede it.
+  it("refuses a Thai word in front of the direction word even when it is short", () => {
+    expect(opensWith("กเงินออก", "เงินออก")).toBe(false);
+    expect(opensWith("*เงินออก", "เงินออก")).toBe(true);
+    expect(opensWith("เงินออก", "เงินออก")).toBe(true);
+  });
+
+  it("refuses a direction word that starts too far into the line", () => {
+    expect(opensWith("****เงินออก", "เงินออก")).toBe(false);
+    expect(opensWith("เงินเข้า", "เงินออก")).toBe(false);
+  });
+});
+
 describe("a separator misread must not make a label unfindable", () => {
   it("finds a timestamp label whose slash was read as a bar or a bang", () => {
     for (const misread of ["วันที่|เวลา", "วันที่!เวลา"]) {
