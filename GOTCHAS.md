@@ -154,6 +154,9 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - An `aria-label` replaces a button's words rather than adding to them, and axe says nothing
 - A control that disables itself takes the focus with it
 - `readError` takes a parsed body, so handing it a `Response` silently shows the fallback
+- A route test that stubs `globalThis.fetch` breaks the owner's own session lookup
+- A `setx` variable does not reach a shell an already-running tool spawns
+- `normalise` decomposes Thai `ำ`, so a label the source spells with one character is matched as two
 
 ## Traps
 
@@ -1035,6 +1038,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: the reader returns a box in the coordinate space of **whatever it read**. Read a 2× image and crop from the original file with the same box and every crop lands at twice its intended offset. It is silent by construction, because a crop of the wrong row is still a crop.
 - Avoid: hold **one** image and use it for both. `app/notification-card-capture.tsx` carries a `CardImage` — the enlarged source plus its dimensions — built once by `loadCardImage` and passed to both the reader and `cropRegion`; the `File` is not kept, so there is nothing to accidentally crop from. `paddedCrop` must be given the same dimensions for the same reason.
 - Verify: 2026-08-16 (D-117). The enlargement lands with the shared `CardImage`, and the card-switch path re-crops from the held image rather than re-decoding the file.
+- **Still live, and closed by construction rather than by care as of 2026-08-17** (D-120). The card path no longer enlarges anything — Vision reads at native size — so the reading and the crops are one image at one scale and no box is ever rescaled. The entry stays because the hazard returns the moment any engine wants a different scale from the one the crops are cut at, and because the `CardImage` that holds the two together is the thing that must not be split.
 
 ## A measurement taken on slips does not govern cards, and this is the fourth time
 
@@ -1049,3 +1053,24 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: `findCards` requires a line to **start** with the layout's direction word, and `labelAtLineStart` requires the same of every label. That rule is right — it is what stops a `ประเภท` row carrying the direction word inside a phrase from inventing a card — but it makes the splitter depend on where the engine chose to break a Thai run, and Thai has no word separator to make that choice obvious. Two engines break the same pixels differently, so a rule anchored at a word boundary silently means "a boundary *this* engine would produce".
 - Avoid: treat word segmentation as engine-specific rather than as a property of the image. When comparing engines, compare **through the same grammar** so the difference is attributable, and read a drop in *cards found* as a grammar problem before concluding anything about the engine. The same fragility applies to a tesseract upgrade moving its own boundaries, so it is latent on the local path too, not only when swapping.
 - Verify: 2026-08-16 (D-118). Vision filled 88 fields against tesseract's 70 over the same 12 screenshots while finding 23 cards against 25 — the entire card-count regression is in this repository's splitter, not in the engine.
+
+## A route test that stubs `globalThis.fetch` breaks the owner's own session lookup
+
+- Symptom: a route test that fakes a third-party call fails long before reaching it, with a sign-in or session error that has nothing to do with the code under test.
+- Cause: `strongOwnerClient` authenticates the owner over HTTP against the local Supabase project, using the same `globalThis.fetch` the stub replaced. Replacing it wholesale takes out the auth the route runs *first*.
+- Avoid: stub selectively and pass everything else through — match on the third party's origin, return the fake for that, and call the captured real `fetch` for anything else. Restore it in a `finally`, or every later test in the file inherits the stub.
+- Verify: 2026-08-17 (D-120). `tests/notification-card-routes.test.ts` § reading a card screenshot stubs only `https://vision.googleapis.com` and restores the real `fetch` afterwards.
+
+## A `setx` variable does not reach a shell an already-running tool spawns
+
+- Symptom: a harness reports a credential missing when the environment variable is demonstrably set — visible in a fresh terminal, and readable with `[Environment]::GetEnvironmentVariable(...,"User")`.
+- Cause: `setx` writes the user environment, and a process inherits that environment **when it starts**. Every shell spawned by a tool that was already running inherits the *old* copy. Nothing reports this; the variable is simply absent.
+- Avoid: read it explicitly in the command that needs it and assign it into the child's environment — `$env:NAME = [Environment]::GetEnvironmentVariable("NAME","User")` on the same line as the run. Report a credential's **length** to prove it is present, never its value.
+- Verify: 2026-08-16 and again 2026-08-17 (D-118, D-120). The Vision measurement harness reads `GOOGLE_VISION_KEY` from `process.env` and prints its length alone.
+
+## `normalise` decomposes Thai `ำ`, so a label the source spells with one character is matched as two
+
+- Symptom: a label that is plainly on the card is refused as `LABEL_NOT_FOUND`, and comparing the strings by eye — or by pasting them side by side — shows no difference at all.
+- Cause: `normalise` runs `NFKC`, and U+0E33 (`ำ`, sara am) has a **compatibility** decomposition to U+0E4D (nikhahit) + U+0E32 (sara aa) that NFKC applies and does not recompose. So `วันที่ทำรายการ` is 14 characters in the source and **15** in the matcher, with a bare nikhahit at index 7. Any engine that reads that small circle as a different superscript mark — U+0E48 mai ek is the one observed — diverges from the label at a position no visual comparison shows.
+- Avoid: diagnose a Thai label refusal **by code point**, never by eye or by string equality in a console. Compute the longest shared prefix against the normalised label and print the first differing character's code point; that names the failure in one line. Do not "fix" it by removing the normalisation — the same NFKC is what makes Arabic-digit and whitespace handling work everywhere else.
+- Verify: 2026-08-17 (D-121). One card of 25 refuses this way; the divergence is at label character 8 of 15, U+0E48 where the label holds U+0E4D.
