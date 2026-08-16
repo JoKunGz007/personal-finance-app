@@ -573,8 +573,13 @@ describe("privacy guardrails", () => {
       .not.toMatch(/\boffered\b/u);
     // And the derived name lists are what does travel, so this test fails if the wiring is dropped
     // rather than passing vacuously once nothing is sent at all (migration 019).
-    expect(submit).toMatch(/prefillOffered:\s*offeredFieldNames/u);
-    expect(submit).toMatch(/prefillChanged:\s*changedFieldNames/u);
+    expect(submit).toMatch(/prefillOffered:\s*namesOrAbsent\(offeredFieldNames\)/u);
+    expect(submit).toMatch(/prefillChanged:\s*namesOrAbsent\(changedFieldNames\)/u);
+    // **An empty list must travel as an absent key, not as `[]`** (D-122). Migration 019 refuses
+    // an explicitly empty array — `array_length` of an empty array is NULL, so its duplicate check
+    // fires — and a card whose pre-fill the owner changed nothing on sends exactly that. Asserted
+    // here because the failure is invisible until a real card is captured with a perfect pre-fill.
+    expect(form).toMatch(/function namesOrAbsent\([\s\S]*?names\.length > 0 \? \[\.\.\.names\] : undefined/u);
   });
 
   it("keeps a card's two direction signals from collapsing into one", () => {

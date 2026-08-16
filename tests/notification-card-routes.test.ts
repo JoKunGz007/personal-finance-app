@@ -293,6 +293,32 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
       expect(audit.output).toContain("[]");
     });
 
+    // **Holds a defect in place until migration 020 removes it, deliberately** (D-122).
+    //
+    // Migration 019 documents an absent key as an empty list and accepts it — the test above
+    // proves that. An **explicitly empty array** is a different story: the duplicate-name check
+    // compares `array_length(v_names, 1)`, which PostgreSQL answers **NULL** for an empty array,
+    // against a `count(distinct)` of 0, so `[]` raises "contains a repeated field name". Two
+    // encodings of the same thing, one of which works.
+    //
+    // It is not academic. The form always sent both keys, so a card whose pre-fill the owner
+    // changed **nothing** on sent an empty `prefillChanged` and could not be captured at all —
+    // found by the first real card read through Cloud Vision, and worst exactly when the reader
+    // is perfect. `namesOrAbsent` in the form now sends the absent form, so nothing in this app
+    // can reach this any more.
+    //
+    // **When migration 020 lands, this expectation flips to 201** and the comment goes with it.
+    // It is here rather than in a document because a test is the only kind of note that fails
+    // when it goes stale.
+    it("refuses an explicitly empty list, which absent is accepted for — migration 019 defect", async () => {
+      const refused = await captureCard({
+        ...card({ occurredAtTime: "17:31", balanceMinor: "51000" }),
+        prefillOffered: [],
+        prefillChanged: []
+      });
+      expect(refused.status).toBe(422);
+    });
+
     it("refuses a field name outside the closed set, rather than storing free text", async () => {
       const written = await captureCard(card({ occurredAtTime: "17:12", prefillOffered: ["counterparty"] }));
       expect(written.status).toBe(422);

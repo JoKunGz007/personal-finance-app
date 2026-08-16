@@ -88,6 +88,20 @@ async function encodeCardForReader(image: CardImage): Promise<Blob | null> {
 }
 
 /**
+ * A list of field names, or nothing at all when it is empty (D-122).
+ *
+ * `JSON.stringify` drops an `undefined` value, so this is what turns an empty list into an absent
+ * key — the encoding migration 019 documents as meaning "empty" and the only one it accepts. The
+ * audit row records `[]` either way, so nothing is lost by saying it this way.
+ *
+ * Kept as a named function rather than inlined twice: the two call sites must agree, and the
+ * reason they exist is worth having one place to read.
+ */
+function namesOrAbsent(names: readonly PrefillField[]): PrefillField[] | undefined {
+  return names.length > 0 ? [...names] : undefined;
+}
+
+/**
  * Reads the card's words, through this app's own reader route (`PLAN.md` task 35, D-120).
  *
  * **The screenshot leaves the device here, and the form says so on screen** — this is the one place
@@ -590,8 +604,17 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
           note: note.trim() || null,
           // Field names only, and both derived by filtering the field-name constant rather than
           // built by hand — so no figure can travel in either by construction (D-114, D-116).
-          prefillOffered: offeredFieldNames,
-          prefillChanged: changedFieldNames
+          //
+          // **An empty list is sent as an absent key, and that is not a style choice** (D-122).
+          // Migration 019 defines absent as an empty list and refuses an explicitly empty array:
+          // its duplicate-name check compares `array_length(names, 1)`, which PostgreSQL answers
+          // **NULL** for an empty array, against a `count(distinct)` of 0 — so `[]` raises
+          // "contains a repeated field name". The two encodings mean the same thing and only one
+          // of them works. **It bites hardest when the pre-fill is perfect**: a card the owner
+          // changed nothing on sends an empty `prefillChanged` and cannot be captured at all,
+          // which is the first thing real use of Cloud Vision found (D-120).
+          prefillOffered: namesOrAbsent(offeredFieldNames),
+          prefillChanged: namesOrAbsent(changedFieldNames)
         })
       });
       const body: unknown = await response.json().catch(() => null);

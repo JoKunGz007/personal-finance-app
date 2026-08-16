@@ -157,6 +157,8 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A route test that stubs `globalThis.fetch` breaks the owner's own session lookup
 - A `setx` variable does not reach a shell an already-running tool spawns
 - `normalise` decomposes Thai `ำ`, so a label the source spells with one character is matched as two
+- `array_length` of an empty array is NULL, so a count-the-duplicates check fires on an empty list
+- A defect that only appears when a feature succeeds will not be in the gate
 
 ## Traps
 
@@ -1074,3 +1076,17 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: `normalise` runs `NFKC`, and U+0E33 (`ำ`, sara am) has a **compatibility** decomposition to U+0E4D (nikhahit) + U+0E32 (sara aa) that NFKC applies and does not recompose. So `วันที่ทำรายการ` is 14 characters in the source and **15** in the matcher, with a bare nikhahit at index 7. Any engine that reads that small circle as a different superscript mark — U+0E48 mai ek is the one observed — diverges from the label at a position no visual comparison shows.
 - Avoid: diagnose a Thai label refusal **by code point**, never by eye or by string equality in a console. Compute the longest shared prefix against the normalised label and print the first differing character's code point; that names the failure in one line. Do not "fix" it by removing the normalisation — the same NFKC is what makes Arabic-digit and whitespace handling work everywhere else.
 - Verify: 2026-08-17 (D-121). One card of 25 refuses this way; the divergence is at label character 8 of 15, U+0E48 where the label holds U+0E4D.
+
+## `array_length` of an empty array is NULL, so a count-the-duplicates check fires on an empty list
+
+- Symptom: a payload that is plainly valid is refused, and the message names a rule it does not break — an empty list rejected as "contains a repeated field name". The same operation with the key **omitted** succeeds, which makes the two look like different payloads when they are two spellings of one.
+- Cause: PostgreSQL's `array_length(arr, 1)` returns **NULL** for an empty array, not 0. So the idiom `array_length(v, 1) is distinct from (select count(distinct n) from unnest(v) as n)` is true for an empty array — NULL against 0 — and every guard written that way refuses the empty case while claiming a duplicate. `cardinality(v)` returns 0 and does not have this behaviour.
+- Avoid: write `coalesce(array_length(v, 1), 0)` or use `cardinality`. And **test both spellings of "nothing"** — an absent key and an explicitly empty array — because a validator with an early return for one will never exercise the other, which is exactly how this survived a full green gate.
+- Verify: 2026-08-17 (D-122). `private.assert_prefill_field_names` refused `[]` in production while accepting an absent key; reproduced with three one-line queries against `private-ledger-local`. `PLAN.md` task 37 carries the fix.
+
+## A defect that only appears when a feature succeeds will not be in the gate
+
+- Symptom: an accuracy improvement ships green on every suite and immediately breaks in production, on the path that only opens when the feature works perfectly.
+- Cause: tests are written against the cases that existed when they were written, and a partly-working feature never produces its own success path. A card pre-fill at 70% always had *some* field the owner corrected, so the "changed nothing" payload was never sent by anything — until the engine reached 99 of 100 and it became the normal case (D-122).
+- Avoid: after any change that raises a success rate, ask **which paths become reachable that were not**, and walk those before shipping. The empty collection, the zero-length list, the no-corrections case and the everything-matched case are the usual ones. A green gate says the old paths still work, and says nothing at all about the new one.
+- Verify: 2026-08-17 (D-122, D-120). Vitest 595, pgTAP 263 and both browser suites were green over a card capture that could not succeed.
