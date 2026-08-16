@@ -130,8 +130,30 @@ function eclipsedBy(lineText: string, label: string, siblings: readonly string[]
   return longer ?? null;
 }
 
+/**
+ * The separator misread, repaired before any label or title is matched.
+ *
+ * **Measured 2026-08-16, and it is the reason a majority of SCB dates were never located.** D-113
+ * established that `/` comes back as `|` or `!` on essentially every card, and treated that as a
+ * problem for a date's *value*. It is also a problem for the *label*: SCB Connect anchors its
+ * timestamp on `วันที่/เวลา` and KBank Live's outgoing title is `รายการโอน/ถอน`, and both carry a
+ * slash. A garbled slash therefore makes the anchor unfindable, and the field is refused as
+ * `LABEL_NOT_FOUND` — a refusal that reads as "this card does not print a timestamp" when the truth
+ * is that one character of its label did not recognise. Of the seven SCB cards refusing their date
+ * on the real sample, **two are found once this repair runs** and five are garbled some other way.
+ *
+ * **This is a safe repair for the same reason `repairToken` in `lib/notification-card-prefill.ts`
+ * is, and for one more.** `|` and `!` carry no value, and here they cannot carry one even in
+ * principle: this text is used **only to match labels and titles**, never to read a figure and
+ * never to build a crop. Every box this module returns comes from word coordinates, so nothing a
+ * substitution does here can change which pixels the owner is shown or which digits are offered.
+ */
+function repairSeparators(text: string): string {
+  return text.replace(/[|!]/gu, "/").replace(/\/{2,}/gu, "/");
+}
+
 function lineText(line: readonly OcrWord[]): string {
-  return normalise(line.map((word) => word.text).join(""));
+  return repairSeparators(normalise(line.map((word) => word.text).join("")));
 }
 
 /**
@@ -154,7 +176,9 @@ function lineText(line: readonly OcrWord[]): string {
 function labelAtLineStart(line: readonly OcrWord[], label: string): number | null {
   let joined = "";
   for (const word of line) {
-    joined += normalise(word.text);
+    // Repaired per accumulated run rather than per word: a slash can be its own OCR word, and
+    // `\/{2,}` collapsing only means anything once the neighbours are beside it.
+    joined = repairSeparators(joined + normalise(word.text));
     if (joined.startsWith(label)) return word.right;
     // The row has diverged from the label before completing it, so this is a different row.
     if (!label.startsWith(joined)) return null;

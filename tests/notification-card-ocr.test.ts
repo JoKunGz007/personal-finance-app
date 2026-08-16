@@ -189,6 +189,36 @@ describe("the timestamp comes from inside the card", () => {
   });
 });
 
+// **Measured on the real sample 2026-08-16.** D-113 established that `/` comes back as `|` or `!`
+// on essentially every card and treated it as a problem for a date's value. It is also a problem
+// for the *anchor*: two of the wordings this grammar matches on carry a slash, so a garbled one
+// makes the field unfindable and the refusal reads as "this card prints no timestamp". Seven SCB
+// cards refused their date that way; two are recovered by repairing the separator before matching.
+describe("a separator misread must not make a label unfindable", () => {
+  it("finds a timestamp label whose slash was read as a bar or a bang", () => {
+    for (const misread of ["วันที่|เวลา", "วันที่!เวลา"]) {
+      const words = card([["รายการเงินออก"], ["-1,234.00", "บาท"], [misread, "07/08/2026", "09:41"]]);
+      expect(locateCardField(words, SCB, "out", "occurredAt")).toMatchObject({ ok: true, source: "วันที่/เวลา" });
+    }
+  });
+
+  it("finds a title whose slash was read as a bar, which is how a card is split at all", () => {
+    const words = card([["รายการโอน|ถอน"], ["12", "ส.ค.", "69", "14:05", "น."], ["จำนวนเงิน", "1,234.00", "บาท"]]);
+    expect(readCardDirection(words, KBANK)).toMatchObject({ ok: true, value: "out" });
+    expect(findCards(words, KBANK)).toHaveLength(1);
+  });
+
+  // The repair only ever touches matching. Every box comes from word coordinates, so it cannot
+  // move a crop or change a digit — which is what makes it safe to run before the anchors.
+  it("does not move the crop it finds", () => {
+    const clean = card([["รายการเงินออก"], ["-1,234.00", "บาท"], ["วันที่/เวลา", "07/08/2026", "09:41"]]);
+    const misread = card([["รายการเงินออก"], ["-1,234.00", "บาท"], ["วันที่|เวลา", "07/08/2026", "09:41"]]);
+    const a = locateCardField(clean, SCB, "out", "occurredAt");
+    const b = locateCardField(misread, SCB, "out", "occurredAt");
+    expect(a.ok && b.ok && a.value).toEqual(b.ok && b.value);
+  });
+});
+
 describe("one direction of one layout has two measured variants", () => {
   const toBankAccount = card([
     ["เงินออก", "-1,234.00", "บาท"],
