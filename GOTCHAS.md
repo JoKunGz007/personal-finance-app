@@ -100,6 +100,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A misread separator hides the label, not just the value, and the field reads as "not printed"
 - Enlarging an image for OCR moves every box, so the crops must come from the same image
 - A measurement taken on slips does not govern cards, and this is the fourth time
+- A reader tuned to one OCR engine's word boundaries fails silently on another's
 
 ### Real data, masking and privacy
 
@@ -1041,3 +1042,10 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: slips and cards are read by the same engine and the same seam, so a finding about one reads as a finding about both. They are different subjects — a photographed receipt against small grey label text inside a phone-notification screenshot — and the engine behaves differently on each. **D-087's 2× upscale ladder** (recovered 1 slip, broke 3) does not hold for cards, where a capped 2× took fields filled from 62 to 70 of 100 (D-117). D-087's accuracy claim did not hold for cards either, and was measured on an older engine version besides (D-112). D-113 found the same for its date grammar.
 - Avoid: before inheriting any OCR limit, check what it was measured **on** and on which engine version. Re-run it against the record in hand rather than reasoning from the entry. Where a finding is genuinely per-subject, apply it at the **call site** rather than in the shared engine — the card form scales its own image and `lib/slip-ocr-engine.ts` is untouched, so slip capture keeps the behaviour its own measurement supports.
 - Verify: 2026-08-16 (D-117, D-112, D-113). Three inherited limits, three re-measurements, three that did not transfer.
+
+## A reader tuned to one OCR engine's word boundaries fails silently on another's
+
+- Symptom: swapping the OCR engine for a demonstrably better one **finds fewer cards**, not more. Three screenshots yielded no card at all under Google Cloud Vision where tesseract found one, while every field Vision did reach read better than tesseract managed.
+- Cause: `findCards` requires a line to **start** with the layout's direction word, and `labelAtLineStart` requires the same of every label. That rule is right — it is what stops a `ประเภท` row carrying the direction word inside a phrase from inventing a card — but it makes the splitter depend on where the engine chose to break a Thai run, and Thai has no word separator to make that choice obvious. Two engines break the same pixels differently, so a rule anchored at a word boundary silently means "a boundary *this* engine would produce".
+- Avoid: treat word segmentation as engine-specific rather than as a property of the image. When comparing engines, compare **through the same grammar** so the difference is attributable, and read a drop in *cards found* as a grammar problem before concluding anything about the engine. The same fragility applies to a tesseract upgrade moving its own boundaries, so it is latent on the local path too, not only when swapping.
+- Verify: 2026-08-16 (D-118). Vision filled 88 fields against tesseract's 70 over the same 12 screenshots while finding 23 cards against 25 — the entire card-count regression is in this repository's splitter, not in the engine.

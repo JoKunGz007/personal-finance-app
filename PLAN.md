@@ -462,3 +462,16 @@ Only after every local task above passes:
 - Do not commit, push, deploy, or create hosted resources without explicit authorization.
 - Do not request the Windows PostgreSQL password until a separately approved backup/recovery task actually needs it.
 - Preserve unrelated and uncommitted files.
+
+35. **Decide whether the card reader calls Google Cloud Vision.** Measured 2026-08-16 (D-118), **not decided and nothing built**. The owner created the project and key himself and authorised twelve real screenshots to be sent; the key is staying.
+
+    **What the measurement says.** Through the same grammar, same pre-fill and same 12 screenshots: **88 fields filled against tesseract's 70**, and **96% of the fields on cards it found against 70%**. Amount, balance and printed account digits are **100%**. It reads KBank Live's balance and account digits, which are **0 of 5 locally under every mode, variant and scale tried** (D-117) — so the KBank rows were never a grammar or contrast problem, they were beyond the local engine.
+
+    **Every remaining failure is in this repository, and both are worth fixing whichever engine wins.**
+
+    1. **`findCards` is tuned to one engine's word boundaries without saying so.** It requires a line to *start* with the direction word, and Vision breaks Thai runs differently, so three images yielded no card where tesseract found one. That is a latent fragility in the local path too — a tesseract upgrade could move those boundaries.
+    2. **The Thai month-name date grammar, built and removed the same day** (D-117) because tesseract could not see KBank's timestamp rows at all. Vision reads them and the grammar refuses them, so restoring it recovers KBank's timestamp. A failing test currently holds the refusal in place, deliberately.
+
+    **What adoption costs, since it is not "call an API".** An API key in the hosted environment, the first credential this deployment would hold that is not Supabase's. A network call on a path that is offline today and works with no connectivity at all. Either a second reader kept working beside the local one, or the local one deleted along with the promise that no image leaves the device. **The strict pre-fill guarantees are unaffected either way** — `parseThb`, the digit guard and blank-on-failure sit downstream of whichever engine produced the words, so no engine can make a wrong-but-plausible figure reach a box.
+
+    **What is not decided**: whether to adopt it at all, and if so whether the local engine stays as a fallback. **Cost is not a factor** — twelve images against 1,000 free per month.
