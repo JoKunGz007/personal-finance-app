@@ -20,9 +20,11 @@ import {
   findCards,
   locateCardFields,
   type CardFieldName,
+  type CardOcrRead,
   type CardRegion,
   type OcrWord
 } from "@/lib/notification-card-ocr";
+import { PREFILL_FIELDS, prefillCardFields, type PrefillField } from "@/lib/notification-card-prefill";
 import { notificationCardDateWindow } from "@/lib/notification-cards";
 import { readError } from "@/lib/wire";
 
@@ -112,6 +114,15 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
   const [notes, setNotes] = useState<Partial<Record<CardFieldName, string>>>({});
   const [reading, setReading] = useState(false);
   const [readerNote, setReaderNote] = useState<string | null>(null);
+  /**
+   * What the pre-fill put in each box, so a change to it can be detected at submit (D-114).
+   *
+   * **Values are held only to be compared, never to be sent.** What leaves this form is the two
+   * lists of *field names* below — which fields were offered, and which of those the owner changed
+   * — because that is the whole of what the trial needs and the whole of what an audit row may
+   * carry. `tests/privacy.test.ts` asserts the distinction rather than trusting this comment.
+   */
+  const [offered, setOffered] = useState<Partial<Record<PrefillField, string>>>({});
 
   const [direction, setDirection] = useState<CardDirection | "">("");
   const [amount, setAmount] = useState("");
@@ -251,11 +262,64 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     }
   }
 
+  /**
+   * Offers the card's own figures as starting values, and remembers exactly what it offered.
+   *
+   * **This is D-087 on trial, not overturned** (D-114). The engine was measured on 19 real cards
+   * and does not produce wrong-but-plausible figures — what breaks is the punctuation, and
+   * `lib/notification-card-prefill.ts` repairs only characters carrying no value, proves no digit
+   * moved, runs the same strict grammar the form runs, and offers nothing at all when any of that
+   * refuses. A field it refuses is left exactly as it is today, so this can only reduce typing.
+   *
+   * **The case against pre-fill was never the engine, it was rubber-stamping** — a plausible value
+   * in a filled box getting confirmed unread. That is a claim about a person and can only be
+   * observed, which is what `offered` is for. The statistic to be careful with is named in D-114:
+   * a low edit rate is consistent with the engine being right *and* with the owner having stopped
+   * looking, so the check that settles it is the statement, not this.
+   *
+   * The direction control is deliberately not filled. `readDirection` compares the card's words
+   * against what the owner chose, and filling in the owner's half would compare the image with
+   * itself and always agree.
+   */
+  function offerPrefill(picked: CardRegion, located: Record<CardFieldName, CardOcrRead<Box>>) {
+    if (!layout) return;
+    // Bangkok's year, not the browser's. `new Date().getFullYear()` is local, and the era rule
+    // turns a two-digit Buddhist year on it — the same class of bug as D-110's UTC date default.
+    const prefill = prefillCardFields(picked.words, located, layout, Number(bangkokToday().slice(0, 4)));
+    const remembered: Partial<Record<PrefillField, string>> = {};
+
+    // **Every box is set, including the ones the engine refused, because this runs whenever a
+    // different card comes on screen.** Leaving a refused field alone would carry the previous
+    // card's figure into this one's form while its crop showed something else — the mismatch the
+    // `cropPass` guard above exists to prevent, arriving by a slower route. A refused field is
+    // therefore emptied rather than inherited, and the date returns to its Bangkok default (D-110)
+    // rather than to nothing.
+    setAmount(prefill.amount.ok ? prefill.amount.value.magnitude : "");
+    if (prefill.amount.ok) remembered.amount = prefill.amount.value.magnitude;
+
+    setBalance(prefill.balance.ok ? prefill.balance.value : "");
+    if (prefill.balance.ok) remembered.balance = prefill.balance.value;
+
+    setPrintedDigits(prefill.ownAccount.ok ? prefill.ownAccount.value : "");
+    if (prefill.ownAccount.ok) remembered.ownAccount = prefill.ownAccount.value;
+
+    // The date input refuses anything outside the capture window, and a value it refuses would sit
+    // in the box looking typed while being unsubmittable. Offered only where it can stand.
+    const timestamp = prefill.occurredAt.ok ? prefill.occurredAt.value : null;
+    const datable = timestamp !== null && timestamp.date >= window_.earliest && timestamp.date <= window_.latest;
+    setOccurredOn(datable ? timestamp.date : bangkokToday());
+    setOccurredAtTime(datable ? timestamp.time : "");
+    if (datable) remembered.occurredAt = `${timestamp.date} ${timestamp.time}`;
+
+    setOffered(remembered);
+  }
+
   async function showCard(file: File, found: CardRegion[], index: number) {
     const picked = found[index];
     if (!layout || !picked) return;
     const pass = ++cropPass.current;
     const located = locateCardFields(picked.words, layout, picked.direction);
+    offerPrefill(picked, located);
     const nextCrops: Partial<Record<CardFieldName, string>> = {};
     const nextNotes: Partial<Record<CardFieldName, string>> = {};
     for (const field of CARD_FIELDS) {
@@ -279,12 +343,13 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
   }
 
   /**
-   * Reads the screenshot and splits it into cards. **It fills nothing in.**
+   * Reads the screenshot and splits it into cards.
    *
-   * `setAmount`, `setBalance`, `setPrintedDigits`, `setOccurredOn` and `setOccurredAtTime` are
-   * all deliberately absent from this function, and `tests/privacy.test.ts` asserts they stay
-   * absent — "pre-fill it, the owner can always check" is the reasonable-sounding change that
-   * would quietly undo D-087.
+   * **It fills nothing in itself.** The four digit-bearing boxes are offered values by
+   * `offerPrefill`, which runs from `showCard` once a specific card is on screen — because a
+   * pre-fill belongs to one card and this function has not chosen one yet. The direction control
+   * is filled by neither, which `tests/privacy.test.ts` asserts: it is the owner's half of the
+   * cross-check that `readDirection` runs against the card's own words.
    */
   async function readImage(file: File) {
     if (!layout) return;
@@ -293,6 +358,9 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     setRegions(null);
     setCrops({});
     setNotes({});
+    // An offer from the previous image must not outlive it: with the boxes still holding those
+    // values, an untouched form would report agreement with a reading of a different card.
+    setOffered({});
     try {
       const words: OcrWord[] | null = await readSlipWords(file);
       if (!words) {
@@ -325,6 +393,9 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     setCounterparty("");
     setCategoryId("");
     setNote("");
+    // Cleared with the boxes it describes. An offer remembered past the values it was made about
+    // would report the next card's typing as agreement with the previous card's reading.
+    setOffered({});
   }
 
   function closeForm() {
@@ -339,6 +410,36 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     setError(null);
     resetTyped();
   }
+
+  /**
+   * What is in each pre-fillable box now, in the same form the offer was remembered in.
+   *
+   * The timestamp is two inputs and one field: a card stores one instant, the pairing rule uses
+   * the instant rather than the day (D-102), and either input moving is the owner disagreeing with
+   * what the image offered.
+   */
+  const typedNow = useMemo((): Record<PrefillField, string> => ({
+    amount,
+    balance,
+    ownAccount: printedDigits,
+    occurredAt: `${occurredOn} ${occurredAtTime}`
+  }), [amount, balance, printedDigits, occurredOn, occurredAtTime]);
+
+  /**
+   * The two lists the trial turns on — **field names, never values** (D-114).
+   *
+   * `offeredFieldNames` is what the image put in front of the owner; `changedFieldNames` is what
+   * they overtyped before submitting. Neither carries an amount, a balance, a date or a digit, and
+   * neither is derived from anything the database does not already store.
+   */
+  const offeredFieldNames = useMemo(
+    () => PREFILL_FIELDS.filter((field) => offered[field] !== undefined),
+    [offered]
+  );
+  const changedFieldNames = useMemo(
+    () => PREFILL_FIELDS.filter((field) => offered[field] !== undefined && offered[field] !== typedNow[field]),
+    [offered, typedNow]
+  );
 
   /**
    * The second direction signal, required whenever there **is** one.
@@ -682,6 +783,25 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
               </select>
             </label>
           </div>
+
+          {offeredFieldNames.length > 0 && (
+            // **Said out loud, because the thing on trial is whether a filled box gets read**
+            // (D-114). A value the owner typed and a value the image offered look identical in an
+            // input, and the second is the one worth checking against its crop. Naming the fields
+            // is also the only honest way to show what the audit row will carry: field names, and
+            // no figure.
+            // `aria-live` rather than `role="status"`: this page already has exactly one status
+            // region, and a second computes to the same role and makes every unscoped
+            // `getByRole("status")` assertion in the browser suite ambiguous (GOTCHAS).
+            <p className="field-help" aria-live="polite">
+              {`The card filled ${offeredFieldNames.map((field) => FIELD_LABELS[field].toLowerCase()).join(", ")}. `}
+              {changedFieldNames.length > 0
+                ? `You have changed ${changedFieldNames.length} of ${offeredFieldNames.length}. `
+                : "You have changed none of them. "}
+              Check each against its crop — once you submit, a figure you did not type is as much
+              yours as one you did, and a card cannot be edited afterwards.
+            </p>
+          )}
 
           <p id="card-direction-help" className="field-help">
             {directionCheck?.outcome === "contradicted"

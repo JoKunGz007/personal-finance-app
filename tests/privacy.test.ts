@@ -528,25 +528,48 @@ describe("privacy guardrails", () => {
     expect(form).not.toMatch(/proposeAmount/u);
   });
 
-  it("never lets a machine-read digit reach any of a card's four stored figures", () => {
+  // **This test was reversed on 2026-08-16 and the reversal is the point of the entry.** It used
+  // to assert that no card figure could be pre-filled, which was D-087. D-114 put that decision on
+  // trial rather than overturning it, so a card's four digit-bearing fields are now offered values
+  // — and what has to be asserted instead is that the offer goes through the one module that
+  // cannot manufacture a figure, and that nothing but a field name leaves the form.
+  it("offers a card's figures only through the strict pre-fill, never through a parser of its own", () => {
     const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+
+    // The single door. A second path — a regex over the OCR text, a lenient parse, a "clean this
+    // up" helper written for the occasion — is exactly the silent error D-112 named as the residual
+    // risk, and it would not look wrong at the call site.
+    const offer = /function offerPrefill\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(offer, "offerPrefill must exist for this test to mean anything").toContain("prefillCardFields(");
+    expect(offer, "a figure may only be offered when the strict module said ok").not.toMatch(/parseThb|replace\(|RegExp|\/\^/u);
+
+    // `readImage` still fills nothing: it has not chosen a card yet, and a pre-fill belongs to one.
     const reader = /async function readImage\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
     expect(reader, "readImage must exist for this test to mean anything").toContain("findCards(");
+    for (const setter of ["setAmount", "setBalance", "setPrintedDigits", "setOccurredAtTime"]) {
+      expect(reader, `${setter} must not be reachable before a card is chosen`).not.toMatch(new RegExp(`${setter}\\(`, "u"));
+    }
 
-    // D-087's rule binds **wider** here than on a slip. A slip stores one digit-bearing field
-    // and a card stores four — the amount, the balance, the timestamp and the account digits —
-    // so all four are typed and none may be filled in from the image. The reader says where each
-    // one is; the owner reads it. "Pre-fill it, they can always check" is the plausible change
-    // that would quietly undo the decision, so it is asserted rather than commented (D-100).
-    for (const setter of ["setAmount", "setBalance", "setPrintedDigits", "setOccurredOn", "setOccurredAtTime"]) {
-      expect(reader, `${setter} must not be reachable from the reader`).not.toMatch(new RegExp(`${setter}\\(`, "u"));
-    }
-    // `showCard` is the other half of the same path — it crops, and cropping is all it does.
-    const shower = /async function showCard\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(shower).toContain("locateCardFields(");
-    for (const setter of ["setAmount", "setBalance", "setPrintedDigits", "setOccurredOn", "setOccurredAtTime"]) {
-      expect(shower, `${setter} must not be reachable from the crop path`).not.toMatch(new RegExp(`${setter}\\(`, "u"));
-    }
+    // **The direction control is still never filled from the image**, which is the half D-114
+    // explicitly did not put on trial: `readDirection` compares the card's words against what the
+    // owner chose, so filling in the owner's half would compare the image with itself.
+    expect(offer).not.toMatch(/setDirection\(/u);
+  });
+
+  it("lets a pre-fill's audit trail carry field names and never a figure", () => {
+    const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+
+    // D-114 records **structure, never values**: which fields were offered, and which of those the
+    // owner changed. Both lists are built by filtering the field-name constant, so a figure cannot
+    // travel in one by construction rather than by review.
+    expect(form).toMatch(/offeredFieldNames\s*=\s*useMemo\(\s*\(\)\s*=>\s*PREFILL_FIELDS\.filter/u);
+    expect(form).toMatch(/changedFieldNames\s*=\s*useMemo\(\s*\(\)\s*=>\s*PREFILL_FIELDS\.filter/u);
+
+    // The remembered values exist to be compared and must not reach the request body. Asserted
+    // against the submit call rather than the whole file, since comparing is legitimate elsewhere.
+    const submit = /async function submit\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(submit, "submit must exist for this test to mean anything").toContain("/api/v1/notification-cards");
+    expect(submit, "the remembered offer is for comparison, not for sending").not.toMatch(/\boffered\b/u);
   });
 
   it("keeps a card's two direction signals from collapsing into one", () => {
