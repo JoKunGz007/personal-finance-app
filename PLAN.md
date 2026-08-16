@@ -474,4 +474,6 @@ Only after every local task above passes:
 
     **What adoption costs, since it is not "call an API".** An API key in the hosted environment, the first credential this deployment would hold that is not Supabase's. A network call on a path that is offline today and works with no connectivity at all. Either a second reader kept working beside the local one, or the local one deleted along with the promise that no image leaves the device. **The strict pre-fill guarantees are unaffected either way** — `parseThb`, the digit guard and blank-on-failure sit downstream of whichever engine produced the words, so no engine can make a wrong-but-plausible figure reach a box.
 
-    **What is not decided**: whether to adopt it at all, and if so whether the local engine stays as a fallback. **Cost is not a factor** — twelve images against 1,000 free per month.
+    **Both fixes were built on 2026-08-16** (D-119) and are unconditional grammar improvements rather than adoption work: under Vision the reader now finds **25 of 25 cards** and fills **99 of 100** fields, with amount, balance and account digits at 25/25 each. Tesseract is unchanged at 70 of 100. **One field is left** — a single Krungthai card refusing its timestamp as `LABEL_NOT_FOUND`, undiagnosed.
+
+    **What is not decided**: whether to adopt Vision at all, and if so whether the local engine stays as a fallback. **Cost is not a factor** — twelve images against 1,000 free per month.
