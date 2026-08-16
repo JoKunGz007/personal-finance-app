@@ -490,7 +490,11 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
           occurredAtTime,
           counterparty: counterparty.trim() || null,
           categoryId: categoryId || null,
-          note: note.trim() || null
+          note: note.trim() || null,
+          // Field names only, and both derived by filtering the field-name constant rather than
+          // built by hand — so no figure can travel in either by construction (D-114, D-116).
+          prefillOffered: offeredFieldNames,
+          prefillChanged: changedFieldNames
         })
       });
       const body: unknown = await response.json().catch(() => null);

@@ -252,6 +252,74 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
     expect(audit.output).not.toContain("73100");
     expect(audit.output).not.toContain("9934");
   });
+
+  // Migration 019, D-114's trial. What is recorded is which fields the OCR pre-fill offered and
+  // which of those the owner changed — **field names and nothing else**, because the statistic
+  // this feeds is a rate over cards rather than anything about a figure.
+  describe("what a card's pre-fill offered travels as field names", () => {
+    it("records both lists in the audit row, carrying no figure", async () => {
+      const written = await captureCard(card({
+        occurredAtTime: "17:10",
+        balanceMinor: "52100",
+        prefillOffered: ["amount", "balance", "occurredAt"],
+        prefillChanged: ["balance"]
+      }));
+      expect(written.status).toBe(201);
+      const audit = psql(`
+        select detail::text from public.audit_events
+        where owner_id = '${owner}' and event_type = 'notification_card.capture'
+        order by id desc limit 1;
+      `);
+      expect(audit.ok).toBe(true);
+      expect(audit.output).toContain("prefill_offered");
+      expect(audit.output).toContain("occurredAt");
+      expect(audit.output).toContain("prefill_changed");
+      // The figures that were on the very card this row is about must not be in it.
+      expect(audit.output).not.toContain("52100");
+      expect(audit.output).not.toContain("20000");
+    });
+
+    // **The deployment-ordering case.** Every push to `main` deploys (D-109), so the browser that
+    // is live right now sends neither key and must keep capturing unchanged.
+    it("captures a card that names no pre-fill at all, and records empty lists", async () => {
+      const written = await captureCard(card({ occurredAtTime: "17:11", balanceMinor: "52000" }));
+      expect(written.status).toBe(201);
+      const audit = psql(`
+        select detail->>'prefill_offered' from public.audit_events
+        where owner_id = '${owner}' and event_type = 'notification_card.capture'
+        order by id desc limit 1;
+      `);
+      expect(audit.ok).toBe(true);
+      expect(audit.output).toContain("[]");
+    });
+
+    it("refuses a field name outside the closed set, rather than storing free text", async () => {
+      const written = await captureCard(card({ occurredAtTime: "17:12", prefillOffered: ["counterparty"] }));
+      expect(written.status).toBe(422);
+    });
+
+    // A figure smuggled into the list is the failure this closed set exists to prevent, and it
+    // must be refused by the *shape* rather than by anything inspecting the string.
+    it("refuses a figure where a field name belongs", async () => {
+      const written = await captureCard(card({ occurredAtTime: "17:13", prefillOffered: ["1,234.00"] }));
+      expect(written.status).toBe(422);
+    });
+
+    it("refuses a changed field that was never offered", async () => {
+      const written = await captureCard(card({
+        occurredAtTime: "17:14",
+        prefillOffered: ["amount"],
+        prefillChanged: ["balance"]
+      }));
+      expect(written.status).toBe(422);
+      expect(String(written.body.error)).toContain("invalid");
+    });
+
+    it("refuses a field named twice, since it would double-count in any rate", async () => {
+      const written = await captureCard(card({ occurredAtTime: "17:15", prefillOffered: ["amount", "amount"] }));
+      expect(written.status).toBe(422);
+    });
+  });
   });
 
   // The binding rule is per layout, and the reason it cannot be global is that applying one

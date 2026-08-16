@@ -569,7 +569,12 @@ describe("privacy guardrails", () => {
     // against the submit call rather than the whole file, since comparing is legitimate elsewhere.
     const submit = /async function submit\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
     expect(submit, "submit must exist for this test to mean anything").toContain("/api/v1/notification-cards");
-    expect(submit, "the remembered offer is for comparison, not for sending").not.toMatch(/\boffered\b/u);
+    expect(submit, "the remembered offer is a map of values and is for comparison, not for sending")
+      .not.toMatch(/\boffered\b/u);
+    // And the derived name lists are what does travel, so this test fails if the wiring is dropped
+    // rather than passing vacuously once nothing is sent at all (migration 019).
+    expect(submit).toMatch(/prefillOffered:\s*offeredFieldNames/u);
+    expect(submit).toMatch(/prefillChanged:\s*changedFieldNames/u);
   });
 
   it("keeps a card's two direction signals from collapsing into one", () => {

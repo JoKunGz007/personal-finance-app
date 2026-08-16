@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema, toMinorAmount } from "@/lib/money";
 import { NOTIFICATION_CARD_LAYOUTS } from "@/lib/notification-card";
+import { PREFILL_FIELDS } from "@/lib/notification-card-prefill";
 import {
   applyCorrection,
   correctionFields,
@@ -78,6 +79,19 @@ export function notificationCardDateWindow(today: Date): { earliest: string; lat
  * No `currency`: the RPC defaults it and the table's CHECK enforces THB, so a currency on the
  * wire would be a value the server ignores, which reads as a choice the owner does not have.
  * Same argument `lib/cash.ts` makes.
+ *
+ * **`prefillOffered` and `prefillChanged` are field names and can never be anything else**
+ * (migration 019, D-114, D-116). They record which of a card's four digit-bearing fields the OCR
+ * pre-fill offered a value for, and which of those the owner changed before submitting — the
+ * denominator the trial needs, and **structure rather than values**, so no amount, balance, date
+ * or digit may travel in either. `z.enum` over the same constant the pre-fill module fills from is
+ * what makes that true by construction: a free-text array would accept a figure and look identical
+ * at this call site.
+ *
+ * **Both are optional, and absent means an empty list rather than a refusal.** A card the engine
+ * could not read at all offers nothing, and a browser with no pre-fill — which is every browser
+ * until this ships — must keep capturing exactly as it does today. The database holds the same
+ * rule for the same reason (D-109's ordering: every push to `main` deploys).
  */
 export const notificationCardCaptureSchema = z.object({
   accountId: z.string().uuid(),
@@ -90,7 +104,9 @@ export const notificationCardCaptureSchema = z.object({
   occurredAtTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   counterparty: z.string().trim().min(1).max(240).nullable(),
   categoryId: z.string().uuid().nullable(),
-  note: z.string().trim().min(1).max(2000).nullable()
+  note: z.string().trim().min(1).max(2000).nullable(),
+  prefillOffered: z.array(z.enum(PREFILL_FIELDS)).optional(),
+  prefillChanged: z.array(z.enum(PREFILL_FIELDS)).optional()
 }).strict().superRefine((card, context) => {
   const amount = toMinorAmount(card.amountMinor);
   if (amount !== null && ((card.kind === "deposit" && amount <= 0n) || (card.kind === "withdrawal" && amount >= 0n))) {
@@ -99,6 +115,27 @@ export const notificationCardCaptureSchema = z.object({
       message: "The amount's sign does not match the card's direction.",
       path: ["amountMinor"]
     });
+  }
+  // A field named twice would double-count it in any rate built from these rows, and the two
+  // lists would stop being comparable. Refused here as well as in the database, because this is
+  // the layer that can say which field is at fault.
+  for (const [key, names] of [["prefillOffered", card.prefillOffered], ["prefillChanged", card.prefillChanged]] as const) {
+    if (names && new Set(names).size !== names.length) {
+      context.addIssue({ code: "custom", message: "A field may be named only once.", path: [key] });
+    }
+  }
+  // **A field changed that was never offered is not a correction.** It is a caller with a broken
+  // model of its own form, and letting it through would inflate every rate computed from these
+  // rows — the one number the trial is for.
+  const offered = new Set(card.prefillOffered ?? []);
+  for (const name of card.prefillChanged ?? []) {
+    if (!offered.has(name)) {
+      context.addIssue({
+        code: "custom",
+        message: "A field cannot be changed from a pre-filled value it was never offered.",
+        path: ["prefillChanged"]
+      });
+    }
   }
 });
 

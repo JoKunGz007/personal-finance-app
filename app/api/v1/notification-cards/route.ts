@@ -139,6 +139,14 @@ export async function POST(request: Request) {
     if (error.message.includes("does not match the account bank")) {
       return routeError(`A ${parsed.data.channel} card belongs to a ${layout.bankCode} account.`, 422);
     }
+    // Migration 019's pre-fill lists. Already refused by the schema above, so reaching this means
+    // the two closed sets have drifted apart — mapped rather than left generic precisely because
+    // that is the failure worth being able to recognise from a response. The database's own words
+    // are still not echoed: they are safe here, but the rule that they are never returned is
+    // easier to keep than to check case by case.
+    if (error.message.includes("prefillOffered") || error.message.includes("prefillChanged")) {
+      return routeError("The record of what the card pre-filled is invalid, so nothing was captured.", 422);
+    }
     return routeError("The notification card could not be captured.", 400);
   }
 
