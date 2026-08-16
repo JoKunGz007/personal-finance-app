@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(26);
+select plan(37);
 
 -- Bank notification cards (migration 016, PLAN task 27).
 --
@@ -242,6 +242,119 @@ select throws_ok(
   $$delete from public.notification_cards where channel = 'SCB Connect'$$,
   'notification_cards is append-only: DELETE is forbidden',
   'a captured card cannot be deleted'
+);
+
+-- ------------------------------------------------------- pre-fill audit (migration 019)
+--
+-- D-114 records **which fields a pre-fill offered and which the owner changed**, as field names
+-- and nothing else, so the trial has a denominator. These hold three things: the closed set is
+-- enforced in the database rather than only at the route, `changed` cannot exceed `offered`, and a
+-- payload carrying neither key still captures — which is what lets this migration reach the hosted
+-- database before the app that sends them.
+
+select is(
+  public.capture_notification_card(jsonb_build_object(
+    'accountId', 'cccccccc-0000-4000-8000-000000000001',
+    'channel', 'SCB Connect', 'printedAccountDigits', '4321',
+    'kind', 'withdrawal', 'amountMinor', '-31500', 'currency', 'THB',
+    'occurredOn', '2026-07-21', 'occurredAtTime', '08:15', 'balanceMinor', '1068000',
+    'prefillOffered', jsonb_build_array('amount','balance','occurredAt'),
+    'prefillChanged', jsonb_build_array('balance')
+  ))->>'captured',
+  'true',
+  'a card captures with the two pre-fill lists alongside it'
+);
+select is(
+  (select detail->'prefill_offered' from public.audit_events
+     where event_type = 'notification_card.capture' and detail->>'occurred_on' = '2026-07-21'),
+  '["amount", "balance", "occurredAt"]'::jsonb,
+  'the audit event records which fields the pre-fill offered'
+);
+select is(
+  (select detail->'prefill_changed' from public.audit_events
+     where event_type = 'notification_card.capture' and detail->>'occurred_on' = '2026-07-21'),
+  '["balance"]'::jsonb,
+  'the audit event records which of those the owner changed'
+);
+-- Values must never travel in either list. Asserted on the stored row rather than on the payload,
+-- because the row is what survives and what a later reader will trust.
+select ok(
+  (select (detail->'prefill_offered')::text !~ '[0-9]' and (detail->'prefill_changed')::text !~ '[0-9]'
+     from public.audit_events
+     where event_type = 'notification_card.capture' and detail->>'occurred_on' = '2026-07-21'),
+  'neither pre-fill list carries a digit, so no figure can reach an audit row through it'
+);
+
+-- **Absent means empty, and this is the deployment-ordering test rather than a tidiness one.**
+-- The app in production sends neither key until part 4 ships, and every push to `main` deploys
+-- (D-109), so a migration that refused the old payload would break card capture from the moment
+-- it was applied until the app caught up.
+select is(
+  public.capture_notification_card(jsonb_build_object(
+    'accountId', 'cccccccc-0000-4000-8000-000000000001',
+    'channel', 'SCB Connect', 'printedAccountDigits', '4321',
+    'kind', 'withdrawal', 'amountMinor', '-31600', 'currency', 'THB',
+    'occurredOn', '2026-07-22', 'occurredAtTime', '08:16', 'balanceMinor', '1036400'
+  ))->>'captured',
+  'true',
+  'a payload carrying neither pre-fill key still captures, so 019 can land before the app'
+);
+select is(
+  (select detail->'prefill_offered' from public.audit_events
+     where event_type = 'notification_card.capture' and detail->>'occurred_on' = '2026-07-22'),
+  '[]'::jsonb,
+  'a card captured with no pre-fill records an empty offered list rather than nothing'
+);
+
+-- The closed set, enforced where it cannot be bypassed. The route validates it too, and the route
+-- is not the last boundary: an audit row is append-only.
+select throws_ok(
+  $$select public.capture_notification_card(jsonb_build_object(
+      'accountId','cccccccc-0000-4000-8000-000000000001','channel','SCB Connect',
+      'printedAccountDigits','4321','kind','withdrawal','amountMinor','-100','currency','THB',
+      'occurredOn','2026-07-23','occurredAtTime','09:00','balanceMinor','1000',
+      'prefillOffered', jsonb_build_array('counterparty')))$$,
+  'prefillOffered contains an unknown field name',
+  'a field name outside the closed set is refused'
+);
+select throws_ok(
+  $$select public.capture_notification_card(jsonb_build_object(
+      'accountId','cccccccc-0000-4000-8000-000000000001','channel','SCB Connect',
+      'printedAccountDigits','4321','kind','withdrawal','amountMinor','-100','currency','THB',
+      'occurredOn','2026-07-23','occurredAtTime','09:00','balanceMinor','1000',
+      'prefillOffered', jsonb_build_array('amount','amount')))$$,
+  'prefillOffered contains a repeated field name',
+  'a repeated field name is refused, since it would double-count in any rate built from these rows'
+);
+select throws_ok(
+  $$select public.capture_notification_card(jsonb_build_object(
+      'accountId','cccccccc-0000-4000-8000-000000000001','channel','SCB Connect',
+      'printedAccountDigits','4321','kind','withdrawal','amountMinor','-100','currency','THB',
+      'occurredOn','2026-07-23','occurredAtTime','09:00','balanceMinor','1000',
+      'prefillOffered', jsonb_build_array(jsonb_build_object('amount','x'))))$$,
+  'prefillOffered must contain only field names',
+  'an object smuggled into the list is refused before it can carry a value into an audit row'
+);
+select throws_ok(
+  $$select public.capture_notification_card(jsonb_build_object(
+      'accountId','cccccccc-0000-4000-8000-000000000001','channel','SCB Connect',
+      'printedAccountDigits','4321','kind','withdrawal','amountMinor','-100','currency','THB',
+      'occurredOn','2026-07-23','occurredAtTime','09:00','balanceMinor','1000',
+      'prefillOffered', '"amount"'::jsonb))$$,
+  'prefillOffered must be an array of field names',
+  'a bare string where a list belongs is refused rather than coerced into one'
+);
+-- Changing a field that was never offered is not a correction; it is a caller with a broken model
+-- of its own form, and it would inflate every rate computed from these rows.
+select throws_ok(
+  $$select public.capture_notification_card(jsonb_build_object(
+      'accountId','cccccccc-0000-4000-8000-000000000001','channel','SCB Connect',
+      'printedAccountDigits','4321','kind','withdrawal','amountMinor','-100','currency','THB',
+      'occurredOn','2026-07-23','occurredAtTime','09:00','balanceMinor','1000',
+      'prefillOffered', jsonb_build_array('amount'),
+      'prefillChanged', jsonb_build_array('balance')))$$,
+  'prefillChanged must be a subset of prefillOffered',
+  'a changed field that was never offered is refused'
 );
 
 select * from finish();
