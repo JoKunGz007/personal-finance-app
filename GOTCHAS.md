@@ -98,6 +98,8 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A WebAssembly decoder resolves its binary next to the bundled chunk, so it 404s and fails silently
 - A WASM core path naming a directory makes the engine ask for a file the build never copied
 - A misread separator hides the label, not just the value, and the field reads as "not printed"
+- Enlarging an image for OCR moves every box, so the crops must come from the same image
+- A measurement taken on slips does not govern cards, and this is the fourth time
 
 ### Real data, masking and privacy
 
@@ -1025,3 +1027,17 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: `.runtime/vitest.harness.config.ts` includes `.runtime/**/*.harness.ts`, so `pnpm vitest run --config .runtime/vitest.harness.config.ts` collects **every** harness present, not the one being worked on. Harnesses here write their output files unconditionally, so an unrelated one re-running overwrites whatever state that file had accumulated.
 - Avoid: always name the harness file as well as the config. Before running anything under that config, list `.runtime/` and see what else is there — harnesses are deleted after use precisely so this cannot happen, and one left in place is the hazard.
 - Verify: 2026-08-16. A run intended for a new harness also re-ran D-113's and rewrote `.runtime/card-ocr-readings.tsv`; the values were identical but any y/n marks on it were lost, and marking that file is the only open way to establish whether an accepted figure was correct.
+
+## Enlarging an image for OCR moves every box, so the crops must come from the same image
+
+- Symptom: after reading an enlarged screenshot, every cropped field shows the wrong row — or a blank strip — while the reader reports each field as found. Nothing errors, and the picture beside the input looks like a plausible piece of the card.
+- Cause: the reader returns a box in the coordinate space of **whatever it read**. Read a 2× image and crop from the original file with the same box and every crop lands at twice its intended offset. It is silent by construction, because a crop of the wrong row is still a crop.
+- Avoid: hold **one** image and use it for both. `app/notification-card-capture.tsx` carries a `CardImage` — the enlarged source plus its dimensions — built once by `loadCardImage` and passed to both the reader and `cropRegion`; the `File` is not kept, so there is nothing to accidentally crop from. `paddedCrop` must be given the same dimensions for the same reason.
+- Verify: 2026-08-16 (D-117). The enlargement lands with the shared `CardImage`, and the card-switch path re-crops from the held image rather than re-decoding the file.
+
+## A measurement taken on slips does not govern cards, and this is the fourth time
+
+- Symptom: a decision entry states a limit with numbers behind it, the limit is inherited without re-testing, and it turns out not to hold on the record it is being applied to.
+- Cause: slips and cards are read by the same engine and the same seam, so a finding about one reads as a finding about both. They are different subjects — a photographed receipt against small grey label text inside a phone-notification screenshot — and the engine behaves differently on each. **D-087's 2× upscale ladder** (recovered 1 slip, broke 3) does not hold for cards, where a capped 2× took fields filled from 62 to 70 of 100 (D-117). D-087's accuracy claim did not hold for cards either, and was measured on an older engine version besides (D-112). D-113 found the same for its date grammar.
+- Avoid: before inheriting any OCR limit, check what it was measured **on** and on which engine version. Re-run it against the record in hand rather than reasoning from the entry. Where a finding is genuinely per-subject, apply it at the **call site** rather than in the shared engine — the card form scales its own image and `lib/slip-ocr-engine.ts` is untouched, so slip capture keeps the behaviour its own measurement supports.
+- Verify: 2026-08-16 (D-117, D-112, D-113). Three inherited limits, three re-measurements, three that did not transfer.
