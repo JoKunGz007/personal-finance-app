@@ -490,3 +490,13 @@ Only after every local task above passes:
     **What it needs when it is done**, and why it was not bundled with the fix: a fresh backup taken first, explicit authorization to push, and the ordering rule — it reaches the hosted project before any app change depending on it. Writing it early opens a local/hosted migration gap for a hole nothing can fall into, and the backup goes stale the next time a card is captured.
 
     **A test already holds the current behaviour in place.** `tests/notification-card-routes.test.ts` § `refuses an explicitly empty list` expects **422** today and **must be flipped to 201** when 020 lands. Read that test rather than this paragraph — it is the one that fails when it goes stale.
+
+38. **Capture flow: the next card, the direction, and a result you can see.** Asked for by the owner after his first three real cards, built 2026-08-17 (D-123). Complete.
+
+    **The next card is selected automatically after a capture** and re-cropped from the held image. A screenshot carries two cards more often than one (D-100), so re-picking from the chooser was the second half of every capture. `selectCard` is now the single path both the chooser and the advance go through.
+
+    **The direction is filled from the printed sign, never from the direction word.** Filling it from the word would hand `readDirection` back the signal it already holds and the cross-check would agree with itself on every card while still looking like a check (D-099). Measured over 28 real cards: **26 print both a word and a sign and all 26 agree**; the two that do not are KBank Live incoming, where the control stays blank and the owner sets it.
+
+    **The result is a coloured banner** — green captured, amber already held, red failed — with the meaning in the words as well as the colour. A banner rather than a modal dialog: a dialog needs a focus trap, Escape handling, focus restoration and `aria-modal`, each a way to fail the axe pass this route holds.
+
+    **One thing this does not do**: the direction is absent from the pre-fill audit lists, because migration 019's closed set is the four digit-bearing fields and widening it is a migration. The trial's offered and changed rates therefore describe those four and say nothing about the direction.

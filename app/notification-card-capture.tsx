@@ -201,10 +201,17 @@ const FIELD_LABELS: Record<CardFieldName, string> = {
  * LINE conversation the screenshot came from is the only thing that can.
  *
  * **Direction is read twice and refuses when the two disagree.** The card names its direction in
- * words *and* signs its amount. This form takes the words from the image and the sign from the
- * control you set, which keeps the two signals genuinely independent; `readDirection` compares
- * them and a contradiction blocks the save. A card stored on the surviving signal would be a
- * payment recorded backwards, and `notification_cards` is append-only.
+ * words *and* signs its amount, and `readDirection` compares the two — a contradiction blocks the
+ * save, because a card stored on the surviving signal is a payment recorded backwards on an
+ * append-only row.
+ *
+ * **Both signals now come from the image, and which one feeds the control is the whole point**
+ * (D-123). The control is filled from the printed **sign** and never from the direction **word**:
+ * the word is what the check already holds, so feeding it back would make the check agree with
+ * itself on every card while still looking like a check. The two are independent in the way that
+ * matters — a misread that garbles a Thai direction word and one that drops a leading `-` are not
+ * the same misread. Where a card prints no sign, the control stays blank and you set it, which on
+ * the measured samples is KBank Live incoming and nothing else.
  */
 export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => void }) {
   const window_ = useMemo(() => notificationCardDateWindow(new Date()), []);
@@ -245,7 +252,9 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
+  // A captured card, a card already held, and a failure read very differently and are acted on
+  // differently, so the result carries its own tone rather than being three shades of grey.
+  const [status, setStatus] = useState<{ tone: "captured" | "already"; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -401,6 +410,25 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
     setAmount(prefill.amount.ok ? prefill.amount.value.magnitude : "");
     if (prefill.amount.ok) remembered.amount = prefill.amount.value.magnitude;
 
+    // **The direction is filled from the sign the card printed, never from its direction word**
+    // (D-123). That distinction is the whole of this block and it is not pedantry.
+    //
+    // `readDirection` refuses a card whose two printed signals disagree, and it gets the word from
+    // the image and the sign from *this control*. Filling the control from the **word** would hand
+    // it back the signal it already has, and the check would agree with itself on every card
+    // forever — the failure D-099 built it to catch would stop being caught silently. Filling it
+    // from the **sign** keeps two genuinely different printed features in play: a misread that
+    // corrupts a Thai direction word and a misread that flips a leading `-` are not the same
+    // misread, and either one alone still blocks the save.
+    //
+    // **Both signals must be present and agree, or the owner picks.** Measured 2026-08-17 over the
+    // 12 real screenshots: 26 of 28 cards print both, and all 26 agree. The other two are KBank
+    // Live incoming, which names its direction in the title and prints no sign — so on those the
+    // control stays blank and the card is not submittable until it is set, exactly as before.
+    const printedSign = prefill.amount.ok ? prefill.amount.value.sign : "";
+    const bySign: CardDirection | "" = printedSign === "+" ? "in" : printedSign === "-" ? "out" : "";
+    setDirection(bySign !== "" && bySign === picked.direction ? bySign : "");
+
     setBalance(prefill.balance.ok ? prefill.balance.value : "");
     if (prefill.balance.ok) remembered.balance = prefill.balance.value;
 
@@ -449,13 +477,34 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
   }
 
   /**
+   * Puts one card of the current screenshot on screen — the only way a card is ever chosen.
+   *
+   * Both callers go through here: the chooser the owner drives, and the advance that follows a
+   * capture. They were the same fifteen lines twice before, and the guard below is the reason
+   * having one copy matters.
+   *
+   * **Guarded, unlike the call inside `readImage`**: a crop can still fail on an image the decoder
+   * mangled, and an unhandled rejection would leave the previous card's crops on screen as though
+   * they were this one's. **The held image is what makes this correct**, not the file — the boxes
+   * were measured in its coordinate space, and re-decoding the file would put them off their rows.
+   */
+  function selectCard(index: number) {
+    setChosen(index);
+    resetTyped();
+    if (!cardImage.current || !regions) return;
+    void showCard(cardImage.current, regions, index).catch(() => {
+      setNotes({ amount: "This card's fields could not be cut out of the image. Read them from the card itself." });
+      setCrops({});
+    });
+  }
+
+  /**
    * Reads the screenshot and splits it into cards.
    *
-   * **It fills nothing in itself.** The four digit-bearing boxes are offered values by
-   * `offerPrefill`, which runs from `showCard` once a specific card is on screen — because a
-   * pre-fill belongs to one card and this function has not chosen one yet. The direction control
-   * is filled by neither, which `tests/privacy.test.ts` asserts: it is the owner's half of the
-   * cross-check that `readDirection` runs against the card's own words.
+   * **It fills nothing in itself.** The four digit-bearing boxes and the direction control are
+   * offered values by `offerPrefill`, which runs from `showCard` once a specific card is on screen
+   * — because a pre-fill belongs to one card and this function has not chosen one yet. A direction
+   * set here would belong to no card in particular, which `tests/privacy.test.ts` asserts.
    */
   async function readImage(file: File) {
     if (!layout) return;
@@ -623,13 +672,25 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
         return;
       }
       const captured = (body as { captured?: boolean } | null)?.captured === true;
-      setStatus(
-        captured
-          ? "Captured. A card cannot be deleted or edited once saved."
-          : "This exact card was already captured, so nothing was added."
-      );
-      resetTyped();
+      // A screenshot carries two cards more often than one (D-100), so the ordinary next act after
+      // a capture is the card beside it. Advancing to it rather than making the owner re-pick from
+      // the chooser is what turns a two-card screenshot into one pass instead of two.
+      const next = regions !== null && chosen + 1 < regions.length ? chosen + 1 : null;
+      const remaining = next === null
+        ? "That was the last card on this screenshot."
+        : `Card ${next + 1} of ${regions!.length} is ready — check each figure against its crop.`;
+      setStatus({
+        tone: captured ? "captured" : "already",
+        message: captured
+          ? `Captured. A card cannot be deleted or edited once saved. ${remaining}`
+          : `This exact card was already captured, so nothing was added. ${remaining}`
+      });
       onCaptured?.();
+      // `selectCard` resets the typed values itself, so the no-next branch is the only one that
+      // has to. Clearing them twice would be harmless; not clearing them at all would leave the
+      // captured card's figures in a form that is no longer about any card on screen.
+      if (next === null) resetTyped();
+      else selectCard(next);
     } catch {
       setError("The ledger could not be reached, so nothing was captured.");
     } finally {
@@ -756,22 +817,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
               <select
                 value={chosen}
                 disabled={busy || reading}
-                onChange={(event) => {
-                  const index = Number(event.target.value);
-                  setChosen(index);
-                  resetTyped();
-                  // Guarded, unlike the call inside `readImage`: a crop can still fail on an
-                  // image the decoder mangled, and an unhandled rejection here would leave the
-                  // previous card's crops on screen as though they were this one's. **The held
-                  // image is what makes this correct**, not the file — the boxes were measured in
-                  // its coordinate space, and re-decoding the file would put them off their rows.
-                  if (cardImage.current && regions) {
-                    void showCard(cardImage.current, regions, index).catch(() => {
-                      setNotes({ amount: "This card's fields could not be cut out of the image. Read them from the card itself." });
-                      setCrops({});
-                    });
-                  }
-                }}
+                onChange={(event) => selectCard(Number(event.target.value))}
               >
                 {regions.map((each, index) => (
                   <option key={index} value={index}>
@@ -983,8 +1029,37 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
             <textarea value={note} maxLength={2000} rows={2} disabled={busy} onChange={(event) => setNote(event.target.value)} />
           </label>
 
-          {status && <p className="status" role="status">{status}</p>}
-          {error && <p className="status error" role="alert">{error}</p>}
+          {/* The result of a capture, which is the one message on this form worth interrupting for
+              — a card is append-only, so "saved" and "not saved" are not the same news in a
+              different shade of grey (D-123).
+
+              **A banner rather than a modal dialog, deliberately.** A dialog needs a focus trap, an
+              Escape key, a restore of focus on close and an `aria-modal` that hides the rest of the
+              page, and every one of those is a way to fail the axe pass this route already holds.
+              A coloured region carrying the same words and the same buttons gets the visibility
+              without any of that, and it does not steal the keyboard from someone mid-form.
+
+              The tone is carried by a class *and* by the words, never by colour alone. */}
+          {status && (
+            <div className={`capture-result ${status.tone}`} role="status">
+              <p>{status.message}</p>
+              <div className="capture-result-actions">
+                <button type="button" className="secondary-button" onClick={() => setStatus(null)}>
+                  OK
+                </button>
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="capture-result failed" role="alert">
+              <p>{error}</p>
+              <div className="capture-result-actions">
+                <button type="button" className="secondary-button" onClick={() => setError(null)}>
+                  OK
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="slip-actions">
             <button type="submit" className="primary-button" disabled={busy || !ready}>

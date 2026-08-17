@@ -550,10 +550,13 @@ describe("privacy guardrails", () => {
       expect(reader, `${setter} must not be reachable before a card is chosen`).not.toMatch(new RegExp(`${setter}\\(`, "u"));
     }
 
-    // **The direction control is still never filled from the image**, which is the half D-114
-    // explicitly did not put on trial: `readDirection` compares the card's words against what the
-    // owner chose, so filling in the owner's half would compare the image with itself.
-    expect(offer).not.toMatch(/setDirection\(/u);
+    // The direction **is** filled from the image as of D-123, and the rule that replaced "never"
+    // is asserted in `keeps a card's two direction signals from collapsing into one`: it comes
+    // from the printed sign, never from the direction word, and only when the two agree. What
+    // still holds here is that it goes through the strict module like every other offer — no
+    // second reading of the sign, no regex over the card's text.
+    expect(offer, "the direction must come from the strict pre-fill's amount, not a reading of its own")
+      .toMatch(/prefill\.amount\.value\.sign/u);
   });
 
   it("lets a pre-fill's audit trail carry field names and never a figure", () => {
@@ -595,8 +598,24 @@ describe("privacy guardrails", () => {
     expect(form, 'a bare `!== "contradicted"` gate is the shape this test exists to prevent')
       .not.toMatch(/directionCheck\?\.outcome !== "contradicted"/u);
 
-    // And the direction control must not be pre-set from the image, or the "second" signal is
-    // the first one wearing a different name.
+    // **The direction is filled from the printed sign and never from the direction word** (D-123),
+    // and this is the assertion that keeps the cross-check from becoming a formality. The word is
+    // what `readDirection` already holds; handing it back through the control would make the check
+    // agree with itself on every card forever, and it would still *look* like a check. Filling
+    // from the sign keeps two different printed features in play.
+    const offer = /function offerPrefill\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(offer, "offerPrefill must exist for this test to mean anything").toContain("prefillCardFields");
+    expect(offer, "the direction must come from the printed sign")
+      .toMatch(/prefill\.amount\.value\.sign/u);
+    expect(offer, "and it must be withheld unless the sign agrees with the direction word")
+      .toMatch(/setDirection\(bySign !== "" && bySign === picked\.direction \? bySign : ""\)/u);
+    // `picked.direction` is the word-derived signal. Assigning it to the control is the exact
+    // collapse this test exists to prevent, however it is spelled.
+    expect(offer, "the word-derived direction must never be assigned to the control")
+      .not.toMatch(/setDirection\(picked\.direction\)/u);
+
+    // `readImage` still fills nothing: it has not chosen a card yet, so any direction it set would
+    // belong to no card in particular.
     const reader = /async function readImage\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
     expect(reader).not.toMatch(/setDirection\(/u);
   });

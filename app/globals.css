@@ -187,6 +187,18 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .card-bench > .secondary-button { margin-left: 167px; }
 .card-bench .status { margin: 0; color: var(--muted); font-size: 13px; }
 .card-bench .status.error { color: var(--red); }
+/* The result of a capture (D-123). A card is append-only, so "saved" and "not saved" are the two
+   sentences on this form that must not be missed — the muted `.status` line they used to share
+   read as one more note among several. Three tones, each carrying its meaning in the words as well
+   as the colour, because colour alone is not a message. Every value is a theme token, so this
+   reads correctly in dark mode without a second rule. */
+.capture-result { margin: 4px 0 0; padding: 14px 16px; display: grid; gap: 12px; border: 1px solid; border-left-width: 4px; border-radius: var(--radius); font-size: 14px; }
+.capture-result p { margin: 0; }
+.capture-result-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.capture-result .secondary-button { min-height: 36px; padding: 7px 13px; font-size: 13px; }
+.capture-result.captured { color: var(--celadon-ink); border-color: var(--celadon); background: color-mix(in srgb, var(--celadon) 22%, transparent); }
+.capture-result.already { color: var(--navy); border-color: var(--saffron); background: var(--saffron-wash); }
+.capture-result.failed { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); }
 /* One crop per field, side by side and each one legible on its own. A card carries up to six
    fields where a slip's finder shows one, so these wrap into a grid rather than stacking into a
    column longer than the form they sit above. */

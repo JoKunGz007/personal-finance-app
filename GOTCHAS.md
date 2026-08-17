@@ -159,6 +159,8 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - `normalise` decomposes Thai `ำ`, so a label the source spells with one character is matched as two
 - `array_length` of an empty array is NULL, so a count-the-duplicates check fires on an empty list
 - A defect that only appears when a feature succeeds will not be in the gate
+- Pre-filling one half of a two-signal cross-check leaves a check that agrees with itself
+- Cloud Vision's output is not byte-identical between calls, so a harness card count is not a fixed number
 
 ## Traps
 
@@ -1090,3 +1092,17 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: tests are written against the cases that existed when they were written, and a partly-working feature never produces its own success path. A card pre-fill at 70% always had *some* field the owner corrected, so the "changed nothing" payload was never sent by anything — until the engine reached 99 of 100 and it became the normal case (D-122).
 - Avoid: after any change that raises a success rate, ask **which paths become reachable that were not**, and walk those before shipping. The empty collection, the zero-length list, the no-corrections case and the everything-matched case are the usual ones. A green gate says the old paths still work, and says nothing at all about the new one.
 - Verify: 2026-08-17 (D-122, D-120). Vitest 595, pgTAP 263 and both browser suites were green over a card capture that could not succeed.
+
+## Pre-filling one half of a two-signal cross-check leaves a check that agrees with itself
+
+- Symptom: none, ever. The refusal path still exists, its tests still pass, its message is still written — and it stops firing. This is the trap: a cross-check that has been made vacuous looks exactly like a cross-check that is never triggered because nothing is wrong.
+- Cause: a check comparing two signals is only worth its code while the two come from different places. `readDirection` compares the direction **word** on the card against the **sign** carried by the owner's direction control; fill that control from the word and both operands trace to one reading. Convenience work is where this happens, because pre-filling a control is exactly the change that looks like it only touches presentation.
+- Avoid: before pre-filling any control, ask **what compares against it**. If the answer is "something derived from the same source", either leave it alone or find a genuinely different source — for the card's direction that is the **printed sign**, a separate feature that a single misread cannot corrupt alongside the word. Then assert the source in a test, so re-pointing it at the easy value fails loudly.
+- Verify: 2026-08-17 (D-123). `tests/privacy.test.ts` asserts the direction is set from `prefill.amount.value.sign` and never from `picked.direction`, and only when the two agree.
+
+## Cloud Vision's output is not byte-identical between calls, so a harness card count is not a fixed number
+
+- Symptom: the same harness over the same 12 images reports 25 cards one day and 28 the next, with no code change in between.
+- Cause: the hosted engine does not guarantee identical output for identical input, and the measurement harness picks a layout by "whichever finds the most cards" — so a handful of words landing differently moves the tie and the total. D-118 already warned that the harness's **per-layout attribution** is an artifact; the **card total** is one too.
+- Avoid: quote **ratios** from that harness and not absolute counts, and never compare a count taken on one day against one taken on another as though the difference meant something changed. Where a number must be stable, derive it from something the app controls rather than from what the engine returned.
+- Verify: 2026-08-17 (D-123, D-118). 25 cards on 2026-08-16 and 28 on 2026-08-17, same images, same code.
