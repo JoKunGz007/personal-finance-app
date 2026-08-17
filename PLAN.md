@@ -500,3 +500,5 @@ Only after every local task above passes:
     **The result is a coloured banner** — green captured, amber already held, red failed — with the meaning in the words as well as the colour. A banner rather than a modal dialog: a dialog needs a focus trap, Escape handling, focus restoration and `aria-modal`, each a way to fail the axe pass this route holds.
 
     **One thing this does not do**: the direction is absent from the pre-fill audit lists, because migration 019's closed set is the four digit-bearing fields and widening it is a migration. The trial's offered and changed rates therefore describe those four and say nothing about the direction.
+
+    **Amended 2026-08-17 after the owner used it** (D-124): the result moved from under the submit button to the **top of the form**, above the channel and the screenshot, and the page scrolls there. Under the button it was correct and nearly useless — the next card was already loaded in the fields *above* the message, off-screen behind it.

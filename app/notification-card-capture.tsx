@@ -277,6 +277,31 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
    */
   const cardImage = useRef<CardImage | null>(null);
 
+  /**
+   * The top of the form, where a capture's result appears and where the page is sent afterwards.
+   *
+   * **A wrapper that is always rendered, rather than a ref on the banner itself.** The banner only
+   * exists while there is a result, so a ref on it would be null at the moment `submit` wants to
+   * scroll — React has not committed the new element yet. The anchor is always in the tree, so its
+   * position is knowable whether or not a message is showing.
+   */
+  const resultBanner = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Brings the result and the fields below it into view after a capture (D-124).
+   *
+   * **No `behavior` is passed, and that is the accessible choice rather than an omission.** Left
+   * unspecified, the browser follows the CSS `scroll-behavior`, which `app/globals.css` sets to
+   * `smooth` and overrides to `auto` under `prefers-reduced-motion`. Passing `"smooth"` here would
+   * ignore that preference for the one person who set it.
+   *
+   * Deferred a frame because it runs in the same commit that puts the banner on screen: scrolling
+   * before the layout includes it lands short by the banner's own height.
+   */
+  function scrollToResult() {
+    requestAnimationFrame(() => resultBanner.current?.scrollIntoView({ block: "start" }));
+  }
+
   const layout = channel === "" ? null : layoutForChannel(channel);
   const region = regions?.[chosen] ?? null;
 
@@ -669,6 +694,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         setError(readError(body, "The card could not be captured."));
+        scrollToResult();
         return;
       }
       const captured = (body as { captured?: boolean } | null)?.captured === true;
@@ -691,8 +717,10 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
       // captured card's figures in a form that is no longer about any card on screen.
       if (next === null) resetTyped();
       else selectCard(next);
+      scrollToResult();
     } catch {
       setError("The ledger could not be reached, so nothing was captured.");
+      scrollToResult();
     } finally {
       setBusy(false);
     }
@@ -748,6 +776,49 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
         </button>
       ) : (
         <form className="slip-form" onSubmit={(event) => void submit(event)}>
+          {/* The result of a capture, at the **top** of the form rather than beside the button
+              that caused it (D-124).
+
+              Under the submit button it was correct and nearly useless: a card form runs several
+              screens long, so the message appeared where the owner already was and the next card —
+              already loaded and waiting in the fields above — was off-screen behind it. Here it
+              sits directly above the channel and the screenshot, so reading the result and seeing
+              what to do next are the same glance. `scrollToResult` brings it into view, because a
+              message at the top of a form is only an improvement if the page goes there too.
+
+              A card is append-only, so "saved" and "not saved" are the two sentences on this form
+              that must not be missed — the muted `.status` line they used to share read as one more
+              note among several. Three tones, each carrying its meaning in the words as well as the
+              colour, because colour alone is not a message.
+
+              **A banner rather than a modal dialog, deliberately.** A dialog needs a focus trap, an
+              Escape key, a restore of focus on close and an `aria-modal` that hides the rest of the
+              page, and every one of those is a way to fail the axe pass this route already holds.
+              A region carrying the same words and the same buttons gets the visibility without any
+              of that, and it does not steal the keyboard from someone mid-form. */}
+          <div ref={resultBanner} className="capture-result-anchor">
+            {status && (
+              <div className={`capture-result ${status.tone}`} role="status">
+                <p>{status.message}</p>
+                <div className="capture-result-actions">
+                  <button type="button" className="secondary-button" onClick={() => setStatus(null)}>
+                    OK
+                  </button>
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="capture-result failed" role="alert">
+                <p>{error}</p>
+                <div className="capture-result-actions">
+                  <button type="button" className="secondary-button" onClick={() => setError(null)}>
+                    OK
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="slip-fields">
             <label>
               <span>Which channel</span>
@@ -1029,37 +1100,6 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
             <textarea value={note} maxLength={2000} rows={2} disabled={busy} onChange={(event) => setNote(event.target.value)} />
           </label>
 
-          {/* The result of a capture, which is the one message on this form worth interrupting for
-              — a card is append-only, so "saved" and "not saved" are not the same news in a
-              different shade of grey (D-123).
-
-              **A banner rather than a modal dialog, deliberately.** A dialog needs a focus trap, an
-              Escape key, a restore of focus on close and an `aria-modal` that hides the rest of the
-              page, and every one of those is a way to fail the axe pass this route already holds.
-              A coloured region carrying the same words and the same buttons gets the visibility
-              without any of that, and it does not steal the keyboard from someone mid-form.
-
-              The tone is carried by a class *and* by the words, never by colour alone. */}
-          {status && (
-            <div className={`capture-result ${status.tone}`} role="status">
-              <p>{status.message}</p>
-              <div className="capture-result-actions">
-                <button type="button" className="secondary-button" onClick={() => setStatus(null)}>
-                  OK
-                </button>
-              </div>
-            </div>
-          )}
-          {error && (
-            <div className="capture-result failed" role="alert">
-              <p>{error}</p>
-              <div className="capture-result-actions">
-                <button type="button" className="secondary-button" onClick={() => setError(null)}>
-                  OK
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="slip-actions">
             <button type="submit" className="primary-button" disabled={busy || !ready}>
