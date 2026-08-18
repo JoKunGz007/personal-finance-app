@@ -19,8 +19,21 @@ const STRICT = process.argv.includes("--strict");
 
 // A decision log outgrows a single read long before it outgrows a file. When the
 // maintained half passes this, archive the oldest contiguous range (D-080).
-const DECISIONS_LINE_BUDGET = 1200;
-const GOTCHAS_LINE_BUDGET = 1400;
+//
+// **Budgeted in bytes, not lines, and the correction is the whole point.** These files were
+// budgeted at 1,200 and 1,400 lines from 2026-07 until 2026-08-18. `DECISIONS.md` passed that
+// check at 1,132 lines while being **332 KB** — roughly 80,000 tokens, most of a context window
+// for one file — because entries here are long prose paragraphs and the file grew sideways rather
+// than downward. A line count says nothing about that. The guard existed to stop a log outgrowing
+// a single read and was reporting green about a file nothing could read in one go.
+//
+// The numbers are set from what a read costs rather than from what the files happen to be: this
+// project's Markdown runs about 0.33 tokens per byte, so 120 KB is ~40,000 tokens and 200 KB is
+// ~66,000. `DECISIONS.md` is read front-to-back by anyone picking the project up, which is why it
+// gets the tighter one; `GOTCHAS.md` is a lookup file entered through its index, so its size costs
+// less per use and it is allowed more.
+const DECISIONS_BYTE_BUDGET = 120_000;
+const GOTCHAS_BYTE_BUDGET = 200_000;
 
 // A path is checkable when its first segment is a directory the repo actually owns.
 // Anything else in backticks is a package-internal path, an external tool, or generated
@@ -183,10 +196,25 @@ for (const [p, note] of Object.entries(RETIRED_PATHS)) {
 
 // ---------------------------------------------------------------- size budget
 
-for (const [file, budget] of [[DECISIONS, DECISIONS_LINE_BUDGET], [GOTCHAS, GOTCHAS_LINE_BUDGET]]) {
-  const n = read(file).length;
-  if (n > budget) {
-    fail(file, `${n} lines exceeds the ${budget}-line budget — archive the oldest contiguous range (D-080)`);
+// Different files, different remedies, and saying so is the point of not sharing one message.
+// There is no archive for traps: a trap whose subject is gone gets a dated "no longer live" line
+// and keeps whatever generalisation outlived it. Relocating them would only move the reading cost.
+const BUDGETS = [
+  [DECISIONS, DECISIONS_BYTE_BUDGET,
+    "archive the oldest contiguous range into docs/decisions/ (D-080), then move its index bullets to the Archived section"],
+  [GOTCHAS, GOTCHAS_BYTE_BUDGET,
+    "retire traps whose subject no longer exists, keeping the generalisation that outlived them"]
+];
+
+const kb = (bytes) => `${(bytes / 1024).toFixed(0)} KB`;
+
+for (const [file, budget, remedy] of BUDGETS) {
+  // Byte length, not `String.length`: this project's documents are full of em dashes, Thai labels
+  // and typographic quotes, every one of which is several bytes and one character. Measuring
+  // characters would under-report the files most at risk of being unreadable in one pass.
+  const bytes = Buffer.byteLength(readFileSync(join(ROOT, file), "utf8"), "utf8");
+  if (bytes > budget) {
+    fail(file, `${kb(bytes)} exceeds the ${kb(budget)} budget — ${remedy}`);
   }
 }
 
@@ -227,9 +255,19 @@ if (failures.length) {
   process.exit(1);
 }
 
+// The sizes are printed on a passing run, not only on a failing one. A budget nobody sees the
+// approach to is a budget that is only ever met as a surprise — and the whole reason this check
+// changed on 2026-08-18 is that its predecessor reported green all the way to 332 KB.
 console.log(
   `docs check passed: ${decisionEntries.length} decisions, ${gotchaTitles.length} traps, ` +
     `indexes match, references and paths resolve.`,
+);
+console.log(
+  "  sizes: " +
+    BUDGETS.map(([file, budget]) => {
+      const bytes = Buffer.byteLength(readFileSync(join(ROOT, file), "utf8"), "utf8");
+      return `${file} ${kb(bytes)}/${kb(budget)} (${Math.round((bytes / budget) * 100)}%)`;
+    }).join(", "),
 );
 if (STRICT && warnings.length) {
   console.error("\n--strict: warnings are fatal.");

@@ -130,6 +130,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Two of the three Playwright configs pin their Supabase target in git; the third's pin is uncommitted
 - The isolated suite's "no dev sign-in" test fails once `.env.local` opts in
 - Stubbing a browser API can hide which code path the test is exercising
+- A size budget in lines reports green about a file nothing can read in one pass
 - A source-grep test keeps passing after the thing it names becomes false
 - Running the browser gate deletes whatever you captured by hand in the test project
 - An axe pass on a route that loads nothing proves nothing about what the route renders
@@ -880,6 +881,14 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: the slip specs stubbed `BarcodeDetector`. Headless Chromium has none — a fact the stub concealed twice over. It hid that the "no QR reader" notice rendered for every *other* spec (breaking their `getByRole("status")` lookups), and it hid that the native detector is unavailable on Windows desktop entirely, so the feature could not run on the developer's own machine (D-057).
 - Avoid: prefer a real artifact through the real code path when one can be generated. A QR can be rendered to a PNG from an invented payload (`tests/fixtures/synthetic-slip.ts`), exactly as statements are rendered to real PDFs — after which the specs exercise the decoder instead of a fake. Where a stub is genuinely unavoidable, assert what the *unstubbed* environment does somewhere too, or the stub becomes the only thing keeping the test green.
 - Verify: 2026-07-30. Replacing the stub with generated QR images kept all five specs green and additionally caught the wasm resolution failure above, which the stubbed versions passed straight through.
+
+## A size budget in lines reports green about a file nothing can read in one pass
+
+- Symptom: `check:docs` passes, and `DECISIONS.md` is **332 KB** — about 80,000 tokens, most of a context window for one file. The budget it passed was 1,200 **lines**, and the file was at 1,132.
+- Cause: the budget was set when entries were short `Decision:` / `Rationale:` bullets and was still being applied when they had become 4.5 KB prose paragraphs. **The file grew sideways, and a line count cannot see that.** A line count is a proxy for size only while lines have a roughly constant width, and nothing records the moment that stops being true — which is exactly the moment the proxy silently stops working.
+- Avoid: budget the dimension you actually care about. If the concern is "can someone read this in one pass", measure **bytes** — with `Buffer.byteLength`, not `String.length`, because em dashes, Thai labels and typographic quotes are several bytes and one character each, so a character count under-reports the files most at risk. Then **print the size on a passing run**, not only on a failing one: a budget nobody sees the approach to is a budget that is only ever met as a surprise.
+- The generalisation, and it is the same shape as the source-grep trap below: a check that measures a **proxy** for the thing it cares about keeps passing after the proxy and the thing come apart, and it is read as evidence the whole time. Ask what would have to change for this check to be green and wrong.
+- Verify: 2026-08-18 (D-130). The budgets are now 120 KB and 200 KB, `DECISIONS.md` is 90 KB after D-060 … D-113 were archived, and a passing run prints `DECISIONS.md 90 KB/117 KB (77%), GOTCHAS.md 177 KB/195 KB (91%)`. Red-proved: lowering the decision budget to 80 KB fails with `90 KB exceeds the 78 KB budget` and names the archive remedy. **`PLAN.md` at 214 KB and `HANDOFF.md` at 91 KB in 86 lines are both still unbudgeted** and are named in D-130 rather than capped, because capping either without first moving its content would make the next handoff worse.
 
 ## A source-grep test keeps passing after the thing it names becomes false
 
