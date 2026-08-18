@@ -481,15 +481,15 @@ Only after every local task above passes:
 
 36. **Open question, not a task: should slip capture use Vision too?** Asked by the owner on 2026-08-17 and **recommended no for now** (D-120). A slip read is a *finder* with one field to help, and its QR already carries the bank, the reference and the date on 14 of 23 — a card had four fields, no QR and a 70→99 gap. A slip is also the larger disclosure: a counterparty name, a reference and account digits, and the measurement itself would be the disclosure since it means sending 23 real slips. Adopting it would leave `lib/slip-ocr-engine.ts` with **no caller**, taking the self-hosted assets, the three privacy tests and the browser spec that proves the strict CSP against a real engine with it. **Revisit only if the amount finder actually gets in the way in daily use** — that is the evidence this would turn on, and it does not exist yet.
 
-37. **Migration 020 — `array_length` of an empty array is NULL, so migration 019 refuses `[]`.** Found in production 2026-08-17 and diagnosed (D-122). **Not urgent and deliberately not written yet.**
+37. **Migration 020 — `array_length` of an empty array is NULL, so migration 019 refused `[]`.** Found in production 2026-08-17 (D-122), **applied everywhere on 2026-08-18 including the hosted project** (D-126). Complete.
 
-    **The change is one line.** In `private.assert_prefill_field_names`, the duplicate-name check compares `array_length(v_names, 1)` against `count(distinct n)`; the first is **NULL** for an empty array and the second is 0, so `[]` raises `contains a repeated field name`. Wrap it: `coalesce(array_length(v_names, 1), 0)`.
+    **The fix is `coalesce(array_length(v_names, 1), 0)`** in `private.assert_prefill_field_names`. No table, no column, no signature change — the backup contract stays at **v7**.
 
-    **Nothing can reach it today.** The card form sends an absent key for an empty list (`namesOrAbsent`), which is the encoding migration 019 documents as meaning empty and accepts. That is why this is a task rather than an incident.
+    **Red-proved before it was fixed**: the new pgTAP test died with the exact production error on the pre-020 schema and passes after. pgTAP **263 → 266 across 8**. Both spellings of "nothing" are now asserted — an absent key and an explicit `[]` — because only the first was ever exercised and the second is where the defect lived.
 
-    **What it needs when it is done**, and why it was not bundled with the fix: a fresh backup taken first, explicit authorization to push, and the ordering rule — it reaches the hosted project before any app change depending on it. Writing it early opens a local/hosted migration gap for a hole nothing can fall into, and the backup goes stale the next time a card is captured.
+    **The route test flipped from 422 to 201** rather than being deleted, which is what it was written for.
 
-    **A test already holds the current behaviour in place.** `tests/notification-card-routes.test.ts` § `refuses an explicitly empty list` expects **422** today and **must be flipped to 201** when 020 lands. Read that test rather than this paragraph — it is the one that fails when it goes stale.
+    **The owner's backup was verified from the database before the push and is still current after it**: sequence **33**, last-exported **33**, equal both times, because DDL mutates no owner data. Verified on the remote by *running* the function there, not by reading the migration text. All twenty migrations match local and remote. The hosted ledger holds **7 cards**.
 
 38. **Capture flow: the next card, the direction, and a result you can see.** Asked for by the owner after his first three real cards, built 2026-08-17 (D-123). Complete.
 

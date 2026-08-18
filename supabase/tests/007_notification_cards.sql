@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(37);
+select plan(40);
 
 -- Bank notification cards (migration 016, PLAN task 27).
 --
@@ -355,6 +355,36 @@ select throws_ok(
       'prefillChanged', jsonb_build_array('balance')))$$,
   'prefillChanged must be a subset of prefillOffered',
   'a changed field that was never offered is refused'
+);
+
+-- Migration 020: an empty list is a list, not a repeated name (D-122, D-126).
+--
+-- **Both spellings of "nothing" are asserted, and that is the point of these three.** Migration 019
+-- accepted an absent key and refused an explicit `[]`, because `array_length` of an empty array is
+-- NULL rather than 0 and its duplicate check compared that against a count of 0. Every test written
+-- for "no pre-fill" omitted the keys, so the untested spelling is where the defect lived — and it
+-- fired precisely when the pre-fill was perfect and the owner changed nothing.
+select lives_ok(
+  $$select private.assert_prefill_field_names('[]'::jsonb, 'prefillChanged')$$,
+  'an explicitly empty list is accepted, not reported as a repeated name'
+);
+
+select is(
+  private.assert_prefill_field_names('[]'::jsonb, 'prefillChanged'),
+  array[]::text[],
+  'an explicitly empty list reads as the empty list, exactly as an absent key does'
+);
+
+-- The end-to-end shape the form actually sends when the reader filled every field and the owner
+-- changed none of them. This is the capture that failed in production.
+select lives_ok(
+  $$select public.capture_notification_card(jsonb_build_object(
+      'accountId','cccccccc-0000-4000-8000-000000000001','channel','SCB Connect',
+      'printedAccountDigits','4321','kind','withdrawal','amountMinor','-8800','currency','THB',
+      'occurredOn','2026-07-23','occurredAtTime','11:20','balanceMinor','4400',
+      'prefillOffered', jsonb_build_array('amount','balance','occurredAt','ownAccount'),
+      'prefillChanged', jsonb_build_array()))$$,
+  'a card whose pre-fill the owner changed nothing on is captured'
 );
 
 select * from finish();

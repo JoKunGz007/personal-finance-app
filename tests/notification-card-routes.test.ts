@@ -293,30 +293,35 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
       expect(audit.output).toContain("[]");
     });
 
-    // **Holds a defect in place until migration 020 removes it, deliberately** (D-122).
+    // **Migration 020 closed this and the expectation flipped with it** (D-122, D-126). It stood at
+    // 422 for exactly as long as the database refused an explicitly empty list, which it did
+    // because `array_length` of an empty array is NULL rather than 0 and the duplicate check
+    // compared that against a count of 0.
     //
-    // Migration 019 documents an absent key as an empty list and accepts it — the test above
-    // proves that. An **explicitly empty array** is a different story: the duplicate-name check
-    // compares `array_length(v_names, 1)`, which PostgreSQL answers **NULL** for an empty array,
-    // against a `count(distinct)` of 0, so `[]` raises "contains a repeated field name". Two
-    // encodings of the same thing, one of which works.
+    // The note it replaces was written to fail when it went stale, and it did its job: an absent
+    // key and an explicit `[]` are two spellings of "nothing" and only one of them was ever
+    // exercised, which is how the defect survived a full green gate and surfaced on the first real
+    // card whose pre-fill the owner changed nothing on.
     //
-    // It is not academic. The form always sent both keys, so a card whose pre-fill the owner
-    // changed **nothing** on sent an empty `prefillChanged` and could not be captured at all —
-    // found by the first real card read through Cloud Vision, and worst exactly when the reader
-    // is perfect. `namesOrAbsent` in the form now sends the absent form, so nothing in this app
-    // can reach this any more.
-    //
-    // **When migration 020 lands, this expectation flips to 201** and the comment goes with it.
-    // It is here rather than in a document because a test is the only kind of note that fails
-    // when it goes stale.
-    it("refuses an explicitly empty list, which absent is accepted for — migration 019 defect", async () => {
-      const refused = await captureCard({
+    // The app sends the absent form (`namesOrAbsent`), so this asserts the database directly rather
+    // than a path the form can still take.
+    it("accepts an explicitly empty list, the same as an absent key", async () => {
+      const captured = await captureCard({
         ...card({ occurredAtTime: "17:31", balanceMinor: "51000" }),
         prefillOffered: [],
         prefillChanged: []
       });
-      expect(refused.status).toBe(422);
+      expect(captured.status).toBe(201);
+
+      // And it records the empty lists rather than nothing at all, so a rate computed from these
+      // rows has the denominator it needs.
+      const audit = psql(`
+        select detail->>'prefill_offered' from public.audit_events
+        where owner_id = '${owner}' and event_type = 'notification_card.capture'
+        order by id desc limit 1;
+      `);
+      expect(audit.ok).toBe(true);
+      expect(audit.output).toContain("[]");
     });
 
     it("refuses a field name outside the closed set, rather than storing free text", async () => {
