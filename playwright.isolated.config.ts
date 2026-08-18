@@ -44,7 +44,12 @@ export default defineConfig({
       NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "0",
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH",
-      OWNER_GOOGLE_EMAIL: "synthetic.owner@example.invalid"
+      OWNER_GOOGLE_EMAIL: "synthetic.owner@example.invalid",
+      // Pinned empty for the same reason as the owner config: `next start` inherits the key from
+      // the owner's Windows user environment, and no browser run should reach a third party
+      // because of whose machine it is on (D-129). No spec here drives a reader today; this is
+      // what stops one added later from calling out by accident.
+      GOOGLE_VISION_KEY: ""
     }
   },
   projects: [

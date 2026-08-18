@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { encodeForReader, readImageWords, type ImageWordsRead } from "@/lib/browser/ocr-reader";
 import { bangkokToday } from "@/lib/dates";
 import { formatThb, parseThb } from "@/lib/money";
 import { BUDDHIST_ERA_OFFSET, paddedCrop, type Box } from "@/lib/slip-ocr";
@@ -20,8 +21,7 @@ import {
   locateCardFields,
   type CardFieldName,
   type CardOcrRead,
-  type CardRegion,
-  type OcrWord
+  type CardRegion
 } from "@/lib/notification-card-ocr";
 import { PREFILL_FIELDS, prefillCardFields, type PrefillField } from "@/lib/notification-card-prefill";
 import { notificationCardDateWindow } from "@/lib/notification-cards";
@@ -68,26 +68,6 @@ async function loadCardImage(file: File): Promise<CardImage> {
 }
 
 /**
- * The card as PNG bytes for the reader route.
- *
- * **Re-encoded rather than forwarded, and that is what makes the format question go away.** The
- * file picker accepts `image/*`, so an iPhone can hand this form a HEIC that Vision cannot decode;
- * anything the *browser* decoded into a bitmap re-encodes to a PNG it can. The pixels are the ones
- * already decoded, so this changes nothing about what the reader sees — a PNG of a decoded JPEG
- * carries the same pixels the JPEG did, which is why the measurement over half-JPEG samples
- * transfers to it unchanged.
- */
-async function encodeCardForReader(image: CardImage): Promise<Blob | null> {
-  const canvas = document.createElement("canvas");
-  canvas.width = image.width;
-  canvas.height = image.height;
-  const context = canvas.getContext("2d");
-  if (!context) return null;
-  context.drawImage(image.source, 0, 0);
-  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-}
-
-/**
  * A list of field names, or nothing at all when it is empty (D-122).
  *
  * `JSON.stringify` drops an `undefined` value, so this is what turns an empty list into an absent
@@ -104,9 +84,9 @@ function namesOrAbsent(names: readonly PrefillField[]): PrefillField[] | undefin
 /**
  * Reads the card's words, through this app's own reader route (`PLAN.md` task 35, D-120).
  *
- * **The screenshot leaves the device here, and the form says so on screen** — this is the one place
- * in the app where that happens, and it is the card path only. Slip capture and statement import
- * both still read entirely on the device.
+ * **The screenshot leaves the device here, and the form says so on screen.** Slip capture does the
+ * same as of 2026-08-18 (D-129) and through this same route; statement import still reads entirely
+ * on the device.
  *
  * The route relays to Google Cloud Vision, which fills 99 of 100 digit-bearing fields against the
  * local engine's 70 (D-118, D-119). **There is no local fallback and that is the decision, not an
@@ -114,35 +94,13 @@ function namesOrAbsent(names: readonly PrefillField[]): PrefillField[] | undefin
  * before pre-fill existed, and keeping a second engine behind the same grammar would mean measuring
  * every future grammar change twice.
  *
- * A refusal comes back as a sentence rather than a code because it is shown to the owner beside the
- * form. Every one of them ends the same way — type the values — since that is the remedy in all
- * cases.
+ * The encoding and the POST live in `lib/browser/ocr-reader.ts` because the slip form makes the same
+ * call; what stays here is the sentence a refusal turns into for *this* form's owner.
  */
-type CardWordsRead = { readonly ok: true; readonly words: OcrWord[] } | { readonly ok: false; readonly why: string };
-
-const READER_UNAVAILABLE = "The card reader could not be reached. Read the card yourself and type the values.";
-
-async function readCardWords(image: CardImage): Promise<CardWordsRead> {
-  const encoded = await encodeCardForReader(image);
+async function readCardWords(image: CardImage): Promise<ImageWordsRead> {
+  const encoded = await encodeForReader(image.source);
   if (!encoded) return { ok: false, why: "This image could not be prepared for the reader. Type the values from the card yourself." };
-
-  let response: Response;
-  try {
-    response = await fetch("/api/v1/notification-cards/read", {
-      method: "POST",
-      headers: { "Content-Type": "image/png" },
-      body: encoded
-    });
-  } catch {
-    return { ok: false, why: READER_UNAVAILABLE };
-  }
-
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) return { ok: false, why: readError(body, READER_UNAVAILABLE) };
-
-  const words = (body as { words?: OcrWord[] } | null)?.words;
-  if (!Array.isArray(words)) return { ok: false, why: READER_UNAVAILABLE };
-  return { ok: true, words };
+  return readImageWords(encoded);
 }
 
 function cropRegion(image: CardImage, box: Box): string | null {

@@ -1,38 +1,46 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
-import { readCardWordsWithVision } from "@/lib/notification-card-vision";
+import { readWordsWithVision } from "@/lib/vision-ocr";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Reading a card screenshot with Google Cloud Vision (`PLAN.md` task 35, D-120).
+ * Reading an image with Google Cloud Vision, for whichever capture form asked (D-120, D-129).
  *
  * **This route exists so the key does not go to the browser.** Calling Vision from the page would
  * mean shipping the key in a `NEXT_PUBLIC_` value — readable by anyone who loads the app — and
  * widening `connect-src` to name `vision.googleapis.com`. Relaying through this app's own origin
  * keeps the credential in the deployment's environment and leaves the strict CSP untouched
- * (D-058). The cost, stated plainly because it is real: the screenshot now passes through this
+ * (D-058). The cost, stated plainly because it is real: the image now passes through this
  * server as well as through Google, so **nothing here may log the image or the words**.
  *
  * It is the only route that reads a request body which is not JSON, and the only one that talks to
  * a third party. Both are deliberate and both are why the guards below are stricter than the
  * happy path needs.
  *
+ * ## Why the path names no record type
+ *
+ * It was `/api/v1/notification-cards/read` while the card form was its only caller (D-120). Slip
+ * capture became the second on 2026-08-18 (D-129), and a slip reading through a card's URL is the
+ * kind of misdescription that later gets reasoned from — the route has never known or cared what
+ * the pixels depict. It takes an image and returns words; **which grammar reads them is entirely
+ * the caller's**, and that is what makes one route correct for both rather than a convenience.
+ *
  * ## What it does not do
  *
  * It stores nothing, in the database or anywhere else — the same rule as the captured image itself
- * (D-050). It returns **words and boxes**, never a decision about what they mean: the grammar
- * (`lib/notification-card-ocr.ts`) and the strict pre-fill (`lib/notification-card-prefill.ts`)
- * both run in the browser, unchanged, on whichever engine produced the words. So no figure this
- * route relays can reach a stored value except through `parseThb`, the digit guard and
- * blank-on-failure, exactly as before Vision (D-114, D-118).
+ * (D-050). It returns **words and boxes**, never a decision about what they mean: the card grammar
+ * (`lib/notification-card-ocr.ts`), the card pre-fill (`lib/notification-card-prefill.ts`) and the
+ * slip's own policy layer (`lib/slip-ocr.ts`) all run in the browser, unchanged, on whichever engine
+ * produced the words. So no figure this route relays can reach a stored value except through
+ * `parseThb`, the digit guard and blank-on-failure, exactly as before Vision (D-114, D-118, D-128).
  *
  * ## Why a failure is not a fallback
  *
- * Any refusal here leaves every box blank and the owner types the card, which is what happened
- * until 2026-08-16. There is deliberately no local second attempt: the pre-fill is blank-on-failure
- * either way, so a fallback would buy a partial fill at the price of two engines behind one
- * grammar — and `findCards` is already known to depend on where an engine breaks a Thai run
- * (D-119). One engine, one measurement.
+ * Any refusal here leaves the box blank and the owner types the figure, which is what happened
+ * before either form called out. There is deliberately no local second attempt: every pre-fill is
+ * blank-on-failure either way, so a fallback would buy a partial fill at the price of two engines
+ * behind one grammar — and `findCards` is already known to depend on where an engine breaks a Thai
+ * run (D-119). One engine, one measurement.
  */
 
 /** Vision decodes these, and refusing anything else stops a non-image being relayed onward. */
@@ -62,7 +70,7 @@ export async function POST(request: Request) {
 
   const contentType = (request.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
   if (!ACCEPTED_TYPES.has(contentType)) {
-    return routeError("A card screenshot must be a PNG, JPEG or WebP image.", 415);
+    return routeError("An image to read must be a PNG, JPEG or WebP.", 415);
   }
 
   // Checked from the declared length first, so an oversized upload is refused without being read
@@ -70,32 +78,32 @@ export async function POST(request: Request) {
   // which is why the same bound is applied again below against the bytes actually received.
   const declared = Number(request.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
-    return routeError("That screenshot is too large to read. Crop it to the card and try again.", 413);
+    return routeError("That image is too large to read. Crop it and try again.", 413);
   }
 
   const body = await request.arrayBuffer().catch(() => null);
-  if (!body) return routeError("The card screenshot could not be read.", 400);
-  if (body.byteLength === 0) return routeError("The card screenshot is empty.", 422);
+  if (!body) return routeError("The image could not be read.", 400);
+  if (body.byteLength === 0) return routeError("The image is empty.", 422);
   if (body.byteLength > MAX_IMAGE_BYTES) {
-    return routeError("That screenshot is too large to read. Crop it to the card and try again.", 413);
+    return routeError("That image is too large to read. Crop it and try again.", 413);
   }
 
   // Read at the point of use rather than at module scope, so a deployment that adds the key needs
   // no rebuild — and so the absence of a key is a runtime refusal the owner can act on rather than
   // a build that fails somewhere unrelated.
   const apiKey = process.env.GOOGLE_VISION_KEY ?? "";
-  const read = await readCardWordsWithVision(new Uint8Array(body), apiKey);
+  const read = await readWordsWithVision(new Uint8Array(body), apiKey);
   if (!read.ok) {
     // Three causes, three sentences, because they call for different things from the owner: a
     // missing key is the deployment's problem, an unreachable service is worth retrying, and a
     // refusal is not. None of them echoes anything Vision said — its messages can quote the image.
     if (read.code === "NOT_CONFIGURED") {
-      return routeError("The card reader is not configured on this deployment. Type the card's values.", 503);
+      return routeError("The reader is not configured on this deployment. Type the values yourself.", 503);
     }
     if (read.code === "UNREACHABLE") {
-      return routeError("The card reader could not be reached. Check your connection, or type the card's values.", 503);
+      return routeError("The reader could not be reached. Check your connection, or type the values yourself.", 503);
     }
-    return routeError("The card reader could not read this image. Type the card's values.", 502);
+    return routeError("The reader could not read this image. Type the values yourself.", 502);
   }
 
   return Response.json({ words: read.words }, { headers: noStoreHeaders });

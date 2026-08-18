@@ -3,7 +3,7 @@ import fc from "fast-check";
 import { bangkokInstant, bangkokToday, gregorianYearFrom, resolveStatementEra } from "@/lib/dates";
 import { canonicalJson, confirmationDigest, normalizeSourceText, rowFingerprint } from "@/lib/canonical";
 import { sourceRowCandidateSchema, type ImportPayload } from "@/lib/statement";
-import { MAX_INT64, MIN_INT64, minor, minorUnitStringSchema, parseThb } from "@/lib/money";
+import { MAX_INT64, MIN_INT64, minor, minorUnitStringSchema, parseThb, plainThb } from "@/lib/money";
 import { reconcileRows } from "@/lib/reconcile";
 import { syntheticImport } from "@/lib/synthetic";
 
@@ -26,6 +26,22 @@ describe("exact THB money", () => {
 
   it("round-trips generated int64 values as canonical strings", () => {
     fc.assert(fc.property(fc.bigInt({ min: MIN_INT64, max: MAX_INT64 }), (value) => minor(value.toString()) === value.toString()));
+  });
+
+  // `plainThb` exists because a pre-filled amount box holds text that this app parses back with the
+  // same grammar that produced it (D-129). So the property that matters is not how it *looks* —
+  // it is that the round trip is exact, on every value, including the ones a formatter written for
+  // reading would break: `formatThb` adds `฿`, groups thousands and uses U+2212 for minus, and
+  // `parseThb` rejects that minus outright.
+  it("writes a minor amount as text that parses back to exactly the same amount", () => {
+    expect(plainThb("123450")).toBe("1234.50");
+    expect(plainThb("-25")).toBe("-0.25");
+    expect(plainThb("0")).toBe("0.00");
+    // No thousands separators and no currency mark, which is what keeps the round trip exact
+    // rather than merely usually right.
+    expect(plainThb("100000000")).toBe("1000000.00");
+    fc.assert(fc.property(fc.bigInt({ min: MIN_INT64 / 100n, max: MAX_INT64 / 100n }), (value) =>
+      parseThb(plainThb(value.toString())).minor === value.toString()));
   });
 });
 

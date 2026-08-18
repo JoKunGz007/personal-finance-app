@@ -51,7 +51,15 @@ export default defineConfig({
       NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "1",
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH",
-      OWNER_GOOGLE_EMAIL: "synthetic.owner@example.invalid"
+      OWNER_GOOGLE_EMAIL: "synthetic.owner@example.invalid",
+      // **Pinned empty so no browser run can call a third party, and this was found the hard
+      // way** (D-129). The key lives in the owner's Windows *user* environment, so `next start`
+      // inherits it on this machine — and the first run of the slip reader spec therefore made a
+      // real Cloud Vision call with the generated QR fixture. Nothing about a browser suite should
+      // depend on whose machine it is running on, and nothing about it should cost money or leave
+      // the network. Empty makes the reader route answer 503 with the sentence written for a
+      // deployment missing its key, which is deterministic everywhere and is what the spec asserts.
+      GOOGLE_VISION_KEY: ""
     }
   },
   projects: [{ name: "desktop", use: { ...devices["Desktop Chrome"] } }]

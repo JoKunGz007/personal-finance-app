@@ -2,19 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 import {
   VISION_ENDPOINT,
   VISION_TIMEOUT_MS,
-  readCardWordsWithVision,
+  readWordsWithVision,
   visionRequestBody,
   wordsFromVision,
   type VisionAnnotateResponse
-} from "@/lib/notification-card-vision";
+} from "@/lib/vision-ocr";
 
 /**
- * The Vision seam (D-120, `PLAN.md` task 35).
+ * The Vision seam, which is now this app's only OCR engine (D-120, D-129).
  *
- * Nothing here measures recognition — the accuracy claim is a measurement over real screenshots
- * (D-118, D-119), not something a fixture can assert. What these cover is the two halves that can
- * go wrong silently: the shape a Vision response is turned into, and which failures are told apart
- * from which. Every fixture below is invented, per `docs/FIXTURE_POLICY.md`.
+ * Nothing here measures recognition — the accuracy claims are measurements over real screenshots
+ * and real slips (D-118, D-119, D-128), not something a fixture can assert. What these cover is the
+ * two halves that can go wrong silently: the shape a Vision response is turned into, and which
+ * failures are told apart from which. Both matter to the card reader and the slip reader equally,
+ * since they share this file and differ only in the grammar they run over the words it returns.
+ * Every fixture below is invented, per `docs/FIXTURE_POLICY.md`.
  */
 
 /** Structural, and looser than `visionWord` returns, so a fixture may omit a zero coordinate. */
@@ -130,7 +132,7 @@ describe("which failures are told apart", () => {
 
   it("refuses without calling out at all when no key is configured", async () => {
     const fetchImpl = vi.fn();
-    const result = await readCardWordsWithVision(image, "", fetchImpl as unknown as typeof fetch);
+    const result = await readWordsWithVision(image, "", fetchImpl as unknown as typeof fetch);
     expect(result).toEqual({ ok: false, code: "NOT_CONFIGURED" });
     // The call must not be attempted: an unauthenticated request is a refusal that costs a round
     // trip and puts the image on the wire for nothing.
@@ -139,7 +141,7 @@ describe("which failures are told apart", () => {
 
   it("carries the key in a header and never in the URL", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(annotated([])), { status: 200 }));
-    await readCardWordsWithVision(image, "a-key", fetchImpl as unknown as typeof fetch);
+    await readWordsWithVision(image, "a-key", fetchImpl as unknown as typeof fetch);
 
     const [url, init] = fetchImpl.mock.calls[0]! as unknown as [string, RequestInit];
     expect(url).toBe(VISION_ENDPOINT);
@@ -154,7 +156,7 @@ describe("which failures are told apart", () => {
     // written for an unreachable reader. The deadline must also sit *below* the platform's own
     // function limit, or it never fires and the signal is decoration.
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(annotated([])), { status: 200 }));
-    await readCardWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch);
+    await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch);
 
     const [, init] = fetchImpl.mock.calls[0]! as unknown as [string, RequestInit];
     expect(init.signal, "the call must carry an abort signal").toBeInstanceOf(AbortSignal);
@@ -166,17 +168,17 @@ describe("which failures are told apart", () => {
     // An abort surfaces as a thrown fetch, which is the same shape as no network at all — and it
     // should stay that way: both mean no reading happened, and both are worth retrying.
     const aborted = vi.fn(async () => { throw new DOMException("The operation was aborted.", "TimeoutError"); });
-    expect(await readCardWordsWithVision(image, "k", aborted as unknown as typeof fetch))
+    expect(await readWordsWithVision(image, "k", aborted as unknown as typeof fetch))
       .toEqual({ ok: false, code: "UNREACHABLE" });
   });
 
   it("separates a call that did not complete from one that was refused", async () => {
     const threw = vi.fn(async () => { throw new Error("network"); });
-    expect(await readCardWordsWithVision(image, "k", threw as unknown as typeof fetch))
+    expect(await readWordsWithVision(image, "k", threw as unknown as typeof fetch))
       .toEqual({ ok: false, code: "UNREACHABLE" });
 
     const rejected = vi.fn(async () => new Response("{}", { status: 403 }));
-    expect(await readCardWordsWithVision(image, "k", rejected as unknown as typeof fetch))
+    expect(await readWordsWithVision(image, "k", rejected as unknown as typeof fetch))
       .toEqual({ ok: false, code: "REFUSED" });
   });
 
@@ -188,13 +190,13 @@ describe("which failures are told apart", () => {
       JSON.stringify({ responses: [{ error: { message: "Bad image data" } }] }),
       { status: 200 }
     ));
-    expect(await readCardWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
+    expect(await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
       .toEqual({ ok: false, code: "REFUSED" });
   });
 
   it("refuses a body that is not the JSON it claims to be", async () => {
     const fetchImpl = vi.fn(async () => new Response("<html>gateway</html>", { status: 200 }));
-    expect(await readCardWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
+    expect(await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
       .toEqual({ ok: false, code: "REFUSED" });
   });
 
@@ -202,7 +204,7 @@ describe("which failures are told apart", () => {
     // "The engine ran and read nothing" is an honest answer the grammar turns into a named
     // refusal; a failure means no reading happened at all. `readSlipWords` draws the same line.
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(annotated([])), { status: 200 }));
-    expect(await readCardWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
+    expect(await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
       .toEqual({ ok: true, words: [] });
   });
 
@@ -211,7 +213,7 @@ describe("which failures are told apart", () => {
       JSON.stringify(annotated([visionWord("ยอด", { left: 4, top: 8, right: 40, bottom: 30 })])),
       { status: 200 }
     ));
-    expect(await readCardWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
+    expect(await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
       .toEqual({ ok: true, words: [{ text: "ยอด", left: 4, top: 8, right: 40, bottom: 30 }] });
   });
 });

@@ -567,20 +567,28 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
   });
   });
 
-  // The reader route (D-120, `PLAN.md` task 35), which is the only route in this app that reads a
-  // body which is not JSON and the only one that talks to a third party.
+  // The reader route (D-120, D-129), which is the only route in this app that reads a body which is
+  // not JSON and the only one that talks to a third party.
+  //
+  // **It is no longer a card route and its tests stay here anyway**, which is worth stating rather
+  // than leaving as an accident. It moved from `/api/v1/notification-cards/read` to
+  // `/api/v1/ocr/read` when slip capture became its second caller (D-129), because a slip reading
+  // through a card's URL is a misdescription that later gets reasoned from. These tests stay in this
+  // file because what they need is a real signed-in aal2 session, which this file's harness already
+  // establishes; splitting them out would mean a second copy of that setup, and a second copy is
+  // how two harnesses come to disagree about what "signed in" means.
   //
   // **What is provable here is the wiring and the guards**, not the recognition: the accuracy claim
   // is a measurement over real screenshots, and the mapping from a Vision response is covered by
-  // `tests/notification-card-vision.test.ts` with an injected `fetch`. What only this layer can show
+  // `tests/vision-ocr.test.ts` with an injected `fetch`. What only this layer can show
   // is that the guards run *before* anything leaves the machine, and that a missing key refuses
   // rather than calling out unauthenticated.
   describe("reading a card screenshot", () => {
     const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
     async function readCard(body: BodyInit, contentType: string) {
-      const { POST } = await import("@/app/api/v1/notification-cards/read/route");
-      const response = await POST(new Request("http://localhost/api/v1/notification-cards/read", {
+      const { POST } = await import("@/app/api/v1/ocr/read/route");
+      const response = await POST(new Request("http://localhost/api/v1/ocr/read", {
         method: "POST",
         headers: { "Content-Type": contentType },
         body
@@ -617,9 +625,9 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
       // length is checked ahead of the read. A lied-about or absent length falls through to the
       // check above, which is why both exist rather than either replacing the other.
       vi.stubEnv("GOOGLE_VISION_KEY", "");
-      const { POST } = await import("@/app/api/v1/notification-cards/read/route");
+      const { POST } = await import("@/app/api/v1/ocr/read/route");
       let read = false;
-      const request = new Request("http://localhost/api/v1/notification-cards/read", {
+      const request = new Request("http://localhost/api/v1/ocr/read", {
         method: "POST",
         headers: { "Content-Type": "image/png", "Content-Length": String(9 * 1024 * 1024) },
         body: new Uint8Array([1, 2, 3])

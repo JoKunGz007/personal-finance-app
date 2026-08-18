@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatThb, parseThb } from "@/lib/money";
-import { locateAmount, paddedCrop, type Box } from "@/lib/slip-ocr";
-import { readSlipWords, releaseSlipOcr } from "@/lib/slip-ocr-engine";
+import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
+import { formatThb, parseThb, plainThb } from "@/lib/money";
+import { locateAmount, paddedCrop, proposeAmount, type Box } from "@/lib/slip-ocr";
 import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
 import { type SlipIdentity } from "@/lib/slip-qr";
 import { slipDateFromReference, slipDateWindow, SLIP_KINDS } from "@/lib/slips";
@@ -106,28 +106,29 @@ async function detectAtScale(bitmap: ImageBitmap, detector: BarcodeDetectorLike,
 const CROP_TARGET_WIDTH = 720;
 const CROP_MAX_SCALE = 4;
 
-async function cropAmountRegion(file: File, box: Box): Promise<string | null> {
-  const bitmap = await createImageBitmap(file);
-  try {
-    const crop = paddedCrop(box, { width: bitmap.width, height: bitmap.height });
-    const width = crop.right - crop.left;
-    const height = crop.bottom - crop.top;
-    if (width <= 0 || height <= 0) return null;
-    const scale = Math.min(CROP_MAX_SCALE, Math.max(1, CROP_TARGET_WIDTH / width));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(width * scale);
-    canvas.height = Math.round(height * scale);
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
-    context.drawImage(bitmap, crop.left, crop.top, width, height, 0, 0, canvas.width, canvas.height);
-    // A data URL rather than an object URL: it is bounded by the crop, it needs no revoking,
-    // and it dies with the component state. `img-src` already permits `data:` (D-058).
-    return canvas.toDataURL("image/png");
-  } finally {
-    bitmap.close();
-  }
+// **The bitmap is a parameter rather than made here, and that is the coordinate-space guard.**
+// The reader returns boxes in the space of the bytes it was sent; a crop cut from a *different*
+// decode with one of those boxes can land on the wrong row, silently, and the symptom is a crop of
+// the wrong field rather than an error. `readAmountOnImage` decodes once and passes the same bitmap
+// to `encodeForReader` and to this — which is the rule the card form's `CardImage` type exists for
+// (D-120).
+function cropAmountRegion(bitmap: ImageBitmap, box: Box): string | null {
+  const crop = paddedCrop(box, { width: bitmap.width, height: bitmap.height });
+  const width = crop.right - crop.left;
+  const height = crop.bottom - crop.top;
+  if (width <= 0 || height <= 0) return null;
+  const scale = Math.min(CROP_MAX_SCALE, Math.max(1, CROP_TARGET_WIDTH / width));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, crop.left, crop.top, width, height, 0, 0, canvas.width, canvas.height);
+  // A data URL rather than an object URL: it is bounded by the crop, it needs no revoking,
+  // and it dies with the component state. `img-src` already permits `data:` (D-058).
+  return canvas.toDataURL("image/png");
 }
 
 const SHARE_CACHE = "shared-slip-v1";
@@ -151,12 +152,20 @@ async function consumePendingSharedSlip(): Promise<File | null> {
 }
 
 /**
- * Slip capture (PLAN task 20, D-050). The QR supplies identity; the owner supplies the
- * amount and confirms it. No OCR — that is task 21, and this form is identical either way,
- * which is why D-050 ordered the manual half first.
+ * Slip capture (PLAN task 20, D-050). The QR supplies identity; the reader offers the amount and
+ * the owner confirms it.
  *
- * The image is never uploaded and never stored. It is decoded in this component and
- * discarded; what crosses the wire is the QR payload and the values the owner typed.
+ * **Identity stays the QR's and is never machine-read.** The bank and the transaction reference
+ * come out of the QR payload under its own CRC, server-side (`lib/slips.ts`); nothing OCR reads can
+ * change either. That is why offering the amount is a bounded change rather than a general
+ * loosening.
+ *
+ * ## What leaves the device, and when
+ *
+ * The QR is decoded here and the image is never stored. **Pressing "Read the amount" sends the slip
+ * image to this app's own reader route, which relays it to Google Cloud Vision** (D-129) — the same
+ * route the card form uses (D-120). Nothing is sent until that button is pressed, and the form says
+ * so on screen. What crosses the wire on submit is still the QR payload and the values in the boxes.
  */
 export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   const [identity, setIdentity] = useState<SlipIdentity | null>(null);
@@ -167,8 +176,9 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   // preview already points at — nothing extra is retained, and both die on reset.
   const [image, setImage] = useState<File | null>(null);
   const [amountCrop, setAmountCrop] = useState<string | null>(null);
-  const [findingAmount, setFindingAmount] = useState(false);
-  const [amountFinderNote, setAmountFinderNote] = useState<string | null>(null);
+  const [readingAmount, setReadingAmount] = useState(false);
+  const [amountFilled, setAmountFilled] = useState(false);
+  const [amountReaderNote, setAmountReaderNote] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -189,13 +199,6 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   // Revoking the object URL matters more here than usual: the whole promise of this
   // feature is that the image does not linger.
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
-
-  // The OCR worker holds several megabytes of WebAssembly, so it ends with the form rather
-  // than outliving it on a route the owner has left. The cost is that coming back re-fetches
-  // the assets — every response here is `no-store` — which is the right way round: a worker
-  // kept alive across the whole session to save a same-origin refetch is memory this app has
-  // no claim on.
-  useEffect(() => () => { void releaseSlipOcr(); }, []);
 
   // Share-to-app. The service worker has already intercepted the share POST and stashed the
   // image locally (public/share-slip-sw.js); this picks it up and runs it through the same
@@ -245,7 +248,8 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
     setScanned(null);
     setImage(null);
     setAmountCrop(null);
-    setAmountFinderNote(null);
+    setAmountFilled(false);
+    setAmountReaderNote(null);
     setAmount("");
     setOccurredAtTime("");
     setDateFromQr(false);
@@ -311,48 +315,85 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   }
 
   /**
-   * Finds the amount on the image and shows it enlarged. It never fills the field in.
+   * Reads the amount off the slip, fills the box with it, and shows the region enlarged.
    *
-   * **That restraint is the whole design, not a stage it has not reached** (D-087). Digits
-   * came back unstable about one time in fifteen across configurations, and at least one wrong
-   * figure passed the strict money grammar — so a machine-read digit that reached a stored
-   * value would be indistinguishable from a correct one. Locating the amount instead removes
-   * that risk rather than managing it, and it answers an easier question, so it works on more
-   * slips than reading would: the label was found on 16–17 of the 23 real samples while the
-   * figure parsed on 13–15, and the extra ones are exactly where reading failed on the digits.
+   * ## This reverses D-087's shipped rule, deliberately, and here is what changed
    *
-   * `setAmount` is deliberately absent from this function. `tests/privacy.test.ts` asserts it
-   * stays absent, because "pre-fill it, the owner can always check" is a reasonable-sounding
-   * change that would quietly undo the decision.
+   * D-087 refused to let a machine-read digit reach this box: on tesseract, digits came back
+   * unstable about one time in fifteen across configurations and at least one wrong figure passed
+   * the strict money grammar, so a pre-filled amount would have been indistinguishable from a
+   * correct one. It shipped a *finder* instead — locate, crop, enlarge, and the owner types.
+   *
+   * **The engine that measurement was taken on no longer exists here** (D-129). Through this
+   * app's own reader route and Google Cloud Vision, over all 23 real samples at native size:
+   * `locateAmount` succeeds on **23 of 23** against tesseract's 16, and `proposeAmount` — the
+   * strict read, which requires the figure to parse as money — succeeds on **23 of 23** as well
+   * (D-128). The seven slips that gave the owner nothing at all now all resolve.
+   *
+   * This is the same reversal `tests/privacy.test.ts` already carries for cards (D-115): the
+   * assertion is no longer "no figure may reach this box" but "a figure may reach it only through
+   * the strict grammar". `setAmount` is called **only** with `proposeAmount`'s own value, never
+   * with a token this function read for itself.
+   *
+   * ## What did not change, and is why this is safe
+   *
+   * `parseThb`, the two-fractional-place rule and blank-on-failure all sit **downstream** of
+   * whichever engine produced the words (`lib/slip-ocr.ts`), so no engine — including one that
+   * hallucinates — can put a wrong-but-plausible figure in the box. A figure that does not parse
+   * leaves the box empty and says so. And a wrong figure that *does* parse still fails to pair with
+   * its statement row and surfaces as unmatched, which is the independent check and the only answer
+   * to the one thing no measurement here can produce: whether the offered figure is the *right*
+   * figure (D-063, D-102, D-112).
+   *
+   * **The crop is kept and is now the check rather than the product.** It is shown whenever the
+   * region was located, including when the figure refused to parse — which is exactly when the
+   * owner most needs to see it enlarged.
    */
-  async function findAmountOnImage() {
+  async function readAmountOnImage() {
     if (!image || !identity) return;
-    setFindingAmount(true);
+    setReadingAmount(true);
     setAmountCrop(null);
-    setAmountFinderNote(null);
+    setAmountFilled(false);
+    setAmountReaderNote(null);
+    let bitmap: ImageBitmap | null = null;
     try {
-      const words = await readSlipWords(image);
-      if (!words) {
-        setAmountFinderNote("The amount finder could not start in this browser. Read the amount from the image above.");
+      // One decode, used for both the bytes sent and the pixels cropped, so a box can never be
+      // applied to a different image than the one it was measured on (`cropAmountRegion`).
+      bitmap = await createImageBitmap(image);
+      const encoded = await encodeForReader(bitmap);
+      if (!encoded) {
+        setAmountReaderNote("This image could not be prepared for the reader. Read the amount off the slip above and type it.");
         return;
       }
-      const located = locateAmount(words, identity.bankCode);
-      if (!located.ok) {
+      const read = await readImageWords(encoded);
+      if (!read.ok) {
+        setAmountReaderNote(read.why);
+        return;
+      }
+
+      // Located first, because the enlargement is useful on strictly more slips than a parsed
+      // figure is — `locateAmount` needs only the label and something beside it.
+      const located = locateAmount(read.words, identity.bankCode);
+      if (located.ok) setAmountCrop(cropAmountRegion(bitmap, located.value));
+
+      const proposed = proposeAmount(read.words, identity.bankCode);
+      if (!proposed.ok) {
         // The policy layer's own words. Its refusals distinguish a label that was never
-        // recognised from one that appears twice, and both are more use than "it did not work".
-        setAmountFinderNote(located.message);
+        // recognised from a figure that did not read as money, and both are more use than
+        // "it did not work" — the second is the one where the crop above is worth looking at.
+        setAmountReaderNote(proposed.message);
         return;
       }
-      const crop = await cropAmountRegion(image, located.value);
-      if (crop === null) {
-        setAmountFinderNote("That region could not be cut out of this image.");
-        return;
-      }
-      setAmountCrop(crop);
+      // The only value that reaches this box, and it is the one the strict grammar returned.
+      // `plainThb` is the inverse of the `parseThb` that produced it, so the box holds a figure
+      // this form will parse back to exactly the same amount.
+      setAmount(plainThb(proposed.value));
+      setAmountFilled(true);
     } catch {
-      setAmountFinderNote("The amount could not be located on this image.");
+      setAmountReaderNote("The amount could not be read off this image.");
     } finally {
-      setFindingAmount(false);
+      bitmap?.close();
+      setReadingAmount(false);
     }
   }
 
@@ -417,7 +458,8 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
           <p>
             The QR names the bank and the transaction; you confirm the amount. Slips are
             provisional — the statement stays the authority and reconciles against them later.
-            The image is read on this device and never stored.
+            The QR is read on this device. Reading the amount sends the slip image to Google
+            Cloud Vision, which stores nothing; the image is never stored here either.
           </p>
         </div>
       </div>
@@ -460,20 +502,39 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
           )}
 
           {/*
-            Locate, then let the owner read. The button says what it does rather than what it
-            finds, because "read the amount" is the promise this deliberately does not make.
+            **The button now says "read", and that word is the reversal** (D-129). It said
+            "Enlarge" while D-087's finder was what it did, because reading the amount was the
+            promise this form deliberately did not make. It makes it now, on the measurement in
+            D-128, and the enlargement below has become the check rather than the product.
+
+            It also says where the slip goes, on the screen where it goes there, rather than only
+            in a document — the same rule the card form follows (D-120).
           */}
           <div className="amount-finder">
-            <button type="button" onClick={() => void findAmountOnImage()} disabled={busy || findingAmount || !image}>
-              {findingAmount ? "Looking for the amount…" : "Enlarge the amount"}
+            <button type="button" onClick={() => void readAmountOnImage()} disabled={busy || readingAmount || !image}>
+              {readingAmount ? "Reading the amount…" : "Read the amount"}
             </button>
+            {/*
+              Three states, and there is deliberately no fourth. **A located region with no
+              filled amount always carries a refusal**, because `locateAmount` and `proposeAmount`
+              find the label the same way: if the label was found and the figure beside it would
+              not parse, `proposeAmount` says so and its sentence is what belongs here. So a
+              "found but not filled" arm would be unreachable, and an unreachable arm is a message
+              nobody ever sees being maintained as though somebody does.
+
+              The filled message only promises an enlargement when there is one — cropping can
+              fail on its own (a canvas the browser would not give us), and a message pointing at
+              something absent is worse than a shorter one.
+            */}
             <p className="field-help" role="status">
-              {findingAmount
-                ? "Reading this slip on your device. The image is not uploaded."
-                : amountFinderNote
-                  ?? (amountCrop
-                    ? "Found on the image and enlarged below. Type what you read — nothing here fills the amount in for you."
-                    : "Optional. Crops the amount out of the slip and enlarges it, so you can read it without zooming.")}
+              {readingAmount
+                ? "Sending this slip to Google Cloud Vision to be read."
+                : amountReaderNote
+                  ?? (amountFilled
+                    ? amountCrop
+                      ? "Read off the slip and filled in above. Check it against the enlargement below before capturing."
+                      : "Read off the slip and filled in above. Check it against the slip before capturing."
+                    : "Optional. Sends the slip image to Google Cloud Vision, fills in the amount it reads, and enlarges that part of the slip so you can check it.")}
             </p>
             {amountCrop && (
               // eslint-disable-next-line @next/next/no-img-element

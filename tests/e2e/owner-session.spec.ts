@@ -1195,30 +1195,40 @@ test("slip capture has no automatically detectable accessibility violations", as
   expect(results.violations).toEqual([]);
 });
 
-// The OCR engine in a real browser, which is the one thing no unit test can reach (D-087).
+// Reading a slip in a real browser under the strict CSP, which is the one thing no unit test can
+// reach (D-087, D-129).
 //
-// **What this proves is the CSP, not the recognition.** `lib/slip-ocr-engine.ts` loads a
-// worker, compiles a WebAssembly core and fetches a language model, and all three are governed
-// by directives that exist to be strict: `worker-src`, `script-src`'s `'wasm-unsafe-eval'`,
-// and a `connect-src` naming `'self'` and the Supabase origin alone (D-058). Every one of them
-// fails at runtime only — a build cannot tell you the browser will refuse.
+// **This spec replaced a different one on 2026-08-18, and what was lost is worth naming.** Until
+// then it drove `lib/slip-ocr-engine.ts` — a worker, a WebAssembly core and a 3 MB language model,
+// each governed by `worker-src`, `script-src`'s `'wasm-unsafe-eval'` and `connect-src` — and it was
+// **the only check anywhere that the strict CSP held against a real OCR engine running in the
+// page**. That engine is gone (D-129) and there is nothing left to hold it to. Nothing now proves
+// the policy would survive a bundled engine, because the app no longer has one; re-adding one means
+// re-earning that proof rather than assuming this spec covers it.
 //
-// The generated QR carries no Thai amount label, so the honest outcome is `LABEL_NOT_FOUND`.
-// **That refusal is the evidence**: the policy layer only produces it after the engine ran and
-// returned words, so a message naming the label is proof the whole chain worked. The other
-// refusal — "could not start in this browser" — is what a blocked asset would produce, and it
-// is a different sentence on purpose.
+// **What this proves instead is the shape that replaced it**: the browser reaches this app's own
+// route and nothing else. The image is POSTed same-origin to `/api/v1/ocr/read`, which holds the key
+// and names the third party (D-058, D-120) — so a `connect-src` naming only `'self'` and the
+// Supabase origin has to permit the call, and no request may reach `vision.googleapis.com` from the
+// page at all. Both fail at runtime only; a build cannot tell you the browser will refuse.
 //
-// **The success path is deliberately not asserted here, and that is a design choice rather
-// than a shortfall.** Making the crop appear would mean rendering a Thai amount label into the
-// fixture and requiring the engine to recognise it — and the measured finding this whole
-// feature rests on is that the label is *missed* on 7 of 23 real slips (D-087). A green run
-// that depended on recognition succeeding would be flaky by construction, and would be
-// asserting the engine's accuracy, which no test in this repository claims. What produces the
-// crop is covered where it is deterministic: `locateAmount` and `paddedCrop` in
-// `tests/slip-ocr.test.ts`, and the engine seam in `tests/slip-ocr-engine.test.ts`.
-test("loads the OCR engine in a real browser under the strict CSP", async ({ page }) => {
-  test.setTimeout(180_000);
+// **The refusal is the evidence and it is deterministic** — but only because the config pins
+// `GOOGLE_VISION_KEY` to the empty string, which it does for a reason found by this spec failing
+// (D-129). The key lives in the owner's Windows *user* environment, so `next start` inherits it on
+// this machine and the first run of this spec made a **real Cloud Vision call** with the generated
+// QR fixture. A browser suite must not depend on whose machine it is running on, and must not reach
+// a third party at all. With the key pinned empty the route answers 503 with the sentence written
+// for a deployment missing its key, and the form shows it. That sentence proves the whole chain ran:
+// the encode, the same-origin POST, the route's auth and guards, and the form's handling of a
+// refusal. A blocked request would produce a different sentence — "could not be reached" — which is
+// what makes the two worth distinguishing on screen.
+//
+// **The success path is deliberately not asserted here.** It would need a real Vision call from a
+// test, which is a third party, a credential and a charge inside a browser suite. What produces a
+// filled box is covered where it is deterministic: `locateAmount`, `proposeAmount` and `paddedCrop`
+// in `tests/slip-ocr.test.ts`, and the reader seam in `tests/vision-ocr.test.ts`.
+test("reads a slip through this app's own route under the strict CSP", async ({ page }) => {
+  test.setTimeout(120_000);
 
   const refusals: string[] = [];
   const requested: string[] = [];
@@ -1238,27 +1248,21 @@ test("loads the OCR engine in a real browser under the strict CSP", async ({ pag
   await chooseSlipImage(page);
   await expect(bench.getByText(SLIP_REFERENCE)).toBeVisible();
 
-  await bench.getByRole("button", { name: "Enlarge the amount" }).click();
-  await expect(bench.getByText("The amount's label could not be found on this image."))
-    .toBeVisible({ timeout: 150_000 });
+  await bench.getByRole("button", { name: "Read the amount" }).click();
+  await expect(bench.getByText("The reader is not configured on this deployment. Type the values yourself."))
+    .toBeVisible({ timeout: 60_000 });
 
   expect(refusals, `the browser refused something: ${refusals.join(" | ")}`).toEqual([]);
   // Scoped deliberately. Next's router cancels its own RSC prefetches on navigation and those
   // arrive here as `ERR_ABORTED` — routine, unrelated, and not something this spec should fail
-  // on. What must never happen is an asset this feature needs failing, or anything at all being
-  // blocked by the policy.
-  expect(failed.filter((entry) => entry.includes("/tesseract/")), `an OCR asset failed: ${failed.join(" | ")}`).toEqual([]);
+  // on. What must never happen is anything at all being blocked by the policy.
   expect(failed.filter((entry) => /BLOCKED_BY/u.test(entry)), `a request was blocked: ${failed.join(" | ")}`).toEqual([]);
 
-  // All four assets, from this origin, and the exact core variant the build copies — the one
-  // static tests can only compare as strings. Given a directory instead of a file, tesseract
-  // feature-detects and asks for `tesseract-core-simd-lstm.wasm.js`, which is not copied.
+  // The POST went to this origin, which is the whole reason the CSP did not have to change.
   const origin = new URL(page.url()).origin;
-  for (const asset of ["worker.min.js", "tesseract-core-simd-lstm.js", "tesseract-core-simd-lstm.wasm", "tha.traineddata.gz"]) {
-    expect(requested, `never requested ${asset}`).toContain(`${origin}/tesseract/${asset}`);
-  }
-  // Nothing reached a third party. The engine's defaults are CDN URLs, so this is the
-  // assertion that the overrides actually took rather than merely being present in the source.
-  expect(requested.filter((url) => /jsdelivr|unpkg|googleapis|cdn\./iu.test(url))).toEqual([]);
-  expect(requested.filter((url) => url.includes("tesseract") && !url.startsWith(origin))).toEqual([]);
+  expect(requested, "the reader route was never called").toContain(`${origin}/api/v1/ocr/read`);
+  // And nothing reached a third party. The key lives on the server precisely so this list stays
+  // empty — a browser-side Vision call would show up here and would need `connect-src` widened.
+  expect(requested.filter((url) => /googleapis|jsdelivr|unpkg|cdn\./iu.test(url))).toEqual([]);
+  expect(requested.filter((url) => !url.startsWith(origin) && /^https?:/u.test(url))).toEqual([]);
 });

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { securityHeaders } from "@/lib/security-headers";
@@ -460,72 +460,74 @@ describe("privacy guardrails", () => {
     }
   });
 
-  it("serves the OCR engine from this origin and never from a CDN", () => {
-    const engine = readFileSync("lib/slip-ocr-engine.ts", "utf8");
-    // tesseract.js resolves its worker, core and language data from jsdelivr when left alone.
-    // `connect-src` would block that (D-058), but the policy is the backstop rather than the
-    // reason: a finance app fetching executable code and a language model from a third party
-    // at runtime has handed that party the page. No absolute URL may appear in this module at
-    // all — not in a default, not in a comment, not as a fallback.
-    expect(engine).not.toMatch(/https?:\/\//u);
-    for (const option of ["workerPath", "corePath", "langPath"]) {
-      expect(engine, `${option} must be set, or tesseract falls back to its CDN`)
-        .toMatch(new RegExp(`${option}:\\s*"/tesseract`, "u"));
-    }
-    // The engine is the only file that may know tesseract exists, and it may only reach it
-    // through a dynamic import — a static one would put 3.9 MB of core and language data into
-    // the bundle of a page that mostly does not use it (the D-057 argument, at four times the
-    // size). A value import elsewhere would defeat both properties.
-    expect(engine).toMatch(/await import\("tesseract\.js"\)/u);
-    expect(engine).not.toMatch(/^\s*import\s+\{[^}]*\}\s+from\s+"tesseract\.js"/mu);
-    for (const file of ["app/slip-capture.tsx", "lib/slip-ocr.ts", "lib/slip-scan.ts"]) {
-      expect(readFileSync(file, "utf8"), `${file} must not reach the engine directly`)
-        .not.toMatch(/tesseract\.js/u);
-    }
-  });
+  // **Three tests stood here until 2026-08-18 and are gone with the engine they described**
+  // (D-129): they held `lib/slip-ocr-engine.ts` to serving tesseract's worker, core and language
+  // data from this origin rather than a CDN, to writing nothing into IndexedDB, and to naming
+  // exactly the assets `scripts/copy-tesseract-assets.mjs` copied. The slip reader now calls
+  // Google Cloud Vision through this app's own route, so there is no engine in the browser, no
+  // self-hosted asset and no client-side cache for any of them to be about. What replaced them is
+  // the test below and `sends every capture image to this app's own origin and nowhere else` —
+  // the key stays on the server, the browser names no third party, and the CSP is unchanged.
+  //
+  // Deleting a test is not free and this says so rather than doing it quietly: what those three
+  // proved that nothing now proves is that a *bundled* engine stayed off the network. There is no
+  // bundled engine to hold to it.
 
-  it("stores nothing on the device for OCR, language model included", () => {
-    const engine = readFileSync("lib/slip-ocr-engine.ts", "utf8");
-    // Left at its default, tesseract writes the traineddata into IndexedDB. It is not slip
-    // content, but it is still client storage, and this app has none — the same rule that
-    // makes the captured image itself transient (D-050).
-    expect(engine).toMatch(/cacheMethod:\s*"none"/u);
-    expect(engine).not.toMatch(/indexedDB|localStorage|sessionStorage|document\.cookie/u);
-  });
-
-  it("asks the build for exactly the assets the engine loads", () => {
-    const engine = readFileSync("lib/slip-ocr-engine.ts", "utf8");
-    const copy = readFileSync("scripts/copy-tesseract-assets.mjs", "utf8");
-    const copied = [...copy.matchAll(/to:\s*"([^"]+)"/gu)].map((match) => match[1]!);
-    expect(copied.length).toBeGreaterThan(0);
-
-    // The trap this exists for: given a *directory*, tesseract feature-detects SIMD and asks
-    // for `tesseract-core-simd-lstm.wasm.js`, a single-file variant the build does not copy —
-    // a 404 on a file nobody named, at the point where the obvious suspect is the CSP. The
-    // engine names the core file outright to skip detection, so the two lists must agree.
-    const named = [...engine.matchAll(/"\/tesseract\/([^"]+)"/gu)].map((match) => match[1]!);
-    expect(named.length).toBeGreaterThan(0);
-    for (const asset of named) {
-      expect(copied, `the engine loads ${asset}, which the build does not copy`).toContain(asset);
-    }
-    // `langPath` is a directory, and `gzip: true` makes the request `<lang>.traineddata.gz`.
-    expect(engine).toMatch(/gzip:\s*true/u);
-    expect(copied).toContain("tha.traineddata.gz");
-  });
-
-  it("never lets a machine-read digit reach the amount field", () => {
+  // **This test was reversed on 2026-08-18 and the reversal is the point of the entry** (D-129).
+  // It used to assert that no machine-read digit could reach the slip's amount box, which was
+  // D-087 — measured on tesseract, where digits came back unstable about one time in fifteen and
+  // at least one wrong figure passed the strict money grammar. That engine is gone. Through Vision
+  // the amount is located on 23 of 23 real slips and parses as money on all 23 (D-128), so what has
+  // to be asserted instead is the same thing the card path asserts since D-115: a figure may reach
+  // the box **only** through the strict grammar, never through a parser the form wrote for itself.
+  it("offers the slip's amount only through the strict grammar, never through a parser of its own", () => {
     const form = readFileSync("app/slip-capture.tsx", "utf8");
-    const finder = /async function findAmountOnImage\(\)[\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(finder).toContain("locateAmount(");
-    // **The decision D-087 turns on.** Digits came back unstable about one time in fifteen
-    // across configurations, and at least one wrong figure passed the strict money grammar —
-    // so a pre-filled amount would be indistinguishable from a correct one. The feature locates
-    // the amount and the owner reads it. "Pre-fill it, they can always check" is the plausible
-    // change that would quietly undo that, which is why it is asserted rather than commented.
-    expect(finder).not.toMatch(/setAmount\(/u);
-    expect(finder).not.toMatch(/proposeAmount|readAmount/u);
-    // And the reader that returns a figure is not imported by the form at all.
-    expect(form).not.toMatch(/proposeAmount/u);
+    const reader = /async function readAmountOnImage\(\)[\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(reader, "readAmountOnImage must exist for this test to mean anything").toContain("proposeAmount(");
+
+    // The single door. `proposeAmount` refuses anything that is not a printed money figure beside
+    // the amount's own label, and it is what finally converts one — so a wrong-but-plausible figure
+    // cannot be manufactured here. A second path (a regex over the words, a lenient parse, a "tidy
+    // this up" helper written for the occasion) is exactly the silent error D-112 named as the
+    // residual risk, and it would not look wrong at the call site.
+    //
+    // **Matched on the call, not the bare name**, so the comments in this function explaining which
+    // grammar produced the figure do not fail the rule. That mistake has now been made three times
+    // in this repository (GOTCHAS).
+    expect(reader, "a figure may only be offered when the strict grammar said ok")
+      .not.toMatch(/parseThb\(|\.replace\(|new RegExp\(/u);
+
+    // `setAmount` is called once, with the strict grammar's own value put back into plain decimal
+    // notation. `plainThb` is the inverse of the `parseThb` inside `proposeAmount`, so the box holds
+    // a figure this form parses back to exactly the amount that was read.
+    // `.+` rather than `[^)]*`: the argument is itself a call, so stopping at the first closing
+    // parenthesis would capture half of it and the assertion would read as a mismatch.
+    const fills = [...reader.matchAll(/setAmount\((.+)\);/gu)].map((match) => match[1]!);
+    expect(fills, "the amount box is filled exactly once").toHaveLength(1);
+    expect(fills[0]).toBe("plainThb(proposed.value)");
+
+    // The crop survives the reversal and is now the owner's check on the offered figure rather than
+    // the product itself, so it must still be shown — including when the figure refused to parse.
+    expect(reader).toContain("locateAmount(");
+    expect(reader).toContain("setAmountCrop(cropAmountRegion(bitmap, located.value))");
+  });
+
+  it("keeps no local OCR engine anywhere in the tree", () => {
+    // D-120 removed the card path's engine and D-129 removed the slip path's, which was its last
+    // caller. Re-adding one as a fallback would put **two engines behind one grammar** — the trap
+    // D-119 names, where `findCards` depends on where an engine breaks a Thai run, and where every
+    // future grammar change has to be measured twice while one side rots quietly.
+    //
+    // Matched on the package name and the deleted module's identifiers rather than on the bare word
+    // "tesseract", so the comments in this file and in the forms explaining why the engine went away
+    // do not fail the rule. That mistake has now been made twice in this file (GOTCHAS).
+    expect(existsSync("lib/slip-ocr-engine.ts"), "the local engine is deleted, not disabled").toBe(false);
+    expect(readFileSync("package.json", "utf8"), "no OCR engine is a dependency of this app")
+      .not.toMatch(/"tesseract\.js"|"@tesseract\.js-data\//u);
+    for (const file of ["app/slip-capture.tsx", "app/notification-card-capture.tsx", "lib/slip-ocr.ts", "lib/slip-scan.ts", "lib/browser/ocr-reader.ts"]) {
+      expect(readFileSync(file, "utf8"), `${file} must not reach a local engine`)
+        .not.toMatch(/readSlipWords|releaseSlipOcr|slip-ocr-engine|import\("tesseract/u);
+    }
   });
 
   // **This test was reversed on 2026-08-16 and the reversal is the point of the entry.** It used
@@ -647,35 +649,44 @@ describe("privacy guardrails", () => {
     expect(reader).not.toMatch(/setDirection\(/u);
   });
 
-  it("sends a card screenshot to this app's own origin and nowhere else", () => {
-    const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+  it("sends every capture image to this app's own origin and nowhere else", () => {
+    const client = readFileSync("lib/browser/ocr-reader.ts", "utf8");
     const bench = readFileSync("app/slips-bench.tsx", "utf8");
-    // D-120 adopted Cloud Vision for the **card** path, and the whole reason there is a route in
-    // front of it is that the browser must not hold the key or name the third party. A `fetch` in
-    // this file with an absolute URL would put both back — the key in a `NEXT_PUBLIC_` value the
+    // D-120 adopted Cloud Vision for the card path and D-129 for the slip path, and the whole
+    // reason there is a route in front of it is that the browser must not hold the key or name the
+    // third party. An absolute URL here would put both back — the key in a `NEXT_PUBLIC_` value the
     // page hands to anyone who loads it, and `vision.googleapis.com` in `connect-src`. The CSP
     // would refuse it today, and the policy is the backstop rather than the reason (D-058).
     expect(bench).toContain("NotificationCardCapture");
     expect(bench).toContain("SlipCapture");
-    expect(form, "no absolute URL belongs in a capture form").not.toMatch(/https?:\/\//u);
-    expect(form).toMatch(/fetch\("\/api\/v1\/notification-cards\/read"/u);
-    expect(form, "the API key belongs to the route and must never be read in the browser")
-      .not.toMatch(/GOOGLE_VISION_KEY|X-Goog-Api-Key/u);
+    expect(client, "no absolute URL belongs in the browser's reader client").not.toMatch(/https?:\/\//u);
+    expect(client).toMatch(/fetch\(OCR_READ_PATH/u);
+    expect(client).toMatch(/OCR_READ_PATH = "\/api\/v1\/ocr\/read"/u);
 
-    // **The local engine is the slip form's alone now.** Keeping a tesseract fallback here was
-    // refused deliberately (D-120), and a re-added one would put two engines behind one grammar
-    // — the trap D-119 names, where `findCards` depends on where an engine breaks a Thai run.
-    // Matched on the identifiers and the import rather than on the word "tesseract", so the note
-    // in `loadCardImage` explaining why the enlargement went away does not fail this.
-    expect(form, "the card path has no local engine and no fallback to one")
-      .not.toMatch(/readSlipWords|releaseSlipOcr|slip-ocr-engine/u);
-    // The slip form still does, unchanged, which is the half of the on-device promise that stands.
-    expect(readFileSync("app/slip-capture.tsx", "utf8")).toMatch(/readSlipWords/u);
+    // **The path names no record type, and that is deliberate** (D-129). A slip reading through a
+    // card's URL is the kind of misdescription that later gets reasoned from.
+    //
+    // Asserted against the **constant's own declaration** rather than the whole file, because the
+    // file explains in prose what the path used to be — and a rule that fails on its own reason is
+    // a rule someone deletes the reason to satisfy (GOTCHAS).
+    const declared = /OCR_READ_PATH = "([^"]+)"/u.exec(client)?.[1] ?? "";
+    expect(declared, "the reader path must not name one record type now that two forms use it")
+      .not.toMatch(/notification-cards|slips|cards/u);
+
+    // Both forms go through that one client rather than each writing its own `fetch`, so there is
+    // one place the URL, the encoding and the key rule are stated.
+    for (const file of ["app/notification-card-capture.tsx", "app/slip-capture.tsx"]) {
+      const form = readFileSync(file, "utf8");
+      expect(form, `${file}: no absolute URL belongs in a capture form`).not.toMatch(/https?:\/\//u);
+      expect(form, `${file} must read through the shared client`).toMatch(/readImageWords\(/u);
+      expect(form, `${file}: the API key belongs to the route and must never be read in the browser`)
+        .not.toMatch(/GOOGLE_VISION_KEY|X-Goog-Api-Key/u);
+    }
   });
 
   it("keeps the Vision key out of every file except the one route that uses it", () => {
-    const engine = readFileSync("lib/notification-card-vision.ts", "utf8");
-    const route = readFileSync("app/api/v1/notification-cards/read/route.ts", "utf8");
+    const engine = readFileSync("lib/vision-ocr.ts", "utf8");
+    const route = readFileSync("app/api/v1/ocr/read/route.ts", "utf8");
 
     // The key is a parameter here, never an environment read, so this module is drivable by a test
     // and by the measurement harness without either holding a credential — and nothing in it can
@@ -743,10 +754,11 @@ describe("privacy guardrails", () => {
     // every fixture written afterwards non-invented (docs/FIXTURE_POLICY.md).
     expect(ignored).toMatch(/^masked-dumps\/$/mu);
     expect(ignored).toMatch(/^private-statements\/$/mu);
-    // The tesseract assets are ~3.8 MB of binaries copied from node_modules at build time. In
-    // git they would be a review surface nobody can read and would drift from the package
-    // version they must match; the copy makes that match structural instead.
-    expect(ignored).toMatch(/^public\/tesseract\/$/mu);
+    // `public/tesseract/` was asserted here until 2026-08-18 and went with the local engine
+    // (D-129). The ZXing reader is the one binary the build still copies, and it is held to the
+    // same rule: in git it would be a review surface nobody can read, drifting from the package
+    // version it must match.
+    expect(ignored).toMatch(/^public\/zxing_reader\.wasm$/mu);
   });
 
   it("reduces the account number to its last four digits inside every parser", () => {

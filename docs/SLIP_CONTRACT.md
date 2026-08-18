@@ -117,6 +117,15 @@ slip** is Buddhist and always does. The two sources disagree by 543 years on the
 
 ## What this does not yet establish
 
+> **The engine every measurement below was taken on is gone, as of 2026-08-18** (D-129). Slip
+> capture reads through Google Cloud Vision via `POST /api/v1/ocr/read`, and `tesseract.js` is not
+> a dependency of this project any more. Every rate in this section is a **tesseract** rate and
+> none of them describes the shipped path: on that path the amount is located on 23 of 23 real
+> slips and parses as money on 23 of 23 (D-128). They are kept because the *layout* findings they
+> rest on — where a label sits, which layouts print a `บาท` suffix, which print a two-digit year —
+> are properties of the documents and are unchanged by the engine reading them. **The payload
+> arithmetic below is the one part that is simply moot**: nothing is downloaded to the browser now.
+
 - ~~**No OCR has been run.**~~ **Measured 2026-08-05** (D-066), by a throwaway harness under
   `.runtime/diag/`, deleted after use. Engine: tesseract.js 7.0.0 with `tha+eng`, default
   settings, native resolution, no upscaling, over the 14 samples whose QR carries a date.

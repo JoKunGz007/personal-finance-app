@@ -29,6 +29,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - PowerShell prepends a UTF-8 BOM when piping into a native command
 - `pnpm add` fails with `ERR_PNPM_UNEXPECTED_STORE`, and the suggested fix is the expensive one
 - PowerShell eats a scoped package name before pnpm ever runs
+- Editing `pnpm-workspace.yaml` makes every `pnpm <script>` want to purge `node_modules`
 - tesseract.js caches its language data into the process working directory
 - pgTAP run straight after `pnpm test` fails in `001` on a foreign key, and the change is not the cause
 - A PowerShell `**` path glob does not recurse, so the build's target check silently under-counts
@@ -292,12 +293,21 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Avoid: quote the name — `pnpm add '@tesseract.js-data/tha'`. Single quotes, since the name may also contain characters PowerShell would otherwise expand. The same applies to every scoped package and to any argument that begins with `@`, including `--filter @scope/app`.
 - Verify: 2026-08-10, met while installing the OCR dependency. The unquoted form fails with `SplattingNotPermitted` and the quoted form installs, with no other change to the command.
 
+## Editing `pnpm-workspace.yaml` makes every `pnpm <script>` want to purge `node_modules`
+
+- Symptom: `pnpm typecheck` — or any other script — exits without running anything, reporting `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`, "Aborted removal of modules directory due to no TTY". Nothing about the message names the file that was edited, and the obvious reading is that the install is broken.
+- Cause: two things compounding. pnpm runs a dependency-status check before every script, and it hashes the **workspace configuration** as well as the lockfile — so removing one line from `pnpm-workspace.yaml` makes it decide `node_modules` is stale and shell out to `pnpm install`. That install then meets the `ERR_PNPM_UNEXPECTED_STORE` condition above (this project's `node_modules` is linked from `.pnpm-store` while pnpm defaults to `D:\.pnpm-store`), so it wants to re-link everything, which means purging the directory first — and a non-interactive shell cannot confirm it, so it aborts.
+- Avoid: run the tool directly rather than through pnpm when only the config moved — `node_modules/.bin/tsc --noEmit`, `node_modules/.bin/eslint .`, `node_modules/.bin/vitest run`. The deps-status check is what is in the way, not the tool. `--store-dir ".pnpm-store"` fixes the *store* half and does not stop the check itself from firing, so it is not the whole answer. A deliberate `pnpm install --frozen-lockfile --offline --store-dir ".pnpm-store"` is the other way, and it is the one to take once the change is settled rather than mid-edit.
+- The generalisation: an agent that meets a purge prompt in a non-interactive shell must not reach for the flag that silences it. `confirmModulesPurge=false` turns an abort into a silent deletion of a working offline install, which on this machine is expensive to rebuild.
+- Verify: 2026-08-18 (D-129). Removing the `tesseract.js: false` entry from `allowBuilds` — one dead line, since the package was gone — made `pnpm typecheck` abort this way while `node_modules/.bin/tsc --noEmit` ran normally and reported the real state of the tree. **It also broke the browser suites**, whose `webServer.command` is `pnpm build && pnpm start`, and there the only symptom is `Process from config.webServer was not able to start. Exit code: 1` — which names neither pnpm nor the config file. `pnpm install --frozen-lockfile --offline --store-dir ".pnpm-store"` cleared it in under a second, reporting `Already up to date` and purging nothing.
+
 ## tesseract.js caches its language data into the process working directory
 
 - Symptom: `tha.traineddata` and `eng.traineddata` appear untracked at the repository root after an OCR harness runs, each a few megabytes and neither written by any code in this repo.
 - Cause: tesseract.js caches downloaded or read language data relative to the **process's** working directory, not to the module that loaded it, so a harness run from the repo root deposits them there. A harness under `.runtime/` is not protected by its own location — what matters is where the process was started.
 - Avoid: run any OCR harness with its working directory inside `.runtime/`, or set the library's cache path explicitly. Then check for both files afterwards regardless: this is the same class of leak `.runtime/` exists to contain, and a stray multi-megabyte binary in the root is exactly the sort of thing that ends up in a commit. The shipped browser path is unaffected — `public/tesseract/` is populated by `prebuild` from `scripts/copy-tesseract-assets.mjs` and is gitignored (D-087).
 - Verify: 2026-08-10. Both files were found at the project root after the 23-sample measurement and deleted; `git status --short` lists them as `??` while `git diff` shows nothing, which is the untracked-file trap above compounding this one. The root is clean as of this entry.
+- **No longer live as of 2026-08-18** (D-129): tesseract.js is not a dependency of this project any more, so nothing here can drop a `.traineddata` anywhere. Kept because the class survives its instance — **a library caches relative to the process's working directory, not the module's**, and `.runtime/` protects nothing against that. Any future harness for any library with a local cache meets it again.
 
 ### Docker and the local Supabase projects
 
@@ -682,6 +692,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Avoid: give `corePath` the **exact file**, not the directory. A path ending in `js` is taken verbatim and skips detection entirely, which is what makes the build's copy list and the runtime's request the same decision instead of two that must be kept in agreement. The same rule is why `langPath` is a directory and safe: there the file name is composed from the language code and `gzip`, both of which the build also controls.
 - The generalisation, and it is the same one the ZXing entry above reaches by a different route: a library that composes an asset name at runtime has a second, invisible copy of your build's file list. Name the file, or make a test compare the two lists.
 - Verify: 2026-08-10. `tests/privacy.test.ts` ("asks the build for exactly the assets the engine loads") compares every `/tesseract/<file>` the engine names against the copy script's `to:` list; pointing `corePath` at the directory-resolved name fails exactly that assertion and nothing else. The owner browser spec then asserts all four files are actually requested from the app's own origin, which is the half a string comparison cannot reach.
+- **No longer live as of 2026-08-18** (D-129): tesseract.js, `scripts/copy-tesseract-assets.mjs`, `public/tesseract/` and both tests named above are deleted with the local OCR engine. **The generalisation is what survives and it still binds**: the ZXing reader in `lib/slip-scan.ts` composes an asset name at runtime the same way, which is the entry above this one, and any library that does keeps a second invisible copy of your build's file list. Name the file, or make a test compare the two lists.
 
 ### Real data, masking and privacy
 

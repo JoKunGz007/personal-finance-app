@@ -54,6 +54,23 @@ export function addMinor(values: readonly MinorUnitString[]): MinorUnitString {
   return minor(values.reduce((total, value) => total + BigInt(value), 0n).toString());
 }
 
+/**
+ * A minor-unit amount as plain decimal notation, which is what a form's amount box holds.
+ *
+ * **The inverse of `parseThb`, and deliberately not `formatThb`.** That one is for *reading*: it
+ * prefixes `฿`, groups thousands and uses a typographic minus (U+2212), and every one of those
+ * would have to be undone before the value could be parsed back. This round-trips by construction —
+ * `parseThb(plainThb(m)).minor === m` — which is what a pre-filled box needs, because the figure
+ * offered there is parsed again on submit by the same grammar that produced it (D-129).
+ */
+export function plainThb(value: MinorUnitString): string {
+  const amount = BigInt(value);
+  const negative = amount < 0n;
+  const absolute = negative ? -amount : amount;
+  const fraction = (absolute % 100n).toString().padStart(2, "0");
+  return `${negative ? "-" : ""}${absolute / 100n}.${fraction}`;
+}
+
 export function formatThb(value: MinorUnitString, locale = "en-GB"): string {
   const amount = BigInt(value);
   const sign = amount < 0n ? "−" : "";

@@ -1,31 +1,37 @@
 import type { OcrWord } from "@/lib/slip-ocr";
 
 /**
- * The card reader's engine: pixels in, `OcrWord[]` out, via Google Cloud Vision (`PLAN.md` task 35).
+ * This app's only OCR engine: pixels in, `OcrWord[]` out, via Google Cloud Vision.
  *
- * This is the Vision counterpart to `lib/slip-ocr-engine.ts` and it sits on the same seam. The
- * policy layers — `lib/notification-card-ocr.ts` and `lib/notification-card-prefill.ts` — depend on
- * no engine, and the only thing that crosses between them is `OcrWord`: a word and its box. That is
- * what made the comparison behind D-118 like-for-like, and it is what lets this file be swapped or
- * removed without touching a grammar rule.
+ * Every policy layer above it — `lib/notification-card-ocr.ts`, `lib/notification-card-prefill.ts`
+ * and `lib/slip-ocr.ts` — depends on no engine, and the only thing that crosses between them is
+ * `OcrWord`: a word and its box. That is what made the comparisons behind D-118 and D-128
+ * like-for-like, and it is what lets this file be swapped or removed without touching a grammar
+ * rule.
  *
- * ## Why the card reader calls out and the slip reader does not
+ * ## Both readers call out now, and each crossing was measured on its own subject
  *
- * Measured over the same 12 real screenshots and the same grammar (D-118, D-119): Vision fills
- * **99 of 100** digit-bearing fields where the local engine fills 70, and reads KBank Live's balance
- * and account digits, which are 0 of 5 locally under every mode, variant and scale tried (D-117).
- * `lib/slip-ocr-engine.ts` is untouched and keeps reading **slips** on the device, so tesseract, its
- * self-hosted assets and every privacy rule around them stay exactly as they were. Vision has never
- * been measured on a slip, and measuring it would mean sending 23 real slips to a third party —
- * a much larger disclosure than a card and not a thing this decision covers.
+ * The **card** reader adopted Vision on 2026-08-17 (D-120): 99 of 100 digit-bearing fields against
+ * the local engine's 70, including KBank Live's balance and account digits, which were 0 of 5
+ * locally under every mode, variant and scale tried (D-117). The **slip** reader followed on
+ * 2026-08-18 (D-129): the amount is located on 23 of 23 real slips against tesseract's 16, and
+ * parses as money on all 23, where the shipped local path read no figure at all (D-128).
+ *
+ * **Neither measurement was allowed to stand in for the other**, which is the rule this project has
+ * broken four times in the other direction (GOTCHAS: an OCR limit measured on one subject does not
+ * govern the other). D-120 said in as many words that Vision had never been measured on a slip and
+ * that measuring it was a separate, wider disclosure — a slip carries a counterparty's name, a
+ * transaction reference and account digits. That measurement was authorised, taken and recorded
+ * before a line of this adoption was written.
  *
  * ## No fallback, deliberately
  *
- * A failed read leaves every box blank and the owner types the card, which is what happened until
- * 2026-08-16 and is not a failure mode worth a second engine. The reason to refuse a silent
- * tesseract fallback is not safety — the pre-fill is blank-on-failure either way — it is that two
- * engines behind one grammar means every future grammar change has to be measured twice, and
- * `findCards` is already known to be sensitive to where an engine breaks a Thai run (D-119).
+ * A failed read leaves the box blank and the owner types the figure, which is what happened before
+ * either adoption and is not a failure mode worth a second engine. The reason to refuse a silent
+ * local fallback is not safety — every pre-fill is blank-on-failure either way — it is that two
+ * engines behind one grammar means every future grammar change has to be measured twice and one
+ * side rots quietly. `findCards` is already known to be sensitive to where an engine breaks a Thai
+ * run (D-119), and `findLabelLine` joins a line before matching for exactly the same reason.
  *
  * ## What this file may not do
  *
@@ -53,10 +59,11 @@ export type VisionAnnotateResponse = {
 /**
  * `DOCUMENT_TEXT_DETECTION` rather than `TEXT_DETECTION`.
  *
- * Both return `fullTextAnnotation`, and the dense-text model is the right subject: a notification
- * card is small grey label text laid out in rows, not a photograph with a sign in it. The language
- * hint matters more than the feature choice — without it Thai tone marks are routinely attached to
- * the wrong base character, and a mangled label is a field the grammar refuses.
+ * Both return `fullTextAnnotation`, and the dense-text model is the right subject for both records
+ * this app reads: a notification card is small grey label text laid out in rows, and a transfer slip
+ * is a labelled form. Neither is a photograph with a sign in it. The language hint matters more than
+ * the feature choice — without it Thai tone marks are routinely attached to the wrong base
+ * character, and a mangled label is a field the grammar refuses.
  */
 export const VISION_FEATURE = "DOCUMENT_TEXT_DETECTION";
 export const VISION_LANGUAGE_HINTS = ["th", "en"] as const;
@@ -87,10 +94,10 @@ export function visionRequestBody(base64Image: string): string {
 /**
  * Flattens Vision's page/block/paragraph/word nesting into the flat word list the policy layer reads.
  *
- * Structure above the word is discarded for the same reason `wordsFromBlocks` discards tesseract's:
- * `groupIntoLines` re-derives lines from vertical *overlap*, because a Thai tone mark makes a taller
- * box and an engine's own line grouping splits on it (`lib/slip-ocr.ts`). Trusting Vision's
- * paragraphs here would put a second, different line model in front of the measured one.
+ * Structure above the word is discarded deliberately: `groupIntoLines` re-derives lines from
+ * vertical *overlap*, because a Thai tone mark makes a taller box and an engine's own line grouping
+ * splits on it (`lib/slip-ocr.ts`). Trusting Vision's paragraphs here would put a second, different
+ * line model in front of the measured one.
  *
  * A box arrives as four vertices rather than a rectangle, and may be rotated. The axis-aligned
  * bounds are taken, which is what `OcrWord` holds and all any caller uses. **A missing coordinate
@@ -112,8 +119,8 @@ export function wordsFromVision(response: VisionAnnotateResponse | null | undefi
           const top = Math.min(...ys);
           const right = Math.max(...xs);
           const bottom = Math.max(...ys);
-          // Degenerate boxes are dropped rather than passed on, exactly as the tesseract seam does:
-          // a zero-width word cannot contribute to a crop and would widen a field region for nothing.
+          // Degenerate boxes are dropped rather than passed on: a zero-width word cannot contribute
+          // to a crop and would widen a field region for nothing.
           if (right <= left || bottom <= top) continue;
           words.push({ text, left, top, right, bottom });
         }
@@ -123,35 +130,35 @@ export function wordsFromVision(response: VisionAnnotateResponse | null | undefi
   return words;
 }
 
-/** What went wrong, in the vocabulary the form turns into a sentence for the owner. */
-export type CardReadFailure =
-  /** No key configured. The deployment is misconfigured; the owner still types the card. */
+/** What went wrong, in the vocabulary a form turns into a sentence for the owner. */
+export type VisionReadFailure =
+  /** No key configured. The deployment is misconfigured; the owner still types the figures. */
   | "NOT_CONFIGURED"
   /** The call did not complete — no network, a timeout, DNS, a refused connection. */
   | "UNREACHABLE"
   /** Vision answered and refused: a bad key, a disabled API, a quota, an unreadable image. */
   | "REFUSED";
 
-export type CardReadResult =
+export type VisionReadResult =
   | { readonly ok: true; readonly words: OcrWord[] }
-  | { readonly ok: false; readonly code: CardReadFailure };
+  | { readonly ok: false; readonly code: VisionReadFailure };
 
 /**
- * Reads every word on a card screenshot, or says which way it failed.
+ * Reads every word on an image, or says which way it failed.
  *
  * The key is a parameter and is never read from the environment here, so this function is callable
- * from a test and from the measurement harness without either one holding a credential. It is also
+ * from a test and from a measurement harness without either one holding a credential. It is also
  * the reason nothing in this file can accidentally log it.
  *
- * **An empty word list is a success, not a failure**, and the distinction is the same one
- * `readSlipWords` makes: "the engine ran and read nothing" is an honest answer that the grammar
- * turns into a named refusal, whereas a failure means no reading happened at all.
+ * **An empty word list is a success, not a failure.** "The engine ran and read nothing" is an
+ * honest answer that the grammar turns into a named refusal — `LABEL_NOT_FOUND` on a slip,
+ * a card with no fields on a screenshot — whereas a failure means no reading happened at all.
  */
-export async function readCardWordsWithVision(
+export async function readWordsWithVision(
   image: Uint8Array,
   apiKey: string,
   fetchImpl: typeof fetch = fetch
-): Promise<CardReadResult> {
+): Promise<VisionReadResult> {
   if (apiKey.length === 0) return { ok: false, code: "NOT_CONFIGURED" };
 
   let response: Response;

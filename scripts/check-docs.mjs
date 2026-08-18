@@ -34,6 +34,16 @@ const SOURCE_DIRS = ["app", "lib", "tests", "scripts", "supabase", "workers", "d
 // in the docs or recorded here with its successor.
 const RETIRED_PATHS = {
   "app/ledger-app.tsx": "split into app/import-bench.tsx and app/recovery-bench.tsx (D-061)",
+  // The local OCR engine and everything that existed only for it. Deleted when slip capture
+  // adopted Cloud Vision, which took its last caller with it (D-129).
+  "lib/slip-ocr-engine.ts": "deleted with the local OCR engine; lib/vision-ocr.ts is the only engine now (D-129)",
+  "tests/slip-ocr-engine.test.ts": "deleted with lib/slip-ocr-engine.ts (D-129)",
+  "scripts/copy-tesseract-assets.mjs": "deleted with the local OCR engine and its prebuild step (D-129)",
+  // Renamed rather than deleted: the reader stopped being the card's when the slip form became
+  // its second caller, and a path naming one record type is what gets reasoned from later.
+  "app/api/v1/notification-cards/read/route.ts": "moved to app/api/v1/ocr/read/route.ts (D-129)",
+  "lib/notification-card-vision.ts": "renamed to lib/vision-ocr.ts (D-129)",
+  "tests/notification-card-vision.test.ts": "renamed to tests/vision-ocr.test.ts (D-129)",
 };
 
 const failures = [];
