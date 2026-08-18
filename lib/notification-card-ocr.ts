@@ -194,11 +194,84 @@ function labelAtLineStart(line: readonly OcrWord[], label: string): number | nul
     // Repaired per accumulated run rather than per word: a slash can be its own OCR word, and
     // `\/{2,}` collapsing only means anything once the neighbours are beside it.
     joined = repairSeparators(joined + normalise(word.text));
-    if (joined.startsWith(label)) return word.right;
+    if (labelReached(joined, label)) return word.right;
     // The row has diverged from the label before completing it, so this is a different row.
-    if (!label.startsWith(joined)) return null;
+    if (!labelStillPossible(joined, label)) return null;
   }
   return null;
+}
+
+/**
+ * The Thai marks that sit **above** the line, which is the class one misread swaps for another.
+ *
+ * Below-vowels (U+0E38–U+0E3A) are deliberately absent. The observed confusion is between marks
+ * drawn above a consonant at notification size — a small circle read as a small stroke — and
+ * widening this to marks that cannot be confused with those would relax the comparison for nothing.
+ */
+const THAI_MARK_ABOVE = /[ัิ-ื็-๎]/u;
+
+/**
+ * At most one mark may differ across a whole label. Not a tuning knob: a second substitution has
+ * never been observed, and every extra one multiplies the chance that two labels meet in the
+ * middle. `labels are distinct under mark tolerance` in `tests/notification-card-ocr.test.ts`
+ * proves the current set stays distinct at this bound, and that test is what must be re-run before
+ * anyone raises it.
+ */
+const MAX_MARK_SUBSTITUTIONS = 1;
+
+/**
+ * Compares a row against a known label, tolerating a misread mark and nothing else (D-127).
+ *
+ * **The problem it solves.** `normalise` runs NFKC, which gives `ำ` its compatibility decomposition
+ * — so `วันที่ทำรายการ` is matched as fifteen characters with a bare U+0E4D (nikhahit) at index 7.
+ * One real Krungthai card has Vision reading U+0E48 (mai ek) there: the same small shape above the
+ * same consonant. The row is read correctly and the *label* becomes unfindable, so the whole field
+ * is refused (D-121). It is D-117's slash problem in a different character class.
+ *
+ * **Why relaxing this is safe here when repairing Thai text in general would not be.** A tone mark
+ * carries meaning in ordinary prose, so a global repair could change a word. This comparison is
+ * only ever made against a **closed set of labels** written down in `lib/notification-card.ts`, and
+ * it is bounded three ways: only characters that are *both* marks above the line may differ, at
+ * most `MAX_MARK_SUBSTITUTIONS` of them, and lengths must still agree. So it can make a known label
+ * more findable and can never turn one label into a different one — **which is asserted over the
+ * real field maps rather than argued**, because two labels differing only by such a mark would
+ * become ambiguous and this is exactly the check that would catch it.
+ *
+ * It also cannot reach a value. A label match only says where a field's value *begins*; every digit
+ * still goes through `parseThb` and the digit guard downstream (D-114).
+ */
+function markTolerantCompare(candidate: string, label: string): { equal: boolean; substitutions: number } {
+  if (candidate.length !== label.length) return { equal: false, substitutions: 0 };
+  let substitutions = 0;
+  for (let index = 0; index < label.length; index += 1) {
+    const a = candidate[index]!;
+    const b = label[index]!;
+    if (a === b) continue;
+    // Both sides must be a mark above the line. A consonant, a digit or a below-vowel differing
+    // means this is a different row, however small the difference looks.
+    if (!THAI_MARK_ABOVE.test(a) || !THAI_MARK_ABOVE.test(b)) return { equal: false, substitutions };
+    substitutions += 1;
+    if (substitutions > MAX_MARK_SUBSTITUTIONS) return { equal: false, substitutions };
+  }
+  return { equal: true, substitutions };
+}
+
+/** Whether the row has now completed the label, allowing a misread mark. */
+function labelReached(joined: string, label: string): boolean {
+  if (joined.length < label.length) return false;
+  return markTolerantCompare(joined.slice(0, label.length), label).equal;
+}
+
+/**
+ * Whether the row could still complete the label, allowing a misread mark in what it has so far.
+ *
+ * The strict version was `label.startsWith(joined)`. Keeping that while relaxing the completion
+ * check would abandon the row at the misread mark and never reach the completion check at all —
+ * the two have to move together or the tolerance does nothing.
+ */
+function labelStillPossible(joined: string, label: string): boolean {
+  if (joined.length > label.length) return false;
+  return markTolerantCompare(joined, label.slice(0, joined.length)).equal;
 }
 
 /**

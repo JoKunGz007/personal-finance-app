@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { layoutForChannel } from "@/lib/notification-card";
+import { NOTIFICATION_CARD_LAYOUTS, fieldMapFor, layoutForChannel } from "@/lib/notification-card";
+import { normalise } from "@/lib/slip-ocr";
 import {
   CARD_FIELDS,
   findCards,
@@ -483,5 +484,92 @@ describe("the form asks for every field at once", () => {
     expect(located.amount.ok).toBe(true);
     expect(located.balance.ok).toBe(true);
     expect(located.counterpartyName).toMatchObject({ ok: false, code: "NOT_PRINTED" });
+  });
+});
+
+// A misread mark inside a label, and the check that decides whether tolerating one is safe (D-127).
+//
+// `normalise` runs NFKC, which decomposes `ำ` — so `วันที่ทำรายการ` is matched as fifteen characters
+// with a bare U+0E4D (nikhahit) at index 7. On one real Krungthai card Vision reads U+0E48 (mai ek)
+// there: the same small shape above the same consonant. The row reads correctly and the *label*
+// becomes unfindable, refusing the whole field (D-121).
+describe("a label survives one misread mark, and only a mark", () => {
+  const KTB = layoutForChannel("Krungthai Connext");
+  const TIMESTAMP = normalise("วันที่ทำรายการ");
+
+  /** The real card, reproduced: nikhahit read as mai ek at index 7. */
+  const misread = TIMESTAMP.slice(0, 7) + "่" + TIMESTAMP.slice(8);
+
+  it("reproduces the refusal the tolerance exists for", () => {
+    // Guards the fixture rather than the code: if these two ever became equal the test below
+    // would pass while proving nothing.
+    expect(misread).not.toBe(TIMESTAMP);
+    expect(misread).toHaveLength(TIMESTAMP.length);
+    expect(TIMESTAMP.codePointAt(7)).toBe(0x0e4d);
+    expect(misread.codePointAt(7)).toBe(0x0e48);
+  });
+
+  it("finds a label whose mark was misread", () => {
+    const read = card([["เงินเข้า"], [misread, "10/08/69", "21:14"]]);
+    const found = locateCardField(read, KTB, "in", "occurredAt");
+    expect(found.ok, found.ok ? "" : `refused ${found.code}`).toBe(true);
+  });
+
+  it("still refuses a row that differs by a consonant, however small the difference looks", () => {
+    // The bound that matters. `ท` → `ค` is one character and is a different word; only marks
+    // above the line may differ, so this stays refused.
+    const wrongConsonant = TIMESTAMP.slice(0, 6) + "ค" + TIMESTAMP.slice(7);
+    const read = card([["เงินเข้า"], [wrongConsonant, "10/08/69", "21:14"]]);
+    const found = locateCardField(read, KTB, "in", "occurredAt");
+    expect(found.ok).toBe(false);
+  });
+
+  it("still refuses a row that differs by a digit", () => {
+    const KBANK = layoutForChannel("KBank Live");
+    const read = card([["รายการเงินเข้า"], ["ยอดเงิน9งเหลือ", "1,000.00"]]);
+    const found = locateCardField(read, KBANK, "in", "balance");
+    expect(found.ok).toBe(false);
+  });
+
+  // **This is the test that decides whether the tolerance is safe at all**, and it is a proof over
+  // the real field maps rather than an argument. Two labels differing only by a mark above the line
+  // would become interchangeable, and a card would then read one field's value into another. If
+  // this ever fails, the tolerance must go — not the assertion.
+  it("keeps every label in the real field maps distinct under the tolerance", () => {
+    const labels = new Set<string>();
+    for (const layout of NOTIFICATION_CARD_LAYOUTS) {
+      for (const direction of ["in", "out"] as const) {
+        const map = fieldMapFor(layout, direction);
+        if (!map) continue;
+        for (const anchor of [map.amount, map.ownAccount, map.occurredAt, map.balance,
+                              ...map.counterpartyName, ...map.counterpartyAccount]) {
+          if (anchor.kind === "label") labels.add(normalise(anchor.label));
+        }
+      }
+    }
+    expect(labels.size, "no labels found — the walk is looking in the wrong place").toBeGreaterThan(6);
+
+    // Every pair, compared the way the matcher compares them. Same length and differing only by
+    // marks above the line is exactly the collision this tolerance could create.
+    const marks = /[ัิ-ื็-๎]/u;
+    const all = [...labels];
+    for (let i = 0; i < all.length; i += 1) {
+      for (let j = i + 1; j < all.length; j += 1) {
+        const a = all[i]!;
+        const b = all[j]!;
+        if (a.length !== b.length) continue;
+        let differences = 0;
+        let onlyMarks = true;
+        for (let k = 0; k < a.length; k += 1) {
+          if (a[k] === b[k]) continue;
+          differences += 1;
+          if (!marks.test(a[k]!) || !marks.test(b[k]!)) onlyMarks = false;
+        }
+        expect(
+          onlyMarks && differences > 0 && differences <= 1,
+          `"${a}" and "${b}" differ only by a mark above the line, so the tolerance makes them interchangeable`
+        ).toBe(false);
+      }
+    }
   });
 });
