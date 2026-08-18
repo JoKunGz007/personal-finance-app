@@ -200,6 +200,10 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .capture-result-anchor { scroll-margin-top: 24px; }
 .capture-result { margin: 0 0 4px; padding: 14px 16px; display: grid; gap: 12px; border: 1px solid; border-left-width: 4px; border-radius: var(--radius); font-size: 14px; }
 .capture-result p { margin: 0; }
+/* Focused programmatically after a capture (D-125), never reachable by Tab — `tabindex="-1"`.
+   The default outline is kept rather than removed: a region that takes focus and shows nothing
+   for it leaves a keyboard user with no idea where they are. */
+.capture-result:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .capture-result-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .capture-result .secondary-button { min-height: 36px; padding: 7px 13px; font-size: 13px; }
 .capture-result.captured { color: var(--celadon-ink); border-color: var(--celadon); background: color-mix(in srgb, var(--celadon) 22%, transparent); }

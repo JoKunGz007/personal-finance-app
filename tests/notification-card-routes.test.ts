@@ -606,6 +606,38 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
       expect(refused.status).toBe(413);
     });
 
+    it("refuses an oversized upload from its declared length, before reading the body", async () => {
+      // The bound protects the third party from this app. Checking it only *after*
+      // `arrayBuffer()` still forwards nothing, but buffers everything first — so the declared
+      // length is checked ahead of the read. A lied-about or absent length falls through to the
+      // check above, which is why both exist rather than either replacing the other.
+      vi.stubEnv("GOOGLE_VISION_KEY", "");
+      const { POST } = await import("@/app/api/v1/notification-cards/read/route");
+      let read = false;
+      const request = new Request("http://localhost/api/v1/notification-cards/read", {
+        method: "POST",
+        headers: { "Content-Type": "image/png", "Content-Length": String(9 * 1024 * 1024) },
+        body: new Uint8Array([1, 2, 3])
+      });
+      // Proves the refusal came from the header rather than from the bytes: reading the body at
+      // all would flip this, and the assertion below would fail even though the status matched.
+      const guarded = new Proxy(request, {
+        get(target, key) {
+          if (key === "arrayBuffer") { read = true; return () => target.arrayBuffer(); }
+          // **`target` as the receiver, not the proxy.** `Request.headers` is a getter over a
+          // private field, and reading it with the proxy as `this` throws "Cannot read private
+          // member #headers" — the route then fails for a reason that has nothing to do with what
+          // is being tested. Functions are bound for the same reason.
+          const value = Reflect.get(target, key, target) as unknown;
+          return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+        }
+      });
+
+      const response = await POST(guarded);
+      expect(response.status).toBe(413);
+      expect(read, "the body must not be read once the declared length is over the bound").toBe(false);
+    });
+
     it("refuses without calling out when no key is configured", async () => {
       // 503 rather than 500: the deployment is missing a value, the owner can still type the card,
       // and the message says so. The size and type guards above having run first is the point —

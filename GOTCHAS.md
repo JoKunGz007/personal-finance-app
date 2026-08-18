@@ -161,6 +161,9 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A defect that only appears when a feature succeeds will not be in the gate
 - Pre-filling one half of a two-signal cross-check leaves a check that agrees with itself
 - Cloud Vision's output is not byte-identical between calls, so a harness card count is not a fixed number
+- A source-grep test matches the comment that explains its own rule
+- A `Proxy` over a `Request` throws on `headers` unless the target is the receiver
+- A size bound checked after the body is read bounds nothing
 
 ## Traps
 
@@ -1106,3 +1109,24 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: the hosted engine does not guarantee identical output for identical input, and the measurement harness picks a layout by "whichever finds the most cards" — so a handful of words landing differently moves the tie and the total. D-118 already warned that the harness's **per-layout attribution** is an artifact; the **card total** is one too.
 - Avoid: quote **ratios** from that harness and not absolute counts, and never compare a count taken on one day against one taken on another as though the difference meant something changed. Where a number must be stable, derive it from something the app controls rather than from what the engine returned.
 - Verify: 2026-08-17 (D-123, D-118). 25 cards on 2026-08-16 and 28 on 2026-08-17, same images, same code.
+
+## A source-grep test matches the comment that explains its own rule
+
+- Symptom: a test that forbids a pattern fails on a file that does not use it. The match is inside the comment written to explain why the pattern is forbidden.
+- Cause: these tests read a source file as text, and a comment is text. Any rule expressed as a bare word — `tesseract`, `aria-modal` — matches its own documentation, so writing the reason down breaks the check. It reads as a real violation, and the instinct is to delete the comment.
+- Avoid: match the **construct**, not the word. `aria-modal=` rather than `aria-modal`; `readSlipWords|slip-ocr-engine` rather than `tesseract`; an import or a call shape rather than a name that could appear in prose. Then say so beside the assertion, or the next person tightens it back.
+- Verify: 2026-08-17 (D-125). It happened twice in one day in `tests/privacy.test.ts`, on `tesseract` and then on `aria-modal`.
+
+## A `Proxy` over a `Request` throws on `headers` unless the target is the receiver
+
+- Symptom: wrapping a `Request` in a `Proxy` to observe one method makes the route under test fail with `Cannot read private member #headers from an object whose class did not declare it` — an error that reads as a defect in the route.
+- Cause: the default `get` trap forwards `Reflect.get(target, key, receiver)` with the **proxy** as receiver. `Request.headers` is a getter over a private field, and a private field lookup is keyed to the real instance, so running the getter with the proxy as `this` throws. The same holds for `body`, `url` and the other accessors, and for every method unless it is bound.
+- Avoid: forward with the **target** as receiver — `Reflect.get(target, key, target)` — and `.bind(target)` anything callable. Or skip the proxy and hand the route a minimal object with just the members it touches.
+- Verify: 2026-08-17 (D-125). `tests/notification-card-routes.test.ts` § refuses an oversized upload from its declared length.
+
+## A size bound checked after the body is read bounds nothing
+
+- Symptom: a route carries a `MAX_BYTES` check and a comment about refusing oversized uploads, and the check never prevents one being received — only forwarded.
+- Cause: `await request.arrayBuffer()` buffers the whole body before returning, so a `byteLength` test after it runs when the cost has already been paid. The code looks like a guard and reads like one in review, because the constant and the 413 are both right there.
+- Avoid: check the declared `Content-Length` **before** reading, and keep the post-read check for the chunked and lying cases. Where neither is enough, stream and count. And make the comment say what the bound actually protects — in this repo it protects the *third party* from the app, not the app from its caller, and the first draft claimed otherwise.
+- Verify: 2026-08-17 (D-125). `app/api/v1/notification-cards/read/route.ts` now refuses from the header first, with a test asserting the body was never read.

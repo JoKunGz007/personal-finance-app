@@ -39,13 +39,20 @@ export const dynamic = "force-dynamic";
 const ACCEPTED_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
 /**
- * Four megabytes, which is a ceiling on what this app forwards rather than a Vision limit.
+ * Four megabytes, which is a ceiling on what this app **forwards** rather than a Vision limit.
  *
  * A phone screenshot is a few hundred kilobytes; Vision itself accepts far more. The bound exists
  * because this route hands a caller's bytes to a third party, and an unbounded relay is worth
- * closing whether or not anything today would reach it. Serverless request bodies are capped
- * around this size in any case, so a larger image fails somewhere regardless — failing here says
- * why.
+ * closing whether or not anything today would reach it.
+ *
+ * **Be precise about what it does not do.** The declared length is checked *before* the body is
+ * read, so an oversized upload is refused without being buffered — but a request that declares no
+ * length, or lies about it, is still read whole before the second check can fire. Closing that
+ * properly means streaming the body and counting as it arrives, which is not worth writing here:
+ * the caller has already passed `strongOwnerClient`, so this is the single owner of a
+ * single-owner app, and the platform caps a serverless request body below this figure anyway.
+ * **The bound protects the third party from this app, not this app from its caller** — and that
+ * is the honest description of it rather than the one the first draft of this comment gave.
  */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
@@ -56,6 +63,14 @@ export async function POST(request: Request) {
   const contentType = (request.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
   if (!ACCEPTED_TYPES.has(contentType)) {
     return routeError("A card screenshot must be a PNG, JPEG or WebP image.", 415);
+  }
+
+  // Checked from the declared length first, so an oversized upload is refused without being read
+  // into memory. `Content-Length` is absent on a chunked request and can be wrong on any request,
+  // which is why the same bound is applied again below against the bytes actually received.
+  const declared = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
+    return routeError("That screenshot is too large to read. Crop it to the card and try again.", 413);
   }
 
   const body = await request.arrayBuffer().catch(() => null);

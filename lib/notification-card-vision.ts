@@ -63,6 +63,9 @@ export const VISION_LANGUAGE_HINTS = ["th", "en"] as const;
 
 export const VISION_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate";
 
+/** See `readCardWordsWithVision` for why a third-party call carries its own deadline. */
+export const VISION_TIMEOUT_MS = 20_000;
+
 /**
  * The request body for one image.
  *
@@ -155,6 +158,14 @@ export async function readCardWordsWithVision(
   try {
     response = await fetchImpl(VISION_ENDPOINT, {
       method: "POST",
+      // **A call to someone else's service needs its own deadline.** Without one, a Vision request
+      // that hangs holds this route open until the platform kills the function — the owner watches
+      // a spinner and gets whatever generic failure the runtime produces, rather than the
+      // "could not be reached, type the values" sentence written for exactly this case. Twenty
+      // seconds is far above the ~1.5s a real read takes and comfortably under Vercel's own
+      // function limit, so this deadline is reached before that one and the failure stays ours.
+      // An abort surfaces as a thrown `fetch`, which is already `UNREACHABLE` below.
+      signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
       headers: {
         "Content-Type": "application/json",
         // The key travels in a header rather than the `?key=` query string Google's examples use.

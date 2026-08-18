@@ -299,7 +299,21 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
    * before the layout includes it lands short by the banner's own height.
    */
   function scrollToResult() {
-    requestAnimationFrame(() => resultBanner.current?.scrollIntoView({ block: "start" }));
+    requestAnimationFrame(() => {
+      const anchor = resultBanner.current;
+      if (!anchor) return;
+      anchor.scrollIntoView({ block: "start" });
+      // **Focus follows the eye** (D-125). The scroll moves the viewport and nothing else, so a
+      // keyboard capture would leave the caret on the submit button that has just gone off-screen
+      // at the bottom — Tab would continue from a control the owner can no longer see. Moving it
+      // to the result is the standard pattern for a region like this and is **not** a focus trap:
+      // Tab and Escape behave normally and nothing on the page is hidden, which is exactly the
+      // difference from the modal dialog D-123 declined.
+      //
+      // `preventScroll` because the scroll above already chose the position; letting focus scroll
+      // as well overrides `scroll-margin-top` and jams the banner against the viewport edge.
+      anchor.querySelector<HTMLElement>("[data-capture-result]")?.focus({ preventScroll: true });
+    });
   }
 
   const layout = channel === "" ? null : layoutForChannel(channel);
@@ -798,7 +812,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
               of that, and it does not steal the keyboard from someone mid-form. */}
           <div ref={resultBanner} className="capture-result-anchor">
             {status && (
-              <div className={`capture-result ${status.tone}`} role="status">
+              <div className={`capture-result ${status.tone}`} role="status" tabIndex={-1} data-capture-result>
                 <p>{status.message}</p>
                 <div className="capture-result-actions">
                   <button type="button" className="secondary-button" onClick={() => setStatus(null)}>
@@ -808,7 +822,7 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
               </div>
             )}
             {error && (
-              <div className="capture-result failed" role="alert">
+              <div className="capture-result failed" role="alert" tabIndex={-1} data-capture-result>
                 <p>{error}</p>
                 <div className="capture-result-actions">
                   <button type="button" className="secondary-button" onClick={() => setError(null)}>

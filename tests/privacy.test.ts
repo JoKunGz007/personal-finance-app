@@ -585,6 +585,33 @@ describe("privacy guardrails", () => {
     expect(form).toMatch(/function namesOrAbsent\([\s\S]*?names\.length > 0 \? \[\.\.\.names\] : undefined/u);
   });
 
+  it("sends the page and the keyboard to a capture's result, without trapping either", () => {
+    const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+    const scroll = /function scrollToResult\(\)[\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
+    expect(scroll, "scrollToResult must exist for this test to mean anything").toContain("scrollIntoView");
+
+    // **No `behavior`, deliberately** (D-124). Unspecified, the browser follows the CSS
+    // `scroll-behavior`, which `app/globals.css` sets to smooth and overrides to auto under
+    // `prefers-reduced-motion`. Naming "smooth" here would ignore that preference, and it would
+    // read as the more careful choice while being the less careful one.
+    expect(scroll, 'passing behavior: "smooth" overrides prefers-reduced-motion')
+      .not.toMatch(/behavior:\s*"smooth"/u);
+
+    // Focus follows the eye (D-125), so Tab does not continue from a button that has scrolled off
+    // the bottom. `preventScroll` because the scroll above already chose the position.
+    expect(scroll).toMatch(/\.focus\(\{ preventScroll: true \}\)/u);
+    // Reachable only programmatically: a result region in the Tab order is a stop on the way to
+    // nothing, on every pass through the form.
+    expect(form).toMatch(/role="status" tabIndex=\{-1\} data-capture-result/u);
+    expect(form).toMatch(/role="alert" tabIndex=\{-1\} data-capture-result/u);
+    // And it is a region, not a dialog: the moment the attribute is set, everything D-123 refused
+    // — the focus trap, the Escape key, the restore on close — becomes owed and is not written.
+    // Matched on the attribute rather than the word, so the comment above explaining the rule does
+    // not fail the rule. That mistake has now been made twice in this file.
+    expect(form, "a banner that grows aria-modal has become the dialog this deliberately is not")
+      .not.toMatch(/aria-modal=/u);
+  });
+
   it("keeps a card's two direction signals from collapsing into one", () => {
     const form = readFileSync("app/notification-card-capture.tsx", "utf8");
 

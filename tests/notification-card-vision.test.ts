@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   VISION_ENDPOINT,
+  VISION_TIMEOUT_MS,
   readCardWordsWithVision,
   visionRequestBody,
   wordsFromVision,
@@ -145,6 +146,28 @@ describe("which failures are told apart", () => {
     // A query string is the half of a URL that lands in access logs and error reports.
     expect(url).not.toContain("a-key");
     expect((init.headers as Record<string, string>)["X-Goog-Api-Key"]).toBe("a-key");
+  });
+
+  it("gives the call its own deadline, so a hang is our failure and not the runtime's", async () => {
+    // Without a signal a hung Vision request holds the route open until the platform kills the
+    // function, and the owner gets whatever generic failure that produces instead of the sentence
+    // written for an unreachable reader. The deadline must also sit *below* the platform's own
+    // function limit, or it never fires and the signal is decoration.
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(annotated([])), { status: 200 }));
+    await readCardWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch);
+
+    const [, init] = fetchImpl.mock.calls[0]! as unknown as [string, RequestInit];
+    expect(init.signal, "the call must carry an abort signal").toBeInstanceOf(AbortSignal);
+    expect(VISION_TIMEOUT_MS).toBeGreaterThan(5_000);
+    expect(VISION_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
+  });
+
+  it("reports an aborted call as unreachable rather than as a refusal", async () => {
+    // An abort surfaces as a thrown fetch, which is the same shape as no network at all — and it
+    // should stay that way: both mean no reading happened, and both are worth retrying.
+    const aborted = vi.fn(async () => { throw new DOMException("The operation was aborted.", "TimeoutError"); });
+    expect(await readCardWordsWithVision(image, "k", aborted as unknown as typeof fetch))
+      .toEqual({ ok: false, code: "UNREACHABLE" });
   });
 
   it("separates a call that did not complete from one that was refused", async () => {
