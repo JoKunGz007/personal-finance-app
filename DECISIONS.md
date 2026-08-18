@@ -151,6 +151,7 @@ This file carries **D-114 onward**. Two settled ranges were relocated unchanged,
 - **D-128** — Vision locates the amount on every real slip and every one parses as money, measured and NOT adopted
 - **D-129** — Slip capture adopts Cloud Vision and pre-fills the amount, and the local OCR engine is deleted
 - **D-130** — The continuity size guard measured lines while the files grew sideways, and reported green at 332 KB
+- **D-131** — The handoff and the plan were append-only by habit, and both had gone self-contradictory
 
 ## D-114 — Pre-fill is trialled rather than decided, and the statement is the independent check the usage stats cannot be
 
@@ -434,3 +435,25 @@ This file carries **D-114 onward**. Two settled ranges were relocated unchanged,
 - **`GOTCHAS.md` is at 91% of its new budget**, which is roughly five more traps. That is the first thing the corrected check says, and it is a real signal rather than an artefact of a tight number: two traps were retired today (the tesseract cache and the WASM core path) and both kept their generalisation, which is the pattern the remedy names.
 - **Red-proved rather than assumed**: lowering the decision budget to 80 KB fails the check with `DECISIONS.md: 90 KB exceeds the 78 KB budget` and the archive remedy, and restoring it passes. The failure names the file, both numbers and what to do, which is what the old message did too — the old one was simply never reached.
 - Evidence: `scripts/check-docs.mjs`, `docs/decisions/ARCHIVE-D-060-D-113.md`, `DECISIONS.md` (header), `HANDOFF.md`, `docs/LOCAL_DEV.md`. `pnpm check:docs --strict` passes at **129 decisions, 132 traps**, unchanged across the move, which is the assertion that the archive relocated bodies and not entries. D-080 (the archive rule this follows), D-052 (the thin-handoff rule this finds broken), D-082, D-085.
+
+## D-131 — The handoff and the plan were append-only by habit, and both had gone self-contradictory
+
+- Date: 2026-08-18
+- Status: **Accepted and done**, on the owner's decision. Follows D-130, which corrected the guard that should have caught this. Documentation only; no application code and nothing about the ledger changes.
+- **The defect is not size, it is that nothing was ever removed.** `HANDOFF.md` was **91 KB in 86 lines** and `PLAN.md` **214 KB**. Every update to either had *prepended* a paragraph and removed none, so both files held a third telling of a history that `git log` and `DECISIONS.md` already carry in full.
+- **Size was the symptom. The failure was that they had become wrong.** `HANDOFF.md` carried **three separate lines each claiming a different migration state** — one said all three local projects were on 012, another said 001–014, another said 019 — while the truth was 020 everywhere. `PLAN.md`'s gate table said Vitest **522 across 28 files** and pgTAP **252** when the real numbers were 604 across 30 and 266. **Every one of those lines was true when written**, and each was left in place beneath a newer one that contradicted it. A reader has no way to tell which of three dated claims is current except by re-deriving all three, which is the opposite of what a continuity document is for.
+
+### What changed
+
+- **`HANDOFF.md` is rewritten, not trimmed: 91 KB → 15 KB.** It now carries only what its own header always said it should — live authorizations, the destructive-operation state of this machine, live hazards, and where to start reading. **One 33 KB line and one 4.8 KB line were the bulk of it**, both pure "Before that:" chains. The file says in its own opening to rewrite it in place and not to prepend, because the rule alone was not enough: D-052 established the thin-entry-point rule in 2026-07 and the file had grown back to more than twice the length that decision trimmed it from.
+- **`PLAN.md`'s gate table records the latest run and not every run: about 50 KB → 3 KB.** One cell was **13.6 KB** on its own. The table now says "replace a cell, never append to it", and the stale headline numbers are corrected to the 2026-08-18 gate.
+- **`PLAN.md`'s checkpoint section was 27 stacked paragraphs reaching back to 2026-07-24** and is now the current checkpoint plus a pointer. Every paragraph removed carried a decision id already, which is what made removing them safe — the pointer names the arcs and where to read them.
+- **One fact was carried forward rather than dropped, and it is the one that proves the exercise was worth doing.** Buried in the twelfth checkpoint paragraph was the finding that a local build's "resting state" is the **synthetic** project, not the live one, because `private-ledger-live` stopped being the ledger on 2026-08-11 (D-094). Every older row in `PLAN.md` and the `.next` bullet in `HANDOFF.md` still said "unpinned, therefore live-targeted". **That mattered within the hour**: an agent reading `.next` on 2026-08-18 found four chunks naming the synthetic port, could not reconcile it with the handoff, and recorded it as an unexplained discrepancy — when the answer was fifty paragraphs down in the file that had been superseded but not deleted.
+- **`PLAN.md` 214 KB → 138 KB.** Less than `HANDOFF.md`'s reduction because its remaining bulk is the task list, where a completed task's full record is genuinely the deliverable rather than history: those entries are how a closed decision stays checkable. Cutting them is a separate judgement and is not made here.
+
+### What this does not do
+
+- **Neither file gets a byte budget yet.** `PLAN.md` at 138 KB and `HANDOFF.md` at 15 KB are both comfortably readable now, but a budget set today would be set against a shape that has just changed, and the thing worth measuring for `PLAN.md` is whether the *task list* is still earning its size. Named so the next change is deliberate rather than reactive.
+- **Nothing removed was summarised into a shorter form.** It was deleted, because a summary of an append-only log is a fourth telling and would go stale the same way. What replaced each cut is a pointer to where the full record lives.
+- **The rule that failed is now written where it is read.** Both files carry a sentence at the point of edit telling the next writer to replace rather than prepend. D-052 put the same rule in a decision entry and it was not enough; a rule that lives only in a log nobody opens while editing is a rule that gets re-broken.
+- Evidence: `HANDOFF.md`, `PLAN.md`. `pnpm check:docs --strict` passes at 131 decisions and 133 traps, and **it caught this entry's own forward reference before it shipped** — both rewritten files cited D-131 while it was still unwritten. D-130 (the guard that should have caught the growth), D-052 (the thin-handoff rule this finds broken twice), D-094 (why "live-targeted" stopped being true), D-082.
