@@ -1,15 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
-import { formatThb } from "@/lib/money";
 import {
   combinedBalanceByTransaction,
   matchesCardQuery,
   matchesCashQuery,
   matchesQuery,
   matchesSlipQuery,
-  movementMinor,
   transactionListSchema,
   type AccountTransaction
 } from "@/lib/transactions";
@@ -28,8 +26,7 @@ import {
   matchCandidates,
   reconcileLedger,
   summarizeRows,
-  type ReconciledRow,
-  type RowStatus
+  type ReconciledRow
 } from "@/lib/slip-reconcile";
 import {
   slipCorrectionResponseSchema,
@@ -48,18 +45,22 @@ import {
   type CashEntry
 } from "@/lib/cash";
 import { CashEntryForm } from "@/app/cash-entry";
-import { CorrectionForm } from "@/app/correction-form";
+import { LedgerCardRow } from "@/app/ledger-card-row";
+import { LedgerCashRow } from "@/app/ledger-cash-row";
+import { LedgerControls } from "@/app/ledger-controls";
+import { LedgerRetiredCards } from "@/app/ledger-retired-cards";
+import {
+  ALL_ACCOUNTS,
+  ALL_STATUSES,
+  type LedgerLayout,
+  type LedgerModes,
+  type Order,
+  type StatusFilter
+} from "@/app/ledger-shared";
+import { LedgerSlipRow } from "@/app/ledger-slip-row";
+import { LedgerStatementRow } from "@/app/ledger-statement-row";
+import { LedgerSummary } from "@/app/ledger-summary";
 import { readError } from "@/lib/wire";
-
-const ALL_ACCOUNTS = "all";
-const ALL_STATUSES = "all";
-type Order = "newest" | "oldest";
-type StatusFilter = typeof ALL_STATUSES | RowStatus;
-
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    .format(new Date(`${date}T00:00:00+07:00`));
-}
 
 /**
  * Reads the confirmed ledger back (PLAN task 17). Front-end only: it calls the two
@@ -159,33 +160,6 @@ export function TransactionsView() {
   const originalSlips = useMemo(() => new Map(slips.map((slip) => [slip.id, slip])), [slips]);
   const originalCash = useMemo(() => new Map(cash.map((entry) => [entry.id, entry])), [cash]);
 
-  /**
-   * A stored correction, folded back into state rather than triggering a reload.
-   *
-   * The whole reconciled view is derived from these lists, so replacing one overlay re-runs
-   * the rule, the totals and any other slip that was competing for a row — with the revision
-   * the database actually stored, which is the one the next write must send.
-   */
-  function storeSlipCorrection(slipId: string, saved: unknown) {
-    const parsed = slipCorrectionResponseSchema.safeParse({ correction: saved });
-    if (!parsed.success) {
-      setCorrectionError("The correction was saved but did not come back in its published shape. Reload before trusting this view.");
-      return;
-    }
-    setSlipCorrections((current) => [...current.filter((correction) => correction.slip_id !== slipId), parsed.data.correction]);
-    setCorrecting(null);
-  }
-
-  function storeCashCorrection(entryId: string, saved: unknown) {
-    const parsed = cashCorrectionResponseSchema.safeParse({ correction: saved });
-    if (!parsed.success) {
-      setCorrectionError("The correction was saved but did not come back in its published shape. Reload before trusting this view.");
-      return;
-    }
-    setCashCorrections((current) => [...current.filter((correction) => correction.cash_entry_id !== entryId), parsed.data.correction]);
-    setCorrecting(null);
-  }
-
   const matchingSlip = useMemo(
     () => (matching === null ? null : currentSlips.find((slip) => slip.id === matching) ?? null),
     [matching, currentSlips]
@@ -232,6 +206,22 @@ export function TransactionsView() {
   // different accounts — and in the per-account layout nothing on screen would say which. That
   // is the very ambiguity `slipAccount` refuses to guess at (D-056), so the chooser must show it.
   const showCombined = picking || pickingCard || selected === ALL_ACCOUNTS;
+
+  // Handed to every row component so the all-accounts column and the width of a full-width
+  // detail or correction row cannot disagree. `columns` was written out as `showCombined ? 7 : 6`
+  // at five separate places before the row kinds became components.
+  const layout = useMemo<LedgerLayout>(
+    () => ({ showCombined, columns: showCombined ? 7 : 6 }),
+    [showCombined]
+  );
+
+  // What the owner is in the middle of, as one value. Every row consults it before deciding
+  // whether its own controls are usable, and the conditions that read it live beside the buttons
+  // they disable (`app/ledger-shared.ts`).
+  const modes = useMemo<LedgerModes>(
+    () => ({ picking, pickingCard, matching, matchingCard, deciding, decidingCard, correcting }),
+    [picking, pickingCard, matching, matchingCard, deciding, decidingCard, correcting]
+  );
 
   // Reconciliation runs over the **whole** ledger, before any account or text filter. A
   // match is a fact about two records, not about what is on screen — reconciling the
@@ -595,6 +585,37 @@ export function TransactionsView() {
     }
   }
 
+  /**
+   * A stored correction, folded back into state rather than triggering a reload.
+   *
+   * The whole reconciled view is derived from these lists, so replacing one overlay re-runs
+   * the rule, the totals and any other slip that was competing for a row — with the revision
+   * the database actually stored, which is the one the next write must send.
+   *
+   * All three sit together. Two of them used to sit halfway up the derivation pipeline, which
+   * read as though the pipeline depended on them; it does not, and they belong with the other
+   * writes.
+   */
+  function storeSlipCorrection(slipId: string, saved: unknown) {
+    const parsed = slipCorrectionResponseSchema.safeParse({ correction: saved });
+    if (!parsed.success) {
+      setCorrectionError("The correction was saved but did not come back in its published shape. Reload before trusting this view.");
+      return;
+    }
+    setSlipCorrections((current) => [...current.filter((correction) => correction.slip_id !== slipId), parsed.data.correction]);
+    setCorrecting(null);
+  }
+
+  function storeCashCorrection(entryId: string, saved: unknown) {
+    const parsed = cashCorrectionResponseSchema.safeParse({ correction: saved });
+    if (!parsed.success) {
+      setCorrectionError("The correction was saved but did not come back in its published shape. Reload before trusting this view.");
+      return;
+    }
+    setCashCorrections((current) => [...current.filter((correction) => correction.cash_entry_id !== entryId), parsed.data.correction]);
+    setCorrecting(null);
+  }
+
   function storeCardCorrection(cardId: string, saved: unknown) {
     const parsed = notificationCardCorrectionResponseSchema.safeParse({ correction: saved });
     if (!parsed.success) {
@@ -605,6 +626,42 @@ export function TransactionsView() {
     setCorrecting(null);
   }
 
+  /**
+   * The four things a row asks this view to do, named once here rather than written as an inline
+   * closure per row kind.
+   *
+   * Each clears the error line belonging to the thing it is about before starting: a refusal left
+   * on screen from the previous attempt would be read as a refusal of this one.
+   */
+  function toggleCorrecting(recordId: string) {
+    setCorrectionError(null);
+    setCorrecting((current) => current === recordId ? null : recordId);
+  }
+
+  function stopCorrecting() {
+    setCorrecting(null);
+  }
+
+  function chooseRowForSlip(slipId: string) {
+    setDecisionError(null);
+    setMatching(slipId);
+  }
+
+  function chooseRowForCard(cardId: string) {
+    setDecisionError(null);
+    setMatchingCard(cardId);
+  }
+
+  // The two detail panels a matched row can open. Independent of each other because a row can
+  // carry a slip and a card at once and the two are separate questions.
+  function togglePair(transactionId: string) {
+    setOpenPair((current) => current === transactionId ? null : transactionId);
+  }
+
+  function toggleCard(transactionId: string) {
+    setOpenCard((current) => current === transactionId ? null : transactionId);
+  }
+
   return (
     <>
     {/* A sibling of the ledger rather than a child of it, so the page keeps a flat outline —
@@ -613,77 +670,21 @@ export function TransactionsView() {
         reloads unless the ledger has already been asked for once. */}
     <CashEntryForm onRecorded={() => { if (transactions !== null) void load(); }} />
     <section className="ledger-band" aria-labelledby="ledger-title">
-      <div className="bench-heading">
-        <p className="section-index">Ledger</p>
-        <div>
-          <h2 id="ledger-title">Transactions</h2>
-          <p>
-            Everything committed to the ledger, and every slip still waiting for the statement
-            that will confirm it. Source facts are immutable here — the one thing this view
-            writes is your say over a match, which is stored beside them and never in them.
-          </p>
-        </div>
-      </div>
-
-      <div className="ledger-controls">
-        {/* Every control here is suspended while a slip is being matched — including Reload,
-            which would drop the choice half-made. The mode is a different question about the
-            ledger, not a filter of it. */}
-        <button type="button" className="secondary-button" disabled={busy || picking || pickingCard} onClick={load}>
-          {busy ? "Loading…" : transactions ? "Reload" : "Load transactions"}
-        </button>
-        {transactions ? (
-          <>
-            <label className="account-control">
-              <span>Account</span>
-              <select value={selected} disabled={picking || pickingCard} onChange={(event) => setSelected(event.target.value)}>
-                <option value={ALL_ACCOUNTS}>All accounts</option>
-                {(accounts ?? []).map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.label} ···· {account.last_four}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="account-control">
-              <span>Order</span>
-              <select value={order} onChange={(event) => setOrder(event.target.value as Order)}>
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-              </select>
-            </label>
-            {/* The status a row carries is no longer written on the row itself when it is
-                the unremarkable one, so this is where the question gets asked instead
-                (D-064). */}
-            <label className="account-control">
-              <span>Status</span>
-              <select value={status} disabled={picking || pickingCard} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
-                <option value={ALL_STATUSES}>All statuses</option>
-                <option value="verified">Verified by slip</option>
-                <option value="awaiting-statement">Awaiting statement</option>
-                <option value="needs-review">Needs review</option>
-                <option value="statement-only">Statement only</option>
-                <option value="cash">Cash</option>
-                {/* Only a notification card can be in this state: it is the one captured record
-                    that prints a balance, so it is the only one with a figure that can
-                    contradict the statement row it otherwise fits. */}
-                <option value="balance-conflict">Balance disagrees</option>
-              </select>
-            </label>
-            <label className="account-control">
-              <span>Filter</span>
-              <input
-                type="search"
-                name="transaction-filter"
-                value={query}
-                disabled={picking || pickingCard}
-                placeholder="Description, reference, branch…"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-          </>
-        ) : null}
-      </div>
+      <LedgerControls
+        busy={busy}
+        loaded={transactions !== null}
+        accounts={accounts}
+        selected={selected}
+        order={order}
+        status={status}
+        query={query}
+        modes={modes}
+        onLoad={load}
+        onSelectAccount={setSelected}
+        onOrderChange={setOrder}
+        onStatusChange={setStatus}
+        onQueryChange={setQuery}
+      />
 
       {error ? (
         <div className="warning error" role="alert">
@@ -694,81 +695,21 @@ export function TransactionsView() {
 
       {transactions ? (
         <>
-          {pickingCard && matchingCardRecord ? (
-            <div className="matching-banner" aria-live="polite">
-              <div>
-                <strong>Choosing a statement row for a card</strong>
-                <span>
-                  {`${matchingCardRecord.channel} · ${formatDate(matchingCardRecord.occurred_on)} ${matchingCardRecord.occurred_at_time} · ${formatThb(matchingCardRecord.amount_minor)}`}
-                  {` — ${offeredToCard.size} row${offeredToCard.size === 1 ? "" : "s"} on this account carry that exact amount. Rows whose printed balance matches the card are listed first, because that is the one the rule would have taken. Other filters are suspended while you choose.`}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="secondary-button"
-                ref={cancelMatching}
-                disabled={decidingCard !== null}
-                onClick={() => setMatchingCard(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : picking && matchingSlip ? (
-            /* The totals are deliberately gone while this is up. What is on screen is a slip
-               and the rows it could be, which is not a view of the ledger and has no total
-               worth printing — a subtotal of three unrelated rows reads as a figure. */
-            <div className="matching-banner" aria-live="polite">
-              <div>
-                <strong>Choosing a statement row</strong>
-                <span>
-                  {`${matchingSlip.bank_code} slip · ${formatDate(matchingSlip.occurred_on)}${matchingSlip.occurred_at_time ? ` ${matchingSlip.occurred_at_time}` : ""} · ${formatThb(matchingSlip.amount_minor)}`}
-                  {` — ${offered.size} row${offered.size === 1 ? "" : "s"} could be it, each at the same bank for the same amount to the satang. The time and the balance are what tell them apart, so they are shown as rows rather than as a list of names. Other filters are suspended while you choose.`}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="secondary-button"
-                ref={cancelMatching}
-                disabled={deciding !== null}
-                onClick={() => setMatching(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* One total over both kinds, which is only correct because a matched pair is one
-                  row. The provisional count travels with the figure so it discloses how much of
-                  itself the bank has not confirmed (D-063). */}
-              <dl className="statement-strip ledger-strip">
-                {/* Cash is counted apart from `provisional`: a slip is waiting for a statement,
-                    while a cash payment has no bank behind it and never will, so folding the
-                    two together would say the total is waiting on something never coming. */}
-                <div><dt>Rows</dt><dd>{totals.rows}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}{totals.cash > 0 ? <small> · {totals.cash} cash</small> : null}{totals.cards > 0 ? <small> · {totals.cards} card{totals.cards === 1 ? "" : "s"}</small> : null}</dd></div>
-                <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}</dd></div>
-                <div><dt>Withdrawals</dt><dd>{formatThb(totals.withdrawals)}</dd></div>
-                <div><dt>Net movement</dt><dd>{formatThb(totals.net)}</dd></div>
-              </dl>
-
-              {slips.length > 0 ? (
-                <p className="ledger-status">
-                  <b>Slips: {reconciled.matches.bySlip.size} verified · {slips.length - reconciled.matches.bySlip.size - reconciled.matches.needsReview.size} awaiting a statement{reconciled.matches.needsReview.size > 0 ? ` · ${reconciled.matches.needsReview.size} needing review` : ""}</b>
-                  {" · a slip is matched to a statement row only when the bank, the exact amount and a date within one day identify one row and no other slip claims it. No layout prints the slip's reference, so a match is a proposal from those three facts rather than an identifier the two records share."}
-                </p>
-              ) : null}
-
-              {cards.length > 0 ? (
-                <p className="ledger-status">
-                  <b>
-                    Notification cards: {reconciled.cardMatches.byCard.size} verified · {cards.length - reconciled.cardMatches.byCard.size - reconciled.cardMatches.needsReview.size - reconciled.cardMatches.balanceConflict.size} awaiting a statement
-                    {reconciled.cardMatches.needsReview.size > 0 ? ` · ${reconciled.cardMatches.needsReview.size} needing review` : ""}
-                    {reconciled.cardMatches.balanceConflict.size > 0 ? ` · ${reconciled.cardMatches.balanceConflict.size} whose balance disagrees` : ""}
-                  </b>
-                  {" · a card matches on the account it was bound to, the exact amount, a date within one day, and the balance it printed being equal to the row's. The balance is what a slip does not have: it breaks a tie between two rows of the same amount, and a card that fits on everything else while contradicting the balance refuses to pair rather than guessing. Recomputed on every load, and nothing about a card's match is stored yet."}
-                </p>
-              ) : null}
-            </>
-          )}
+          <LedgerSummary
+            modes={modes}
+            matchingSlip={matchingSlip}
+            matchingCardRecord={matchingCardRecord}
+            offeredCount={offered.size}
+            offeredToCardCount={offeredToCard.size}
+            totals={totals}
+            slipCount={slips.length}
+            cardCount={cards.length}
+            matches={reconciled.matches}
+            cardMatches={reconciled.cardMatches}
+            cancelRef={cancelMatching}
+            onCancelMatching={() => setMatching(null)}
+            onCancelMatchingCard={() => setMatchingCard(null)}
+          />
 
           {slipsError ? (
             <p className="ledger-status" role="status">{slipsError}</p>
@@ -841,662 +782,77 @@ export function TransactionsView() {
                 <tbody>
                   {visibleRows.map((row) => {
                     if (row.kind === "cash") {
-                      const entry = row.entry;
-                      const amount = BigInt(entry.amount_minor);
-                      const original = originalCash.get(entry.id);
                       return (
-                        <Fragment key={entry.id}>
-                        {/* Marked in the row itself for the reason a slip is: the difference
-                            between a bank's record and one the owner typed is the most important
-                            thing this table says, and it has to survive a screenshot and a
-                            screen reader rather than living in a colour. */}
-                        <tr className="cash-row">
-                          <td data-label="Date">
-                            <time dateTime={entry.occurred_on}>{formatDate(entry.occurred_on)}</time>
-                            <small>{entry.occurred_at_time ?? "—"}</small>
-                          </td>
-                          <td data-label="Description">
-                            <strong>Cash</strong>
-                            <span>{entry.counterparty ?? "No counterparty recorded"}</span>
-                            {entry.note ? <em>{entry.note}</em> : null}
-                          </td>
-                          <td data-label="Status">
-                            <em className="status-chip cash">Cash · no statement</em>
-                            {/* Said in words rather than implied by the chip. A corrected figure
-                                and an uncorrected one look identical on the row, and which one
-                                is on screen is exactly what the owner needs to know. */}
-                            {cashCorrectionByEntry.has(entry.id) ? <small className="decision-mark">Corrected by you</small> : null}
-                            {/* The only way to change a cash entry, because the row itself
-                                cannot be changed: `cash_entries_immutable` refuses an update
-                                outright, so this writes an overlay beside it and keeps both. */}
-                            {original ? (
-                              <div className="match-control">
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  aria-expanded={correcting === entry.id}
-                                  aria-label={`Correct the cash entry dated ${formatDate(entry.occurred_on)}`}
-                                  disabled={correcting !== null && correcting !== entry.id}
-                                  onClick={() => { setCorrectionError(null); setCorrecting((current) => current === entry.id ? null : entry.id); }}
-                                >
-                                  {correcting === entry.id ? "Stop correcting" : "Correct"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </td>
-                          <td data-label={showCombined ? "Account" : "Reference"}>
-                            <span>No account · cash</span>
-                          </td>
-                          <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>
-                            {amount > 0n ? "+" : ""}{formatThb(entry.amount_minor)}
-                          </td>
-                          {/* No balance, in either column, and for a stronger reason than a
-                              slip's: cash is in no bank's balance chain at all, so there is not
-                              even a later statement that could supply one. */}
-                          <td data-label={showCombined ? "Account balance" : "Balance"} className="numeric">
-                            <span aria-label="No balance: cash is in no statement's balance chain">—</span>
-                          </td>
-                          {showCombined ? <td data-label="All accounts" className="numeric combined-balance">—</td> : null}
-                        </tr>
-                        {original && correcting === entry.id ? (
-                          <tr className="correction-row">
-                            <td colSpan={showCombined ? 7 : 6}>
-                              <CorrectionForm
-                                base={original}
-                                overlay={cashCorrectionByEntry.get(entry.id) ?? null}
-                                endpoint={`/api/v1/cash/${entry.id}/correction`}
-                                title="Correct this cash entry"
-                                onSaved={(saved) => storeCashCorrection(entry.id, saved)}
-                                onCancel={() => setCorrecting(null)}
-                              />
-                            </td>
-                          </tr>
-                        ) : null}
-                        </Fragment>
+                        <LedgerCashRow
+                          key={row.entry.id}
+                          row={row}
+                          layout={layout}
+                          modes={modes}
+                          original={originalCash.get(row.entry.id)}
+                          correction={cashCorrectionByEntry.get(row.entry.id) ?? null}
+                          onToggleCorrecting={toggleCorrecting}
+                          onCorrectionSaved={storeCashCorrection}
+                          onCancelCorrection={stopCorrecting}
+                        />
                       );
                     }
 
                     if (row.kind === "card") {
-                      const card = row.card;
-                      const amount = BigInt(card.amount_minor);
-                      const fittingRows = reconciled.cardMatches.balanceConflict.get(card.id) ?? 0;
-                      const reviewReason = reconciled.cardMatches.needsReview.get(card.id);
-                      const originalCard = originalCards.get(card.id);
                       return (
-                        <Fragment key={card.id}>
-                        {/* Marked in the row itself for the reason a slip and a cash entry are:
-                            the difference between a record the bank has confirmed on a statement
-                            and one it has only pushed to a phone is the most important thing this
-                            table says, and it has to survive a screenshot and a screen reader
-                            rather than living in a colour. */}
-                        <tr className="card-row">
-                          <td data-label="Date">
-                            <time dateTime={card.occurred_on}>{formatDate(card.occurred_on)}</time>
-                            <small>{card.occurred_at_time}</small>
-                          </td>
-                          <td data-label="Description">
-                            <strong>Card · {card.channel}</strong>
-                            <span>{card.counterparty ?? "No counterparty recorded"}</span>
-                            {card.note ? <em>{card.note}</em> : null}
-                          </td>
-                          <td data-label="Status">
-                            {row.status === "balance-conflict" ? (
-                              <em className="status-chip needs-review">Balance disagrees</em>
-                            ) : row.status === "needs-review" ? (
-                              <em className="status-chip needs-review">Needs review</em>
-                            ) : (
-                              <em className="status-chip awaiting">Awaiting statement</em>
-                            )}
-                            {/* Each state says what was found and what would change it, because
-                                all three look identical as a chip and only one of them is
-                                waiting for something. */}
-                            {row.status === "balance-conflict" ? (
-                              <small className="decision-mark warn">
-                                {fittingRows} statement row{fittingRows === 1 ? "" : "s"} on this account
-                                carr{fittingRows === 1 ? "ies" : "y"} this exact amount within a day, and none
-                                printed this balance. Not paired, on purpose — check the balance you typed
-                                against the card before trusting either figure.
-                              </small>
-                            ) : row.status === "needs-review" ? (
-                              <small className="decision-mark warn">
-                                {reviewReason === "several-cards"
-                                  ? "Another captured card resolves to the same statement row. They differ only in the time printed on them, so one of the two times is likely mistyped."
-                                  : "Two statement rows on this account carry both this amount and this balance, which a sound balance chain should not contain. Check the import rather than the card."}
-                              </small>
-                            ) : (
-                              <small className="decision-mark">
-                                No row on this account carries this amount within a day of it yet. Import the
-                                statement covering this date and it will pair itself.
-                              </small>
-                            )}
-                            {row.ownerDecided ? (
-                              <small className="decision-mark">Your decision · on no statement row</small>
-                            ) : null}
-                            {cardCorrectionByCard.has(card.id) ? (
-                              <small className="decision-mark">Corrected by you</small>
-                            ) : null}
-                            {/* Not a dropdown, for D-069's reason: candidate rows share an account
-                                and an amount, and only the printed time and the running balance
-                                tell them apart. The chooser puts them in the table where both
-                                live, with the balance-agreeing one first. */}
-                            {(candidatesByCard.get(card.id) ?? []).length > 0 ? (
-                              <div className="match-control">
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  aria-label={`Choose a statement row for the card dated ${formatDate(card.occurred_on)}`}
-                                  disabled={decidingCard !== null || matchingCard !== null || matching !== null}
-                                  onClick={() => { setDecisionError(null); setMatchingCard(card.id); }}
-                                >
-                                  Choose a statement row
-                                </button>
-                                <small>
-                                  {(candidatesByCard.get(card.id) ?? []).length} row
-                                  {(candidatesByCard.get(card.id) ?? []).length === 1 ? "" : "s"} could be this payment
-                                </small>
-                              </div>
-                            ) : null}
-                            {/* The remedy for a card that should never have been captured — a
-                                wrong account binding or a second capture. The binding cannot be
-                                re-made and the row cannot be deleted, so retiring is what a wrong
-                                card gets (D-103). Reversible: retired cards stay listed below. */}
-                            <div className="match-control">
-                              <button
-                                type="button"
-                                className="secondary-button"
-                                aria-label={`Not a payment — retire the card dated ${formatDate(card.occurred_on)} and take it out of the ledger`}
-                                disabled={decidingCard !== null || pickingCard}
-                                onClick={() => void decideCard(card.id, "not-a-payment", null)}
-                              >
-                                {decidingCard === card.id ? "Saving…" : "Not a payment"}
-                              </button>
-                            </div>
-                            {originalCards.has(card.id) ? (
-                              <div className="match-control">
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  aria-expanded={correcting === card.id}
-                                  aria-label={`Correct what you typed for the card dated ${formatDate(card.occurred_on)}`}
-                                  disabled={pickingCard || picking || (correcting !== null && correcting !== card.id)}
-                                  onClick={() => { setCorrectionError(null); setCorrecting((current) => current === card.id ? null : card.id); }}
-                                >
-                                  {correcting === card.id ? "Stop correcting" : "Correct what you typed"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </td>
-                          <td data-label={showCombined ? "Account" : "Reference"}>
-                            {/* A card has no reference — no layout prints one, which is why
-                                migration 016 identifies it by a computed fingerprint. The digits
-                                it printed are the nearest thing, and they are what the capture
-                                route checked the account against. */}
-                            {showCombined
-                              ? <span>{row.account ? `${row.account.label} ···· ${row.account.last_four}` : "Unknown account"}</span>
-                              : <span className="mono">···· {card.printed_account_digits}</span>}
-                          </td>
-                          <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>
-                            {amount > 0n ? "+" : ""}{formatThb(card.amount_minor)}
-                          </td>
-                          {/* A balance, where a slip and a cash entry both print a dash — and this
-                              is the whole reason a card reconciles better than a slip. It is the
-                              bank's own running balance after the transaction, printed on the card
-                              by the bank, which is the same figure the statement prints in its
-                              balance column. Labelled as printed rather than derived: it has not
-                              been confirmed against a statement row, because there is no matching
-                              row yet. */}
-                          <td data-label={showCombined ? "Account balance" : "Balance"} className="numeric">
-                            <span aria-label={`Balance printed on the card, not yet confirmed against a statement row: ${formatThb(card.balance_minor)}`}>
-                              {formatThb(card.balance_minor)}
-                            </span>
-                            <small>as printed</small>
-                          </td>
-                          {/* The combined figure is walked from statement rows only, so a card
-                              that is in no statement contributes nothing to it. */}
-                          {showCombined ? <td data-label="All accounts" className="numeric combined-balance">—</td> : null}
-                        </tr>
-                        {originalCard && correcting === card.id ? (
-                          <tr className="correction-row">
-                            <td colSpan={showCombined ? 7 : 6}>
-                              <CorrectionForm
-                                base={originalCard}
-                                overlay={cardCorrectionByCard.get(card.id) ?? null}
-                                balance={{
-                                  baseMinor: originalCard.balance_minor,
-                                  overlayMinor: cardCorrectionByCard.get(card.id)?.balance_minor ?? null
-                                }}
-                                endpoint={`/api/v1/notification-cards/${card.id}/correction`}
-                                title={`Correct what you typed for this ${card.channel} card`}
-                                onSaved={(saved) => storeCardCorrection(card.id, saved)}
-                                onCancel={() => setCorrecting(null)}
-                              />
-                            </td>
-                          </tr>
-                        ) : null}
-                        </Fragment>
+                        <LedgerCardRow
+                          key={row.card.id}
+                          row={row}
+                          layout={layout}
+                          modes={modes}
+                          original={originalCards.get(row.card.id)}
+                          correction={cardCorrectionByCard.get(row.card.id) ?? null}
+                          candidates={candidatesByCard.get(row.card.id) ?? []}
+                          fittingRows={reconciled.cardMatches.balanceConflict.get(row.card.id) ?? 0}
+                          reviewReason={reconciled.cardMatches.needsReview.get(row.card.id)}
+                          onChooseRow={chooseRowForCard}
+                          onNotAPayment={(cardId) => void decideCard(cardId, "not-a-payment", null)}
+                          onToggleCorrecting={toggleCorrecting}
+                          onCorrectionSaved={storeCardCorrection}
+                          onCancelCorrection={stopCorrecting}
+                        />
                       );
                     }
 
                     if (row.kind === "provisional") {
-                      const slip = row.slip;
-                      const amount = BigInt(slip.amount_minor);
-                      const candidates = candidatesBySlip.get(slip.id) ?? [];
-                      const originalSlip = originalSlips.get(slip.id);
                       return (
-                        <Fragment key={slip.id}>
-                        {/* Marked in the row itself, not only by colour: the difference between
-                            a bank's record and one the owner typed is the most important thing
-                            this table says, and it has to survive a screenshot, a print and a
-                            screen reader. */}
-                        <tr className="provisional-row">
-                          <td data-label="Date">
-                            <time dateTime={slip.occurred_on}>{formatDate(slip.occurred_on)}</time>
-                            <small>{slip.occurred_at_time ?? "—"}</small>
-                          </td>
-                          <td data-label="Description">
-                            <strong>Slip · {slip.bank_code}</strong>
-                            <span>{slip.counterparty ?? "No counterparty recorded"}</span>
-                          </td>
-                          <td data-label="Status">
-                            {row.status === "needs-review" ? (
-                              <em className="status-chip needs-review">Needs review · several rows match</em>
-                            ) : (
-                              <em className="status-chip awaiting">Awaiting statement</em>
-                            )}
-                            {/* Said in words, because "awaiting a statement" and "you decided
-                                this is on no statement" look identical otherwise, and the
-                                second is a decision the owner may want to take back. */}
-                            {row.ownerDecided ? <small className="decision-mark">Your decision · on no statement row</small> : null}
-                            {/* A corrected slip matches on the figure in force, so the amount in
-                                this row is not necessarily the one captured. Saying so is what
-                                keeps "no row carries this exact amount" checkable. */}
-                            {slipCorrectionBySlip.has(slip.id) ? <small className="decision-mark">Corrected by you</small> : null}
-                            {/* Not a dropdown (D-069). Candidate rows share a bank, an amount
-                                and usually a date and a wording, so an option label repeating
-                                the first two of those cannot tell them apart — the printed time
-                                and the running balance can, and both live in the table. The
-                                button asks the table to show only this slip and its candidates
-                                instead of describing them here. */}
-                            {candidates.length > 0 ? (
-                              <div className="match-control">
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  aria-label={`Choose a statement row for the slip dated ${formatDate(slip.occurred_on)}`}
-                                  disabled={deciding !== null || matching !== null}
-                                  onClick={() => { setDecisionError(null); setMatching(slip.id); }}
-                                >
-                                  Choose a statement row
-                                </button>
-                                <small>{candidates.length} row{candidates.length === 1 ? "" : "s"} could be this payment</small>
-                              </div>
-                            ) : (
-                              <small className="decision-mark">
-                                No {slip.bank_code} row carries this exact amount, so there is nothing to match it to.
-                              </small>
-                            )}
-                            {/* Offered beside "nothing matches this amount" on purpose: a
-                                mistyped amount is the likeliest reason a slip has no candidate,
-                                and correcting it is the fix. What the QR carried — the bank and
-                                the reference — is not correctable and is not in the form. */}
-                            {originalSlip ? (
-                              <div className="match-control">
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  aria-expanded={correcting === slip.id}
-                                  aria-label={`Correct what you typed for the slip dated ${formatDate(slip.occurred_on)}`}
-                                  disabled={picking || (correcting !== null && correcting !== slip.id)}
-                                  onClick={() => { setCorrectionError(null); setCorrecting((current) => current === slip.id ? null : slip.id); }}
-                                >
-                                  {correcting === slip.id ? "Stop correcting" : "Correct what you typed"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </td>
-                          <td data-label={showCombined ? "Account" : "Reference"}>
-                            {showCombined
-                              ? <span>{row.account ? `${row.account.label} ···· ${row.account.last_four}` : `${slip.bank_code} · account unknown`}</span>
-                              : <span className="mono">{slip.slip_reference}</span>}
-                          </td>
-                          <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>
-                            {amount > 0n ? "+" : ""}{formatThb(slip.amount_minor)}
-                          </td>
-                          {/* No balance, in either column. A printed balance is the bank's
-                              statement of the account after a row, and a slip is not in that
-                              chain — writing a derived figure here would invent one. */}
-                          <td data-label={showCombined ? "Account balance" : "Balance"} className="numeric">
-                            <span aria-label="No balance: a slip is not in the statement's balance chain">—</span>
-                          </td>
-                          {showCombined ? <td data-label="All accounts" className="numeric combined-balance">—</td> : null}
-                        </tr>
-                        {originalSlip && correcting === slip.id ? (
-                          <tr className="correction-row">
-                            <td colSpan={showCombined ? 7 : 6}>
-                              <CorrectionForm
-                                base={originalSlip}
-                                overlay={slipCorrectionBySlip.get(slip.id) ?? null}
-                                endpoint={`/api/v1/slips/${slip.id}/correction`}
-                                title={`Correct what you typed for this ${slip.bank_code} slip`}
-                                onSaved={(saved) => storeSlipCorrection(slip.id, saved)}
-                                onCancel={() => setCorrecting(null)}
-                              />
-                            </td>
-                          </tr>
-                        ) : null}
-                        </Fragment>
+                        <LedgerSlipRow
+                          key={row.slip.id}
+                          row={row}
+                          layout={layout}
+                          modes={modes}
+                          original={originalSlips.get(row.slip.id)}
+                          correction={slipCorrectionBySlip.get(row.slip.id) ?? null}
+                          candidates={candidatesBySlip.get(row.slip.id) ?? []}
+                          onChooseRow={chooseRowForSlip}
+                          onToggleCorrecting={toggleCorrecting}
+                          onCorrectionSaved={storeSlipCorrection}
+                          onCancelCorrection={stopCorrecting}
+                        />
                       );
                     }
 
-                    const transaction = row.transaction;
-                    const movement = movementMinor(transaction);
-                    const overlay = transaction.transaction_overlays[0];
-                    const account = accountsById.get(transaction.account_id);
-                    // A verified row is the statement's, enriched by whichever captured records
-                    // matched it: the printed balance and the immutable source facts stay, and
-                    // the counterparty the owner typed fills in what the bank's own description
-                    // usually does not say. The slip is read before the card only because it is
-                    // the record a counterparty gets typed into more often; either will do.
-                    const counterparty = overlay?.counterparty ?? row.slip?.counterparty ?? row.card?.counterparty ?? null;
-                    const pair = row.slip;
-                    const cardPair = row.card;
                     return (
-                      <Fragment key={transaction.id}>
-                      <tr className={row.slip || row.card ? "verified-row" : ""}>
-                        <td data-label="Date">
-                          <time dateTime={transaction.source_date}>{formatDate(transaction.source_date)}</time>
-                          <small>{transaction.source_time ?? "—"}</small>
-                        </td>
-                        <td data-label="Description">
-                          <strong lang="th">{transaction.transaction_label}</strong>
-                          <span>{overlay?.description ?? transaction.description}</span>
-                          {/* Named by the record it actually came from. Saying "from slip" over a
-                              counterparty read off a card would attribute it to a record that is
-                              not on this row, and the two are corrected in different places. */}
-                          {counterparty ? (
-                            <em>
-                              {counterparty}
-                              {overlay?.counterparty ? "" : row.slip?.counterparty ? " (from slip)" : " (from card)"}
-                            </em>
-                          ) : null}
-                          {transaction.source_components.length > 1 ? <em>2 components</em> : null}
-                        </td>
-                        {/* No chip for a statement row with no slip. It is the ledger's default
-                            state — on this ledger, essentially every row — so a badge on each
-                            one carries no information while making the three statuses that do
-                            mean something harder to find. The status is still readable to a
-                            screen reader here, and askable through the Status filter (D-064). */}
-                        <td data-label="Status">
-                          {pickingCard && matchingCard !== null && matchingCardRecord !== null ? (
-                            /* Picking a row for a card. The balance is printed on both records,
-                               so the row says whether the two agree — and when they do not, the
-                               button asks for that acknowledgement explicitly rather than
-                               storing a disagreement the owner never saw. */
-                            <div className="match-control">
-                              {row.card ? <em className="status-chip verified">Verified by card</em> : null}
-                              {BigInt(transaction.post_balance_minor) === BigInt(matchingCardRecord.balance_minor) ? (
-                                <small className="decision-mark">Balance agrees with the card</small>
-                              ) : (
-                                <small className="decision-mark warn">
-                                  This row&rsquo;s balance is {formatThb(transaction.post_balance_minor)} and the card printed
-                                  {" "}{formatThb(matchingCardRecord.balance_minor)}. Choosing it records that you accepted the
-                                  disagreement — which is right when a hold was outstanding, and wrong if a figure was mistyped.
-                                </small>
-                              )}
-                              <button
-                                type="button"
-                                className="primary-button"
-                                aria-label={`This is it — ${formatDate(row.date)}${transaction.source_time ? ` at ${transaction.source_time}` : ""}, balance ${formatThb(transaction.post_balance_minor)}`}
-                                disabled={decidingCard !== null}
-                                onClick={() => void decideCard(
-                                  matchingCard,
-                                  "matched",
-                                  transaction.id,
-                                  BigInt(transaction.post_balance_minor) !== BigInt(matchingCardRecord.balance_minor)
-                                )}
-                              >
-                                {decidingCard === matchingCard ? "Saving…" : "This is it"}
-                              </button>
-                            </div>
-                          ) : picking && matching !== null ? (
-                            /* Picking mode: this row is one of the candidates, or it would not
-                               be on screen. The button is on the row itself, beside the time
-                               and the balance that are the only things distinguishing it from
-                               its neighbours. */
-                            <div className="match-control">
-                              {/* The chip stays. A candidate may already be paired with a
-                                  *different* slip — `matchCandidates` offers those deliberately,
-                                  and the database accepts the write — so replacing the status
-                                  with a button would let the owner take a row off another slip
-                                  with nothing on screen saying so but a green edge, which is
-                                  colour alone. Taking it is allowed; not being told is not. */}
-                              {row.slip ? <em className="status-chip verified">Verified by slip</em> : null}
-                              {/* Shown but never warned about, unlike the slip below. A card and
-                                  a slip do not compete for a row — one payment can produce both —
-                                  so choosing this row takes nothing away from the card, and
-                                  saying it did would be a false warning. */}
-                              {row.card ? <em className="status-chip verified">Verified by card</em> : null}
-                              {row.slip && row.slip.id !== matching ? (
-                                <small className="decision-mark warn">
-                                  Already matched to the {formatDate(row.slip.occurred_on)} slip
-                                  {row.slip.counterparty ? ` · ${row.slip.counterparty}` : ""}. Choosing this row
-                                  unmatches that one, which goes back to waiting for a statement.
-                                </small>
-                              ) : null}
-                              <button
-                                type="button"
-                                className="primary-button"
-                                /* The visible words come first, because an accessible name that
-                                   does not contain the label is a name nobody can speak — and
-                                   the rest is what distinguishes this row from its twin. */
-                                aria-label={`This is it — ${formatDate(row.date)}${transaction.source_time ? ` at ${transaction.source_time}` : ""}, balance ${formatThb(transaction.post_balance_minor)}`}
-                                disabled={deciding !== null}
-                                onClick={() => decide(matching, "matched", transaction.id)}
-                              >
-                                {deciding === matching ? "Saving…" : "This is it"}
-                              </button>
-                            </div>
-                          ) : row.slip || row.card ? (
-                            <>
-                              {row.slip ? (
-                            <>
-                              <em className="status-chip verified">Verified by slip</em>
-                              {row.ownerDecided ? <small className="decision-mark">Your match</small> : null}
-                              {/* The undo, and the only control a matched row needs. It stores
-                                  `unmatched` rather than deleting the decision: the RPC has no
-                                  way to return a slip to the automatic rule, and pretending
-                                  otherwise would promise something the database cannot do. */}
-                              <div className="match-control">
-                                {/* A pairing this app itself calls a proposal from three facts
-                                    has to be inspectable, or "verified" is something the owner
-                                    can only take on trust. The pair collapsed onto the statement
-                                    row, so without this the slip is on screen nowhere. */}
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  aria-expanded={openPair === transaction.id}
-                                  aria-controls={`pair-${transaction.id}`}
-                                  /* Visible words first — an accessible name that does not
-                                     contain the label is a name nobody can speak, and it is the
-                                     second time in one day that rule caught a locator instead of
-                                     a screen reader (GOTCHAS). */
-                                  aria-label={`${openPair === transaction.id ? "Hide slip" : "Show slip"} — the slip matched to the row dated ${formatDate(row.date)}`}
-                                  onClick={() => setOpenPair((current) => current === transaction.id ? null : transaction.id)}
-                                >
-                                  {openPair === transaction.id ? "Hide slip" : "Show slip"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  aria-label={`Not this slip — the row dated ${formatDate(row.date)} is not this payment`}
-                                  /* Every decision control, not just this row's. One write at a
-                                     time: two in flight let the first to resolve re-enable a
-                                     button whose own write is still pending, and a second press
-                                     then sends a revision the database has already moved past —
-                                     which comes back as "changed in another session" to an owner
-                                     who has only one tab open. The shared error line has the same
-                                     problem: it cannot say which decision it is about. */
-                                  disabled={deciding !== null}
-                                  onClick={() => decide(row.slip!.id, "unmatched", null)}
-                                >
-                                  {deciding === row.slip.id ? "Saving…" : "Not this slip"}
-                                </button>
-                              </div>
-                            </>
-                              ) : null}
-                              {cardPair ? (
-                                <>
-                                  <em className="status-chip verified">Verified by card</em>
-                                  {/* No undo beside it, unlike the slip's. A card's match cannot
-                                      be overruled yet: that needs its own table, and PLAN task 27
-                                      keeps it with the correction overlay so both land in one
-                                      migration rather than one backup version bump each. The
-                                      panel is therefore the whole of what this row offers, and
-                                      it says the pairing is the rule's. */}
-                                  <div className="match-control">
-                                    <button
-                                      type="button"
-                                      className="secondary-button"
-                                      aria-expanded={openCard === transaction.id}
-                                      aria-controls={`card-${transaction.id}`}
-                                      /* Visible words first, for the reason the slip's button
-                                         carries the same rule: an accessible name that does not
-                                         contain the label is a name nobody can speak (GOTCHAS). */
-                                      aria-label={`${openCard === transaction.id ? "Hide card" : "Show card"} — the notification card matched to the row dated ${formatDate(row.date)}`}
-                                      onClick={() => setOpenCard((current) => current === transaction.id ? null : transaction.id)}
-                                    >
-                                      {openCard === transaction.id ? "Hide card" : "Show card"}
-                                    </button>
-                                    {/* The undo, which exists now that a card's decision has a
-                                        table. It stores `unmatched` rather than deleting the
-                                        decision, for the reason the slip's does: the RPC has no
-                                        way to return a card to the automatic rule, and pretending
-                                        otherwise would promise something the database cannot do. */}
-                                    <button
-                                      type="button"
-                                      className="secondary-button"
-                                      aria-label={`Not this card — the row dated ${formatDate(row.date)} is not this payment`}
-                                      disabled={decidingCard !== null}
-                                      onClick={() => void decideCard(cardPair.id, "unmatched", null)}
-                                    >
-                                      {decidingCard === cardPair.id ? "Saving…" : "Not this card"}
-                                    </button>
-                                  </div>
-                                  {row.cardOwnerDecided ? <small className="decision-mark">Your match</small> : null}
-                                  {/* Stored consent, shown for as long as the pairing stands. It
-                                      does not go stale after a later correction, because it says
-                                      what the owner accepted rather than what the figures now say. */}
-                                  {row.cardBalanceMismatchAccepted ? (
-                                    <small className="decision-mark warn">
-                                      You matched this despite the card and the row printing different balances.
-                                    </small>
-                                  ) : null}
-                                </>
-                              ) : null}
-                            </>
-                          ) : (
-                            <span className="status-none" aria-label="Statement only: no slip and no notification card is matched to this row">—</span>
-                          )}
-                        </td>
-                        <td data-label={showCombined ? "Account" : "Reference"}>
-                          {showCombined
-                            ? <span>{account ? `${account.label} ···· ${account.last_four}` : "Unknown account"}</span>
-                            : <span>{transaction.reference ?? "Not printed"}</span>}
-                        </td>
-                        <td data-label="Movement" className={`numeric ${BigInt(movement) > 0n ? "positive" : ""}`}>
-                          {BigInt(movement) > 0n ? "+" : ""}{formatThb(movement)}
-                        </td>
-                        <td data-label={showCombined ? "Account balance" : "Balance"} className="numeric">
-                          {formatThb(transaction.post_balance_minor)}
-                        </td>
-                        {showCombined ? (
-                          <td data-label="All accounts" className="numeric combined-balance">
-                            {formatThb(combined.get(transaction.id) ?? transaction.post_balance_minor)}
-                          </td>
-                        ) : null}
-                      </tr>
-                      {pair && openPair === transaction.id ? (
-                        <tr className="pair-detail" id={`pair-${transaction.id}`}>
-                          <td colSpan={showCombined ? 7 : 6}>
-                            <dl>
-                              <div><dt>Slip reference</dt><dd className="mono">{pair.slip_reference}</dd></div>
-                              <div><dt>Slip bank</dt><dd>{pair.bank_code}</dd></div>
-                              <div>
-                                <dt>Printed on the slip</dt>
-                                <dd>{formatDate(pair.occurred_on)}{pair.occurred_at_time ? ` · ${pair.occurred_at_time}` : " · no time printed"}</dd>
-                              </div>
-                              {/* Shown because it is the match: the slip's amount and the row's
-                                  movement are equal to the minor unit, or this pairing could not
-                                  exist. Seeing both is what makes the claim checkable. */}
-                              <div>
-                                <dt>Slip amount</dt>
-                                <dd>
-                                  {formatThb(pair.amount_minor)}
-                                  {slipCorrectionBySlip.has(pair.id) ? " · corrected by you, and it is this figure the match was checked against" : null}
-                                </dd>
-                              </div>
-                              <div><dt>Counterparty on the slip</dt><dd>{pair.counterparty ?? "none recorded"}</dd></div>
-                              {pair.note ? <div><dt>Note</dt><dd>{pair.note}</dd></div> : null}
-                              <div>
-                                <dt>Paired by</dt>
-                                <dd>{row.ownerDecided ? "you — a stored decision" : "the rule — same bank, same amount to the satang, within one day"}</dd>
-                              </div>
-                            </dl>
-                            {row.ownerDecided ? null : (
-                              <p>
-                                No statement layout prints a slip&rsquo;s reference, so this is a proposal from
-                                three facts rather than an identifier the two records share. It is recomputed
-                                on every load and nothing about it is stored until you decide something.
-                              </p>
-                            )}
-                          </td>
-                        </tr>
-                      ) : null}
-                      {cardPair && openCard === transaction.id ? (
-                        <tr className="pair-detail" id={`card-${transaction.id}`}>
-                          <td colSpan={showCombined ? 7 : 6}>
-                            <dl>
-                              <div><dt>Pushed by</dt><dd>{cardPair.channel}</dd></div>
-                              <div>
-                                <dt>Account digits printed</dt>
-                                <dd className="mono">···· {cardPair.printed_account_digits}</dd>
-                              </div>
-                              <div>
-                                <dt>Printed on the card</dt>
-                                <dd>{formatDate(cardPair.occurred_on)} · {cardPair.occurred_at_time}</dd>
-                              </div>
-                              {/* Both figures, side by side, because both are the match. The
-                                  amount is equal to this row's movement and the balance is equal
-                                  to its printed balance, or this pairing could not exist — seeing
-                                  the two is what makes that claim checkable rather than trusted. */}
-                              <div><dt>Card amount</dt><dd>{formatThb(cardPair.amount_minor)}</dd></div>
-                              <div>
-                                <dt>Balance printed on the card</dt>
-                                <dd>
-                                  {formatThb(cardPair.balance_minor)}
-                                  {" · equal to this row's printed balance, which is what paired them"}
-                                </dd>
-                              </div>
-                              <div><dt>Counterparty on the card</dt><dd>{cardPair.counterparty ?? "none recorded"}</dd></div>
-                              {cardPair.note ? <div><dt>Note</dt><dd>{cardPair.note}</dd></div> : null}
-                              <div>
-                                <dt>Paired by</dt>
-                                <dd>the rule — same account, same amount to the satang, within one day, and the same printed balance</dd>
-                              </div>
-                            </dl>
-                            <p>
-                              A card prints no reference either, so this is still a proposal rather than an
-                              identifier the two records share &mdash; but it rests on four facts where a slip
-                              rests on three, and the fourth is the one that tells two payments of the same
-                              amount apart. It is recomputed on every load, and nothing about it is stored.
-                              The balance was measured equal to the statement&rsquo;s on every card checked, but
-                              on six cards and none captured while a hold was outstanding, so it is treated as
-                              a cross-check rather than as proof.
-                            </p>
-                          </td>
-                        </tr>
-                      ) : null}
-                      </Fragment>
+                      <LedgerStatementRow
+                        key={row.transaction.id}
+                        row={row}
+                        layout={layout}
+                        modes={modes}
+                        account={accountsById.get(row.transaction.account_id)}
+                        combinedBalance={combined.get(row.transaction.id) ?? row.transaction.post_balance_minor}
+                        matchingCardRecord={matchingCardRecord}
+                        slipCorrected={row.slip !== null && slipCorrectionBySlip.has(row.slip.id)}
+                        openPair={openPair}
+                        openCard={openCard}
+                        onTogglePair={togglePair}
+                        onToggleCard={toggleCard}
+                        onDecideSlip={decide}
+                        onDecideCard={decideCard}
+                      />
                     );
                   })}
                 </tbody>
@@ -1508,42 +864,13 @@ export function TransactionsView() {
               the database's reversibility would be theoretical: the row vanishes from the ledger,
               and there would be nothing on screen to undo it from. */}
           {retiredCards.length > 0 && !picking && !pickingCard ? (
-            <div className="retired-cards">
-              <button
-                type="button"
-                className="secondary-button"
-                aria-expanded={showRetired}
-                onClick={() => setShowRetired((current) => !current)}
-              >
-                {showRetired ? "Hide retired cards" : `Show ${retiredCards.length} retired card${retiredCards.length === 1 ? "" : "s"}`}
-              </button>
-              <p className="ledger-status">
-                A retired card is one you marked <b>not a payment</b> &mdash; a wrong account, or the same payment
-                captured twice. It is out of the ledger and out of the totals, and it is still in the database, because
-                nothing here is ever deleted. Bringing one back puts it in front of the matching rule again.
-              </p>
-              {showRetired ? (
-                <ul className="retired-list">
-                  {retiredCards.map((card) => (
-                    <li key={card.id}>
-                      <span>
-                        {card.channel} · {formatDate(card.occurred_on)} {card.occurred_at_time} · {formatThb(card.amount_minor)}
-                        {card.counterparty ? ` · ${card.counterparty}` : ""}
-                      </span>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        aria-label={`Bring back the ${card.channel} card dated ${formatDate(card.occurred_on)}`}
-                        disabled={decidingCard !== null}
-                        onClick={() => void decideCard(card.id, "unmatched", null)}
-                      >
-                        {decidingCard === card.id ? "Saving…" : "Bring it back"}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
+            <LedgerRetiredCards
+              cards={retiredCards}
+              expanded={showRetired}
+              decidingCard={decidingCard}
+              onToggle={() => setShowRetired((current) => !current)}
+              onBringBack={(cardId) => void decideCard(cardId, "unmatched", null)}
+            />
           ) : null}
         </>
       ) : null}

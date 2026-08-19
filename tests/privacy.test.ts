@@ -4,26 +4,40 @@ import { describe, expect, it } from "vitest";
 import { securityHeaders } from "@/lib/security-headers";
 
 /**
- * Every `.tsx` under `app/`, found rather than listed.
+ * Every `.ts` and `.tsx` under `app/`, found rather than listed.
  *
  * The service-worker test below used to carry a hardcoded array described in its own comment as
  * "every client component in `app/`". It had drifted — `app/cash-entry.tsx` and
  * `app/correction-form.tsx` were both added without joining it — so the test was checking a
  * shrinking fraction of the surface while claiming to check all of it. A list that has to be
  * maintained by hand to stay true is the same defect that comment was written about.
+ *
+ * **`.ts` joined `.tsx` when the ledger view was split.** `app/transactions-view.tsx` became six
+ * files, one of them a plain `.ts` module of shared types and the date format
+ * (`app/ledger-shared.ts`), and a walk that saw only `.tsx` would have stopped covering it on the
+ * way past. The same split is why the client-storage check below stopped naming its files.
  */
-function appComponents(): string[] {
+function appSources(): string[] {
   const found: string[] = [];
   const walk = (directory: string) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const full = path.join(directory, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (entry.name.endsWith(".tsx")) found.push(full.split(path.sep).join("/"));
+      else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) found.push(full.split(path.sep).join("/"));
     }
   };
   walk("app");
   return found.sort();
 }
+
+/**
+ * The one file allowed to name `serviceWorker`, excluded by name and with its reason.
+ *
+ * Registration is the shell's job so that any visited route arms the share interceptor, not only
+ * the one a share lands on. Everything else under `app/` must be free of it and of every client
+ * storage API.
+ */
+const SERVICE_WORKER_REGISTRAR = "app/site-header.tsx";
 
 describe("privacy guardrails", () => {
   it("does not expose statement password environment variables", () => {
@@ -32,12 +46,15 @@ describe("privacy guardrails", () => {
   });
 
   it("installs no observation tooling and keeps the ledger surfaces free of client storage", () => {
+    // **Found rather than listed, since the ledger view became six files.** This named five of
+    // them — including `app/transactions-view.tsx`, which then had its four row kinds, its
+    // controls and its retired-cards panel moved into siblings. A check naming the old file would
+    // have gone on passing while saying nothing about the ~940 lines of markup that left it, which
+    // is precisely the drift the walk above was written about the first time.
     const packageJson = readFileSync("package.json", "utf8");
-    const ui = readFileSync("app/import-bench.tsx", "utf8")
-      + readFileSync("app/recovery-bench.tsx", "utf8")
-      + readFileSync("app/transactions-view.tsx", "utf8")
-      + readFileSync("app/captured-slips.tsx", "utf8")
-      + readFileSync("app/slips-bench.tsx", "utf8");
+    const sources = appSources().filter((file) => file !== SERVICE_WORKER_REGISTRAR);
+    expect(sources.length, "no sources found — the walk is looking in the wrong place").toBeGreaterThan(10);
+    const ui = sources.map((file) => readFileSync(file, "utf8")).join("\n");
     expect(ui).not.toMatch(/serviceWorker|localStorage|sessionStorage|console\./);
     expect(packageJson).not.toMatch(/analytics|sentry|datadog|hotjar|fullstory/i);
   });
@@ -55,10 +72,10 @@ describe("privacy guardrails", () => {
     // registration site, and it is still one. The candidate list is **found** rather than
     // written down, so a second registration anywhere under `app/` fails this rather than
     // hiding in a file nobody remembered to add.
-    const candidates = appComponents();
+    const candidates = appSources();
     expect(candidates.length, "no components found — the walk is looking in the wrong place").toBeGreaterThan(5);
     const registrations = candidates.filter((file) => readFileSync(file, "utf8").includes("serviceWorker.register"));
-    expect(registrations).toEqual(["app/site-header.tsx"]);
+    expect(registrations).toEqual([SERVICE_WORKER_REGISTRAR]);
 
     const worker = readFileSync("public/share-slip-sw.js", "utf8");
     // One fetch handler, and it must return early for anything that is not the share POST.

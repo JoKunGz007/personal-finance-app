@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-18.
+Last updated: 2026-08-19.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -16,9 +16,11 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying D-114 onward in full, with
-D-001…D-059 in [docs/decisions/ARCHIVE-D-001-D-059.md](docs/decisions/ARCHIVE-D-001-D-059.md) and
-D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md)) →
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-120 onward** in full,
+with D-001…D-059 in [docs/decisions/ARCHIVE-D-001-D-059.md](docs/decisions/ARCHIVE-D-001-D-059.md),
+D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md) and
+D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md);
+the index at the top of `DECISIONS.md` covers all four) →
 [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture and
@@ -90,9 +92,14 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **`main` is level with `origin/main` at `e009137`**, and the working tree holds only the two
-  local-only config files. Read `git status -sb` rather than trusting this sentence — it is the line
-  most likely to be stale, which is what commit `a2efdc7` was about.
+- **`main` was level with `origin/main` at `cba6769` before 2026-08-19's work, which is one commit
+  on top of it**: the ledger view split and both budget remedies (D-132, D-133). **Read `git log -1`
+  and `git status -sb` for the hash rather than trusting this sentence** — it is deliberately not
+  written here, because a hash typed before the commit that produces it is the exact class of stale
+  line commit `a2efdc7` was about. That push **is** a production deployment.
+- **After it, the working tree should hold the two local-only config files and nothing else.**
+  `git status --short` is the only thing that tells them from ordinary work. If it shows more, the
+  commit did not include everything it should have.
 - **`eslint.config.mjs` and `playwright.config.ts` are deliberately local-only and are never
   committed.** `git status --short` is what tells them apart from ordinary uncommitted work.
   `playwright.owner.config.ts` and `playwright.isolated.config.ts` **are** committed — only the bare
@@ -125,11 +132,21 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
 - **Both capture readers call Google Cloud Vision** through `POST /api/v1/ocr/read` (D-120, D-129).
   **Statement import is the only path left that reads entirely on the device.** The key never
   reaches the browser and the CSP is unchanged.
-- **Gate at 2026-08-18**: Vitest **604 passed / 7 skipped across 30 files**, pgTAP **266 across 8**,
-  Playwright owner **29/29** and isolated **18/18**, production build clean at **eighteen**
-  `/api/v1/` routes, `pnpm check:docs --strict` at **130 decisions, 133 traps**. **One flake, not
-  diagnosed**: `owner-access.spec.ts`'s returning-owner TOTP challenge failed once and passed on an
-  immediate re-run with nothing changed.
+- **Gate at 2026-08-19**: Vitest **604 passed / 7 skipped across 30 files**, Playwright owner
+  **29/29** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes,
+  `pnpm check:docs --strict` at **133 decisions, 132 traps**. **pgTAP was not re-run and that is
+  deliberate** — it stands at **266 across 8** from 2026-08-18, and the day's work moved no SQL.
+  The owner suite ran **three times**: a baseline before the ledger view was touched and once after
+  each extraction step, which is the only thing that proves the split changed no behaviour (D-132).
+  **The 2026-08-18 flake did not recur** in any of the three — `owner-access.spec.ts`'s
+  returning-owner TOTP challenge failed once that day and passed on an immediate re-run. Still
+  undiagnosed, now unreproduced.
+- **Both budgets were acted on on 2026-08-19 and neither was raised** (D-133). `DECISIONS.md` is
+  **81 KB/117 KB (69%)**, down from 90%, after **D-114 … D-119** went to
+  `docs/decisions/ARCHIVE-D-114-D-119.md`; the file now carries **D-120 onward**. `GOTCHAS.md` is
+  **177 KB/195 KB (91%)**, down from 93%. **`GOTCHAS.md` will breach again** — there is no archive
+  for traps by design, so the only remedy is retiring one whose subject is gone, and that is bounded
+  by how many actually die. Raising it is the owner's call and has not been made.
 - **`.next` rests on the synthetic project, and "unpinned" no longer means "live-targeted".**
   `.env.local` names `private-ledger-local`, so an unpinned `pnpm build` aims there. The old phrasing
   was written when `private-ledger-live` was the ledger, and it has not been since 2026-08-11
@@ -151,6 +168,15 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
 
 ## Live hazards on this machine
 
+- **The local-only `playwright.config.ts` does not pin `GOOGLE_VISION_KEY`, and on this machine it
+  runs a real build.** Found by the 2026-08-19 security review. The **committed** copy runs
+  `pnpm dev`, which never hydrates under the strict CSP, so its tests cannot really execute — but
+  the **working copy** runs `pnpm build && pnpm start`, which they do (GOTCHAS records this reversal
+  for a different trap). It has no `testIgnore`, so it collects `owner-session.spec.ts` including
+  the reader spec, and it pins three environment variables while `next start` inherits the real
+  Vision key from the Windows user environment. **That is the 2026-08-18 incident still reachable.**
+  Both sibling configs pin the key empty; this one is the owner's file and was left alone. One line
+  in its `env` block closes it.
 - **Docker Desktop stops often.** It went down twice on 2026-08-18 alone. **A stopped Docker makes
   the database-backed suites SKIP rather than fail, and the totals read identically** — read the
   word, not the colour, and run `docker ps` before trusting any database-backed row.
