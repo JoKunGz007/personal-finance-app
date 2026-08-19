@@ -28,12 +28,28 @@ const STRICT = process.argv.includes("--strict");
 // a single read and was reporting green about a file nothing could read in one go.
 //
 // The numbers are set from what a read costs rather than from what the files happen to be: this
-// project's Markdown runs about 0.33 tokens per byte, so 120 KB is ~40,000 tokens and 200 KB is
-// ~66,000. `DECISIONS.md` is read front-to-back by anyone picking the project up, which is why it
-// gets the tighter one; `GOTCHAS.md` is a lookup file entered through its index, so its size costs
-// less per use and it is allowed more.
+// project's Markdown runs about 0.33 tokens per byte, so 120 KB is ~40,000 tokens. `DECISIONS.md`
+// is read front-to-back by anyone picking the project up, which is why it gets the tighter one;
+// `GOTCHAS.md` is a lookup file entered through its index, so its size costs less per use and it
+// is allowed more.
+//
+// **`GOTCHAS.md` was raised from 200 KB to 260 KB on 2026-08-19** (D-134), on the owner's decision
+// and after the sanctioned remedy had been applied rather than instead of it: two dead traps were
+// retired first and that moved 181 KB to 177 KB, which is the honest measure of what retirement can
+// do. There is no archive for traps by design (see the remedy below), so retirement is the only
+// lever and it is bounded by how many traps actually die — far fewer than are written.
+//
+// **The raise follows the lookup-file argument to its conclusion.** What a reader of this file
+// actually pays is the **index plus one trap**, not the whole body; the index is about 10 KB of the
+// 177. So the body is bounded by what keeps the file greppable rather than by what fits in one
+// read, and 260 KB is ~86,000 tokens of body nobody reads front-to-back.
+//
+// **The condition attached to it, which is the point of writing this here.** The thing that must
+// stay readable in one pass is the **index**. When the index stops being scannable, the answer is
+// structural — splitting the file along its existing section headings, each with its own index —
+// and **not** a third raise. A budget raised twice is a budget that has been abandoned.
 const DECISIONS_BYTE_BUDGET = 120_000;
-const GOTCHAS_BYTE_BUDGET = 200_000;
+const GOTCHAS_BYTE_BUDGET = 260_000;
 
 // A path is checkable when its first segment is a directory the repo actually owns.
 // Anything else in backticks is a package-internal path, an external tool, or generated
@@ -203,7 +219,8 @@ const BUDGETS = [
   [DECISIONS, DECISIONS_BYTE_BUDGET,
     "archive the oldest contiguous range into docs/decisions/ (D-080), then move its index bullets to the Archived section"],
   [GOTCHAS, GOTCHAS_BYTE_BUDGET,
-    "retire traps whose subject no longer exists, keeping the generalisation that outlived them"]
+    "retire traps whose subject no longer exists, keeping the generalisation that outlived them — " +
+    "and if that is not enough, split the file along its section headings rather than raising this again (D-134)"]
 ];
 
 const kb = (bytes) => `${(bytes / 1024).toFixed(0)} KB`;

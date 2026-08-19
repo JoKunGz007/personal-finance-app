@@ -155,6 +155,7 @@ This file carries **D-120 onward**. Three settled ranges were relocated unchange
 - **D-131** — The handoff and the plan were append-only by habit, and both had gone self-contradictory
 - **D-132** — The ledger view's markup became seven files, and the derivation pipeline deliberately did not move
 - **D-133** — Both continuity budgets were acted on rather than raised, and the archive boundary excluded every open question
+- **D-134** — The traps budget is raised to 260 KB on the lookup-file argument, with the next breach owed a split rather than a third raise
 
 ## D-120 — The card reader adopts Cloud Vision behind this app's own route, with no fallback, and slips stay on the device
 
@@ -422,3 +423,22 @@ This file carries **D-120 onward**. Three settled ranges were relocated unchange
 - **The sweep found no other dead subjects.** Eight further traps mention tesseract.js, and in every one it is an example inside a rule that still binds (the pnpm build allowlist, the store-path mismatch, the scoped-name quoting). A trap is retired when its *subject* is gone, not when a word in it is.
 - **Named rather than solved**: at 91% and 132 traps, `GOTCHAS.md` will breach again, and retirement is bounded by how many traps actually die. Raising that budget is the owner's call and is not made here.
 - Evidence: `pnpm check:docs --strict` passes at **132 decisions, 132 traps**, indexes match, references and paths resolve, `DECISIONS.md` 78 KB/117 KB (67%) and `GOTCHAS.md` 177 KB/195 KB (91%). D-130 (the budgets and why they are bytes), D-080 (the archive remedy), D-131 (the same instinct applied to the handoff and the plan).
+
+## D-134 — The traps budget is raised to 260 KB on the lookup-file argument, with the next breach owed a split rather than a third raise
+
+- Date: 2026-08-19
+- Status: **Accepted and done**, on the owner's decision, taken after D-133 applied the sanctioned remedy and reported what it could and could not achieve. Tooling and documentation only.
+- **`GOTCHAS.md`'s budget goes 200 KB → 260 KB** (`scripts/check-docs.mjs`). It sits at **177 KB, so 70%**. `DECISIONS.md` is unchanged at 120 KB.
+
+### Why raising it is not the same as abandoning it
+
+- **The remedy was applied first, and the raise is a response to what it measured.** D-133 retired both traps whose subject no longer existed and moved the file 181 KB → 177 KB. **That 4 KB is the honest ceiling on retirement**: a sweep of all 132 traps found no further dead subjects, because a trap is retired when its *subject* is gone and this project's traps mostly describe things that still exist. Retirement is bounded by how many traps die, which is far fewer than are written.
+- **There is no archive for traps and that stays true** — relocating them only moves the reading cost, which is why `check-docs.mjs` says so at the point the remedy is printed. So retirement was the only lever, and it was not enough.
+- **The number follows the argument the budgets were already set from.** They are set from what a read costs, and `GOTCHAS.md` was already given the looser one because it is *entered through its index* rather than read front-to-back. Taken to its conclusion: what a reader pays is **the index plus one trap**, and the index is about 10 KB of the 177. The body is therefore bounded by what keeps the file greppable, not by what fits in one context window.
+
+### The condition, which is the substance of this entry
+
+- **The thing that must stay readable in one pass is the index, not the file.** When the index stops being scannable, the answer is **structural** — split along the eight existing section headings, each with its own index — and not a third raise.
+- **A budget raised twice has been abandoned.** That sentence is now in `check-docs.mjs` beside the constant and in the failure message the next breach prints, because D-130 established that a rule living only in a log nobody opens while editing is a rule that gets re-broken, and D-131 found the same thing again.
+- **What this does not do**: it does not touch `DECISIONS.md`'s 120 KB, which is the tighter budget precisely because that file *is* read front-to-back, and which D-133 just brought to 69% by archiving rather than by raising. The two files have different remedies for a reason and this changes only one of them.
+- Evidence: `pnpm check:docs --strict` passes at **134 decisions, 132 traps**, `GOTCHAS.md` **177 KB/254 KB (70%)** and `DECISIONS.md` 84 KB/117 KB (72%). Red-proved by lowering the new constant until the check failed and restoring it, which is how D-130 proved the byte budget in the first place. D-130 (the budgets and why bytes), D-133 (the remedy applied and its ceiling), D-131 (a rule must live where it is read).

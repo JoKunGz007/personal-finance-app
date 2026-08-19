@@ -92,11 +92,12 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **`main` was level with `origin/main` at `cba6769` before 2026-08-19's work, which is one commit
-  on top of it**: the ledger view split and both budget remedies (D-132, D-133). **Read `git log -1`
-  and `git status -sb` for the hash rather than trusting this sentence** — it is deliberately not
-  written here, because a hash typed before the commit that produces it is the exact class of stale
-  line commit `a2efdc7` was about. That push **is** a production deployment.
+- **`main` was level with `origin/main` at `cba6769` before 2026-08-19's work, which is two commits
+  on top of it**: the ledger view split with the archive and the trap retirements (`d11066f`, D-132
+  and D-133, **verified Ready in the Vercel dashboard**), and the traps-budget raise (D-134).
+  **Read `git log` and `git status -sb` rather than trusting this sentence** — the second hash is
+  deliberately not written here, because a hash typed before the commit that produces it is the
+  exact class of stale line commit `a2efdc7` was about. Both pushes **are** production deployments.
 - **After it, the working tree should hold the two local-only config files and nothing else.**
   `git status --short` is the only thing that tells them from ordinary work. If it shows more, the
   commit did not include everything it should have.
@@ -134,19 +135,21 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   reaches the browser and the CSP is unchanged.
 - **Gate at 2026-08-19**: Vitest **604 passed / 7 skipped across 30 files**, Playwright owner
   **29/29** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes,
-  `pnpm check:docs --strict` at **133 decisions, 132 traps**. **pgTAP was not re-run and that is
+  `pnpm check:docs --strict` at **134 decisions, 132 traps**. **pgTAP was not re-run and that is
   deliberate** — it stands at **266 across 8** from 2026-08-18, and the day's work moved no SQL.
   The owner suite ran **three times**: a baseline before the ledger view was touched and once after
   each extraction step, which is the only thing that proves the split changed no behaviour (D-132).
   **The 2026-08-18 flake did not recur** in any of the three — `owner-access.spec.ts`'s
   returning-owner TOTP challenge failed once that day and passed on an immediate re-run. Still
   undiagnosed, now unreproduced.
-- **Both budgets were acted on on 2026-08-19 and neither was raised** (D-133). `DECISIONS.md` is
-  **81 KB/117 KB (69%)**, down from 90%, after **D-114 … D-119** went to
-  `docs/decisions/ARCHIVE-D-114-D-119.md`; the file now carries **D-120 onward**. `GOTCHAS.md` is
-  **177 KB/195 KB (91%)**, down from 93%. **`GOTCHAS.md` will breach again** — there is no archive
-  for traps by design, so the only remedy is retiring one whose subject is gone, and that is bounded
-  by how many actually die. Raising it is the owner's call and has not been made.
+- **Both budgets were dealt with on 2026-08-19, and by different means on purpose.**
+  `DECISIONS.md` is **84 KB/117 KB (72%)**, down from 90%, because **D-114 … D-119** were archived
+  to `docs/decisions/ARCHIVE-D-114-D-119.md`; it now carries **D-120 onward** (D-133).
+  `GOTCHAS.md` is **177 KB/254 KB (70%)** because its budget was **raised** from 195 KB on the
+  owner's decision (D-134) — retirement had been applied first and moved it only 181 → 177 KB, which
+  is the honest ceiling on that remedy since a trap is retired only when its *subject* is gone.
+  **The next `GOTCHAS.md` breach is owed a split along its eight section headings, not a third
+  raise.** That condition is in `check-docs.mjs` beside the constant and in the failure message.
 - **`.next` rests on the synthetic project, and "unpinned" no longer means "live-targeted".**
   `.env.local` names `private-ledger-local`, so an unpinned `pnpm build` aims there. The old phrasing
   was written when `private-ledger-live` was the ledger, and it has not been since 2026-08-11
