@@ -477,7 +477,12 @@ footer p { margin: 0; }
   .cash-bench > .secondary-button, .card-bench > .secondary-button { margin-left: 0; }
   .batch-bench .status, .batch-note, .batch-rows, .batch-summary { margin-left: 0; }
   .or-rule { display: none; }
-  .ledger-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
+  /* **`1fr` is `minmax(auto, 1fr)`, and that `auto` floor is min-content, not zero.** A select whose
+     longest option is an account label therefore refuses to shrink, so the grid sizes itself to its
+     contents and overflows the page rather than the text truncating. `minmax(0, 1fr)` is the whole
+     fix and is why every track here is written the long way. Found at 390px with rows loaded
+     (D-138), where the two columns came to 591px inside a 358px `main`. */
+  .ledger-controls { margin-left: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .ledger-controls > button { grid-column: 1 / -1; }
   .statement-strip { grid-template-columns: repeat(3, 1fr); }
   .ledger-strip { grid-template-columns: repeat(2, 1fr); }
@@ -543,6 +548,9 @@ footer p { margin: 0; }
   .site-nav a.current { box-shadow: none; border-bottom: 2px solid var(--blue); border-radius: 0; }
   .import-controls { grid-template-columns: 1fr; }
   .binding-controls { grid-template-columns: 1fr; }
+  /* One column at phone width: two 175px tracks side by side is a select showing about
+     eighteen characters of an account label, which is not a choice anyone can make. */
+  .ledger-controls { grid-template-columns: minmax(0, 1fr); }
   .slip-fields { grid-template-columns: 1fr; }
   .batch-fix { grid-template-columns: 1fr; }
   .slip-controls { flex-direction: column; align-items: stretch; }
@@ -559,7 +567,20 @@ footer p { margin: 0; }
   .rail-label { display: none; }
   .balance-rail i::before, .balance-rail i::after { height: 73px; }
   .table-scroll { overflow: visible; }
-  table, tbody { display: block; min-width: 0; }
+  /*
+    **`table` is an element selector and `.ledger-table` is a class, so the class wins.** This line
+    read as "no table has a minimum width here" and was false for the only table that matters:
+    `.ledger-table` sets 1160px and `.ledger-table.merged` 1280px, both of which survived it at
+    specificity 0,1,0 against 0,0,1. With `.table-scroll` set to `overflow: visible` directly above,
+    that width had nothing to scroll inside and escaped to the document — so a real phone rendered
+    the whole page zoomed out to about a third, with the ledger row card running off the side.
+
+    **It shipped because no automated run has ever rendered this table on a phone.** Nothing in this
+    app loads until asked, so an audit that signs in and looks sees no `<table>` at all — a rule with
+    no element to apply to cannot be wrong. `.runtime/mobile-audit.spec.ts` now seeds rows and loads
+    them before measuring; the owner found this on his own device first (2026-08-21, D-138).
+  */
+  table, tbody, .ledger-table, .ledger-table.merged { display: block; min-width: 0; }
   thead { display: none; }
   tbody tr { display: grid; grid-template-columns: 1fr 1fr; min-height: 145px; padding: 16px; border-bottom: 1px solid var(--line); background: var(--paper); }
   td { display: block; height: auto; min-width: 0; padding: 5px 8px; border: 0; text-align: left !important; white-space: normal !important; }

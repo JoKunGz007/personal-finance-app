@@ -92,11 +92,15 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **`main` was level with `origin/main` at `77f9f99` when 2026-08-21's work began, and still is.**
-  2026-08-19 put two commits on top of `cba6769`: the ledger view split with the archive and the
-  trap retirements (`d11066f`, D-132 and D-133, **verified Ready in the Vercel dashboard**), and the
-  traps-budget raise (`77f9f99`, D-134). **Read `git log` and `git status -sb` rather than trusting
-  this sentence.** Both pushes **are** production deployments.
+- **2026-08-21 pushed three times, and each push is a production deployment**: bulk slip upload
+  (`7be667e`, D-135), the warm palette with the phone measurement (`76dc46b`, D-136), and cornsilk
+  as the ground with the dark scheme dropped (`8319d5d`, D-137). A fourth is the phone-overflow fix
+  (D-138). **Read `git log` and `git status -sb` rather than trusting this sentence** — a hash typed
+  before the commit that produces it is the exact class of stale line commit `a2efdc7` was about.
+- **The owner verifies a deployment in the dashboard; nothing here can.** `76dc46b` shipped a
+  palette that reached every screen, and the defect D-138 fixes was found **by him on his own phone
+  minutes later**, not by any suite. Treat "the build went Ready" as saying nothing about whether
+  the page is usable.
 - **The app is on a warm palette as of 2026-08-21** (D-136, amended the same day by D-137): Olive
   Leaf, Black Forest, Cornsilk, Light Caramel, Copper, chosen by the owner. **Cornsilk `#FEFAE0` is
   the ground itself**, with surfaces lifting toward a warm white above it.
@@ -111,9 +115,15 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   app public lib` is the sweep; it is in `GOTCHAS.md` as its own trap.
 - Phone width was measured for the first time behind a sign-in (`.runtime/mobile-audit.spec.ts`,
   throwaway and gitignored); the first pass of PLAN task 28 is applied and the remainder is there.
-- **`DECISIONS.md` is at 86% of its budget**, up from 72% on 2026-08-19. **The next substantial
-  entry breaches it.** The remedy is an archive boundary taken where an argument ends (D-133), not a
-  raise — the raise precedent is `GOTCHAS.md`'s and its reasoning does not transfer.
+- **`DECISIONS.md` is at 89% of its budget**, up from 72% on 2026-08-19 — three days, three entries,
+  seventeen points. **Treat the next substantial entry as the breach.** The remedy is an archive
+  boundary taken where an argument ends (D-133), not a raise: the raise precedent is `GOTCHAS.md`'s
+  and rests on that file being entered through an index rather than read front-to-back, which is not
+  true here.
+- **The ledger table overflowed a real phone and no suite could see it** (D-138). The audit now seeds
+  rows and asserts a table is present before measuring. **Two surfaces are still unmeasured with
+  records in them** — the captured-slips list and the batch worklist — because the audit only clicks
+  what a button offers and those need records created first.
 - **Bulk slip upload (D-135) shipped as `7be667e` and is deployed**, on the owner's explicit
   authorization, 14 files. **The palette and the phone pass (D-136) are NOT committed** — the theme
   was asked for, committing it was not. Uncommitted: `app/globals.css`, the four continuity docs, and
