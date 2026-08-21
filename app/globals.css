@@ -4,11 +4,11 @@
   The palette, and the one thing to know before changing a value here.
   Olive Leaf #606C38, Black Forest #283618, Cornsilk #FEFAE0, Light Caramel #DDA15E, Copper #BC6C25.
 
-  **The token names describe roles, not hues, and that is deliberate** — `--blue` has not been blue
-  since 2026-08-21 and `--celadon` has never been the colour it is named after in dark mode. Renaming
-  them is a mechanical sweep of this file and nothing else (no `.tsx` reads a custom property), so it
-  is worth doing the next time this file is opened for something bigger. What must not happen is a
-  rename that stops halfway.
+  **The token names describe roles, not hues, and every one of them now lies** — `--blue` is copper,
+  `--celadon` is olive, `--navy` is the near-black green, and `--mist` is the cornsilk ground rather
+  than anything misty. Renaming is a mechanical sweep of this file and nothing else (no `.tsx` reads a
+  custom property), so it is worth doing the next time this file is opened for something bigger. What
+  must not happen is a rename that stops halfway.
 
   **Three states must stay separable by hue, because this palette is entirely warm** and the old one
   got its separation for free from blue-versus-amber. Action is copper, verified is olive, provisional
@@ -16,14 +16,28 @@
   as a link. **Colour is never the only carrier** — every one of those states also says what it is in
   words (D-123) — which is what makes near-neighbour hues tolerable rather than a defect.
 
-  Contrast against `--paper`, measured rather than eyeballed: `--muted` 5.9:1, `--blue` 5.3:1,
+  **Cornsilk is the ground itself, not a card colour** (D-137). `--mist` *is* `#FEFAE0`, and the
+  surfaces above it lift toward white rather than the page sitting on something duller. The ladder
+  runs mist → paper → paper-strong and stays in that order; inverting it makes every border in the
+  file read backwards.
+
+  **This app declares one colour scheme and has no dark block** (D-137). That is a decision, not an
+  omission: the ground is warm enough to read against for long stretches, and a second scheme is a
+  second set of contrast facts that nothing here measures. `color-scheme: light` below is what makes
+  a date picker and a select dropdown obey it on a device whose OS is dark. **If a dark block ever
+  returns, read the `GOTCHAS.md` trap about tokens that invert between schemes first** — the
+  variable-plus-literal pairings that failed on 2026-08-21 are still in this file and will fail again.
+
+  Contrast against `--mist`, measured rather than eyeballed: `--muted` 5.9:1, `--blue` 5.3:1,
   `--red` 7.1:1, `--celadon-ink` on `--celadon` 6.3:1. All clear AA for body text, which is what the
-  axe checks in the Playwright suites hold this file to.
+  axe checks in the Playwright suites hold this file to. Everything above the ground is lighter than
+  it, so these are the floor rather than an average.
 */
 :root {
-  --mist: #f1ecd4;
-  --paper: #fefae0;
-  --paper-strong: #fffdf1;
+  color-scheme: light;
+  --mist: #fefae0;
+  --paper: #fffdf0;
+  --paper-strong: #fffffa;
   --navy: #283618;
   --muted: #5c6636;
   --line: #ddd5b0;
@@ -557,42 +571,6 @@ footer p { margin: 0; }
   footer { align-items: flex-start; flex-direction: column; gap: 6px; }
   .detail-grid { grid-template-columns: 1fr; }
   .detail-grid div:nth-child(even) { padding-left: 0; border-left: 0; }
-}
-
-@media (prefers-color-scheme: dark) {
-  /* Black Forest deepened into a ground, with Cornsilk as the ink. **Action and provisional are
-     pulled further apart here than in light**: copper brightens toward orange and caramel lightens
-     toward gold, because on a dark ground the two collapse into one warm tan otherwise. */
-  :root {
-    --mist: #1b2113;
-    --paper: #232b19;
-    --paper-strong: #2b351e;
-    --navy: #f2eeda;
-    --muted: #aab588;
-    --line: #3f4a2c;
-    --blue: #e2914f;
-    --blue-dark: #f0a566;
-    --celadon: #45542a;
-    --celadon-ink: #c3d495;
-    --saffron: #d8b06a;
-    --saffron-wash: #3a2e18;
-    --red: #e58b7a;
-  }
-  /* **Every surface filled with `--blue` needs its ink flipped here, not just the button.** In light
-     the action colour is a deep copper and white sits on it at 5.6:1; in dark it brightens to
-     #e2914f, where white drops to 2.5:1 and fails outright. `.primary-button` already had this
-     override and the other two filled surfaces did not — they were white-on-bright-tan before
-     2026-08-21, which no light-mode look at this file would ever reveal. */
-  .primary-button, .stage-nav li.active span, .secondary-button:hover { color: #1b2113; }
-  .brand-mark { color: #1b2113; background: var(--blue); }
-  .warning, .backup-band.stale { color: #eccb8e; }
-  /* The light-mode brown reads as near-black on this background; the same gold the stale
-     backup band uses in dark carries the "not settled yet" meaning legibly. */
-  .status-chip.awaiting { color: #eccb8e; }
-  .status-chip.verified { color: #bcd08c; }
-  .verified-row td:first-child { box-shadow: inset 3px 0 #bcd08c; }
-  .stale .backup-button { color: #1f1a0c; border-color: var(--saffron); background: var(--saffron); }
-  .detail-dialog { border-color: var(--line); }
 }
 
 @media (prefers-reduced-motion: reduce) {

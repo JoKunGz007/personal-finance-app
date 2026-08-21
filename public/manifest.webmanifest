@@ -5,8 +5,8 @@
   "start_url": "/ledger",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#eaf0f4",
-  "theme_color": "#eaf0f4",
+  "background_color": "#fefae0",
+  "theme_color": "#fefae0",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ],

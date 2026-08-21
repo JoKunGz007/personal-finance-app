@@ -17,7 +17,15 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest"
 };
 
-export const viewport: Viewport = { colorScheme: "light dark", themeColor: "#eaf0f4" };
+// **`themeColor` must equal `--mist`, and it is the one colour no screenshot can check.** It tints
+// the browser's own chrome around the page on a phone, so a stale value shows as a band in the wrong
+// colour above the app — invisible to the headless audit, which never renders chrome. It sat at the
+// pre-2026-08-21 blue-grey for a full day after the palette changed.
+//
+// `light` rather than `light dark`: this app declares one scheme (D-137), and the declaration is
+// what makes a date picker and a select dropdown render light on a device whose OS is dark. Without
+// it those controls come back dark against a cream page.
+export const viewport: Viewport = { colorScheme: "light", themeColor: "#fefae0" };
 
 // The shell — header, main, footer — belongs to every route since routing landed, so it
 // lives here instead of inside a page component. Each route renders its own sections into

@@ -97,12 +97,23 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   trap retirements (`d11066f`, D-132 and D-133, **verified Ready in the Vercel dashboard**), and the
   traps-budget raise (`77f9f99`, D-134). **Read `git log` and `git status -sb` rather than trusting
   this sentence.** Both pushes **are** production deployments.
-- **The app is on a warm palette as of 2026-08-21** (D-136): Olive Leaf, Black Forest, Cornsilk,
-  Light Caramel, Copper, chosen by the owner. `app/globals.css` is the **only** file that changed —
-  no `.tsx` reads a custom property. Phone width was measured for the first time behind a sign-in
-  (`.runtime/mobile-audit.spec.ts`, throwaway and gitignored); the first pass of PLAN task 28 is
-  applied and the remainder is listed there. **`DECISIONS.md` is at 83% of its budget** and was at
-  72% two days earlier — the next archive boundary is nearer than it looks.
+- **The app is on a warm palette as of 2026-08-21** (D-136, amended the same day by D-137): Olive
+  Leaf, Black Forest, Cornsilk, Light Caramel, Copper, chosen by the owner. **Cornsilk `#FEFAE0` is
+  the ground itself**, with surfaces lifting toward a warm white above it.
+- **There is no dark scheme, and that is a decision with the owner's own qualifier on it** (D-137):
+  he said *"but we'll see"*. The cost is a bright page on a dark-OS phone at night and **nobody has
+  tried that** — so treat it as a position taken, not a settled one. `color-scheme: light` in
+  `:root` and `app/layout.tsx` is what makes native date pickers and selects obey it.
+- **Four colour literals live outside the stylesheet and none of them is in the gate**:
+  `themeColor` in `app/layout.tsx`, `background_color` and `theme_color` in
+  `public/manifest.webmanifest`, and the two fills in `public/icon.svg`. **All four were stale for a
+  day and across two production deployments** after the palette changed. `grep -rn "eaf0f4\|1f3d57"
+  app public lib` is the sweep; it is in `GOTCHAS.md` as its own trap.
+- Phone width was measured for the first time behind a sign-in (`.runtime/mobile-audit.spec.ts`,
+  throwaway and gitignored); the first pass of PLAN task 28 is applied and the remainder is there.
+- **`DECISIONS.md` is at 86% of its budget**, up from 72% on 2026-08-19. **The next substantial
+  entry breaches it.** The remedy is an archive boundary taken where an argument ends (D-133), not a
+  raise — the raise precedent is `GOTCHAS.md`'s and its reasoning does not transfer.
 - **Bulk slip upload (D-135) shipped as `7be667e` and is deployed**, on the owner's explicit
   authorization, 14 files. **The palette and the phone pass (D-136) are NOT committed** — the theme
   was asked for, committing it was not. Uncommitted: `app/globals.css`, the four continuity docs, and

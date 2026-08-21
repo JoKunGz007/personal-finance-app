@@ -169,6 +169,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Shipped, tested code with no caller looks identical to code that does not exist
 - A token that inverts between colour schemes makes every hardcoded partner a latent failure
 - The browser suite that covers the signed-in app is desktop-only, so phone width is unmeasured there
+- A colour declared outside the stylesheet does not move when the stylesheet does
 
 ## Traps
 
@@ -1174,3 +1175,10 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: `playwright.isolated.config.ts` has both a `desktop` and a `mobile` project, but it **ignores both owner specs** — so its mobile project only ever sees the signed-out shell. `playwright.owner.config.ts`, which is the one that signs in and drives the ledger, slips and import, declares `projects: [{ name: "desktop" }]` and nothing else. The gap is invisible because the two configs are read separately and each looks complete.
 - Avoid: before answering anything about small-screen behaviour, check which config renders the surface and what projects it declares. For a one-off measurement, a throwaway config under `.runtime/` pointing `testDir` at itself is enough — but **set `webServer.cwd`**, because Playwright defaults it to the config file's own directory and `pnpm build` then runs inside `.runtime/` and fails on a module it cannot resolve.
 - Verify: 2026-08-21 (D-136). `.runtime/mobile-audit.spec.ts` found a 47px heading floor, four sub-44px tap-target classes and a clipped active-route marker, none of which any passing suite had ever rendered.
+
+## A colour declared outside the stylesheet does not move when the stylesheet does
+
+- Symptom: a phone shows a band of the *previous* palette in the browser's own chrome above the page, while the page itself is correct. On desktop everything looks right, and no screenshot shows it — a headless capture renders the page, never the surrounding browser.
+- Cause: `themeColor` in `app/layout.tsx` is a `<meta>` value, not a custom property, so a palette change in `app/globals.css` leaves it behind. It sat at the pre-retheme `#eaf0f4` for a day and across two production deployments. Nothing in this repo's gate reads it: tsc sees a valid string, ESLint sees a valid string, and both browser suites assert on page content.
+- Avoid: treat `app/layout.tsx`'s `viewport` export as part of the palette. `themeColor` must equal `--mist`, and `colorScheme` must match what the stylesheet actually declares — the file says so at the declaration. The general rule is the part worth carrying: **grep for colour literals outside the stylesheet before calling a retheme done** — `themeColor`, `public/manifest.webmanifest`, any inline `style`, and any SVG shipped with a fill.
+- Verify: 2026-08-21 (D-137), found by reading `app/layout.tsx` for an unrelated reason — and the sweep this entry prescribes then found **three more the same minute**: `public/manifest.webmanifest` carried the old blue-grey as both `background_color` and `theme_color` (the installed-app splash and chrome), and `public/icon.svg` was still a navy plate with blue-grey rules (the app icon and favicon). Four stale colours, none of which any suite, any type-check or any screenshot would ever have reported. `grep -rn "eaf0f4\|1f3d57\|102b46\|1769aa" app public lib` is the check worth repeating.
