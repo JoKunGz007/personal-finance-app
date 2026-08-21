@@ -167,6 +167,8 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A size bound checked after the body is read bounds nothing
 - A `FileList` is a live view of its input, so resetting the input empties it mid-handler
 - Shipped, tested code with no caller looks identical to code that does not exist
+- A token that inverts between colour schemes makes every hardcoded partner a latent failure
+- The browser suite that covers the signed-in app is desktop-only, so phone width is unmeasured there
 
 ## Traps
 
@@ -1158,3 +1160,17 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: a function built ahead of its caller passes the gate, appears in coverage, appears in the decision log as done, and never appears in a stack trace or a diff of the path being reasoned about. Both greps someone actually runs — the failing behaviour, and the module they are editing — miss it.
 - Avoid: before scoping around a limitation, grep the repo for the *capability* rather than the defect. `grep -rn "<function>" lib app` returning only its own test file is the signal, and it is worth a moment for any function a `docs/` contract or a decision entry describes as built. The cheaper habit: when a decision records a reader as built, record what calls it — or that nothing does yet, and why.
 - Verify: 2026-08-21 (D-135). `grep -rn "readPrintedDate" lib app` returned only `lib/slip-ocr.ts` itself before bulk upload, and the D-086 entry does not say so.
+
+## A token that inverts between colour schemes makes every hardcoded partner a latent failure
+
+- Symptom: a surface is unreadable in exactly one colour scheme — white text on a light fill, or dark text on a dark one — while looking perfect in the other. Nothing in the file draws attention to it, and whichever scheme you develop in is the one that looks right.
+- Cause: a rule pairs a **variable** with a **literal** — `background: var(--navy); color: white`. `--navy` is the *text* colour, so it flips from near-black to near-white between schemes while the literal cannot. `app/globals.css` had three: `.skip-link` and `.brand-mark` were white-on-cream in dark, and `.stage-nav li.active span` and `.secondary-button:hover` were white on the brightened action colour at 2.5:1. `.primary-button` had the identical pairing **and** a dark-mode override, which is what made the other two look deliberate.
+- Avoid: pair a variable with a variable. `background: var(--navy); color: var(--paper)` is correct in both directions by construction, with no override to keep in step. Where a literal is unavoidable, the test is mechanical: **grep the file for every rule that sets both a `var(--…)` background and a literal colour, and check each one has a dark-mode partner.** An override on one such rule is evidence the author knew, not evidence the others were considered.
+- Verify: 2026-08-21 (D-136), all three found while reasoning about every filled surface at once during a palette change — not by looking at the app, which is the point. Neither browser suite's axe check caught them: they run in the default scheme.
+
+## The browser suite that covers the signed-in app is desktop-only, so phone width is unmeasured there
+
+- Symptom: an accessibility or layout question about a phone gets answered from the CSS, because "the browser suite passes" feels like it covers it. It does not, for any surface behind a sign-in.
+- Cause: `playwright.isolated.config.ts` has both a `desktop` and a `mobile` project, but it **ignores both owner specs** — so its mobile project only ever sees the signed-out shell. `playwright.owner.config.ts`, which is the one that signs in and drives the ledger, slips and import, declares `projects: [{ name: "desktop" }]` and nothing else. The gap is invisible because the two configs are read separately and each looks complete.
+- Avoid: before answering anything about small-screen behaviour, check which config renders the surface and what projects it declares. For a one-off measurement, a throwaway config under `.runtime/` pointing `testDir` at itself is enough — but **set `webServer.cwd`**, because Playwright defaults it to the config file's own directory and `pnpm build` then runs inside `.runtime/` and fails on a module it cannot resolve.
+- Verify: 2026-08-21 (D-136). `.runtime/mobile-audit.spec.ts` found a 47px heading floor, four sub-44px tap-target classes and a clipped active-route marker, none of which any passing suite had ever rendered.

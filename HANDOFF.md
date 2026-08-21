@@ -97,14 +97,21 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   trap retirements (`d11066f`, D-132 and D-133, **verified Ready in the Vercel dashboard**), and the
   traps-budget raise (`77f9f99`, D-134). **Read `git log` and `git status -sb` rather than trusting
   this sentence.** Both pushes **are** production deployments.
-- **Bulk slip upload (D-135) is built and is UNCOMMITTED.** Committing was neither asked for nor
-  granted, and in this repository committing to `main` is deploying. Ten files: `lib/slip-batch.ts`,
-  `app/slip-batch.tsx`, `lib/browser/qr-detector.ts` and `tests/slip-batch.test.ts` are new; the
-  edits are to `app/slip-capture.tsx`, `app/slips-bench.tsx`, `app/globals.css`, `lib/slips.ts`,
-  `tests/privacy.test.ts` and `tests/e2e/owner-session.spec.ts`, plus the continuity docs.
-  **`git status --short` will show all of that alongside the two local-only config files** — the
-  rule for telling them apart is the next bullet, and it is doing real work now rather than
-  distinguishing two files from nothing.
+- **The app is on a warm palette as of 2026-08-21** (D-136): Olive Leaf, Black Forest, Cornsilk,
+  Light Caramel, Copper, chosen by the owner. `app/globals.css` is the **only** file that changed —
+  no `.tsx` reads a custom property. Phone width was measured for the first time behind a sign-in
+  (`.runtime/mobile-audit.spec.ts`, throwaway and gitignored); the first pass of PLAN task 28 is
+  applied and the remainder is listed there. **`DECISIONS.md` is at 83% of its budget** and was at
+  72% two days earlier — the next archive boundary is nearer than it looks.
+- **Bulk slip upload (D-135) shipped as `7be667e` and is deployed**, on the owner's explicit
+  authorization, 14 files. **The palette and the phone pass (D-136) are NOT committed** — the theme
+  was asked for, committing it was not. Uncommitted: `app/globals.css`, the four continuity docs, and
+  the throwaway `.runtime/` audit, which is gitignored and belongs to nobody. **`git status --short`
+  will show that alongside the two local-only config files**, and the rule for telling them apart is
+  the next bullet.
+- **`/code-review` was not run before `7be667e`.** It is user-triggered and an agent cannot invoke
+  it, so the commit went in on the gate plus a self-review. D-125 exists because that shortcut was
+  taken five times in one day; running it against that hash is still owed.
 - **`eslint.config.mjs` and `playwright.config.ts` are deliberately local-only and are never
   committed.** `git status --short` is what tells them apart from ordinary uncommitted work.
   `playwright.owner.config.ts` and `playwright.isolated.config.ts` **are** committed — only the bare
@@ -143,7 +150,7 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   reaches the browser and the CSP is unchanged.
 - **Gate at 2026-08-21**: Vitest **621 passed / 7 skipped across 31 files**, Playwright owner
   **31/31** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes,
-  `pnpm check:docs --strict` at **135 decisions, 134 traps**, tsc and ESLint clean. **pgTAP was not
+  `pnpm check:docs --strict` at **136 decisions, 136 traps**, tsc and ESLint clean. **pgTAP was not
   re-run and that is deliberate** — it stands at **266 across 8** from 2026-08-18, and neither the
   ledger view split nor bulk slip upload moved any SQL. **Read the skip count, not the total**: it
   is still 7, and a stopped Docker would turn the database-backed suites into skips while leaving

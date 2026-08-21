@@ -157,6 +157,7 @@ This file carries **D-120 onward**. Three settled ranges were relocated unchange
 - **D-133** — Both continuity budgets were acted on rather than raised, and the archive boundary excluded every open question
 - **D-134** — The traps budget is raised to 260 KB on the lookup-file argument, with the next breach owed a split rather than a third raise
 - **D-135** — Bulk slip upload files a slip unseen only when its date is exact, and the printed-date reader that made that possible had shipped uncalled
+- **D-136** — The palette becomes warm and the phone gets measured, which found two contrast failures no light-mode look would reveal
 
 ## D-120 — The card reader adopts Cloud Vision behind this app's own route, with no fallback, and slips stay on the device
 
@@ -484,3 +485,34 @@ The owner's reasoning was that a misread slip fails to pair and surfaces as unma
 - **A `FileList` is live, not a snapshot.** The batch handler cleared previous state first, and `clear()` sets `input.value = ""`, which **empties the `FileList` the handler is still reading**. Every chosen slip vanished and the form went on saying "Choose slip images…" — no error anywhere. Caught by the browser spec on its first run, not by any unit test, because it only exists once a real input holds real files.
 - A third was found in the guard rather than the code: the privacy assertion pinning the amount fill anchored on a trailing newline, and an injected second fill one line later passed straight through it. This is the `GOTCHAS.md` trap about a source-grep test passing over code that has moved out from under it, **hit while writing the test meant to prevent it**. It now compares the set of every `plainThb` call.
 - Evidence: `tests/slip-batch.test.ts` (16 tests over the date order, the disagreement refusal, the two-digit-year refusal, the window re-check, the amount grammar and the sign rule, with no browser and no engine), two `tests/e2e/owner-session.spec.ts` specs, and two new assertions in `tests/privacy.test.ts` — both **red-proved**, one by making the policy date a slip today and one by adding a second amount fill. The reader-client privacy check now **walks `app/` for `readImageWords(`** instead of naming two files, so a third reader form is covered the moment it is written. Vitest **621 passed / 7 skipped across 31 files**, Playwright owner **31/31** and isolated **18/18**, production build clean at eighteen `/api/v1/` routes, `pnpm check:docs --strict` at 134 decisions and 132 traps, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: no SQL moved. D-059 (which references carry a date), D-086 (the printed-date reader), D-031 (why a two-digit year is refused), D-110 (the UTC date fixed twice before), D-129 (the strict-grammar rule this inherits).
+
+## D-136 — The palette becomes warm and the phone gets measured, which found two contrast failures no light-mode look would reveal
+
+- Date: 2026-08-21
+- Status: **Accepted and done**, on the owner's choice of palette. Styling and a throwaway harness only — no application logic, no SQL, no route, no contract.
+- What changed: `app/globals.css` alone. **No `.tsx` reads a custom property**, which is what made a whole-app retheme a single-file edit and is worth knowing before anyone proposes a theming abstraction.
+
+### The palette, and the one problem it creates
+
+Olive Leaf `#606C38`, Black Forest `#283618`, Cornsilk `#FEFAE0`, Light Caramel `#DDA15E`, Copper `#BC6C25`.
+
+**It is entirely warm, and the old palette got its state separation for free from blue-versus-amber.** That separation has to be manufactured here: action is copper, verified is olive, provisional is caramel, and `--red` is pushed deliberately toward crimson so an error is not read as a link. In dark mode the two nearest — action and provisional — are pulled further apart than in light, because on a dark ground both otherwise collapse into one warm tan. **What makes near-neighbour hues tolerable rather than a defect is that colour was never the only carrier**: every one of those states also says what it is in words (D-123), and that rule is what this palette spends.
+
+**Contrast was computed, not eyeballed**, and two palette values were darkened until they cleared AA: `--muted` 5.9:1 and `--blue` 5.3:1 against `--paper`, `--red` 7.1:1, `--celadon-ink` on `--celadon` 6.3:1. Both browser suites' axe checks pass unchanged.
+
+### Two failures the retheme surfaced that predate it
+
+Neither is caused by the new palette; both were found by having to reason about every filled surface at once.
+
+- **`.skip-link` and `.brand-mark` were `color: white` over `background: var(--navy)`.** In dark mode `--navy` *is* the light colour, so both were white-on-cream — invisible. They take `var(--paper)` now, which is correct in both directions by construction rather than by two hardcoded values kept in step.
+- **`.stage-nav li.active span` and `.secondary-button:hover` are filled with `--blue` and inked white.** `.primary-button` already had a dark-mode override flipping that ink and **the other two did not** — white on the brightened action colour is 2.5:1, a clear failure. All three share the override now. **No amount of looking at this file in light mode would have shown either**, which is the general point: a token that inverts between schemes makes every hardcoded partner a latent failure in exactly one of them.
+
+### The phone measurement (PLAN task 28)
+
+**The committed owner config is desktop-only**, so every signed-in surface had never been rendered at phone width by anything. `.runtime/mobile-audit.spec.ts` signs in, walks the four routes at 390 CSS px, screenshots each, and reports elements wider than the viewport and controls under 44×44.
+
+**Nothing was broken.** No route pans sideways, and the single over-wide element is inside its own scroll container by design. What was wrong was legibility: a `12vw` heading floor rendering at **47px**, the first control on `/ledger` roughly **1,200px down** an 844px viewport, **every nav link 36px tall**, and the active-route marker rendering as a detached rounded box because an inset `box-shadow` is clipped by the link's own `border-radius`. All four are fixed; `/ledger` is ~13% shorter and every control clears 44px.
+
+**What the audit still cannot see, stated so it is not mistaken for coverage**: it signs in but loads no data, because nothing in this app loads until asked. So the ledger table, the captured-slips list and the batch worklist have **still never been seen at phone width with rows in them** — and the table is the surface most likely to read badly. That is the remainder of task 28, not a thing this entry closed.
+
+- Evidence: `app/globals.css`; `.runtime/mobile-audit.spec.ts` and its config, gitignored and throwaway; before-and-after screenshots at 390px. Playwright isolated **18/18** and owner **31/31**, both carrying the axe checks that hold this file to AA; Vitest **621 passed / 7 skipped across 31 files**, tsc and ESLint clean. D-123 (colour is never the only carrier), D-124 (the reduced-motion rule this file already honours).

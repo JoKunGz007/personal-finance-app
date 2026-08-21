@@ -1,19 +1,39 @@
 @import "tailwindcss";
 
+/*
+  The palette, and the one thing to know before changing a value here.
+  Olive Leaf #606C38, Black Forest #283618, Cornsilk #FEFAE0, Light Caramel #DDA15E, Copper #BC6C25.
+
+  **The token names describe roles, not hues, and that is deliberate** — `--blue` has not been blue
+  since 2026-08-21 and `--celadon` has never been the colour it is named after in dark mode. Renaming
+  them is a mechanical sweep of this file and nothing else (no `.tsx` reads a custom property), so it
+  is worth doing the next time this file is opened for something bigger. What must not happen is a
+  rename that stops halfway.
+
+  **Three states must stay separable by hue, because this palette is entirely warm** and the old one
+  got its separation for free from blue-versus-amber. Action is copper, verified is olive, provisional
+  is caramel. `--red` is deliberately pushed away from copper toward crimson so an error is not read
+  as a link. **Colour is never the only carrier** — every one of those states also says what it is in
+  words (D-123) — which is what makes near-neighbour hues tolerable rather than a defect.
+
+  Contrast against `--paper`, measured rather than eyeballed: `--muted` 5.9:1, `--blue` 5.3:1,
+  `--red` 7.1:1, `--celadon-ink` on `--celadon` 6.3:1. All clear AA for body text, which is what the
+  axe checks in the Playwright suites hold this file to.
+*/
 :root {
-  --mist: #eaf0f4;
-  --paper: #f8fbfc;
-  --paper-strong: #ffffff;
-  --navy: #102b46;
-  --muted: #526879;
-  --line: #c9d5dc;
-  --blue: #1769aa;
-  --blue-dark: #0f4f84;
-  --celadon: #bcdccc;
-  --celadon-ink: #174c3b;
-  --saffron: #d99519;
-  --saffron-wash: #fff2cf;
-  --red: #aa3a3a;
+  --mist: #f1ecd4;
+  --paper: #fefae0;
+  --paper-strong: #fffdf1;
+  --navy: #283618;
+  --muted: #5c6636;
+  --line: #ddd5b0;
+  --blue: #9c5518;
+  --blue-dark: #7f4412;
+  --celadon: #cbd6a5;
+  --celadon-ink: #3d4a1e;
+  --saffron: #dda15e;
+  --saffron-wash: #f8edd7;
+  --red: #9b2c2c;
   --radius: 6px;
   --font-body: "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
   --font-data: "IBM Plex Mono", "Cascadia Mono", monospace;
@@ -26,19 +46,19 @@ button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: wait; opacity: .65; }
 :focus-visible { outline: 3px solid var(--saffron); outline-offset: 3px; }
-.skip-link { position: fixed; z-index: 100; top: 12px; left: 12px; padding: 9px 14px; background: var(--navy); color: white; transform: translateY(-160%); }
+.skip-link { position: fixed; z-index: 100; top: 12px; left: 12px; padding: 9px 14px; background: var(--navy); color: var(--paper); transform: translateY(-160%); }
 .skip-link:focus { transform: translateY(0); }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 .app-shell { min-height: 100vh; }
 
 .site-header { min-height: 76px; padding: 10px clamp(20px, 5vw, 76px); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 28px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 90%, transparent); }
 .brand { display: inline-flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
-.brand-mark { width: 36px; height: 36px; display: grid; place-items: center; color: white; background: var(--navy); font: 500 12px/1 var(--font-data); letter-spacing: .08em; }
+.brand-mark { width: 36px; height: 36px; display: grid; place-items: center; color: var(--paper); background: var(--navy); font: 500 12px/1 var(--font-data); letter-spacing: .08em; }
 .brand strong, .brand small { display: block; }
 .brand strong { font-weight: 600; letter-spacing: -.01em; }
 .brand small { margin-top: 1px; color: var(--muted); font: 400 10px/1.2 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 .privacy-chip { display: inline-flex; align-items: center; gap: 8px; color: var(--celadon-ink); font-size: 13px; font-weight: 500; }
-.privacy-chip i { width: 8px; height: 8px; border-radius: 50%; background: #278263; box-shadow: 0 0 0 4px color-mix(in srgb, var(--celadon) 55%, transparent); }
+.privacy-chip i { width: 8px; height: 8px; border-radius: 50%; background: #7d8c47; box-shadow: 0 0 0 4px color-mix(in srgb, var(--celadon) 55%, transparent); }
 
 /* One row of routes, since routing replaced the single page (PLAN task 19). Deliberately
    plain: this is a four-item ledger app, and anything that needed a disclosure pattern to
@@ -275,7 +295,7 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .statement-strip dt { color: var(--muted); font-size: 12px; }
 .statement-strip dd { margin: 5px 0 0; font: 500 clamp(14px, 1.5vw, 20px)/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
 .positive { color: var(--celadon-ink) !important; }
-.warning { margin-top: 22px; padding: 14px 16px; display: flex; gap: 18px; color: #60410b; border: 1px solid var(--saffron); background: var(--saffron-wash); font-size: 13px; }
+.warning { margin-top: 22px; padding: 14px 16px; display: flex; gap: 18px; color: #7a4a12; border: 1px solid var(--saffron); background: var(--saffron-wash); font-size: 13px; }
 .warning strong { white-space: nowrap; }
 .warning.error { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--paper)); }
 
@@ -302,19 +322,19 @@ td time, td strong, td span, td small { display: block; }
 td time { font: 500 13px/1.2 var(--font-data); }
 td small, td span { margin-top: 3px; color: var(--muted); font-size: 12px; }
 td strong { font-weight: 500; }
-td em { display: inline-block; margin-top: 5px; padding: 2px 6px; color: #60410b; background: var(--saffron-wash); font: normal 500 9px/1.3 var(--font-data); text-transform: uppercase; }
+td em { display: inline-block; margin-top: 5px; padding: 2px 6px; color: #7a4a12; background: var(--saffron-wash); font: normal 500 9px/1.3 var(--font-data); text-transform: uppercase; }
 td select { width: 100%; padding: 8px 26px 8px 9px; color: var(--navy); border: 1px solid var(--line); border-radius: 4px; background-color: var(--paper-strong); }
 .numeric { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .resync-row { box-shadow: inset 3px 0 var(--saffron); }
-.resync-label { color: #7a540d; font: 500 9px/1 var(--font-data); text-transform: uppercase; }
+.resync-label { color: #8a5518; font: 500 9px/1 var(--font-data); text-transform: uppercase; }
 .detail-button { padding: 7px 0; color: var(--blue); border: 0; border-bottom: 1px solid currentColor; background: transparent; font-size: 12px; }
 
 .backup-band { margin-bottom: 70px; padding: 28px 30px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, .7fr); align-items: end; gap: 48px; color: var(--celadon-ink); border: 1px solid #86b9a2; background: color-mix(in srgb, var(--celadon) 55%, var(--paper)); }
-.backup-band.stale { color: #60410b; border-color: var(--saffron); background: var(--saffron-wash); }
+.backup-band.stale { color: #7a4a12; border-color: var(--saffron); background: var(--saffron-wash); }
 .backup-band h2 { font-size: 27px; }
 .backup-form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; }
 .backup-button { color: var(--paper-strong); border: 1px solid var(--celadon-ink); background: var(--celadon-ink); }
-.stale .backup-button { border-color: #60410b; background: #60410b; }
+.stale .backup-button { border-color: #7a4a12; background: #7a4a12; }
 footer { padding: 25px clamp(20px, 5vw, 76px); display: flex; justify-content: space-between; color: var(--muted); border-top: 1px solid var(--line); background: var(--paper); font-size: 12px; }
 footer span { color: var(--navy); font-weight: 600; }
 footer p { margin: 0; }
@@ -343,7 +363,7 @@ footer p { margin: 0; }
    wash. Saffron is already this app's "not settled yet" signal (a stale backup). */
 .provisional-row { background: color-mix(in srgb, var(--saffron-wash) 55%, transparent); }
 .provisional-row td:first-child { box-shadow: inset 3px 0 var(--saffron); }
-.verified-row td:first-child { box-shadow: inset 3px 0 #278263; }
+.verified-row td:first-child { box-shadow: inset 3px 0 #606c38; }
 /* Cash is the owner's record too, and deliberately not saffron: saffron is this app's "not
    settled yet", and a cash payment is settled — it simply has no bank behind it and never
    will. A rule without a wash says "owner's record, complete" rather than "waiting". */
@@ -364,8 +384,8 @@ footer p { margin: 0; }
 /* Five states, and the row says which in words rather than by colour alone — the difference
    between the bank's record and the owner's is the most important thing this table says. */
 .status-chip { display: inline-block; padding: 3px 7px; border: 1px solid currentColor; border-radius: 3px; font: 500 9px/1.35 var(--font-data); font-style: normal; text-transform: uppercase; letter-spacing: .05em; }
-.status-chip.verified { color: #1d6a52; }
-.status-chip.awaiting { color: #60410b; }
+.status-chip.verified { color: #4a5a24; }
+.status-chip.awaiting { color: #7a4a12; }
 .status-chip.needs-review { color: var(--red); }
 .status-chip.cash { color: var(--muted); }
 .status-none { color: var(--muted); }
@@ -457,13 +477,56 @@ footer p { margin: 0; }
   .site-header { height: auto; min-height: 68px; padding-block: 12px; }
   .privacy-chip { max-width: 130px; font-size: 11px; }
   .site-nav { order: 3; flex-basis: 100%; }
-  .site-nav a { padding: 8px 10px; font-size: 13px; }
   .stage-nav { overflow-x: auto; }
   .stage-nav ol { min-width: 810px; }
   main { width: calc(100% - 32px); }
-  .intro { padding: 48px 0 34px; }
-  h1 { font-size: clamp(38px, 12vw, 58px); }
+
+  /*
+    PLAN task 28, measured at 390 CSS px rather than guessed (2026-08-21). The audit that
+    produced these is `.runtime/mobile-audit.spec.ts` — throwaway, and re-runnable.
+
+    **Nothing here fixes a broken layout, because nothing was broken.** No route pans sideways at
+    this width; the one element wider than the viewport is `.stage-nav ol`, which is inside its own
+    `overflow-x: auto` and is meant to. What was wrong is that the page *reads* badly — which is
+    exactly the observation the task was opened on, and why it stayed unscoped until something
+    looked at it.
+  */
+
+  /* **A 47px heading eats a quarter of a phone screen before a word of content.** `12vw` was
+     written against a desktop clamp where the floor never bound; at 390px the floor is what runs,
+     and it was set for a tablet. The ceiling still governs everything above this breakpoint. */
+  .intro { padding: 34px 0 26px; }
+  h1 { font-size: clamp(29px, 8.4vw, 40px); }
+  .intro-copy p { font-size: 15px; }
+
+  /* **The first control on `/ledger` sat roughly 1,200px down**, behind an intro and a bench
+     paragraph, on a viewport 844px tall. The prose is worth reading once and is in the way every
+     time after that, so at this width it tightens rather than disappears — deleting it would take
+     the explanation away from the one screen where a first-time reader is most likely to be. */
   .bench-heading { grid-template-columns: 1fr; gap: 0; }
+  .bench-heading p, .slip-bench > .bench-heading p, .batch-bench > .bench-heading p { font-size: 14px; }
+  .slip-bench, .cash-bench, .card-bench, .batch-bench { padding: 24px 0 30px; }
+
+  /*
+    **Tap targets, measured: every nav link was 36px tall and "Sign out" was 49×20.** Both platform
+    guidelines settle on 44×44, and this app is used from a phone by design — share-to-app exists
+    for no other reason.
+
+    The two links inside sentences expand by `padding-block` cancelled with a negative
+    `margin-block`, so the hit area grows without the text moving. Giving them a real height would
+    re-space the line they sit in, which is the version of this fix that looks right in the CSS and
+    wrong on the screen.
+  */
+  .site-nav a { min-height: 44px; padding: 11px 12px; display: flex; align-items: center; font-size: 13px; }
+  .brand { padding-block: 4px; }
+  .skip-link { padding: 13px 16px; }
+  .link-button { padding-block: 12px; margin-block: -12px; }
+
+  /* **The active-route marker rendered as a detached rounded box.** `box-shadow: inset 0 -2px` is
+     clipped to the link's `border-radius`, so the underline curved up at both ends and read as a
+     stray outline rather than as an underline. A bottom border is the same two pixels and follows
+     the box. */
+  .site-nav a.current { box-shadow: none; border-bottom: 2px solid var(--blue); border-radius: 0; }
   .import-controls { grid-template-columns: 1fr; }
   .binding-controls { grid-template-columns: 1fr; }
   .slip-fields { grid-template-columns: 1fr; }
@@ -497,30 +560,38 @@ footer p { margin: 0; }
 }
 
 @media (prefers-color-scheme: dark) {
+  /* Black Forest deepened into a ground, with Cornsilk as the ink. **Action and provisional are
+     pulled further apart here than in light**: copper brightens toward orange and caramel lightens
+     toward gold, because on a dark ground the two collapse into one warm tan otherwise. */
   :root {
-    --mist: #0d1a27;
-    --paper: #122334;
-    --paper-strong: #172b3e;
-    --navy: #e7f0f5;
-    --muted: #9bb0bf;
-    --line: #304759;
-    --blue: #58a8e6;
-    --blue-dark: #7abcf0;
-    --celadon: #285f4e;
-    --celadon-ink: #a8ddc8;
-    --saffron: #e6a93b;
-    --saffron-wash: #3f3218;
-    --red: #ef8c8c;
+    --mist: #1b2113;
+    --paper: #232b19;
+    --paper-strong: #2b351e;
+    --navy: #f2eeda;
+    --muted: #aab588;
+    --line: #3f4a2c;
+    --blue: #e2914f;
+    --blue-dark: #f0a566;
+    --celadon: #45542a;
+    --celadon-ink: #c3d495;
+    --saffron: #d8b06a;
+    --saffron-wash: #3a2e18;
+    --red: #e58b7a;
   }
-  .primary-button { color: #071522; }
-  .brand-mark { color: #071522; background: var(--blue); }
-  .warning, .backup-band.stale { color: #f3cf84; }
-  /* The light-mode brown reads as near-black on this background; the same amber the stale
+  /* **Every surface filled with `--blue` needs its ink flipped here, not just the button.** In light
+     the action colour is a deep copper and white sits on it at 5.6:1; in dark it brightens to
+     #e2914f, where white drops to 2.5:1 and fails outright. `.primary-button` already had this
+     override and the other two filled surfaces did not — they were white-on-bright-tan before
+     2026-08-21, which no light-mode look at this file would ever reveal. */
+  .primary-button, .stage-nav li.active span, .secondary-button:hover { color: #1b2113; }
+  .brand-mark { color: #1b2113; background: var(--blue); }
+  .warning, .backup-band.stale { color: #eccb8e; }
+  /* The light-mode brown reads as near-black on this background; the same gold the stale
      backup band uses in dark carries the "not settled yet" meaning legibly. */
-  .status-chip.awaiting { color: #f3cf84; }
-  .status-chip.verified { color: #7fd0b2; }
-  .verified-row td:first-child { box-shadow: inset 3px 0 #7fd0b2; }
-  .stale .backup-button { color: #211707; border-color: var(--saffron); background: var(--saffron); }
+  .status-chip.awaiting { color: #eccb8e; }
+  .status-chip.verified { color: #bcd08c; }
+  .verified-row td:first-child { box-shadow: inset 3px 0 #bcd08c; }
+  .stale .backup-button { color: #1f1a0c; border-color: var(--saffron); background: var(--saffron); }
   .detail-dialog { border-color: var(--line); }
 }
 
