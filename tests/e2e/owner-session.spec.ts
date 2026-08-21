@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { bangkokToday } from "../../lib/dates";
 import { formatThb } from "../../lib/money";
-import { buildSlipQrPng, KBANK_SLIP, KTB_SLIP, KTB_SLIP_DATED, SCB_SLIP } from "../fixtures/synthetic-slip";
+import { buildSlipQrPng, KBANK_SLIP, KTB_SLIP, KTB_SLIP_DATED, SCB_SLIP, type SlipFixture } from "../fixtures/synthetic-slip";
 import { validStatement } from "../fixtures/krungthai-layout-v1";
 import { kbankStatement, scbStatement } from "../fixtures/statement-layouts";
 import { buildStatementPdf } from "../fixtures/synthetic-pdf";
@@ -645,7 +646,12 @@ test("fills the date from the QR when the reference carries one, and says so", a
   await signIn(page, "/slips");
   const bench = page.locator(".slip-bench");
   const date = bench.getByLabel("Date", { exact: true });
-  const today = new Date().toISOString().slice(0, 10);
+  // **`bangkokToday`, not `toISOString`.** The form's fallback moved to it when the slip form
+  // finally got the fix D-110 applied to the cash and card forms and missed here, and this
+  // assertion is the reason it has to move with it: `toISOString` is UTC, so between midnight and
+  // 07:00 Bangkok the two disagree and this test would have failed for seven hours a day —
+  // reported as a broken date fallback rather than as a stale expectation.
+  const today = bangkokToday();
 
   await chooseSlipImage(page, SCB_SLIP);
   await expect(date).toHaveValue(SCB_SLIP.reference.slice(0, 8).replace(/(\d{4})(\d{2})(\d{2})/u, "$1-$2-$3"));
@@ -663,6 +669,104 @@ test("fills the date from the QR when the reference carries one, and says so", a
   await chooseSlipImage(page, KBANK_SLIP);
   await expect(date).toHaveValue(today);
   await expect(bench.getByText(/carries no date, so today is filled in/)).toBeVisible();
+});
+
+// Bulk slip upload (PLAN task 39, D-135).
+//
+// **What this covers that no unit test can**: many files through one input, the worklist that
+// results, and the fact that a slip the reader could not read stays in front of the owner instead
+// of being filed. Both browser configs pin `GOOGLE_VISION_KEY` empty (D-129), so
+// `POST /api/v1/ocr/read` answers 503 here — which makes this the *reader-unavailable* path, and
+// that is the more valuable one to hold in a browser. **Nothing may be captured unseen when the
+// reader is down**, and this is what proves it.
+//
+// The classification itself — QR date, printed date, the disagreement refusal, the amount grammar —
+// is `tests/slip-batch.test.ts`, where it needs no browser and no third party.
+async function chooseBatchImages(page: import("@playwright/test").Page, slips: readonly SlipFixture[]) {
+  await page.locator('.batch-bench input[type="file"]').setInputFiles(
+    await Promise.all(slips.map(async (slip, index) => ({
+      name: `slip-${index}.png`,
+      mimeType: "image/png",
+      buffer: await buildSlipQrPng(slip)
+    })))
+  );
+}
+
+test("reads many slips at once, files none unseen, and captures the ones filled in", async ({ page }) => {
+  await signIn(page, "/slips");
+  const bench = page.locator(".batch-bench");
+
+  await chooseBatchImages(page, [SCB_SLIP, KTB_SLIP]);
+  // Nothing has left the device yet, and the form says so before the button is pressed.
+  await expect(bench.getByText("2 slips chosen. Nothing has been read or sent yet.")).toBeVisible();
+
+  await bench.getByRole("button", { name: "Read these slips" }).click();
+
+  const rows = bench.locator(".batch-row");
+  await expect(rows).toHaveCount(2);
+  // Identity came from the QR on this device, so it is displayed even though the reader failed.
+  await expect(bench.getByText(SCB_SLIP.reference)).toBeVisible({ timeout: 30_000 });
+  await expect(bench.getByText(KTB_SLIP.reference)).toBeVisible();
+
+  // The property this spec exists for. The reader is unavailable, so both slips are in front of
+  // the owner and neither is capturable — a bulk form that filed them with a guessed amount or
+  // today's date would still look like it had worked.
+  await expect(rows.first().getByText("needs a value")).toBeVisible();
+  await expect(rows.nth(1).getByText("needs a value")).toBeVisible();
+  await expect(bench.getByRole("button", { name: /^Capture / })).toBeDisabled();
+
+  for (const [index, amount, date] of [[0, "1,250.75", "2026-07-20"], [1, "500.00", "2026-01-09"]] as const) {
+    await rows.nth(index).getByLabel("Amount (THB)").fill(amount);
+    await rows.nth(index).getByLabel("Date", { exact: true }).fill(date);
+  }
+
+  await expect(bench.getByRole("button", { name: "Capture 2 slips" })).toBeEnabled();
+  await bench.getByRole("button", { name: "Capture 2 slips" }).click();
+
+  await expect(rows.first().getByText("captured")).toBeVisible({ timeout: 30_000 });
+  await expect(rows.nth(1).getByText("captured")).toBeVisible();
+
+  // The ledger itself, not the chips. A status saying "captured" can be true of a page that
+  // stored nothing, which is the trap PLAN task 17 recorded.
+  const owner = ownerId();
+  const stored = psql(`
+    select kind || ' ' || amount_minor || ' ' || bank_code || ' ' || occurred_on
+    from public.slips where owner_id = '${owner}' order by occurred_on;
+  `);
+  expect(stored.ok, stored.output).toBe(true);
+  // The batch's one direction applied to both, and negative because "money out" is the default.
+  expect(stored.output).toContain("withdrawal -50000 KTB 2026-01-09");
+  expect(stored.output).toContain("withdrawal -125075 SCB 2026-07-20");
+
+  // Provisional means provisional: nothing reached the authoritative ledger.
+  const authoritative = psql(`select count(*) from public.source_transactions where owner_id = '${owner}';`);
+  expect(authoritative.output.trim()).toContain("0");
+});
+
+test("re-running a batch over the same slips writes no second row", async ({ page }) => {
+  // The property that makes a backlog safe to retry: a batch interrupted halfway can simply be run
+  // again over the whole folder. `capture_slip` is idempotent on (owner, bank, reference)
+  // (migration 011), and this is that guarantee exercised through the form rather than the RPC.
+  await signIn(page, "/slips");
+  const bench = page.locator(".batch-bench");
+
+  for (const attempt of ["first", "second"] as const) {
+    await chooseBatchImages(page, [SCB_SLIP]);
+    await bench.getByRole("button", { name: "Read these slips" }).click();
+    const row = bench.locator(".batch-row").first();
+    await expect(row.getByText("needs a value")).toBeVisible({ timeout: 30_000 });
+    // A different amount the second time, so a row silently overwritten would be visible in the
+    // stored figure rather than hidden behind an identical one.
+    await row.getByLabel("Amount (THB)").fill(attempt === "first" ? "1,250.75" : "9,999.00");
+    await row.getByLabel("Date", { exact: true }).fill("2026-07-20");
+    await bench.getByRole("button", { name: "Capture 1 slip" }).click();
+    await expect(row.getByText(attempt === "first" ? "captured" : "already captured")).toBeVisible({ timeout: 30_000 });
+  }
+
+  const owner = ownerId();
+  const stored = psql(`select count(*), min(amount_minor) from public.slips where owner_id = '${owner}';`);
+  expect(stored.output).toContain("1");
+  expect(stored.output).toContain("-125075");
 });
 
 // Reconciliation in the ledger view (PLAN task 22, D-063). The gap the owner found by using

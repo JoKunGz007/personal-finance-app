@@ -165,6 +165,8 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A source-grep test matches the comment that explains its own rule
 - A `Proxy` over a `Request` throws on `headers` unless the target is the receiver
 - A size bound checked after the body is read bounds nothing
+- A `FileList` is a live view of its input, so resetting the input empties it mid-handler
+- Shipped, tested code with no caller looks identical to code that does not exist
 
 ## Traps
 
@@ -1142,3 +1144,17 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: `await request.arrayBuffer()` buffers the whole body before returning, so a `byteLength` test after it runs when the cost has already been paid. The code looks like a guard and reads like one in review, because the constant and the 413 are both right there.
 - Avoid: check the declared `Content-Length` **before** reading, and keep the post-read check for the chunked and lying cases. Where neither is enough, stream and count. And make the comment say what the bound actually protects — in this repo it protects the *third party* from the app, not the app from its caller, and the first draft claimed otherwise.
 - Verify: 2026-08-17 (D-125). `app/api/v1/notification-cards/read/route.ts` now refuses from the header first, with a test asserting the body was never read.
+
+## A `FileList` is a live view of its input, so resetting the input empties it mid-handler
+
+- Symptom: a multi-file picker silently accepts nothing. Files are chosen, the change handler runs, and the form goes on saying "Choose slip images…" — no error, no console line, nothing to grep for. The handler *looks* correct on the page: it reads `event.target.files`, copies the array, and builds its rows from the copy.
+- Cause: `event.target.files` is a **live `FileList`**, a view onto the input rather than a snapshot of it. Anything that sets `input.value = ""` empties it, and clearing the input is exactly what a "start a fresh batch" reset does. So a handler shaped `reset(); const files = [...chosen];` reads zero files from a list that held several a line earlier. The single-file forms in this repo do not have the hazard, and that is what makes it easy to reproduce by copying one: they take `files?.[0]` — a `File` reference, which survives the reset — before their own reset runs.
+- Avoid: copy the list out **before** any reset, teardown or state clear: `const files = chosen ? [...chosen] : []` on the first line, then reset. The general rule is the part worth carrying: **a DOM live collection is not an argument, it is a query re-run on every access** — the same applies to `HTMLCollection` and to `NodeList` from `getElementsByTagName`.
+- Verify: 2026-08-21 (D-135), found by `tests/e2e/owner-session.spec.ts` § reads many slips at once on its first run. **No unit test could have caught it**: it needs a real `<input type="file">` holding real files, so it exists only in a browser.
+
+## Shipped, tested code with no caller looks identical to code that does not exist
+
+- Symptom: a feature is scoped, and sometimes descoped, around a limitation the repository had already removed. The handoff for bulk slip upload named the date fallback as the thing that made a backlog unfileable — while `readPrintedDate` in `lib/slip-ocr.ts` had read the date printed on a slip since 2026-08-10 (D-086), with 40 tests over it. Nothing in `app/` or `lib/` called it, so it was invisible to every way anyone looks at a working system.
+- Cause: a function built ahead of its caller passes the gate, appears in coverage, appears in the decision log as done, and never appears in a stack trace or a diff of the path being reasoned about. Both greps someone actually runs — the failing behaviour, and the module they are editing — miss it.
+- Avoid: before scoping around a limitation, grep the repo for the *capability* rather than the defect. `grep -rn "<function>" lib app` returning only its own test file is the signal, and it is worth a moment for any function a `docs/` contract or a decision entry describes as built. The cheaper habit: when a decision records a reader as built, record what calls it — or that nothing does yet, and why.
+- Verify: 2026-08-21 (D-135). `grep -rn "readPrintedDate" lib app` returned only `lib/slip-ocr.ts` itself before bulk upload, and the D-086 entry does not say so.

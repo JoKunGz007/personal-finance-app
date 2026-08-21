@@ -16,6 +16,11 @@ import { readSlipQr } from "@/lib/slip-qr";
 
 export const SLIP_KINDS = ["deposit", "withdrawal"] as const;
 
+// Named once because three surfaces reason about it — the capture form, the batch form and the
+// batch's sign rule — and a local `(typeof SLIP_KINDS)[number]` in each is three chances to widen
+// one of them without the others noticing.
+export type SlipKind = (typeof SLIP_KINDS)[number];
+
 // A slip is money moving today, not a statement covering a period. The window is generous
 // enough for a slip found in the camera roll weeks later and narrow enough that a Buddhist
 // year typed through unconverted — 543 years ahead — cannot pass. `capture_slip` enforces

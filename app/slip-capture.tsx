@@ -2,97 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
+import { detectAtScale, resolveDetector } from "@/lib/browser/qr-detector";
+import { bangkokToday } from "@/lib/dates";
 import { formatThb, parseThb, plainThb } from "@/lib/money";
 import { locateAmount, paddedCrop, proposeAmount, type Box } from "@/lib/slip-ocr";
 import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
 import { type SlipIdentity } from "@/lib/slip-qr";
-import { slipDateFromReference, slipDateWindow, SLIP_KINDS } from "@/lib/slips";
+import { slipDateFromReference, slipDateWindow, type SlipKind } from "@/lib/slips";
 import { readError } from "@/lib/wire";
 
 type Category = { id: string; name: string; archived: boolean };
-type Kind = (typeof SLIP_KINDS)[number];
-
-type BarcodeDetectorLike = { detect(source: ImageBitmapSource): Promise<Array<{ rawValue: string }>> };
-type BarcodeDetectorConstructor = {
-  new (options?: { formats?: string[] }): BarcodeDetectorLike;
-  getSupportedFormats?: () => Promise<string[]>;
-};
-
-// Resolves a QR reader, preferring the platform's own.
-//
-// The native detector is the better choice **where it exists**: nothing to download, and
-// it is backed by the platform on the device this feature is actually for. It does not
-// exist everywhere. Chrome implements the Shape Detection barcode backend on Android,
-// macOS and ChromeOS and **not on Windows or Linux desktop** — measured on this machine
-// across bundled Chromium and installed Chrome, headless and headed, with the relevant
-// flags, all absent (D-057). Depending on it alone meant slip capture could not run, or be
-// verified, on the owner's own computer.
-//
-// The fallback is `import()`ed rather than imported at module scope, so a platform that
-// has a native detector never downloads the ~1.1 MB WebAssembly reader. That is what makes
-// its size acceptable; putting it in the bundle unconditionally would tax the phone, which
-// is the one device that does not need it.
-async function resolveDetector(): Promise<BarcodeDetectorLike | null> {
-  const native = (globalThis as { BarcodeDetector?: BarcodeDetectorConstructor }).BarcodeDetector;
-  if (native) {
-    try {
-      // Constructing it is not proof it can read a QR: the constructor's presence and its
-      // format support are separate facts, so ask before trusting it.
-      const formats = await native.getSupportedFormats?.();
-      if (!formats || formats.includes("qr_code")) return new native({ formats: ["qr_code"] });
-    } catch {
-      // Fall through. A native detector that throws is not worth diagnosing here when a
-      // working reader is one dynamic import away.
-    }
-  }
-  try {
-    const { BarcodeDetector, prepareZXingModule } = await import("barcode-detector/ponyfill");
-    // Point the reader at our own copy of its WebAssembly binary. Without this it resolves
-    // the file relative to its bundled chunk — `/_next/static/chunks/zxing_reader.wasm` —
-    // which does not exist, so the fetch 404s and every decode returns nothing at all. The
-    // failure is silent, which is what makes it worth an explicit override rather than a
-    // default. `scripts/copy-zxing-wasm.mjs` puts the file there at build time, and the CSP
-    // permits it precisely because it is same-origin (D-057).
-    await prepareZXingModule({
-      overrides: {
-        locateFile: (path: string, prefix: string) => (path.endsWith(".wasm") ? "/zxing_reader.wasm" : `${prefix}${path}`)
-      },
-      fireImmediately: true
-    });
-    return new BarcodeDetector({ formats: ["qr_code"] });
-  } catch {
-    return null;
-  }
-}
-
-// Draws the image at `scale` and hands the result to the detector. The 2x pass is the
-// whole reason this indirection exists: D-053 measured that 3 of 23 real slips do not
-// decode at native resolution while the detector still finds the finder pattern, so a
-// single-pass reader silently loses 13% of them. `lib/slip-scan.ts` owns the ladder; this
-// only supplies pixels.
-async function detectAtScale(bitmap: ImageBitmap, detector: BarcodeDetectorLike, scale: number) {
-  const source = scale === 1
-    ? bitmap
-    : await (async () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(bitmap.width * scale);
-      canvas.height = Math.round(bitmap.height * scale);
-      const context = canvas.getContext("2d");
-      if (!context) return bitmap;
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      return canvas;
-    })();
-  try {
-    const found = await detector.detect(source as ImageBitmapSource);
-    return found.map((code) => code.rawValue).filter((value) => typeof value === "string" && value.length > 0);
-  } catch {
-    // A detector that throws on one scale must not abort the ladder — the next scale is
-    // exactly the case this is here to rescue.
-    return [];
-  }
-}
 
 // Cuts the located region out of the image and enlarges it, as a data URL.
 //
@@ -184,7 +103,7 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [kind, setKind] = useState<Kind>("withdrawal");
+  const [kind, setKind] = useState<SlipKind>("withdrawal");
   const [amount, setAmount] = useState("");
   const [occurredOn, setOccurredOn] = useState("");
   const [dateFromQr, setDateFromQr] = useState(false);
@@ -296,7 +215,12 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
       // back to today, which is right for a slip captured at the moment of payment.
       const fromQr = slipDateFromReference(result.identity.reference, window);
       setDateFromQr(fromQr !== null);
-      setOccurredOn(fromQr ?? new Date().toISOString().slice(0, 10));
+      // `bangkokToday`, not `toISOString`, which is UTC and names *yesterday* between midnight and
+      // 07:00 local. D-110 fixed exactly this in the cash and card forms and missed this one, so
+      // the slip form spent seven hours a day pre-filling a date one day early — quietly, because
+      // a plausible date in a filled box prompts nobody to check it, and because the one-day
+      // reconciliation window usually absorbs it and sometimes does not.
+      setOccurredOn(fromQr ?? bangkokToday());
       setStatus(result.scale === 2
         ? "Read after upscaling — this slip does not decode at its native resolution."
         : "Slip QR read. Confirm the amount from the image.");
@@ -549,7 +473,7 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
           <div className="slip-fields">
             <label>
               <span>Direction</span>
-              <select value={kind} onChange={(event) => setKind(event.target.value as Kind)}>
+              <select value={kind} onChange={(event) => setKind(event.target.value as SlipKind)}>
                 <option value="withdrawal">Money out</option>
                 <option value="deposit">Money in</option>
               </select>

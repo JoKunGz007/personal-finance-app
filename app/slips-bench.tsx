@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { CapturedSlips } from "@/app/captured-slips";
 import { NotificationCardCapture } from "@/app/notification-card-capture";
+import { SlipBatch } from "@/app/slip-batch";
 import { SlipCapture } from "@/app/slip-capture";
 import { slipListSchema, slipsInForce, type CapturedSlip } from "@/lib/slips";
 import { readError } from "@/lib/wire";
@@ -55,6 +56,11 @@ export function SlipsBench() {
   return (
     <>
       <SlipCapture onCaptured={() => { if (slips !== null) void load(); }} />
+      {/* The backlog form sits under the single-slip one and refreshes the same list on the same
+          terms. It is a sibling rather than a mode because the two disagree about the one default
+          that matters — a slip captured now may be dated today and a slip from a backlog may not,
+          and a backlog dated today can never pair with its statement row. */}
+      <SlipBatch onCaptured={() => { if (slips !== null) void load(); }} />
       {/* A card sits on this route rather than the ledger's, and the difference from cash is the
           reason. Cash is a ledger fact the moment it is typed and is never reconciled; a card is
           a bank transaction with a printed running balance, so like a slip it is **provisional

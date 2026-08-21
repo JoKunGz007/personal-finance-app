@@ -180,6 +180,33 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 /* The cash form's opening control sits where the slip bench's file picker does, so the two
    benches line up rather than each starting at a different indent. */
 .cash-bench > .secondary-button { margin-left: 167px; }
+
+/* Bulk slip upload. It shares the slip bench's indent and controls so the two line up, and keeps
+   its own class for the reason the cash bench does: a locator written for one bench must never
+   find the other, and both now hold a file input. The row list is deliberately plain — it is a
+   worklist, and a slip that needs nothing from the owner should take one line and no more. */
+.batch-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
+.batch-bench .status { margin: 18px 0 0 167px; color: var(--muted); font-size: 13px; }
+.batch-bench .status.error { color: var(--red); }
+.batch-direction { display: grid; gap: 7px; min-width: 190px; }
+.batch-direction > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.batch-direction select { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
+.batch-note { margin: 12px 0 0 167px; max-width: 70ch; }
+.batch-rows { margin: 22px 0 0 167px; padding: 0; max-width: 720px; list-style: none; border-top: 1px solid var(--line); }
+.batch-row { padding: 12px 0; display: grid; gap: 6px; border-bottom: 1px solid var(--line); }
+.batch-row-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.batch-file { color: var(--navy); font-size: 13px; word-break: break-all; }
+.batch-identity { margin: 0; color: var(--muted); font-size: 12px; }
+.batch-identity .mono { font-family: var(--font-data); word-break: break-all; }
+.batch-values { margin: 0; font-size: 13px; }
+.batch-values b { font-family: var(--font-data); font-weight: 500; }
+.batch-source { color: var(--muted); font-size: 12px; }
+.batch-reason { max-width: 70ch; }
+.batch-fix { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 12px; margin: 4px 0 2px; }
+.batch-fix label { display: grid; gap: 6px; }
+.batch-fix label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.batch-fix input { height: 42px; padding: 10px 12px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
+.batch-summary { margin: 20px 0 0 167px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; max-width: 720px; }
 .slip-bench .status, .slip-bench .notice { margin: 18px 0 0 167px; color: var(--muted); font-size: 13px; }
 .slip-bench .status.error { color: var(--red); }
 .cash-bench .status { margin: 0; color: var(--muted); font-size: 13px; }
@@ -414,6 +441,7 @@ footer p { margin: 0; }
   .slip-controls, .slip-form, .cash-bench .slip-form, .card-bench .slip-form { margin-left: 0; }
   .slip-bench .status, .slip-bench .notice { margin-left: 0; }
   .cash-bench > .secondary-button, .card-bench > .secondary-button { margin-left: 0; }
+  .batch-bench .status, .batch-note, .batch-rows, .batch-summary { margin-left: 0; }
   .or-rule { display: none; }
   .ledger-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .ledger-controls > button { grid-column: 1 / -1; }
@@ -439,6 +467,7 @@ footer p { margin: 0; }
   .import-controls { grid-template-columns: 1fr; }
   .binding-controls { grid-template-columns: 1fr; }
   .slip-fields { grid-template-columns: 1fr; }
+  .batch-fix { grid-template-columns: 1fr; }
   .slip-controls { flex-direction: column; align-items: stretch; }
   .password-control small { position: static; transform: none; }
   .review-heading { align-items: flex-start; flex-direction: column; }

@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-19.
+Last updated: 2026-08-21.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -92,15 +92,19 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **`main` was level with `origin/main` at `cba6769` before 2026-08-19's work, which is two commits
-  on top of it**: the ledger view split with the archive and the trap retirements (`d11066f`, D-132
-  and D-133, **verified Ready in the Vercel dashboard**), and the traps-budget raise (D-134).
-  **Read `git log` and `git status -sb` rather than trusting this sentence** — the second hash is
-  deliberately not written here, because a hash typed before the commit that produces it is the
-  exact class of stale line commit `a2efdc7` was about. Both pushes **are** production deployments.
-- **After it, the working tree should hold the two local-only config files and nothing else.**
-  `git status --short` is the only thing that tells them from ordinary work. If it shows more, the
-  commit did not include everything it should have.
+- **`main` was level with `origin/main` at `77f9f99` when 2026-08-21's work began, and still is.**
+  2026-08-19 put two commits on top of `cba6769`: the ledger view split with the archive and the
+  trap retirements (`d11066f`, D-132 and D-133, **verified Ready in the Vercel dashboard**), and the
+  traps-budget raise (`77f9f99`, D-134). **Read `git log` and `git status -sb` rather than trusting
+  this sentence.** Both pushes **are** production deployments.
+- **Bulk slip upload (D-135) is built and is UNCOMMITTED.** Committing was neither asked for nor
+  granted, and in this repository committing to `main` is deploying. Ten files: `lib/slip-batch.ts`,
+  `app/slip-batch.tsx`, `lib/browser/qr-detector.ts` and `tests/slip-batch.test.ts` are new; the
+  edits are to `app/slip-capture.tsx`, `app/slips-bench.tsx`, `app/globals.css`, `lib/slips.ts`,
+  `tests/privacy.test.ts` and `tests/e2e/owner-session.spec.ts`, plus the continuity docs.
+  **`git status --short` will show all of that alongside the two local-only config files** — the
+  rule for telling them apart is the next bullet, and it is doing real work now rather than
+  distinguishing two files from nothing.
 - **`eslint.config.mjs` and `playwright.config.ts` are deliberately local-only and are never
   committed.** `git status --short` is what tells them apart from ordinary uncommitted work.
   `playwright.owner.config.ts` and `playwright.isolated.config.ts` **are** committed — only the bare
@@ -130,18 +134,28 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   only its length (39) if presence must be proven. **Shells spawned by tools do not inherit it — but
   `next start` does**, which is how a browser spec made a real Vision call on 2026-08-18 (D-129).
   Both committed Playwright configs now pin it empty.
-- **Both capture readers call Google Cloud Vision** through `POST /api/v1/ocr/read` (D-120, D-129).
+- **Three capture surfaces now call Google Cloud Vision** through `POST /api/v1/ocr/read` — the card
+  form, the single-slip form and bulk slip upload (D-120, D-129, D-135). **The batch is the one that
+  can spend without anyone watching**: one read per slip, up to fifty per batch, so a mistaken drop
+  of a camera roll is a real bill. That cap is in `app/slip-batch.tsx` and is the only thing bounding
+  it. Nothing is sent until the owner presses **Read these slips**.
   **Statement import is the only path left that reads entirely on the device.** The key never
   reaches the browser and the CSP is unchanged.
-- **Gate at 2026-08-19**: Vitest **604 passed / 7 skipped across 30 files**, Playwright owner
-  **29/29** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes,
-  `pnpm check:docs --strict` at **134 decisions, 132 traps**. **pgTAP was not re-run and that is
-  deliberate** — it stands at **266 across 8** from 2026-08-18, and the day's work moved no SQL.
-  The owner suite ran **three times**: a baseline before the ledger view was touched and once after
-  each extraction step, which is the only thing that proves the split changed no behaviour (D-132).
-  **The 2026-08-18 flake did not recur** in any of the three — `owner-access.spec.ts`'s
-  returning-owner TOTP challenge failed once that day and passed on an immediate re-run. Still
-  undiagnosed, now unreproduced.
+- **Gate at 2026-08-21**: Vitest **621 passed / 7 skipped across 31 files**, Playwright owner
+  **31/31** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes,
+  `pnpm check:docs --strict` at **135 decisions, 134 traps**, tsc and ESLint clean. **pgTAP was not
+  re-run and that is deliberate** — it stands at **266 across 8** from 2026-08-18, and neither the
+  ledger view split nor bulk slip upload moved any SQL. **Read the skip count, not the total**: it
+  is still 7, and a stopped Docker would turn the database-backed suites into skips while leaving
+  the totals looking the same.
+- **Docker had to be started by hand at the beginning of 2026-08-21's session**, and a full Vitest
+  run launched while it was still coming up reported **9 failures in `tests/slip-match-route.test.ts`
+  that were purely the race** — every one passed on an immediate re-run against a settled database.
+  Worth knowing before diagnosing anything: check `docker ps` first, and re-run once before
+  believing a database-backed failure.
+- **The 2026-08-18 TOTP flake has not recurred** in any run since. `owner-access.spec.ts`'s
+  returning-owner challenge failed once that day and passed on an immediate re-run. Still
+  undiagnosed, now unreproduced across several full owner runs.
 - **Both budgets were dealt with on 2026-08-19, and by different means on purpose.**
   `DECISIONS.md` is **84 KB/117 KB (72%)**, down from 90%, because **D-114 … D-119** were archived
   to `docs/decisions/ARCHIVE-D-114-D-119.md`; it now carries **D-120 onward** (D-133).
@@ -166,8 +180,12 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   `node scripts/recovery-destination.mjs up` starts and migrates it, `down` discards it. It receives
   no migration automatically — run `up` again after adding one, or the portability test fails on a
   missing relation rather than on anything real. `tests/recovery-portability.test.ts` **skips**
-  without it and the Vitest totals read the same either way, so **read its named line, never the
-  totals**.
+  without it and the Vitest totals read the same either way, so **read its named lines, never the
+  totals**. **It is up and on migration 020 as of 2026-08-21**, read from
+  `supabase_migrations.schema_migrations` in its own container, and its four named lines passed that
+  day — which retires the earlier note that it was stale at 017. The fifth test is the "not
+  verified" placeholder and **skips when the destination is up**, so a run where that one *reports*
+  is the run that proved nothing.
 
 ## Live hazards on this machine
 
