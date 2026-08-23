@@ -775,8 +775,14 @@ describe("privacy guardrails", () => {
     // later slipped straight past it — the trap `GOTCHAS.md` records as a source-grep test passing
     // over code that has moved out from under it, hit again while writing the test meant to prevent
     // it. The set is what matters: one call, and its argument is the strict grammar's own value.
+    // **Two fills now, and the count is not the invariant — the source is.** A review row carries
+    // whatever resolved, so an amount that passed the grammar is pre-filled even when the *date* is
+    // the half that failed; that is a second call site, not a second grammar. What must stay true
+    // is that every fill takes `classifySlip`'s own value and nothing else, so this asserts the set
+    // of distinct arguments rather than pinning how many times it appears.
     const fills = [...form.matchAll(/plainThb\(([^)]*)\)/gu)].map((match) => match[1]!);
-    expect(fills, "a row's amount is filled exactly once, from the strict grammar's own value")
+    expect(fills.length, "the component must fill a row's amount somewhere").toBeGreaterThan(0);
+    expect([...new Set(fills)], "every fill takes the strict grammar's own value and nothing else")
       .toEqual(["verdict.amountMinor"]);
 
     // And the function that fills it holds no grammar of its own — no lenient parse, no regex over

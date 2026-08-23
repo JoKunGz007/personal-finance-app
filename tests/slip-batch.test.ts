@@ -234,6 +234,89 @@ describe("classifying one slip in a batch", () => {
   });
 });
 
+describe("what a review verdict carries besides its reason", () => {
+  // **A slip goes to review because one value could not be established, not because none could.**
+  // Blanking the row threw away work the app had already done — most sharply the date, which comes
+  // out of the QR's CRC-covered reference and never touches a recognised word (D-059). Across a
+  // batch that meant hand-typing the one value this module says can never pair and never
+  // self-corrects.
+
+  it("keeps the QR's date when the reader could not be reached at all", () => {
+    const verdict = classifySlip({
+      reference: scbReference("20260714"),
+      bankCode: "SCB",
+      words: null,
+      readerRefusal: "The reader could not be reached.",
+      window: WINDOW,
+      today: TODAY
+    });
+    expect(verdict.status).toBe("review");
+    // The amount is genuinely unknown — nothing was recognised — but the date never depended on
+    // that, and this is the case the whole change exists for.
+    expect(verdict.status === "review" && verdict.amountMinor).toBeNull();
+    expect(verdict.status === "review" && verdict.date?.occurredOn).toBe("2026-07-14");
+    expect(verdict.status === "review" && verdict.date?.source).toBe("qr");
+  });
+
+  it("keeps the QR's date when the amount was read but refused the grammar", () => {
+    const verdict = classifySlip({
+      reference: scbReference("20260714"),
+      bankCode: "SCB",
+      words: slipWords({ amount: "not-an-amount" }),
+      readerRefusal: null,
+      window: WINDOW,
+      today: TODAY
+    });
+    expect(verdict.status).toBe("review");
+    expect(verdict.status === "review" && verdict.amountMinor).toBeNull();
+    expect(verdict.status === "review" && verdict.date?.occurredOn).toBe("2026-07-14");
+  });
+
+  it("keeps an amount that passed the strict grammar when the date is the half that failed", () => {
+    // The converse, and it matters for KBANK, whose reference carries no date and whose two-digit
+    // printed year is refused outright (D-031). The amount is still exactly what was read.
+    const verdict = classifySlip({
+      reference: "AB12CD34EF56GH78",
+      bankCode: "KTB",
+      words: slipWords({ printed: null }),
+      readerRefusal: null,
+      window: WINDOW,
+      today: TODAY
+    });
+    expect(verdict.status).toBe("review");
+    expect(verdict.status === "review" && verdict.date).toBeNull();
+    expect(verdict.status === "review" && verdict.amountMinor).toBe("125000");
+  });
+
+  it("carries neither when neither could be established", () => {
+    const verdict = classifySlip({
+      reference: "AB12CD34EF56GH78",
+      bankCode: "KTB",
+      words: null,
+      readerRefusal: "The reader could not be reached.",
+      window: WINDOW,
+      today: TODAY
+    });
+    expect(verdict.status === "review" && verdict.date).toBeNull();
+    expect(verdict.status === "review" && verdict.amountMinor).toBeNull();
+  });
+
+  it("never pre-fills a date the two readings disagreed about", () => {
+    // The refusal that exists because nothing can say which is right. Carrying either one into the
+    // box would quietly pick a winner, which is the decision this module declines to make.
+    const verdict = classifySlip({
+      reference: scbReference("20260714"),
+      bankCode: "SCB",
+      words: slipWords({ printed: "15 ก.ค. 2569 - 09:05" }),
+      readerRefusal: null,
+      window: WINDOW,
+      today: TODAY
+    });
+    expect(verdict.status).toBe("review");
+    expect(verdict.status === "review" && verdict.date).toBeNull();
+  });
+});
+
 describe("applying the batch's direction", () => {
   // The same sign convention `slipCaptureSchema` cross-checks. A deposit filed as a withdrawal has
   // the opposite sign, can never pair with any statement row, and skews the totals until corrected
@@ -246,5 +329,14 @@ describe("applying the batch's direction", () => {
   it("takes the magnitude first, so a signed input cannot override the chosen direction", () => {
     expect(signedSlipAmount("-125000", "deposit")).toBe("125000");
     expect(signedSlipAmount("-125000", "withdrawal")).toBe("-125000");
+  });
+
+  it("refuses a non-canonical magnitude rather than coercing it to zero", () => {
+    // It used to answer `"0"` — a request that looks well-formed, renders as ฿0.00 on the row, and
+    // is refused by `slipCaptureSchema`'s sign cross-check at the far end. The doc claimed the
+    // caller refused it; the database was doing the refusing. Now the caller does.
+    expect(signedSlipAmount("100.00", "withdrawal")).toBeNull();
+    expect(signedSlipAmount("", "deposit")).toBeNull();
+    expect(signedSlipAmount("twelve", "deposit")).toBeNull();
   });
 });

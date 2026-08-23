@@ -171,6 +171,7 @@ What this file now holds is the continuity-hygiene arc and the current work: the
 - **D-139** — "Where did that card go" is answered in the result banner rather than under the form, because a one-time question must not buy permanent vertical space
 - **D-140** — The fourth archive boundary moves the whole Cloud Vision arc, because a shipped feature closed the question the third boundary was blocked on
 - **D-141** — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
+- **D-142** — The bulk slip form threw away work it had already done, and could not be told to try again
 
 ## D-130 — The continuity size guard measured lines while the files grew sideways, and reported green at 332 KB
 
@@ -505,3 +506,42 @@ The policy layer came through clean. **Five defects were in the component, and f
 **One efficiency finding was taken and one was declined.** Duplicate files were fully parsed before being discarded, though the digest that condemns them is computed before the worker starts; they are now skipped, and they still reach the plan carrying that digest, which is what keeps them `duplicate-file` rather than unreadable. **The two findings against `eslint.config.mjs` and `playwright.config.ts` were left alone**: both are the owner's deliberately local-only files, never committed, and one of the two is already recorded in `HANDOFF.md`.
 
 - Evidence: `lib/statement-batch.ts`, `app/statement-batch.tsx`, `app/import-bench.tsx`, `tests/statement-batch.test.ts`, `tests/privacy.test.ts`. Vitest **637 passed / 7 skipped across 32 files** — up 16 on 2026-08-21's 621/7, with the skip count back at its baseline. pgTAP **266 across 8**, Playwright isolated **18/18** and owner **31/31**, production build clean at **eighteen** `/api/v1/` routes, tsc and ESLint clean, `pnpm check:docs --strict` at 141 decisions and 140 traps. Re-run in full after the review fixes. **Phone width is measured for both batch worklists** by `.runtime/worklist-phone-audit.spec.ts` (throwaway): the statement worklist is clean at 390px, and the slip worklist does not overflow but carries two tap targets under 44px that predate this change. D-017 (binding is a user decision), D-043 (refusal over labelling), D-055 (the reordering warning this is built around), D-128/D-129 (device-only statement reading), D-135 (the bulk pattern this follows and where it deliberately differs).
+
+## D-142 — The bulk slip form threw away work it had already done, and could not be told to try again
+
+- Date: 2026-08-23
+- Status: **Accepted and done.** `lib/slip-batch.ts`, `app/slip-batch.tsx`, `tests/slip-batch.test.ts` (+6), `tests/privacy.test.ts` (one guard rewritten). **No SQL, no route, no contract change** — eighteen `/api/v1/` routes, every project on 020, backup contract v7.
+- Context: `/code-review` run against the two files `7be667e` added, discharging the debt D-125 records. Eight findings, four medium. The form had shipped and been in production since 2026-08-21.
+
+### The one theme, and it is not the one the findings were filed under
+
+**Four of the eight were the same defect wearing different clothes: a failure path that discards information rather than showing it, on a form whose failures cost money.** Bulk slip upload caps at fifty files precisely because every slip is a billed Cloud Vision read (D-135) — and every recovery path it offered was "discard the batch and read all fifty again".
+
+- A transient reader 503 or a momentary `createImageBitmap` failure left rows in `review`/`failed`, and `readAll` processed only `queued` rows. No `queued` rows remained, so the button was permanently disabled.
+- A network error on the capture POST set `refused`, which `rowIsSubmittable` excluded forever.
+- An unparsable 201 body fell to the outer `catch` and marked the row `refused` — **reporting as rejected a slip `capture_slip` had already written**, with no retry to reveal the truth and a summary line that under-reported the ledger.
+- And the sharpest: **when the reader was unreachable, `classifySlip` returned before `resolveSlipDate` ever ran.** But `slipDateFromReference` reads the date out of the QR's CRC-covered reference and never touches a recognised word (D-059). For SCB and the longer Krungthai variant the app **already held the exact date** and discarded it, making the owner hand-type across a whole batch the one value this module's own docstring calls unable to pair and unable to self-correct.
+
+### What changed
+
+`SlipBatchDecision`'s review branch now carries `date` and `amountMinor`, either of which may be null. **Neither field relaxes a rule** — each is the same value the ready path would have carried, so a pre-filled row is still a row the owner is looking at. The disagreement refusal (D-059) still pre-fills nothing: carrying either reading would quietly pick a winner, which is the decision this module declines to make.
+
+`readAll` claims `phase` **before** awaiting `resolveDetector()` and wraps the loop in `try/finally`. The await downloads ~1.1 MB of WebAssembly on any browser without a native `BarcodeDetector` (D-057); throughout that window every control was live, so a second press started a concurrent loop over the same snapshot and **sent every image to the metered reader twice**. `app/slip-capture.tsx` had always set its flag before the identical await. The `finally` closes the other half: a throw anywhere in the loop used to leave the phase at `reading` for good, disabling Discard along with everything else.
+
+`readAll` also reprocesses `failed` rows and `rowIsSubmittable` accepts `refused`. **Re-sending is safe by construction** — `capture_slip` writes nothing for a slip already in the ledger (migration 011), which is the same property that makes the whole batch re-runnable.
+
+`signedSlipAmount` returns `null` instead of `?? 0n`. It had been answering `"0"` for a non-canonical input — a request that looks well-formed, renders as ฿0.00 on the row, and is refused by `slipCaptureSchema`'s sign cross-check at the far end. **The docstring one line above claimed the caller refused it; the database was doing the refusing.** Now the claim is true.
+
+`dateWindow` is recomputed when a pass starts rather than pinned at mount, so a tab left open across midnight stops refusing a slip dated today.
+
+### A privacy guard had to be loosened, and the reasoning is the point
+
+`tests/privacy.test.ts` pinned `plainThb` to **exactly one** call site. Pre-filling a review row is a second, and both take `verdict.amountMinor`. **The count was never the invariant — the source is**: no machine-read digit may reach a stored value except through the strict grammar. The guard now asserts the set of *distinct arguments* is `["verdict.amountMinor"]` and that at least one fill exists. Pinning the count would have blocked a legitimate second fill while proving nothing extra; asserting the source catches the thing the guard exists for, including a fill site added later.
+
+### Consequences
+
+**Two findings were deliberately not actioned**, both naming `eslint.config.mjs` and `playwright.config.ts` — the owner's deliberately local-only files, never committed. One of the two (`webServer.timeout` absent for a cold `pnpm build && pnpm start`) is already recorded in `HANDOFF.md` § Live hazards.
+
+**A review of shipped code found more than a review of new code did**, and cheaply: eight findings against `7be667e`'s two files versus five against the same day's new work. D-125 exists because five commits shipped in one day without a review; this is the evidence for what that costs.
+
+- Evidence: `lib/slip-batch.ts`, `app/slip-batch.tsx`, `tests/slip-batch.test.ts`, `tests/privacy.test.ts`. Vitest **643 passed / 7 skipped across 32 files** (up 6, all in `tests/slip-batch.test.ts` covering the partial-verdict and refusal behaviour); Playwright owner **31/31** and isolated **18/18**; production build clean at **eighteen** `/api/v1/` routes; tsc and ESLint clean; `.runtime/worklist-phone-audit.spec.ts` still passes both worklists. **pgTAP was not re-run and that is deliberate** — it stands at 266 across 8 from earlier the same day and nothing here moves SQL. D-135 (the form this reviews), D-125 (the review debt this discharges), D-059 (the QR reference's date), D-057 (the WASM fallback behind the await), D-129 (the strict-grammar rule the guard protects).

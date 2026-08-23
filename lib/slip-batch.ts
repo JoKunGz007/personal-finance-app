@@ -99,7 +99,26 @@ export type SlipBatchDecision =
     /** The **magnitude**, in minor units. The direction supplies the sign at submit. */
     readonly amountMinor: MinorUnitString;
   }
-  | { readonly status: "review"; readonly reason: string };
+  | {
+    readonly status: "review";
+    readonly reason: string;
+    /**
+     * Whatever *did* resolve, so a review row starts from what is known rather than from blank.
+     *
+     * **A slip goes to review because one value could not be established, not because none
+     * could**, and the two most valuable cases are asymmetric. When the reader is unreachable the
+     * amount is unknown — but the date may not be, because `slipDateFromReference` reads it out of
+     * the QR's CRC-covered reference and never touches a recognised word (D-059). Discarding it
+     * made the owner hand-type, across a whole batch, the one value this module says can never
+     * pair and never self-corrects. The converse holds too: an amount that came through the strict
+     * grammar is still that amount when the date refuses.
+     *
+     * Null means genuinely not established. Neither field ever relaxes a rule — each is the same
+     * value the ready path would have carried.
+     */
+    readonly date: ResolvedSlipDate | null;
+    readonly amountMinor: MinorUnitString | null;
+  };
 
 const READER_UNAVAILABLE = "This slip could not be read, so its amount and date need typing in.";
 
@@ -129,23 +148,44 @@ export function classifySlip(input: {
   readonly window: { readonly earliest: string; readonly latest: string };
   readonly today: Date;
 }): SlipBatchDecision {
-  if (input.words === null) return { status: "review", reason: input.readerRefusal ?? READER_UNAVAILABLE };
+  // **Resolved first, and for the reader-unavailable case that is the whole point.** The QR
+  // reference carries the date under its own CRC for SCB and the longer Krungthai variant, so it
+  // is available whether or not a single word was recognised. Running this before the amount is
+  // what lets a review row pre-fill a date the app already holds.
+  const date = resolveSlipDate({
+    reference: input.reference,
+    // `resolveSlipDate` consults the printed line only as a fallback, and there is none to consult
+    // when the reader could not be reached. The QR half still answers.
+    words: input.words ?? [],
+    window: input.window,
+    today: input.today
+  });
+  const resolvedDate = date.ok ? date.date : null;
+
+  if (input.words === null) {
+    return { status: "review", reason: input.readerRefusal ?? READER_UNAVAILABLE, date: resolvedDate, amountMinor: null };
+  }
 
   const amount = proposeAmount(input.words, input.bankCode);
-  if (!amount.ok) return { status: "review", reason: amount.message };
+  if (!amount.ok) return { status: "review", reason: amount.message, date: resolvedDate, amountMinor: null };
 
   const magnitude = toMinorAmount(amount.value);
   // Defensive rather than expected: printed money carries no sign, so the grammar should never
   // produce one. Taking the magnitude means a slip can never be filed with the sign of whatever
   // the image happened to say instead of the sign the direction chose.
   if (magnitude === null || magnitude === 0n) {
-    return { status: "review", reason: "The amount read off this slip is not one this ledger can store." };
+    return {
+      status: "review",
+      reason: "The amount read off this slip is not one this ledger can store.",
+      date: resolvedDate,
+      amountMinor: null
+    };
   }
+  const amountMinor = (magnitude < 0n ? -magnitude : magnitude).toString();
 
-  const date = resolveSlipDate({ reference: input.reference, words: input.words, window: input.window, today: input.today });
-  if (!date.ok) return { status: "review", reason: date.reason };
+  if (!date.ok) return { status: "review", reason: date.reason, date: null, amountMinor };
 
-  return { status: "ready", date: date.date, amountMinor: (magnitude < 0n ? -magnitude : magnitude).toString() };
+  return { status: "ready", date: date.date, amountMinor };
 }
 
 /**
@@ -155,8 +195,14 @@ export function classifySlip(input: {
  * cross-checks: a withdrawal is negative, a deposit positive, and a mismatch is refused before the
  * request is built rather than by the database.
  */
-export function signedSlipAmount(amountMinor: MinorUnitString, kind: SlipKind): MinorUnitString {
-  const magnitude = toMinorAmount(amountMinor) ?? 0n;
+export function signedSlipAmount(amountMinor: MinorUnitString, kind: SlipKind): MinorUnitString | null {
+  const magnitude = toMinorAmount(amountMinor);
+  // **Refuses rather than coercing, which is what the paragraph above always claimed.** This read
+  // `?? 0n`, so a non-canonical input produced `"0"` — a request that looks well-formed, renders as
+  // ฿0.00 on the row, and is refused by `slipCaptureSchema`'s sign cross-check at the far end. The
+  // database was doing the refusing while the doc said the caller was. Null makes it the caller's,
+  // and the current callers all pass canonical strings, so nothing legitimate reaches this.
+  if (magnitude === null) return null;
   const positive = magnitude < 0n ? -magnitude : magnitude;
   return (kind === "withdrawal" ? -positive : positive).toString();
 }

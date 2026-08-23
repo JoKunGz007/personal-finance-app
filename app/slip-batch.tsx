@@ -65,7 +65,12 @@ function amountMagnitude(amount: string): bigint | null {
 }
 
 function rowIsSubmittable(row: BatchRow): boolean {
-  if (row.state !== "ready" && row.state !== "review") return false;
+  // **`refused` belongs here, and leaving it out made a transient failure permanent.** A network
+  // error on slip 30 of 50 set `refused`, which this excluded forever, so the only way back was to
+  // discard the batch and re-read every slip — fifty fresh paid reads to recover one failed POST.
+  // Re-sending is safe by construction: `capture_slip` writes nothing for a slip already in the
+  // ledger (migration 011), which is the same property that makes the whole batch re-runnable.
+  if (row.state !== "ready" && row.state !== "review" && row.state !== "refused") return false;
   if (!row.occurredOn || !row.identity || !row.payload) return false;
   return amountMagnitude(row.amount) !== null;
 }
@@ -134,7 +139,10 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
   const [error, setError] = useState<string | null>(null);
 
   const fileInput = useRef<HTMLInputElement>(null);
-  const dateWindow = useMemo(() => slipDateWindow(new Date()), []);
+  // **Recomputed when a pass starts, not pinned at mount.** `latest` is the day after the window
+  // was built, so a tab left open across midnight refused a slip dated today and the review row's
+  // `max` blocked the owner typing it. A backlog form is the one most likely to sit open for days.
+  const [dateWindow, setDateWindow] = useState(() => slipDateWindow(new Date()));
 
   const counts = useMemo(() => ({
     submittable: rows.filter(rowIsSubmittable).length,
@@ -194,7 +202,7 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
    * The detector is a parameter rather than resolved here, so the ~1.1 MB WebAssembly fallback is
    * downloaded once per batch instead of once per slip.
    */
-  async function readOne(row: BatchRow, detector: SlipQrReader) {
+  async function readOne(row: BatchRow, detector: SlipQrReader, dates: { earliest: string; latest: string }) {
     let bitmap: ImageBitmap;
     try {
       bitmap = await createImageBitmap(row.file);
@@ -225,7 +233,7 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
         bankCode: scanned.identity.bankCode,
         words: read.ok ? read.words : null,
         readerRefusal: read.ok ? null : read.why,
-        window: dateWindow,
+        window: dates,
         today: new Date()
       });
 
@@ -246,15 +254,21 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
         return;
       }
 
+      // **Whatever resolved is carried in, rather than blanking the row.** The reader being
+      // unreachable says nothing about the date: it comes out of the QR's CRC-covered reference
+      // and never touched a recognised word (D-059). Blanking it made the owner hand-type, across
+      // a whole batch, the one value `lib/slip-batch.ts` calls unable to pair and unable to
+      // self-correct. Neither field relaxes a rule — each is what the ready path would have
+      // carried — so a pre-filled row is still a row the owner is looking at.
       patch(row.id, {
         state: "review",
         identity: scanned.identity,
         payload: scanned.payload,
         reason: verdict.reason,
-        dateSource: null,
-        occurredOn: "",
-        occurredAtTime: null,
-        amount: ""
+        dateSource: verdict.date?.source ?? null,
+        occurredOn: verdict.date?.occurredOn ?? "",
+        occurredAtTime: verdict.date?.occurredAtTime ?? null,
+        amount: verdict.amountMinor === null ? "" : plainThb(verdict.amountMinor)
       });
     } catch {
       patch(row.id, { state: "failed", reason: "This slip could not be read." });
@@ -274,27 +288,43 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
    * review row.
    */
   async function readAll() {
-    const detector = await resolveDetector();
-    if (!detector) {
-      setError("No QR reader could be loaded in this browser.");
-      return;
-    }
-    const queued = rows.filter((row) => row.state === "queued");
+    // **The phase is claimed before the first await, and that ordering is the fix.** Resolving the
+    // detector downloads ~1.1 MB of WebAssembly on any browser without a native `BarcodeDetector`
+    // (D-057) — seconds on a cold connection, and every control stayed live throughout because
+    // `busy` derives from `phase`. A second press in that window started a concurrent loop over the
+    // same snapshot and sent every image to the metered reader twice; choosing new files mid-flight
+    // left the in-flight loop patching ids that the new selection can reuse. `app/slip-capture.tsx`
+    // has always set its flag before the identical await.
     setPhase("reading");
     setError(null);
-    setProgress({ done: 0, total: queued.length });
-    setStatus("Reading the slips. Each one is sent to Google Cloud Vision to have its amount read.");
+    const dates = slipDateWindow(new Date());
+    setDateWindow(dates);
+    try {
+      const detector = await resolveDetector();
+      if (!detector) {
+        setError("No QR reader could be loaded in this browser.");
+        return;
+      }
+      // Read after the await, not before: the owner may have been typing into a review row while
+      // the reader loaded, and a snapshot taken earlier would overwrite that.
+      const pending = rows.filter((row) => row.state === "queued" || row.state === "failed");
+      setProgress({ done: 0, total: pending.length });
+      setStatus("Reading the slips. Each one is sent to Google Cloud Vision to have its amount read.");
 
-    let done = 0;
-    for (const row of queued) {
-      patch(row.id, { state: "reading" });
-      await readOne(row, detector);
-      done += 1;
-      setProgress({ done, total: queued.length });
+      let done = 0;
+      for (const row of pending) {
+        patch(row.id, { state: "reading" });
+        await readOne(row, detector, dates);
+        done += 1;
+        setProgress({ done, total: pending.length });
+      }
+      setStatus("All slips read. Fill in the ones needing a value, then capture.");
+    } finally {
+      // **`finally`, so a throw anywhere in the loop cannot strand the form.** Without it the phase
+      // stayed `reading` for good, which disables Discard along with everything else and leaves a
+      // page reload as the only way out — after a batch that has already been paid for.
+      setPhase("idle");
     }
-
-    setPhase("idle");
-    setStatus("All slips read. Fill in the ones needing a value, then capture.");
   }
 
   /**
@@ -327,6 +357,13 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
   async function captureOne(row: BatchRow) {
     const magnitude = amountMagnitude(row.amount);
     if (magnitude === null || !row.identity || !row.payload) return;
+    // `signedSlipAmount` refuses a non-canonical magnitude rather than coercing it to zero, so the
+    // refusal is handled here instead of being sent and bounced by the database.
+    const signed = signedSlipAmount(magnitude.toString(), kind);
+    if (signed === null) {
+      patch(row.id, { state: "review", reason: "This amount is not one this ledger can store. Type it again." });
+      return;
+    }
     try {
       const response = await fetch("/api/v1/slips", {
         method: "POST",
@@ -337,7 +374,7 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
           bankQrCode: row.identity.bankQrCode,
           slipReference: row.identity.reference,
           kind,
-          amountMinor: signedSlipAmount(magnitude.toString(), kind),
+          amountMinor: signed,
           currency: "THB",
           occurredOn: row.occurredOn,
           occurredAtTime: row.occurredAtTime,
@@ -356,12 +393,21 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
         patch(row.id, { state: "refused", reason: readError(failure, "This slip could not be captured.") });
         return;
       }
-      const body = await response.json();
+      // **Guarded like the failure path, because the failure modes are not symmetric.** An
+      // unparsable 201 body means the slip *was* written — `capture_slip` had already committed —
+      // and falling to the outer catch marked it `refused`, reporting as rejected a slip that is
+      // in the ledger. The summary line then under-reports what was captured.
+      const body: unknown = await response.json().catch(() => null);
+      const captured = typeof body === "object" && body !== null && (body as { captured?: unknown }).captured === true;
+      if (body === null) {
+        patch(row.id, { state: "review", reason: "This slip was accepted but its confirmation could not be read. Check the ledger before capturing it again." });
+        return;
+      }
       // A slip already in the ledger is a plain outcome rather than an error — re-running a batch
       // over the same folder is expected, and it is what makes this safe to retry.
       patch(row.id, {
-        state: body.captured ? "captured" : "duplicate",
-        reason: body.captured ? null : "Already in the ledger. Nothing changed."
+        state: captured ? "captured" : "duplicate",
+        reason: captured ? null : "Already in the ledger. Nothing changed."
       });
     } catch {
       patch(row.id, { state: "refused", reason: "This slip could not be captured." });
@@ -449,7 +495,7 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
 
                 {row.state === "ready" && (
                   <p className="batch-values">
-                    <b>{formatThb(signedSlipAmount(amountMagnitude(row.amount)?.toString() ?? "0", kind))}</b>
+                    <b>{formatThb(signedSlipAmount(amountMagnitude(row.amount)?.toString() ?? "0", kind) ?? "0")}</b>
                     {" on "}{row.occurredOn}
                     {" — "}
                     <span className="batch-source">
@@ -486,6 +532,17 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
                         onChange={(event) => patch(row.id, { amount: event.target.value })}
                       />
                     </label>
+                    {/* **Said out loud, because silence here reads as the form ignoring you.** A
+                        figure the strict grammar rejects leaves `rowIsSubmittable` false, so the
+                        "N ready to capture" count simply fails to move and the row goes on showing
+                        the reader's original refusal. The single-slip form surfaces this; this one
+                        did not. */}
+                    {row.amount.trim() !== "" && amountMagnitude(row.amount) === null && (
+                      <p className="batch-reason" role="alert">
+                        This is not an amount this ledger can store. Type it as digits with at most
+                        two decimal places, and not zero.
+                      </p>
+                    )}
                   </div>
                 )}
               </li>
