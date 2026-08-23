@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { sha256HexBytes } from "@/lib/canonical";
 import {
   describeStatement, planStatementBatch,
@@ -29,6 +29,14 @@ type BatchFile = {
   readonly digest: string | null;
   readonly parsed: { frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number } | null;
   readonly reason: string | null;
+};
+
+/** What the stage machine hands back once a batched statement has reached the ledger. */
+export type BatchConfirmation = {
+  readonly label: string;
+  readonly rows: number;
+  readonly accountLabel: string;
+  readonly batchId: string;
 };
 
 /** What the batch hands to the stage machine when the owner picks one statement to work. */
@@ -76,10 +84,15 @@ type WorkerReply =
  * review table. Statement import remains the one path in this app that reads entirely on the
  * device (D-128, D-129).
  */
-export function StatementBatch({ onWork, confirmedDigests }: {
+export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBind, onAutoBindChange }: {
   readonly onWork: (handoff: BatchHandoff) => void;
+  /** Whether a statement printing an account this ledger holds is bound without asking. */
+  readonly autoBind: boolean;
+  readonly onAutoBindChange: (next: boolean) => void;
   /** Artifact digests already confirmed this session, so a worked statement stops inviting a second pass. */
   readonly confirmedDigests: readonly string[];
+  /** The most recent confirmation, so the worklist says what happened where the owner is looking. */
+  readonly confirmation: BatchConfirmation | null;
 }) {
   const [files, setFiles] = useState<BatchFile[]>([]);
   const [password, setPassword] = useState("");
@@ -87,6 +100,37 @@ export function StatementBatch({ onWork, confirmedDigests }: {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  /**
+   * **A wrapper that is always rendered, rather than a ref on the banner itself.** The banner only
+   * exists while there is a confirmation, so a ref on it would be null at the moment the effect
+   * wants to scroll — React has not committed the new element yet. The same reasoning as the card
+   * form's result banner (D-139), and the same anchor class.
+   */
+  const resultBanner = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Brings the confirmation into view once a statement has reached the ledger.
+   *
+   * **The owner is looking at this list, not at the review table he just left** — which is D-139's
+   * finding in a second place: a one-time answer belongs where the question was asked. Confirming
+   * used to leave a sentence at the bottom of the single-import section, several screens above.
+   *
+   * **No `behavior` is passed, and that is the accessible choice rather than an omission.** Left
+   * unspecified the browser follows the CSS `scroll-behavior`, which `app/globals.css` overrides to
+   * `auto` under `prefers-reduced-motion`; passing `"smooth"` would ignore that preference.
+   */
+  useEffect(() => {
+    if (!confirmation) return;
+    requestAnimationFrame(() => {
+      const anchor = resultBanner.current;
+      if (!anchor) return;
+      anchor.scrollIntoView({ block: "start" });
+      // Focus follows the eye: the scroll moves the viewport and nothing else, so a keyboard user
+      // would otherwise be left on a control now off-screen. `preventScroll` because the line above
+      // already chose the position, and letting focus scroll too overrides `scroll-margin-top`.
+      anchor.querySelector<HTMLElement>("[data-capture-result]")?.focus({ preventScroll: true });
+    });
+  }, [confirmation]);
 
   // Built only from files that have actually been through the worker: a queued file has no digest
   // and no frame, so there is nothing for the policy layer to decide about it yet.
@@ -350,10 +394,44 @@ export function StatementBatch({ onWork, confirmedDigests }: {
         ) : null}
       </div>
 
+      <label className="auto-bind-control">
+        <input
+          type="checkbox"
+          name="auto-bind"
+          checked={autoBind}
+          disabled={busy}
+          onChange={(event) => onAutoBindChange(event.target.checked)}
+        />
+        <span>
+          <b>Bind automatically when the account is unambiguous.</b> A statement prints a bank and
+          four digits, and this ledger holds at most one account for that pair — so when exactly one
+          matches, it is bound without asking and you go straight to the review. Everything else is
+          unchanged: a mismatch is still refused, every balance is still shown, and nothing reaches
+          the ledger until you confirm it. Turn this off to choose the account yourself; the
+          matching one is preselected either way.
+        </span>
+      </label>
+
       {progress ? (
         <p className="batch-note" role="status">Read {progress.done} of {progress.total}.</p>
       ) : null}
       {status ? <p className="status" role="status">{status}</p> : null}
+
+      <div ref={resultBanner} className="capture-result-anchor">
+        {confirmation ? (
+          <div className="capture-result captured" role="status" tabIndex={-1} data-capture-result>
+            <p>
+              <b>{confirmation.label} is in the ledger.</b>{" "}
+              {confirmation.rows} row(s) confirmed into {confirmation.accountLabel}, as batch{" "}
+              <span className="mono">{confirmation.batchId}</span>.
+            </p>
+            <p>
+              The last backup no longer covers the ledger — export a new one from Recovery.{" "}
+              {plan.ready.length > 1 ? "Carry on with the next statement below." : null}
+            </p>
+          </div>
+        ) : null}
+      </div>
 
       {plan.ready.length > 0 ? (
         <>

@@ -39,6 +39,21 @@ function appSources(): string[] {
  */
 const SERVICE_WORKER_REGISTRAR = "app/site-header.tsx";
 
+/**
+ * One top-level function's source, from its signature to the closing brace in column 3.
+ *
+ * Sliced rather than matched with a regex because the regexes that do this elsewhere in the file
+ * are the reason several of these guards have gone quiet: a pattern pinned to one phrasing passes
+ * happily once the code is written a different way. An empty result fails the assertion that uses
+ * it, which is why every caller checks for its own marker first.
+ */
+function section(source: string, header: string): string {
+  const start = source.indexOf(header);
+  if (start === -1) return "";
+  const end = source.indexOf("\n  }", start);
+  return end === -1 ? source.slice(start) : source.slice(start, end);
+}
+
 describe("privacy guardrails", () => {
   it("does not expose statement password environment variables", () => {
     const example = readFileSync(".env.example", "utf8");
@@ -147,15 +162,43 @@ describe("privacy guardrails", () => {
     expect(body).toBe("JSON.stringify({ idempotencyKey, artifactDigest, payload: statement })");
   });
 
-  it("never infers which ledger account a statement belongs to", () => {
+  it("binds a statement automatically only on an exact, unique account match", () => {
     const ui = readFileSync("app/import-bench.tsx", "utf8");
-    // Binding is a checked user decision (DECISIONS D-017): the account id comes from
-    // the chooser, and assembleImportPayload re-checks it against the printed account
-    // and currency. Matching an account to the statement automatically — however
-    // convenient — would make a parser reading the ledger's routing decision.
+    // **This test used to say "never infers", and it failed at its own job** (D-144 supersedes
+    // D-017). It asserted `not.toMatch(/find\([^)]*accountLastFour/)` — a *spelling*, not a
+    // behaviour — so when auto-binding arrived written with `.filter(...)`, the guard put here to
+    // prevent exactly that change passed without noticing it. A source grep pinned to one phrasing
+    // is the trap `GOTCHAS.md` already carries, hit by the test meant to enforce the rule.
+    //
+    // The rule is now narrower and this asserts the narrow version. Auto-binding removes the
+    // dropdown, not the decision: a statement may only be bound to an account whose bank code and
+    // last four digits it actually printed, and only when exactly one such account exists.
     expect(ui).toContain("assembleImportPayload(");
     expect(ui).toContain("accounts?.find((item) => item.id === chosenAccountId)");
-    expect(ui).not.toMatch(/find\([^)]*accountLastFour/u);
+
+    // Matched on both halves of the identity, never the digits alone: one owner can hold accounts
+    // ending in the same four digits at three banks (D-041).
+    const matcher = section(ui, "function soleMatchingAccount(");
+    expect(matcher, "soleMatchingAccount must exist for this test to mean anything").toContain("filter(");
+    expect(matcher).toContain("item.bank_code === frame.bankCode");
+    expect(matcher).toContain("item.last_four === frame.accountLastFour");
+    // Ambiguity is refused rather than resolved. `public.accounts` is unique on
+    // (owner_id, bank_code, last_four) so this should never fire; it is asserted anyway, because
+    // the day it does is the day a guess would otherwise be made.
+    expect(matcher).toContain("matches.length === 1");
+    expect(matcher, "a partial match must yield nothing rather than a best effort").toContain("null");
+
+    // No fuzzy matching anywhere in the file: no substring search over a label, no scoring, no
+    // "closest" account. Either the printed identity resolves to one account, or the owner chooses.
+    expect(ui).not.toMatch(/includes\(\s*frame\.|startsWith\(\s*frame\.|score|closest|fuzzy/iu);
+
+    // **And the half that is not relaxed.** Binding reaches the review stage and stops there. The
+    // reordering warning (D-055) is what the owner is confirming and nothing else surfaces it, so
+    // no binding path — automatic or manual — may reach the confirmation.
+    const binder = section(ui, "function bindTo(");
+    expect(binder, "bindTo must exist for this test to mean anything").toContain("assembleImportPayload(");
+    expect(binder, "binding may not confirm").not.toMatch(/confirmBoundImport|imports\/confirm/u);
+    expect(binder, "binding ends at the review stage").toContain('setStage("review")');
   });
 
   it("never infers a ledger account when many statements are opened at once", () => {

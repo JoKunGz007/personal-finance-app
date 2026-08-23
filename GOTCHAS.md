@@ -46,6 +46,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Restarting the Supabase database container breaks every host connection until its dependants restart too
 - `supabase start` reports "already running" while its database container has exited
 - Windows reserves the whole local Supabase port block, and every container still reports healthy
+- A source-grep guard pinned to one spelling passes when the code is rewritten
 
 ### Database, migrations and pgTAP
 
@@ -389,6 +390,13 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: WinNAT/Hyper-V takes **dynamic** TCP port reservations at boot, and one of them can swallow the project's whole block. Measured here as `54243-54342`, which covers `private-ledger-local` entirely (54321 gateway, 54322 db, 54323 studio, 54324 inbucket) and reaches into `private-ledger-recovery`'s 5433x. Docker starts the containers anyway and simply does not publish the ports: `docker inspect` shows `HostConfig.PortBindings` carrying `8000/tcp -> 54321` while `NetworkSettings.Ports` is `{"8000/tcp":[]}`. **That gap is the whole diagnosis** — a configured binding that was never established — and no `docker ps` column shows it.
 - Avoid: read the reservation before touching Docker — `netsh interface ipv4 show excludedportrange protocol=tcp` and look for a range covering 54321. Clearing it needs an **elevated** shell (`net stop winnat` then `net start winnat`, then `supabase stop` and `supabase start`), so an agent cannot fix this and must hand it back. Reserving the block permanently is what stops it recurring: `netsh int ipv4 add excludedportrange protocol=tcp startport=54320 numberofports=30 store=persistent`, also elevated. **Do not read a `docker restart` as the remedy** — the trap directly above this one has the same symptom and a different cause, and trying that one first is what costs the time here.
 - Verify: 2026-08-23. `netsh` reported `54243-54342` while all ten `private-ledger-local` containers read `Up (healthy)`, `curl http://127.0.0.1:54321/rest/v1/` returned `000`, and Kong's own log showed a clean start with its workers up — the container was fine and the host binding never existed. `supabase stop` had already backed the data up to `docker volume ls --filter label=com.supabase.cli.project=private-ledger-local`, which survived the failed start, so the cost was the stack being down rather than anything lost.
+
+## A source-grep guard pinned to one spelling passes when the code is rewritten
+
+- Symptom: a test whose entire purpose is to forbid a change passes after that change is made. `tests/privacy.test.ts` carried "never infers which ledger account a statement belongs to" and went green the day auto-binding was added.
+- Cause: it asserted `not.toMatch(/find\([^)]*accountLastFour/)` — a *spelling*. The new code used `.filter(...)`, so the pattern did not match and the guard reported success. Every guard in that file reads source text rather than running behaviour, so all of them are exposed to this; the ones matching a **whole call site** are far more fragile than the ones matching a name.
+- Avoid: assert the property, not the phrasing. Slice the function by name and check what it must contain (`matches.length === 1`, both halves of the identity) alongside what it must not (`fuzzy|score|closest`), and make every assertion fail loudly when its marker is missing — `expect(section, "X must exist for this test to mean anything")` — so a rename cannot make it pass vacuously. Where behaviour can be exercised instead of grepped, exercise it: the browser check for the same rule asserts `import_batches` stays at zero, which no rewrite can fake.
+- Verify: 2026-08-23 (D-144). Reproduced by adding auto-binding and watching the guard pass; the rewritten guard fails against the pre-D-144 spelling and passes after, and the browser test in `.runtime/worklist-phone-audit.spec.ts` proves the unrelaxed half independently of any grep.
 
 ### Database, migrations and pgTAP
 

@@ -6,8 +6,15 @@
 # Bytecode from the owner-run Python tool in scripts/
 __pycache__/
 
-# Private financial source documents
+# Private financial source documents. `private-statements/inbox/` is where
+# scripts/fetch-statements.mjs writes what it pulls from the mailbox, so it is inside this
+# boundary by construction: real, password-protected statements that an agent may never read.
 private-statements/
+
+# Names the statement mailbox and the senders it receives from. No secret is in it — the app
+# password is read from stdin, never from a file — but it names an address, and an address is
+# the owner's to share rather than the repository's.
+statement-mailbox.json
 
 # Real transfer slips and receipts used to size the OCR work. Images, so no masking
 # harness reaches them and nothing here can be made value-free — treat as raw private

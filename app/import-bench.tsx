@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { accountListSchema, createAccountSchema, ledgerAccountSchema, type LedgerAccount } from "@/lib/accounts";
 import { encryptBackup } from "@/lib/backup";
 import { downloadFile } from "@/lib/download";
@@ -10,7 +10,7 @@ import type { StatementFrame } from "@/lib/statement-frame";
 import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
-import { StatementBatch, type BatchHandoff } from "@/app/statement-batch";
+import { StatementBatch, type BatchConfirmation, type BatchHandoff } from "@/app/statement-batch";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
 const stages: Array<{ id: Stage; label: string }> = [
@@ -77,7 +77,54 @@ export function ImportBench() {
   // pass in the batch worklist. Session-scoped and nothing more: the authority on what is already
   // imported is `import_artifacts` in the database, which refuses a repeat on its own.
   const [confirmedDigests, setConfirmedDigests] = useState<readonly string[]>([]);
+  // Which batch entry is being worked, and the last one that reached the ledger. Both exist so the
+  // worklist can say what happened **where the owner is looking** — the same finding as D-139, in a
+  // second place: confirming used to leave its sentence at the bottom of the single-import section,
+  // several screens above the list the owner was working down.
+  const [workingLabel, setWorkingLabel] = useState<string | null>(null);
+  // **Binding a statement without asking, when exactly one account can possibly take it** (D-144,
+  // relaxing D-017 on the owner's decision). Default on, and switchable in the batch section so it
+  // is visible rather than a hidden behaviour. What it removes is the dropdown, never the review:
+  // `assembleImportPayload` still refuses a mismatch, the review table still shows every balance,
+  // and confirming is still an explicit act — which is what D-055's reordering warning needs.
+  const [autoBind, setAutoBind] = useState(true);
+  const [batchConfirmation, setBatchConfirmation] = useState<BatchConfirmation | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  /**
+   * Always in the tree, so its position is knowable before the binding section it precedes exists.
+   * A ref on that section would be null at the moment `workBatchEntry` wants to scroll, because
+   * React has not committed it yet (the reasoning `app/notification-card-capture.tsx` records).
+   */
+  const bindAnchor = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Brings the account chooser into view when a statement is taken off the worklist.
+   *
+   * Without it, pressing **Bind & review** changed a section far above the fold and appeared to do
+   * nothing. Keyed on the digest rather than on the stage so that re-opening an already-confirmed
+   * statement scrolls again; `stage` alone is already `bind` in that case and the effect would not
+   * re-run.
+   *
+   * **No `behavior` is passed**, so the browser follows the CSS `scroll-behavior`, which
+   * `app/globals.css` overrides to `auto` under `prefers-reduced-motion`.
+   */
+  /**
+   * Loads the account list once, unprompted.
+   *
+   * It used to be a button, which was fine when binding was always a manual step — the owner was
+   * already in the chooser. Auto-binding has to know the accounts *before* the owner arrives, and
+   * the manual path is better for it too: the chooser now arrives populated instead of asking for
+   * a second click before it can be used.
+   */
+  useEffect(() => {
+    void loadAccounts();
+    // Once, on mount. Re-running it on every render would put a request behind every keystroke.
+  }, []);
+
+  useEffect(() => {
+    if (stage !== "bind" || workingLabel === null) return;
+    requestAnimationFrame(() => bindAnchor.current?.scrollIntoView({ block: "start" }));
+  }, [stage, workingLabel, artifactDigest]);
 
   const reconciliation = useMemo(
     () => statement ? reconcileRows(statement.openingBalance.minor, statement.rows) : null,
@@ -205,13 +252,16 @@ export function ImportBench() {
    * exists, which is what keeps bulk import from becoming a second way to reach the ledger.
    */
   function workBatchEntry(handoff: BatchHandoff) {
+    setWorkingLabel(handoff.label);
+    // Cleared as the next statement is opened: a banner about the previous one, sitting above the
+    // chooser for this one, reads as though this one had already been confirmed.
+    setBatchConfirmation(null);
     setArtifactDigest(handoff.artifactDigest);
     setExtracted({ frame: handoff.frame, rows: handoff.rows, pageCount: handoff.pageCount });
     setStatement(null);
     setAssemblyWarnings([]);
     setBoundAccount(null);
     setBindingError(null);
-    setChosenAccountId("");
     setSelectedRow(null);
     // **Keyed by row index, so it survives a change of statement as a wrong label over real rows.**
     // Categorise row 2 of one statement, confirm it, then open the next off the worklist and row 2
@@ -224,12 +274,29 @@ export function ImportBench() {
     setLabelCandidates([]);
     setValueLabels([]);
     setStructure([]);
+    const match = soleMatchingAccount(handoff.frame);
+    const source: Extracted = { frame: handoff.frame, rows: handoff.rows, pageCount: handoff.pageCount };
+
+    // **Auto-bind takes the dropdown away, not the decision.** The review table below is unchanged
+    // and confirming is still an explicit act, which is what D-055's reordering warning depends on.
+    if (autoBind && match) {
+      bindTo(match, source, true);
+      return;
+    }
+
+    // Pre-selected when there is a single match and auto-bind is off, so the manual path is a
+    // confirmation rather than a search. Left blank when nothing matches — offering an account the
+    // statement cannot bind to would only produce a refusal one click later.
+    setChosenAccountId(match?.id ?? "");
     setStage("bind");
     setStatus(
       `${handoff.label}: read ${handoff.rows.length} rows across ${handoff.pageCount} page(s) as a `
       + `${handoff.frame.bankCode} statement, for account ending ${handoff.frame.accountLastFour}, `
       + `${handoff.frame.periodStart} to ${handoff.frame.periodEnd}. `
-      + "Nothing has left this device. Choose the ledger account it belongs to."
+      + "Nothing has left this device. "
+      + (match
+        ? "The account it prints is selected below — check it and bind."
+        : "Choose the ledger account it belongs to.")
     );
   }
 
@@ -302,14 +369,28 @@ export function ImportBench() {
   // Binding is a user decision, and assembleImportPayload refuses to act on it
   // blindly: the chosen account's last four digits and currency must match what the
   // statement printed, so a mis-click cannot post one account's rows into another.
-  function bindStatement() {
-    if (!extracted) return;
-    const account = accounts?.find((item) => item.id === chosenAccountId);
-    if (!account) {
-      setBindingError("Choose the ledger account this statement belongs to.");
-      return;
-    }
-    const result = assembleImportPayload(extracted.frame, extracted.rows, {
+  /**
+   * The one account a statement can belong to, or null.
+   *
+   * **Exact, and unique by construction.** `public.accounts` is unique on
+   * `(owner_id, bank_code, last_four)`, so a bank code and four printed digits identify at most one
+   * account — this is a lookup on a compound key, not a guess. It still returns null rather than a
+   * best effort when the match is not exactly one, which is the case the chooser exists for.
+   *
+   * Currency is deliberately **not** matched here. `assembleImportPayload` checks it and refuses
+   * with its own message; filtering on it would turn a statement in the wrong currency into
+   * "no account found", which sends the owner to create an account that already exists.
+   */
+  function soleMatchingAccount(frame: StatementFrame): LedgerAccount | null {
+    const matches = (accounts ?? []).filter(
+      (item) => item.bank_code === frame.bankCode && item.last_four === frame.accountLastFour
+    );
+    return matches.length === 1 ? matches[0]! : null;
+  }
+
+  /** Binds `account` to the extracted statement, or reports why it cannot be bound. */
+  function bindTo(account: LedgerAccount, source: Extracted, automatic: boolean) {
+    const result = assembleImportPayload(source.frame, source.rows, {
       accountId: account.id,
       bankCode: account.bank_code,
       lastFour: account.last_four,
@@ -318,17 +399,35 @@ export function ImportBench() {
     if (!result.ok) {
       setBindingError(result.message);
       setStatus(`Binding refused: ${result.message}`);
+      // An automatic attempt that is refused leaves the chooser up rather than the review, so the
+      // owner sees the refusal beside the control that can answer it.
+      setStage("bind");
       return;
     }
     setBindingError(null);
     setBoundAccount(account);
+    setChosenAccountId(account.id);
     setStatement(result.payload);
     setAssemblyWarnings(result.warnings);
     // One key per bound statement, so retrying a failed confirmation is a retry
     // rather than a second import.
     setIdempotencyKey(crypto.randomUUID());
     setStage("review");
-    setStatus(`Bound to ${account.label} •••• ${account.last_four}. Review every balance before confirming.`);
+    setStatus(
+      `${automatic ? "Bound automatically" : "Bound"} to ${account.label} •••• ${account.last_four}`
+      + ` on its printed ${source.frame.bankCode} code and last four digits.`
+      + " Review every balance before confirming."
+    );
+  }
+
+  function bindStatement() {
+    if (!extracted) return;
+    const account = accounts?.find((item) => item.id === chosenAccountId);
+    if (!account) {
+      setBindingError("Choose the ledger account this statement belongs to.");
+      return;
+    }
+    bindTo(account, extracted, false);
   }
 
   async function confirmBoundImport() {
@@ -348,6 +447,14 @@ export function ImportBench() {
     }
     setStage("confirmed");
     setConfirmedDigests((current) => current.includes(artifactDigest) ? current : [...current, artifactDigest]);
+    if (workingLabel !== null) {
+      setBatchConfirmation({
+        label: workingLabel,
+        rows: statement.rows.length,
+        accountLabel: `${boundAccount.label} •••• ${boundAccount.last_four}`,
+        batchId: String(record.batchId)
+      });
+    }
     // The ledger has moved, so whatever backup exists no longer covers it. Said here rather
     // than shown on the recovery route: the two are separate routes now and share no state,
     // and the authoritative check is the sequence `confirm_backup_custody` compares anyway.
@@ -481,7 +588,21 @@ export function ImportBench() {
         ) : null}
       </section>
 
-      <StatementBatch onWork={workBatchEntry} confirmedDigests={confirmedDigests} />
+      <StatementBatch
+        onWork={workBatchEntry}
+        confirmedDigests={confirmedDigests}
+        confirmation={batchConfirmation}
+        autoBind={autoBind}
+        onAutoBindChange={setAutoBind}
+      />
+
+      {/* **A plain div, deliberately not `.capture-result-anchor`.** That class carries
+          `:empty { display: none }` so a result banner leaves no gap when there is no result — and
+          this anchor is *always* empty, so it would have no box at all and `scrollIntoView` would
+          silently do nothing. Measured: the chooser landed at the foot of the viewport rather than
+          the top, and the browser check passed anyway because "in the viewport" was too weak an
+          assertion to notice. */}
+      <div ref={bindAnchor} className="scroll-anchor" />
 
       {extracted && !boundAccount ? (
         <section className="binding-bench" aria-labelledby="binding-title">

@@ -44,6 +44,7 @@
     "eslint": "^9.35.0",
     "eslint-config-next": "^16.0.0",
     "fast-check": "^4.3.0",
+    "imapflow": "^1.7.2",
     "jsdom": "^26.1.0",
     "supabase": "^2.39.0",
     "tailwindcss": "^4.1.0",

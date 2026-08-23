@@ -173,6 +173,7 @@ What this file now holds is the continuity-hygiene arc and the current work: the
 - **D-141** — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 - **D-142** — The bulk slip form threw away work it had already done, and could not be told to try again
 - **D-143** — A third button rank, because "quiet" had been spelled as "unstyled"
+- **D-144** — Auto-import v1 is a local fetcher, and binding becomes automatic where the account is unambiguous
 
 ## D-130 — The continuity size guard measured lines while the files grew sideways, and reported green at 332 KB
 
@@ -573,3 +574,45 @@ Applied to all three bare buttons. **The amount finder's is a different kind of 
 **The 44px threshold is the audit's, not the repo's, and still nothing in the gate enforces it.** PLAN task 28 remains unscoped and no standard has been agreed; this change aligns the stylesheet with itself rather than adopting a rule. The two existing phone-width raises — `.site-nav a` and `.capture-result .secondary-button` — stay where they are, inside the mobile block, because both are compact by intent on a desktop where a pointer does the aiming. This rank is 47px at every width instead, because it is aligning with siblings that are.
 
 - Evidence: `app/globals.css`, `app/slip-batch.tsx`, `app/slip-capture.tsx`. `.runtime/worklist-phone-audit.spec.ts` now reports **tap targets: all >= 44px** on both worklists, where the slip one previously reported two under. Vitest **643 passed / 7 skipped across 32 files**, Playwright isolated **18/18** — its axe checks are what hold this stylesheet to AA and they cover the changed rules — owner **31/31**, production build clean at eighteen `/api/v1/` routes, tsc and ESLint clean. D-136 and D-137 (the palette these vars carry), D-138 (the phone-width work this belongs to), D-142 (the review that produced the measurement).
+
+## D-144 — Auto-import v1 is a local fetcher, and binding becomes automatic where the account is unambiguous
+
+- Date: 2026-08-23
+- Status: **Accepted and built**, both halves on the owner's decision. **Supersedes D-017** on the binding question; everything else D-017 said still holds.
+- What changed: `lib/server/statement-mailbox.ts`, `scripts/fetch-statements.mjs`, `tests/statement-mailbox.test.ts` (23) for the fetcher; `app/import-bench.tsx`, `app/statement-batch.tsx`, `app/globals.css`, `tests/privacy.test.ts` for the binding and the two pieces of import feedback. **No SQL, no route, no contract change** — eighteen `/api/v1/` routes, every project on 020, backup contract v7. One new **devDependency**, `imapflow`, which nothing in the app bundle imports.
+
+### The mailbox half, and why the design got cheaper rather than dearer
+
+D-141 recommended a hosted "Sync" button: a route fetching the encrypted attachment and streaming it to the browser to decrypt. **That was right when the import queue did not exist and wrong once it did.** With bulk statement import shipped, a local script that drops files in a folder reaches the same place with **no route, no server-side credential, no CSP question and no security review** — and it is strictly more private, because the app password never leaves the machine and the PDFs never touch a server.
+
+So v1 is `scripts/fetch-statements.mjs`. The IMAP work lives in `lib/server/statement-mailbox.ts` **so that the hosted button, if it is ever wanted, is a second caller of that module rather than a second implementation of the protocol** — the same seam as `lib/slip-batch.ts` against its form.
+
+**The app password is read from stdin only**, never an argument, a file or an environment variable. That is D-035's rule for document passwords applied to a merely-rotatable credential, because the habit is what protects the stronger secret. Input is masked with a star per character: hiding it entirely gave no way to tell a failed paste from a wrong password, and the length is not the secret. Raw mode rather than `readline` — muting readline breaks its line editing, and a paste then renders wrongly, which looks like the paste failing.
+
+**Retention: the mail is left untouched.** The owner's reasoning, and it is better than the concern it answers: the files already live in his main mail, so the second mailbox duplicates an archive rather than creating one.
+
+**Two things the first real fetch taught us.** A statement mail carries **more than one PDF** — one bank sent two months in a single message, another sent a statement beside an unrelated document — so the fetcher takes every PDF and decides nothing about which is which. And the Gmail *filter* that forwards them needs `OR` rather than a comma-separated `from:` list; the comma form works in the search box and silently does not in a filter. The IMAP grammar has the same trap in different syntax, which is why `senderSearch` nests `or` two arguments at a time.
+
+### Binding: what D-017 said, and what is left of it
+
+**D-017 held that account binding is a checked user decision, not a parser inference.** The owner asked for it to be automatic. It now is, by default, with a switch in the batch section.
+
+**The argument for relaxing it is that the match is a lookup, not a guess.** `public.accounts` is unique on `(owner_id, bank_code, last_four)`, so a statement's printed bank code and last four digits identify **at most one** account. `soleMatchingAccount` binds only when exactly one matches and returns null otherwise — an ambiguous match is refused rather than resolved, and a partial one yields nothing rather than a best effort.
+
+**What is not relaxed is the part that mattered.** Auto-binding removes the dropdown, not the owner: `assembleImportPayload` still re-checks bank, suffix and currency and still refuses a mismatch; the review table still shows every balance; and confirming is still an explicit act. **That last one is load-bearing** — `out-of-order-run` says rows were reordered to make the balance close (D-055), and nothing but the review surfaces it. A refused automatic bind lands on the chooser rather than the review, so the refusal appears beside the control that can answer it.
+
+### The guard that was supposed to prevent this, and did not
+
+`tests/privacy.test.ts` carried a test named "never infers which ledger account a statement belongs to". **It passed after auto-binding was added.** It asserted `not.toMatch(/find\([^)]*accountLastFour/)` — a *spelling* — and the new code uses `.filter(...)`. The guard written to stop precisely this change never noticed it.
+
+That is the source-grep trap `GOTCHAS.md` already records, hit by the test meant to enforce a rule. It is now rewritten to assert the behaviour: the match is exact on **both** halves of the identity, `matches.length === 1` is required, no fuzzy matching exists anywhere in the file, and **no binding path reaches the confirmation**. A `section()` helper slices a function by name instead of matching a phrasing, and every assertion first checks its own marker so it cannot pass vacuously.
+
+### Import feedback, on the owner's report from using it
+
+**Pressing "Bind & review" appeared to do nothing**, because it changed a section far above the fold. It now scrolls the chooser into view. **Confirming left its sentence at the bottom of the single-import section**, several screens from the list being worked — so a confirmation banner now appears in the batch section, naming the file, the rows, the account and the batch, then takes focus. That is D-139's finding in a second place: a one-time answer belongs where the question was asked.
+
+**Three defects were found only in a browser, and all three would have passed a source review.** The scroll anchor used `.capture-result-anchor`, which carries `:empty { display: none }` and is therefore invisible when always-empty, so `scrollIntoView` did nothing. Then the check for it was wrong twice: first accepting anything inside the viewport, and passing while the chooser sat at y=635 of 664; then tightening the bound but measuring before the animation finished, and failing a scroll that worked. `scroll-behavior: smooth` means any such assertion must poll.
+
+**And the audit caught a regression within minutes of the fix that produced it**: the new checkbox measured 20x20. It is 24 now, and the audit learned that a control wrapped in its own label is hit by tapping the label — the measurement had been aimed at the wrong element.
+
+- Evidence: the files above. Vitest **666 passed / 7 skipped across 33 files** (up 23, all `tests/statement-mailbox.test.ts`), Playwright owner **31/31** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes, tsc and ESLint clean. `.runtime/worklist-phone-audit.spec.ts` is **4 tests** now and covers the bind scroll and the auto-bind path end to end, asserting `import_batches` stays at zero — the browser proof that binding does not confirm. **pgTAP not re-run and deliberately so**: nothing here moves SQL. **The fetcher was run against the real mailbox**: 3 messages, 5 PDFs, and all four statements imported by the owner. D-141 (the design this completes and revises), D-017 (superseded on binding), D-035 (the stdin rule), D-055 (why confirming stays manual), D-139 (the banner precedent), D-138 (why a browser check).

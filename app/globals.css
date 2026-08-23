@@ -253,6 +253,11 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
    select`, `.slip-fields input`, `.batch-direction select` and the three button ranks all sit at
    47. This was the one outlier at 42, which read as deliberate and was not. */
 .batch-fix input { height: 47px; padding: 10px 12px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
+/* The auto-bind switch. Wide measure on the explanation because it is describing a relaxation of a
+   rule the rest of the app is built on (D-144), and a one-line label could not carry that. */
+.auto-bind-control { margin: 18px 0 0 167px; max-width: 70ch; display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; color: var(--muted); font-size: 13px; }
+.auto-bind-control input { width: 24px; height: 24px; margin: 1px 0 0; accent-color: var(--blue); }
+.auto-bind-control b { color: var(--navy); font-weight: 600; }
 .batch-summary { margin: 20px 0 0 167px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; max-width: 720px; }
 .slip-bench .status, .slip-bench .notice { margin: 18px 0 0 167px; color: var(--muted); font-size: 13px; }
 .slip-bench .status.error { color: var(--red); }
@@ -270,6 +275,10 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
    so `scrollIntoView` has something to aim at in the same commit that renders the banner. The
    scroll margin is breathing room — the header does not stick, so this is only to keep the result
    off the very top edge of the viewport. An empty anchor collapses so it adds no gap. */
+/* A zero-height marker that keeps a box, so `scrollIntoView` has something to aim at. Distinct
+   from `.capture-result-anchor` below, which hides itself when empty and therefore cannot be a
+   scroll target unless it is holding a banner. */
+.scroll-anchor { display: block; height: 0; scroll-margin-top: 24px; }
 .capture-result-anchor:empty { display: none; }
 .capture-result-anchor { scroll-margin-top: 24px; }
 .capture-result { margin: 0 0 4px; padding: 14px 16px; display: grid; gap: 12px; border: 1px solid; border-left-width: 4px; border-radius: var(--radius); font-size: 14px; }
@@ -494,7 +503,7 @@ footer p { margin: 0; }
   .slip-controls, .slip-form, .cash-bench .slip-form, .card-bench .slip-form { margin-left: 0; }
   .slip-bench .status, .slip-bench .notice { margin-left: 0; }
   .cash-bench > .secondary-button, .card-bench > .secondary-button { margin-left: 0; }
-  .batch-bench .status, .batch-note, .batch-rows, .batch-summary { margin-left: 0; }
+  .batch-bench .status, .batch-note, .batch-rows, .batch-summary, .auto-bind-control { margin-left: 0; }
   .or-rule { display: none; }
   /* **`1fr` is `minmax(auto, 1fr)`, and that `auto` floor is min-content, not zero.** A select whose
      longest option is an account label therefore refuses to shrink, so the grid sizes itself to its
