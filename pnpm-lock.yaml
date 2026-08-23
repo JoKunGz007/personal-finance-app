@@ -23,6 +23,9 @@ importers:
       barcode-detector:
         specifier: ^3.2.1
         version: 3.2.1(@types/emscripten@1.41.5)
+      imapflow:
+        specifier: ^1.7.2
+        version: 1.7.2
       next:
         specifier: ^16.0.0
         version: 16.2.11(@babel/core@7.29.7(supports-color@7.2.0))(@playwright/test@1.61.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -66,9 +69,6 @@ importers:
       fast-check:
         specifier: ^4.3.0
         version: 4.9.0
-      imapflow:
-        specifier: ^1.7.2
-        version: 1.7.2
       jsdom:
         specifier: ^26.1.0
         version: 26.1.0(supports-color@7.2.0)

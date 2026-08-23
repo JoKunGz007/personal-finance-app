@@ -4,11 +4,13 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-130 onward**. Four settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, and **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23. The index below covers all five files, so a reader can find any entry without opening any body.
+This file carries **D-134 onward**. Five settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, and **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24. The index below covers all six files, so a reader can find any entry without opening any body.
 
 **Every boundary sits where an argument ends rather than where a number is round**, and the fourth one is the clearest case of that rule so far. It was taken at **93%** of this file's byte budget and moved the whole arc in which both readers went to Cloud Vision and the local OCR engine was deleted. **The third boundary had explicitly refused to move D-120**, on the grounds that whether pre-fill stays was undecided and that question attached to D-120 and D-129 — which was true when written. **What closed it was not an argument but a shipped feature**: D-135 files a machine-read amount into the ledger without the owner looking at it at all, which is a stronger commitment than the trial ever asked for. *A question is closed when the code has stopped asking it*, and that is the test to apply at the next boundary rather than re-reading the prose.
 
-What this file now holds is the continuity-hygiene arc and the current work: the byte-budget correction, the handoff and plan rewrites, the ledger view split, bulk slip upload, and the palette with its phone measurements.
+What this file now holds is the current work and the two open questions the fifth boundary could not move past: bulk slip upload and the palette with its phone measurements, then the statement auto-import arc — bulk import, the local mail fetcher, and the hosted Sync button.
+
+**The fifth boundary is shallower than the fourth and the reason is worth knowing before taking the sixth** (D-146). It landed at 82% where the fourth landed at 56%, because D-134 and D-137 sit immediately behind it holding questions that have not closed: whether `GOTCHAS.md` splits at its next breach, and whether this app really has no dark scheme. **Closing those is what buys the next boundary its depth** — a deeper cut here would have had to break D-133's own rule to get it.
 
 **The size guard measures bytes, not lines, and that correction is the reason this archive exists** (`scripts/check-docs.mjs`). The budget was 1,200 lines and this file passed it at 1,132 while being 332 KB — roughly 80,000 tokens, most of a context window — because the entries grew sideways rather than downward. A guard that exists to stop a log outgrowing a single read has to measure what a read actually costs.
 
@@ -155,14 +157,19 @@ What this file now holds is the continuity-hygiene arc and the current work: the
 - **D-128** — Vision locates the amount on every real slip and every one parses as money, measured and NOT adopted
 - **D-129** — Slip capture adopts Cloud Vision and pre-fills the amount, and the local OCR engine is deleted
 
-### Current 
+### Archived 
 —
- this file
+ `docs/decisions/ARCHIVE-D-130-D-133.md`
 
 - **D-130** — The continuity size guard measured lines while the files grew sideways, and reported green at 332 KB
 - **D-131** — The handoff and the plan were append-only by habit, and both had gone self-contradictory
 - **D-132** — The ledger view's markup became seven files, and the derivation pipeline deliberately did not move
 - **D-133** — Both continuity budgets were acted on rather than raised, and the archive boundary excluded every open question
+
+### Current 
+—
+ this file
+
 - **D-134** — The traps budget is raised to 260 KB on the lookup-file argument, with the next breach owed a split rather than a third raise
 - **D-135** — Bulk slip upload files a slip unseen only when its date is exact, and the printed-date reader that made that possible had shipped uncalled
 - **D-136** — The palette becomes warm and the phone gets measured, which found two contrast failures no light-mode look would reveal
@@ -174,100 +181,8 @@ What this file now holds is the continuity-hygiene arc and the current work: the
 - **D-142** — The bulk slip form threw away work it had already done, and could not be told to try again
 - **D-143** — A third button rank, because "quiet" had been spelled as "unstyled"
 - **D-144** — Auto-import v1 is a local fetcher, and binding becomes automatic where the account is unambiguous
-
-## D-130 — The continuity size guard measured lines while the files grew sideways, and reported green at 332 KB
-
-- Date: 2026-08-18
-- Status: **Accepted and done.** A correction to `scripts/check-docs.mjs` and an archive taken under the new measure. No application code is involved and nothing about the ledger changes.
-- **The defect, in one line.** `check:docs` budgeted `DECISIONS.md` at **1,200 lines** and `GOTCHAS.md` at 1,400. `DECISIONS.md` passed that check at **1,132 lines while being 332 KB** — roughly 80,000 tokens, most of a context window for one file. The guard's own comment says it exists because "a decision log outgrows a single read long before it outgrows a file", and it was measuring the one dimension that could not see that happening.
-- **Why the two diverged, which is the part worth keeping.** Entries in this log are long prose paragraphs, not the short `Decision:` / `Rationale:` bullets D-001 … D-020 used. The file grew **sideways**. A line count is a proxy for size only while lines have a roughly constant width, and nothing recorded when that stopped being true — the budget was set in 2026-07 against entries averaging a few hundred bytes and was still being applied to entries averaging 4.5 KB.
-- **The measurements, taken before anything was changed.** `DECISIONS.md` 332 KB in 1,132 lines; `PLAN.md` 214 KB in 516 lines and budgeted by nothing at all; `GOTCHAS.md` 182 KB in 1,143 lines; `HANDOFF.md` **91 KB in 86 lines**. Per-entry sizes in the decision log are strikingly uniform — 2.5 KB to 8 KB, with only D-129 above that at 10.9 KB — so the growth is entry *count* times a stable size, not a few bloated entries anyone could have spotted by reading.
-
-### What changed
-
-- **The budgets are bytes**: `DECISIONS.md` 120 KB, `GOTCHAS.md` 200 KB. Set from what a read costs rather than from what the files happen to be — this project's Markdown runs about 0.33 tokens per byte, so those are roughly 40,000 and 66,000 tokens. **The two files get different numbers because they are read differently**: the decision log is read front-to-back by anyone picking the project up, while `GOTCHAS.md` is a lookup file entered through its index, so its size costs less per use.
-- **Measured with `Buffer.byteLength`, not `String.length`.** These documents are full of em dashes, Thai labels and typographic quotes, every one of which is several bytes and one character. Measuring characters would under-report exactly the files most at risk.
-- **The remedy is per file rather than one shared sentence.** The decision log's is to archive the oldest contiguous range; `GOTCHAS.md` has no archive and its remedy is to retire traps whose subject no longer exists, keeping whatever generalisation outlived them. A message naming the wrong remedy is how a check gets satisfied the wrong way.
-- **A passing run now prints each file's size and percentage.** `DECISIONS.md 90 KB/117 KB (77%), GOTCHAS.md 177 KB/195 KB (91%)`. **A budget nobody sees the approach to is a budget that is only ever met as a surprise**, which is the whole story of this entry.
-- **D-060 … D-113 are archived** to `docs/decisions/ARCHIVE-D-060-D-113.md`, moved unchanged. `DECISIONS.md` went **332 KB → 90 KB**. The index still covers all three files, so no entry became harder to find — only harder to read by accident.
-- **The boundary is where an argument starts, not where a number is round.** D-114 is the point at which the owner put D-087's no-pre-fill rule on trial instead of keeping or reversing it, and every entry since — the strict pre-fill module, both Vision measurements, both adoptions — is that trial playing out. The maintained file now holds one continuous line of reasoning.
-
-### What this did not do, and what it found
-
-- **`PLAN.md` is 214 KB and is still budgeted by nothing.** It is not added here because its shape is different: it is a task list where completed tasks keep their full record inline, so the remedy is not an archive but a decision about how much of a closed task's history stays in the file. That is the owner's call and it is not made.
-- **`HANDOFF.md` is 91 KB in 86 lines** and is the file whose own text says it is the thin entry point and that status paragraphs belong in `PLAN.md` (D-052). Line 3 alone is a chain of "Before that:" history several times the length the rule intends. **The rule has failed in practice and a byte budget would catch it**, but capping it without first moving that history somewhere would make the next session's handoff worse rather than better. Named here so the next change is deliberate.
-- **`GOTCHAS.md` is at 91% of its new budget**, which is roughly five more traps. That is the first thing the corrected check says, and it is a real signal rather than an artefact of a tight number: two traps were retired today (the tesseract cache and the WASM core path) and both kept their generalisation, which is the pattern the remedy names.
-- **Red-proved rather than assumed**: lowering the decision budget to 80 KB fails the check with `DECISIONS.md: 90 KB exceeds the 78 KB budget` and the archive remedy, and restoring it passes. The failure names the file, both numbers and what to do, which is what the old message did too — the old one was simply never reached.
-- Evidence: `scripts/check-docs.mjs`, `docs/decisions/ARCHIVE-D-060-D-113.md`, `DECISIONS.md` (header), `HANDOFF.md`, `docs/LOCAL_DEV.md`. `pnpm check:docs --strict` passes at **129 decisions, 132 traps**, unchanged across the move, which is the assertion that the archive relocated bodies and not entries. D-080 (the archive rule this follows), D-052 (the thin-handoff rule this finds broken), D-082, D-085.
-
-## D-131 — The handoff and the plan were append-only by habit, and both had gone self-contradictory
-
-- Date: 2026-08-18
-- Status: **Accepted and done**, on the owner's decision. Follows D-130, which corrected the guard that should have caught this. Documentation only; no application code and nothing about the ledger changes.
-- **The defect is not size, it is that nothing was ever removed.** `HANDOFF.md` was **91 KB in 86 lines** and `PLAN.md` **214 KB**. Every update to either had *prepended* a paragraph and removed none, so both files held a third telling of a history that `git log` and `DECISIONS.md` already carry in full.
-- **Size was the symptom. The failure was that they had become wrong.** `HANDOFF.md` carried **three separate lines each claiming a different migration state** — one said all three local projects were on 012, another said 001–014, another said 019 — while the truth was 020 everywhere. `PLAN.md`'s gate table said Vitest **522 across 28 files** and pgTAP **252** when the real numbers were 604 across 30 and 266. **Every one of those lines was true when written**, and each was left in place beneath a newer one that contradicted it. A reader has no way to tell which of three dated claims is current except by re-deriving all three, which is the opposite of what a continuity document is for.
-
-### What changed
-
-- **`HANDOFF.md` is rewritten, not trimmed: 91 KB → 15 KB.** It now carries only what its own header always said it should — live authorizations, the destructive-operation state of this machine, live hazards, and where to start reading. **One 33 KB line and one 4.8 KB line were the bulk of it**, both pure "Before that:" chains. The file says in its own opening to rewrite it in place and not to prepend, because the rule alone was not enough: D-052 established the thin-entry-point rule in 2026-07 and the file had grown back to more than twice the length that decision trimmed it from.
-- **`PLAN.md`'s gate table records the latest run and not every run: about 50 KB → 3 KB.** One cell was **13.6 KB** on its own. The table now says "replace a cell, never append to it", and the stale headline numbers are corrected to the 2026-08-18 gate.
-- **`PLAN.md`'s checkpoint section was 27 stacked paragraphs reaching back to 2026-07-24** and is now the current checkpoint plus a pointer. Every paragraph removed carried a decision id already, which is what made removing them safe — the pointer names the arcs and where to read them.
-- **One fact was carried forward rather than dropped, and it is the one that proves the exercise was worth doing.** Buried in the twelfth checkpoint paragraph was the finding that a local build's "resting state" is the **synthetic** project, not the live one, because `private-ledger-live` stopped being the ledger on 2026-08-11 (D-094). Every older row in `PLAN.md` and the `.next` bullet in `HANDOFF.md` still said "unpinned, therefore live-targeted". **That mattered within the hour**: an agent reading `.next` on 2026-08-18 found four chunks naming the synthetic port, could not reconcile it with the handoff, and recorded it as an unexplained discrepancy — when the answer was fifty paragraphs down in the file that had been superseded but not deleted.
-- **`PLAN.md` 214 KB → 138 KB.** Less than `HANDOFF.md`'s reduction because its remaining bulk is the task list, where a completed task's full record is genuinely the deliverable rather than history: those entries are how a closed decision stays checkable. Cutting them is a separate judgement and is not made here.
-
-### What this does not do
-
-- **Neither file gets a byte budget yet.** `PLAN.md` at 138 KB and `HANDOFF.md` at 15 KB are both comfortably readable now, but a budget set today would be set against a shape that has just changed, and the thing worth measuring for `PLAN.md` is whether the *task list* is still earning its size. Named so the next change is deliberate rather than reactive.
-- **Nothing removed was summarised into a shorter form.** It was deleted, because a summary of an append-only log is a fourth telling and would go stale the same way. What replaced each cut is a pointer to where the full record lives.
-- **The rule that failed is now written where it is read.** Both files carry a sentence at the point of edit telling the next writer to replace rather than prepend. D-052 put the same rule in a decision entry and it was not enough; a rule that lives only in a log nobody opens while editing is a rule that gets re-broken.
-- Evidence: `HANDOFF.md`, `PLAN.md`. `pnpm check:docs --strict` passes at 131 decisions and 133 traps, and **it caught this entry's own forward reference before it shipped** — both rewritten files cited D-131 while it was still unwritten. D-130 (the guard that should have caught the growth), D-052 (the thin-handoff rule this finds broken twice), D-094 (why "live-targeted" stopped being true), D-082.
-
-## D-132 — The ledger view's markup became seven files, and the derivation pipeline deliberately did not move
-
-- Date: 2026-08-19
-- Status: **Accepted and done.** Front-end structure only: **no behaviour changed, no route, RPC, migration or SQL moved**, so every project stays on 020 and the backup contract stays at **v7**.
-- **The defect was one `return`, not one file.** `app/transactions-view.tsx` was **1553 lines** with **29 `useState`, about 25 `useMemo` and roughly 940 lines of JSX in a single `return`** — the four record kinds it renders were four branches of one `map` rather than four things. It was the only file in a whole-repo survey where length was a genuine comprehension problem rather than a number; the other long files are 21–30% comment and are per-bank parsing contracts that belong together.
-
-### What moved
-
-- **The four record kinds are components**: `app/ledger-statement-row.tsx` (378), `app/ledger-card-row.tsx` (216), `app/ledger-slip-row.tsx` (154), `app/ledger-cash-row.tsx` (118). The statement row is the largest because its Status cell is **three modes rather than three styles** — picking a row for a card, picking one for a slip, and the ordinary verified view.
-- **The chrome is three more**: `app/ledger-controls.tsx` (128), `app/ledger-summary.tsx` (143), `app/ledger-retired-cards.tsx` (69). The summary is one component because the matching banner and the totals strip are **alternatives rather than neighbours** — the totals are deliberately absent while a row is being chosen, since a subtotal of three unrelated rows reads as a figure.
-- **`app/ledger-shared.ts` (77)** holds what they must agree about: one `formatDate`, the `ALL_ACCOUNTS`/`ALL_STATUSES` control values, and two types. **`LedgerLayout` exists because `showCombined ? 7 : 6` was written out at five separate places** and a detail row spanning the wrong number of columns is a silent defect. **`LedgerModes` groups the seven values describing what the owner is in the middle of**, because a row asks "is a write in flight anywhere", not "is this id deciding" — the conditions that read it stay beside the buttons they disable.
-- **`app/transactions-view.tsx` is 1553 → 880 lines, and its `return` is 940 → 215.** Two `store*Correction` functions that sat halfway up the derivation pipeline moved down beside the third, because their position read as though the pipeline depended on them and it does not.
-
-### What deliberately did not move, and why
-
-- **The `useMemo` derivation chain stays in the component.** It was the obvious next cut and it is the wrong one: extracting it would need roughly **16 arguments in and 24 values out**, which is not more comprehensible than the pipeline read top to bottom — it only moves the reading cost from one file to two. The chain is a derivation pipeline, not incidental state, and the rules it calls (`lib/slip-reconcile.ts`, `lib/notification-card-reconcile.ts`) already live outside it.
-- **`load()` stays too**, for the same arithmetic: it writes fifteen pieces of state across four record types, so a hook owning it would hand all fifteen back.
-- **29 `useState` is unchanged.** Grouping them would change update batching and state identity, which is a behaviour change, and no behaviour change was licensed here.
-
-### The test that would have gone quiet
-
-- **`tests/privacy.test.ts` named five files by hand**, one of them `app/transactions-view.tsx`, to assert the ledger surfaces carry no `serviceWorker`, `localStorage`, `sessionStorage` or `console.`. **A split moves guarded code out from under a check like that while it keeps passing** — the exact drift the same file's opening comment was written about after a hardcoded array missed `app/cash-entry.tsx` and `app/correction-form.tsx`.
-- It now **walks `app/`** instead, covering `.ts` as well as `.tsx` — the new shared module is a plain `.ts` and a `.tsx`-only walk would have stopped covering it on the way past. **`app/site-header.tsx` is excluded by name**, with its reason: it is the one file allowed to register the service worker.
-- **Red-proved rather than assumed**: a `console.log` was put in `app/ledger-shared.ts`, the check failed, and it was removed.
-- Evidence: gate re-run green after each of the two extraction steps and against a baseline taken before anything was touched — Vitest **604 passed / 7 skipped across 30 files** unchanged throughout, pgTAP untouched (no SQL moved), Playwright owner **29/29** at baseline and after both steps, production build clean at **eighteen** `/api/v1/` routes. D-011 (the two-agent workflow this was done under), D-064 (why a statement row carries no chip), D-069 (why the chooser is rows and not a dropdown), D-075 (the detail panels), D-103 (retiring a card).
-
-## D-133 — Both continuity budgets were acted on rather than raised, and the archive boundary excluded every open question
-
-- Date: 2026-08-19
-- Status: **Accepted and done**, on the owner's instruction. Documentation only; no application code, no SQL, nothing about the ledger changes.
-- **Both budgeted files were within ten percent of breaching**: `DECISIONS.md` at **106 KB/117 KB (90%)** and `GOTCHAS.md` at **181 KB/195 KB (93%)**. D-130 set those budgets deliberately, so raising either would have removed the guard rather than answered it. Each file has a **different** sanctioned remedy and both were applied.
-
-### `DECISIONS.md`: 106 KB → 78 KB (90% → 67%)
-
-- **D-114 … D-119 archived** to `docs/decisions/ARCHIVE-D-114-D-119.md`, moved unchanged. This file now carries **D-120 onward**.
-- **The boundary is where the argument ended, and the test was whether anything is still open.** The six moved are the measurements and repairs that *led to* the card reader adopting Cloud Vision. **D-120 is that adoption and it stayed**, because it is the arrangement the app still runs — and because **whether pre-fill stays at all is still undecided on both the card and the slip path**, a question that attaches to D-120 and D-129. Archiving either would have filed a live argument as settled, which is the one thing an archive must not do.
-- A round number would have taken D-114 … D-129 and been wrong for exactly that reason.
-
-### `GOTCHAS.md`: 181 KB → 177 KB (93% → 91%)
-
-- **There is no archive for traps and that is by design** (`scripts/check-docs.mjs`): relocating them would only move the reading cost, so the only remedy is retiring a trap whose subject no longer exists down to the generalisation that outlived it.
-- **The 2026-08-18 retirements had annotated two dead traps without shrinking them**, which is why the file kept growing while reporting that traps had been retired. A "no longer live" line appended to a full Symptom/Cause/Avoid/Verify body costs bytes rather than saving them. Both were cut properly this time.
-- **`A WASM core path naming a directory…` was removed outright**, because its generalisation is word-for-word the one the live ZXing entry above it already carries; the surviving half — **a library that composes an asset name at runtime keeps a second, invisible copy of your build's file list** — was folded into that entry instead of being kept twice. Trap count 133 → 132.
-- **The sweep found no other dead subjects.** Eight further traps mention tesseract.js, and in every one it is an example inside a rule that still binds (the pnpm build allowlist, the store-path mismatch, the scoped-name quoting). A trap is retired when its *subject* is gone, not when a word in it is.
-- **Named rather than solved**: at 91% and 132 traps, `GOTCHAS.md` will breach again, and retirement is bounded by how many traps actually die. Raising that budget is the owner's call and is not made here.
-- Evidence: `pnpm check:docs --strict` passes at **132 decisions, 132 traps**, indexes match, references and paths resolve, `DECISIONS.md` 78 KB/117 KB (67%) and `GOTCHAS.md` 177 KB/195 KB (91%). D-130 (the budgets and why they are bytes), D-080 (the archive remedy), D-131 (the same instinct applied to the handoff and the plan).
+- **D-145** — The hosted Sync button proxies ciphertext, and it is a caller of the mail seam rather than a second one
+- **D-146** — The fifth archive boundary is shallow on purpose, because two open questions sit immediately behind it
 
 ## D-134 — The traps budget is raised to 260 KB on the lookup-file argument, with the next breach owed a split rather than a third raise
 
@@ -616,3 +531,125 @@ That is the source-grep trap `GOTCHAS.md` already records, hit by the test meant
 **And the audit caught a regression within minutes of the fix that produced it**: the new checkbox measured 20x20. It is 24 now, and the audit learned that a control wrapped in its own label is hit by tapping the label — the measurement had been aimed at the wrong element.
 
 - Evidence: the files above. Vitest **666 passed / 7 skipped across 33 files** (up 23, all `tests/statement-mailbox.test.ts`), Playwright owner **31/31** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes, tsc and ESLint clean. `.runtime/worklist-phone-audit.spec.ts` is **4 tests** now and covers the bind scroll and the auto-bind path end to end, asserting `import_batches` stays at zero — the browser proof that binding does not confirm. **pgTAP not re-run and deliberately so**: nothing here moves SQL. **The fetcher was run against the real mailbox**: 3 messages, 5 PDFs, and all four statements imported by the owner. D-141 (the design this completes and revises), D-017 (superseded on binding), D-035 (the stdin rule), D-055 (why confirming stays manual), D-139 (the banner precedent), D-138 (why a browser check).
+
+## D-145 — The hosted Sync button proxies ciphertext, and it is a caller of the mail seam rather than a second one
+
+- Date: 2026-08-23
+- Status: **Built, uncommitted, and not deployed — and it cannot work until the owner puts a credential into Vercel, which is a gate that has not been asked for.** `lib/statement-sync.ts` (policy), `lib/server/statement-mailbox-session.ts` (the server-side caller), `app/api/v1/imports/mailbox/route.ts` and `app/api/v1/imports/mailbox/attachment/route.ts` (the two routes), `app/statement-sync.tsx` (the button), plus `app/statement-batch.tsx`, `app/globals.css`, `tests/statement-sync.test.ts` (29) and `tests/privacy.test.ts` (two guards added, one comment corrected). **No SQL and no contract change**; every project stays on migration 020 and the backup contract stays at **v7**. **Two new routes**: the build emits **twenty** `/api/v1/` routes where it emitted eighteen.
+- Context: PLAN task 41, asked for by the owner on 2026-08-23 immediately after auto-import v1 landed (D-144). **The design was settled in D-141 and was not re-derived**: the server proxies the still-encrypted bytes and the browser decrypts them.
+
+### What was already decided, and what this had to decide
+
+D-141 chose the shape and rejected the two alternatives for reasons that have not changed. **Server-side decrypt** would put a secret derived from the owner's citizen ID onto a third party's infrastructure and would end statements being the only path in this app that reads entirely on the device (D-128, D-129). **A browser calling Gmail directly** would need `connect-src` widened past `'self'` and the Supabase origin, and the CSP is not weakened to make a feature work (D-058). Proxying ciphertext needs neither: what crosses is a file the bank locked and this app cannot open, and it was already sitting on Google's servers before it moved.
+
+**`lib/server/statement-mailbox.ts` is reused byte-for-byte unchanged**, which is what its own header said it existed for. This adds a *caller*. The IMAP session handling that both callers need — sign in, take the INBOX lock, release once — is a new sibling rather than an edit to the seam, so `scripts/fetch-statements.mjs` is untouched too.
+
+**Task 41 left two questions open and both are answered here.**
+
+**One: the route lists first and fetches on demand.** Fetching everything in one call would hold every attachment in one server process and return them in one response body — a memory bound nobody set, and a response size the hosting platform caps independently of anything in this repository, which would surface as a truncated PDF rather than an error. Listing first keeps the server holding one attachment at a time and makes a failure specific: one statement that will not download is one row saying so. The cost is one IMAP session per request rather than one per sync, which is seconds on a button pressed by hand. **The page still spends both calls on one press**, because what the owner asked for was a Sync button and the split is the server's concern.
+
+**Two: it never claims a statement is already present, and that is a refusal rather than an omission.** The local fetcher skips by filename because it owns the directory it writes to; a route has no folder. The alternative was inventing server-side state to hold a watermark — a new persisted thing, for a button pressed by hand. The import worklist already blocks a repeat on the PDF's own SHA-256 (D-141), which is a stronger check than a filename and happens where the bytes actually are. A weaker check that *sounded* authoritative would be worse than none.
+
+### The credential, and why it is a different risk class from the one the rules were written about
+
+**The app password moves from stdin to an environment variable, and that is a real change that the design accepts rather than hides.** D-035's rule — passwords from stdin only, never a file, an argument or an environment — was written about *document* passwords, which derive from the owner's date of birth and citizen ID and are therefore identity-grade and non-rotatable. The mailbox app password is rotatable from a Google account page and scoped to reading one mailbox that receives nothing but bank mail. A route cannot prompt anybody, so a hosted deployment necessarily holds it.
+
+**The document password never comes near any of this.** It is not a parameter of either route, is not held by the deployment, and no path there could use it. `app/statement-sync.tsx` takes two props and neither is one; it has no such state and renders no field that could collect one. The PDFs move locked and are opened by pdf.js on the device, exactly as before.
+
+**Three environment variables, and the routes fail closed and say which is missing**: `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD`. Absent, both routes answer **503** with a sentence naming the unset variables and pointing at local files — the same shape `strongOwnerClient()` uses for an unconfigured Supabase, because "not set up" and "broken" want different words. `statement-mailbox.json` is gitignored and therefore does not exist in a deployment, so the configuration comes from the environment instead. **The variable names are not in `.env.example`**, which is inside the never-read boundary and is the owner's to edit.
+
+### Two checks on the pair the browser names, and the second is the load-bearing one
+
+`uid` and `part` arrive from the page, so they are **client input into a mail server query**. `lib/statement-sync.ts` refuses anything that is not a positive integer and a dotted-digit part path — a part path is a selector, not a value with a safe encoding, so an unexpected one is refused rather than escaped.
+
+**That is not sufficient on its own, and assuming it was would have been the defect.** A *well-formed* pair still names an arbitrary part of an arbitrary message. So the mailbox is asked a second question before anything is downloaded: is this uid in the set matching the configured senders, and is this part one of its PDF attachments? Either no is a **404**, and deliberately the same 404 for "no such message", "not from a configured sender" and "not a PDF part" — distinguishing them would let the shape of the mailbox be mapped one request at a time. Without that check, an owner-gated download route would also be a way to read any mail in the mailbox, which is more than this feature needs and therefore more than it should have.
+
+Both routes take `strongOwnerClient()` — aal2 plus a verified TOTP factor, matching `private.has_strong_owner_access` (D-093). **Reading the owner's bank mail is not a lesser act than reading his ledger.** Both pin `runtime = "nodejs"`, because a TLS socket cannot be opened from the edge runtime and a silent fallback would fail at request time rather than at build time. Neither logs, and `imapflow`'s own logger is off: the library prints subjects and addresses at info level, and a hosting platform retains stdout.
+
+### The guard that changed meaning, and why it is said out loud
+
+`tests/privacy.test.ts` asserted that `app/statement-batch.tsx` and `lib/statement-batch.ts` **construct no request of any kind**. That assertion still passes — and it would have gone on passing while meaning less, which is precisely the trap D-144 was written about one file along.
+
+**So the fetching lives in a separate component on purpose.** `app/statement-sync.tsx` talks to the server and hands `File` objects across; the batch still fetches nothing. The old guard's comment now states what it still means (the bytes, the password and the parse never leave the device) and what it no longer means on its own (that nothing in the import section talks to a server), and a second guard covers the new file: two GETs and no third, both built from a named constant or from `attachmentPath`, no absolute URL anywhere, no request body of any kind, no storage API, and no worker, digest or reader.
+
+**One of those assertions was written as a word-grep and was wrong the way word-greps are.** It forbade `password` anywhere in `app/statement-sync.tsx` — and the component *tells* the owner to "type the document password" into the form below, which is the correct instruction. Asserting the shapes that would actually carry a secret (a prop, a state, a `type="password"` field) is what the grep was standing in for, so that is what it asserts now. The same correction applies to the routes: they say "check that the app password is current" in a message the owner needs when the mailbox credential expires, and that is the rotatable one.
+
+### The dependency moved, and it had to
+
+**`imapflow` was a devDependency and shipped server code now imports it.** It is a runtime dependency and is declared as one; the lockfile moved three lines and nothing else. Confirmed from the build artifact rather than from the file: `imapflow` and `imap.gmail.com` appear in **one server chunk and zero client chunks**.
+
+### What is proved in a browser, and what is not
+
+**`.runtime/mailbox-sync.spec.ts` is 4 tests** (throwaway, gitignored) and exists because the sharpest lesson of this day was that three defects were visible only in a browser and would each have passed a source review. It proves, at 390px behind a real sign-in:
+
+- **The unconfigured path, through the real route.** This machine has no mailbox credential and must not have one, so pressing the button actually runs `strongOwnerClient()` and `mailboxConfig()` and returns a 503 — and the owner sees a sentence naming the unset variable, with the button enabled again rather than left dead.
+- **The download path**, with both routes intercepted and synthetic bytes served: a manifest becomes `File` objects, they land in the batch, they are marked as ones he did not choose, the pdf.js worker opens them, binding reaches the review — and `import_batches` is asserted to stay at zero.
+- **A failed download is one line, not a failed sync.** The one that arrived still reaches the batch. That is the "failure path that discards work" shape D-142 was about.
+- **The band is clean at 390px** with every tap target at 44px or more.
+
+**What is not proved is the mailbox.** No IMAP connection was made by anything this session; the route has never spoken to a real server, and it cannot until the credential is in Vercel. The seam it calls *is* proven against the real mailbox, by the fetcher, on 2026-08-23 (D-144).
+
+### Two smaller decisions, recorded because they change shipped behaviour
+
+**Choosing local files now adds to the batch instead of replacing it.** It replaced the batch before, which was harmless while the chooser was the only way in and stopped being harmless the moment a sync could fill the list — one local PDF chosen afterwards would have silently discarded everything downloaded. "Clear this batch" is now the only way to start over. The entry id became a monotonic counter for the same reason: `${index}-${name}` is unique within one selection and is not unique across two arrivals, and a duplicate React key makes two rows render as one.
+
+**A synced row says "from the mailbox".** It matters most on the blocked list: a local file that will not open is one the owner picked, and a mailbox one is a bank attaching something that is not a statement — which is a thing the owner's real banks do (D-144).
+
+### What `/code-review` found, run before asking to commit (D-125)
+
+Eleven findings. **Ten were real and are fixed; one was declined.** The agent died once on a session limit before reading the diff and was re-run — a failed review is not a passed one, and the second run is the one that counts.
+
+**Two were serious, and both are the same mistake: a limit applied after the cost instead of before it.**
+
+1. **A batch of unread files could not be cleared, and there was no other way out.** Making selection additive (below) removed the old escape — re-choosing used to replace the batch — and "Clear this batch" was rendered only when `plan` had rows. `plan` is built solely from files that have been through the worker, so a sync that queued forty unwanted PDFs left **no** Clear button, a cap refusing every further add, and a chooser that could only append. A page reload was the only recovery. It is now shown whenever the batch holds anything, reading "*n* waiting to be unlocked" before any parse. **The lesson is that a change which removes a recovery path owes a replacement in the same commit**, and this one silently did not.
+
+2. **The route walked every matching message before applying its own cap.** `findAttachments` issued one `fetchOne` per UID and `buildManifest` capped afterwards — while the page offers "everything the senders ever sent". On a mailbox holding years of bank mail that is thousands of sequential IMAP round trips inside one request, ending as a gateway timeout with no sentence in it: **exactly the failure the bounded socket timeouts were added to prevent, reached by a different road.** The loop now stops at `MAX_SYNC_ATTACHMENTS`, and because it stops it can no longer count what it did not look at — so `omitted: number` became `truncated: boolean`, which says *there is more* without inventing a figure. Counting would have been the scan the cap exists to avoid.
+
+**Three more were the same shape in the browser.** The sync capped its manifest against an *empty* batch, so with thirty-five files already queued it downloaded forty and discarded thirty-five **after** paying for them over the network — the opposite of the reason the cap was documented to exist. It now receives the remaining room and trims before downloading. It also announced what it had downloaded rather than what was accepted, putting "40 added" beside the batch's own correct "5 added, and 35 left out" — two contradictory sentences with the false one nearer the button; `onFetched` now returns the accepted count. And `room` was computed from a render-time `files.length` captured at click time, so choosing local files during a long sync could leave a batch capped at forty holding seventy; it reads a ref written in the same handler that queues the files, and the chooser is held while a sync runs.
+
+**One was a defect in a route that no test would have reached.** `Content-Disposition` interpolated the attachment's name directly. `safeFileName` preserves non-ASCII — correctly, since it names a file on disk — and Node refuses a header value carrying a code point above `\xFF`. **The banks this app reads are Thai**, so a Thai filename would have failed the whole download with `ERR_INVALID_CHAR` rather than delivering the PDF: the ordinary case, not an exotic one. `contentDisposition` now emits both RFC 6266 forms, and it percent-encodes against RFC 5987's `attr-char` set explicitly because `encodeURIComponent` leaves `!'()*` alone.
+
+**And one was in a guard written this same day, which is the sharpest of them.** The "no absolute URL" assertion ran against a comment-stripped copy of the source — and `.replace(/\/\/.*/gu, "")` knows nothing about string literals, so `fetch("https://mail.google.com/…")` becomes `fetch("https:` before the pattern looks at it. **The check would have passed for precisely the drift it was written to catch.** It runs against the raw source now. This is the third distinct way a source-grep guard has failed at its own job in two days — after the spelling trap (D-144) and the word-grep on prose (above) — and all three are in `GOTCHAS.md`.
+
+**The remaining three were small and are fixed**: the "stream" drained its source inside `async start`, which enqueues everything regardless of the consumer and buffers the whole PDF — the memory profile a buffered response was rejected for, while calling itself a stream; it reads one chunk per `pull` now, releasing the session on all three exits. `messages` counted every mail with a body structure, so a mailbox of ordinary correspondence could report "2 PDF(s) across 60 message(s)", which reads like 58 statements went missing. And the local file chooser's label was fed by the whole batch, so it read "40 chosen" after a sync the owner chose nothing in — the one place the new `source` field earns its keep.
+
+**One finding was declined**, and on precedent rather than judgement: `playwright.config.ts` sets no `webServer.timeout` for a cold `pnpm build && pnpm start`. It is correct — the sibling config sets 180 s for the same shape — but that file is the owner's deliberately local-only copy, is never committed, and the same hazard is already recorded in `HANDOFF.md` § Live hazards. D-141 declined findings against it for the same reason.
+
+**One of the review's assertions was itself wrong and the spec settled it.** A new test claimed `!` must be percent-encoded in an extended filename; `!` is a legitimate RFC 5987 `attr-char`, and only the other four of `!'()*` are not. The implementation was right and the test was corrected.
+
+
+### What this is still owed
+
+- **`/security-review`.** Two new routes, a stored credential and a mailbox read is exactly what it exists for, and only the owner can run it. **`/code-review` is discharged**: it ran against this work before asking to commit, per D-125, and its ten real findings are fixed above.
+- **The credential in Vercel**, which is a hosted-resource change and needs the owner's authorization at the time. Until then the feature is inert in production and says so.
+- **A committed spec.** The gap D-141 left is unchanged and this widens it: the statement batch is covered by unit tests and a throwaway, and the sync now is too.
+
+- Evidence: the files above. Vitest **696 passed / 7 skipped across 34 files** (up 30, one new file), Playwright owner **31/31** and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, tsc and ESLint clean. `.runtime/mailbox-sync.spec.ts` is **6 tests** — two of them added for the review findings above, and both fail against the code as it stood before the fix. All re-run in full after the review. **pgTAP not re-run and deliberately so**: nothing here moves SQL, and it stands at 266 across 8 from 2026-08-18. D-141 (the design this implements, not revisits), D-144 (the seam this calls, and the guard-spelling trap), D-035 (the stdin rule and why a mailbox credential is a different class), D-058 (why the CSP was not widened), D-093 (the gate both routes take), D-125 (review before asking to commit), D-128/D-129 (device-only statement reading, which is unchanged).
+
+
+## D-146 — The fifth archive boundary is shallow on purpose, because two open questions sit immediately behind it
+
+- Date: 2026-08-24
+- Status: **Done.** **D-130 … D-133** relocated unchanged to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md). No entry was rewritten, no index bullet was lost, and every cross-reference still resolves — `check:docs --strict` reads the archives, so a reference to an archived id is not a dangling one.
+- Context: `DECISIONS.md` hit **94% of its 120 KB budget** on 2026-08-24, one day after the fourth boundary had taken it to 56%. Five entries did that — D-141 … D-145, of which D-145 alone is 18 KB.
+
+### What moved, and why the range ends where it does
+
+The four are the continuity-hygiene arc and they close on each other: the size guard that measured lines while the files grew sideways (D-130), the handoff and plan rewrites that followed (D-131), the ledger view's markup split (D-132), and the third archive boundary (D-133) — which is the first statement of the rule this entry is a later application of.
+
+### The finding, which is not the archive itself
+
+**This boundary lands at 82% where the fourth landed at 56%, and that is not a failure of nerve.** D-133's rule is that *a boundary excludes every open question*, and D-140 sharpened it into a test: *a question is closed when the code has stopped asking it.* Applying that test honestly stops the range at D-133, because the next two entries both still ask:
+
+- **D-134** raises the traps budget and says the **next** breach is owed a split rather than a third raise. That condition has not fired — `GOTCHAS.md` is at 79% — and the code is still asking it: the rule sits in `scripts/check-docs.mjs` beside the constant and in its failure message.
+- **D-137** drops the dark scheme with the owner's own qualifier on it, *"but we'll see"*. Nobody has looked at a bright page on a dark-OS phone at night, so the code is asking that question every time it serves `color-scheme: light`.
+
+Archiving either would have bought roughly ten more points and hidden a live argument to get them. **The cheaper cut was available and was refused**, which is the whole content of this entry.
+
+### What this means for the sixth boundary
+
+**Depth is bought by closing questions, not by cutting harder.** The two above are the owner's to close — one is a decision about how `GOTCHAS.md` grows, the other needs a phone in a dark room — and until they do, the sixth boundary faces the same wall at the same place. **The alternative worth naming rather than doing quietly**: this file's budget has never been raised, and D-134's own argument for raising `GOTCHAS.md`'s does not transfer, because that file is entered through an index and this one is read front to back. So the answer here stays archiving.
+
+**And the rate is now the thing to watch rather than the percentage.** Four days of ordinary work took this file 72% → 93%; *one* day took it 56% → 94%. At five entries a day a boundary is not a fortnightly event, it is part of finishing a feature — which is an argument for shorter entries, not only for more archives.
+
+- Evidence: `docs/decisions/ARCHIVE-D-130-D-133.md`, the index in this file, `pnpm check:docs --strict` passing at **146 decisions, 145 traps** with `DECISIONS.md` back under budget. D-130 (the byte guard that makes this measurable), D-133 (the rule this applies), D-140 (the test it applies), D-134 and D-137 (the two questions that bound it).

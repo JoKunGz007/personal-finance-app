@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { StatementSync } from "@/app/statement-sync";
 import { sha256HexBytes } from "@/lib/canonical";
 import {
   describeStatement, planStatementBatch,
@@ -23,6 +24,8 @@ type FileState = "queued" | "parsing" | "read" | "failed";
 type BatchFile = {
   readonly id: string;
   readonly fileName: string;
+  /** Where the bytes came from, so the worklist can say which ones the owner did not choose. */
+  readonly source: "chosen" | "mailbox";
   readonly file: File;
   readonly state: FileState;
   /** The PDF's SHA-256, computed before the bytes are transferred to the worker. */
@@ -101,6 +104,30 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
   const [status, setStatus] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   /**
+   * A monotonic counter behind every entry's key.
+   *
+   * **The id used to be `${index}-${file.name}` within one selection, and that stopped being unique
+   * once a batch could be added to.** Files now arrive from the chooser *and* from the mailbox, so
+   * two arrivals could each hold an entry at index 0 with the same name — a duplicate React key,
+   * which makes two rows update as one. A counter is unique across arrivals by construction, which
+   * a name and a position are not.
+   */
+  const nextId = useRef(0);
+  /**
+   * How many entries the batch holds, mirrored in a ref.
+   *
+   * **`files.length` is a render-time value and the sync resolves outside that render.** The
+   * callback `StatementSync` captured at click time closes over the `files` of the click; forty
+   * downloads later it is stale, so a `room` computed from it would let a batch capped at forty
+   * hold seventy — which is the memory bound the cap exists for, broken by the one code path that
+   * takes the longest. The ref is written in the same handler that queues the files, so it is
+   * always current. Only `addFiles` and `clear` change the array's length, which is what keeps the
+   * two in step.
+   */
+  const fileCount = useRef(0);
+  /** True while `StatementSync` is listing or downloading. Separate from `busy`, which is parsing. */
+  const [syncing, setSyncing] = useState(false);
+  /**
    * **A wrapper that is always rendered, rather than a ref on the banner itself.** The banner only
    * exists while there is a confirmation, so a ref on it would be null at the moment the effect
    * wants to scroll — React has not committed the new element yet. The same reasoning as the card
@@ -154,7 +181,10 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
   }, [files]);
 
   const queuedCount = files.filter((item) => item.state === "queued").length;
+  const chosenCount = files.filter((item) => item.source === "chosen").length;
   const retryable = files.filter((item) => item.state === "failed");
+  /** Parsing or syncing. Every control in this section is held while either is true. */
+  const working = busy || syncing;
 
   function patch(id: string, changes: Partial<BatchFile>) {
     setFiles((current) => current.map((item) => (item.id === id ? { ...item, ...changes } : item)));
@@ -162,35 +192,68 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
 
   function clear() {
     setFiles([]);
+    fileCount.current = 0;
     setProgress(null);
     setStatus(null);
     if (fileInput.current) fileInput.current.value = "";
   }
 
+  /**
+   * Adds files to the batch, from either source.
+   *
+   * **Adding rather than replacing, and that is a change from how the chooser used to behave.** A
+   * selection used to clear the batch first, which was harmless while the chooser was the only way
+   * in. It stopped being harmless the moment a mailbox sync could fill the list: choosing one local
+   * PDF afterwards would silently discard everything that had just been downloaded. "Clear this
+   * batch" is the way to start over, and it is the only way, which is the honest arrangement now
+   * that files arrive from two places.
+   *
+   * **Re-adding the same file is not guarded here on purpose.** `parseOne` blocks a repeat on its
+   * SHA-256 and the plan shows it as `duplicate-file`, which is a real check against the bytes;
+   * comparing names here would be a weaker check in an earlier place saying the same thing worse.
+   */
+  function addFiles(incoming: readonly File[], source: "chosen" | "mailbox"): number {
+    if (incoming.length === 0) return 0;
+    // Room comes from the ref, not from `files.length`: see `fileCount`. The work stays out of the
+    // `setFiles` updater because an updater must be pure — `reactStrictMode` runs it twice — and
+    // advancing a counter or setting other state in there is the impurity that exists to expose.
+    const room = Math.max(0, MAX_BATCH_FILES - fileCount.current);
+    const kept = incoming.slice(0, room);
+    const added: BatchFile[] = kept.map((file) => {
+      nextId.current += 1;
+      return {
+        id: `f${nextId.current}`,
+        fileName: file.name,
+        source,
+        file,
+        state: "queued",
+        digest: null,
+        parsed: null,
+        reason: null
+      };
+    });
+    fileCount.current += added.length;
+    setFiles((current) => [...current, ...added]);
+    setStatus(incoming.length > kept.length
+      ? `${kept.length} added, and ${incoming.length - kept.length} left out — a batch is capped at ${MAX_BATCH_FILES}. Nothing has been unlocked yet.`
+      : `${kept.length} statement(s) added. Nothing has been unlocked yet.`);
+    // **The accepted count travels back to the caller.** `StatementSync` used to report what it
+    // downloaded, which is not what landed: with the batch nearly full it announced "40 added"
+    // beside this function's "5 added, and 35 left out" — two contradictory sentences, and the one
+    // nearer the button was the false one.
+    return added.length;
+  }
+
   function onFiles(chosen: FileList | null) {
-    // **Copied out before `clear()`, and that order is load-bearing.** A `FileList` is a live view
-    // onto the input rather than a snapshot, and `clear()` sets `input.value = ""`, which empties
-    // it — so reading `chosen` afterwards finds nothing and every chosen file vanishes silently.
-    // Bulk slip upload shipped with exactly this defect and a browser spec caught it (D-135); no
-    // unit test could have.
+    // **Copied out before the input is reset, and that order is load-bearing.** A `FileList` is a
+    // live view onto the input rather than a snapshot, so reading it after `input.value = ""` finds
+    // nothing and every chosen file vanishes silently. Bulk slip upload shipped with exactly this
+    // defect and a browser spec caught it (D-135); no unit test could have.
     const chosenFiles = chosen ? [...chosen] : [];
-    clear();
-    if (chosenFiles.length === 0) return;
-    const kept = chosenFiles.slice(0, MAX_BATCH_FILES);
-    setFiles(kept.map((file, index) => ({
-      // The index is part of the key because two files in one selection can share a name, and a
-      // duplicate key would make two rows update as one.
-      id: `${index}-${file.name}`,
-      fileName: file.name,
-      file,
-      state: "queued",
-      digest: null,
-      parsed: null,
-      reason: null
-    })));
-    setStatus(chosenFiles.length > kept.length
-      ? `${kept.length} statements taken, and ${chosenFiles.length - kept.length} left out — a batch is capped at ${MAX_BATCH_FILES}. Nothing has been unlocked yet.`
-      : `${kept.length} statement(s) chosen. Nothing has been unlocked yet.`);
+    // Cleared so choosing the *same* file again still fires a change event — without it, a file
+    // removed from the batch could not be put back.
+    if (fileInput.current) fileInput.current.value = "";
+    addFiles(chosenFiles, "chosen");
   }
 
   /**
@@ -347,10 +410,27 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
           <h2 id="statement-batch-title">Or open several at once</h2>
           <p>
             Every PDF is unlocked and read on this device, in the same worker the single import
-            uses. Binding and confirming stay one statement at a time.
+            uses. Binding and confirming stay one statement at a time. Choose local files, or sync
+            the locked PDFs straight from the statement mailbox.
           </p>
         </div>
       </div>
+
+      {/* **The one surface in this section that talks to a server, and it is a separate file for
+          that reason.** This component is asserted to construct no request of any kind, because
+          statement import is the only path in this app that reads entirely on the device (D-128,
+          D-129) — so the mailbox fetch lives in `app/statement-sync.tsx` and hands `File`s back,
+          and `tests/privacy.test.ts` guards both halves separately. What it downloads is the
+          bank's own ciphertext; the document password below never reaches it. */}
+      <StatementSync
+        busy={busy}
+        // How many more this batch can hold. Without it a sync downloads forty attachments into a
+        // batch with room for five and throws thirty-five away *after* paying for them over the
+        // network — which is the opposite of what the cap was for.
+        room={Math.max(0, MAX_BATCH_FILES - files.length)}
+        onWorkingChange={setSyncing}
+        onFetched={(fetched) => addFiles(fetched, "mailbox")}
+      />
 
       <div className="import-controls">
         <label className="file-control">
@@ -361,10 +441,13 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
             name="statement-pdfs"
             accept="application/pdf,.pdf"
             multiple
-            disabled={busy}
+            disabled={working}
             onChange={(event) => onFiles(event.target.files)}
           />
-          <b>{files.length > 0 ? `${files.length} chosen` : "Choose local PDFs…"}</b>
+          {/* **Counts the ones actually chosen here, not the whole batch.** Fed by `files.length`
+              it read "40 chosen" on the local file control after a mailbox sync the owner had
+              chosen nothing in — which is the one place the `source` field earns its keep. */}
+          <b>{chosenCount > 0 ? `${chosenCount} chosen` : "Choose local PDFs…"}</b>
         </label>
         <label className="password-control">
           <span>Document password</span>
@@ -374,7 +457,7 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
             autoComplete="off"
             name="statement-batch-unlock-code"
             placeholder="Enter only when ready…"
-            disabled={busy}
+            disabled={working}
             onChange={(event) => setPassword(event.target.value)}
           />
           <small>Held in this form for one pass, then cleared.</small>
@@ -382,7 +465,7 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
         <button
           className="primary-button"
           type="button"
-          disabled={busy || queuedCount === 0}
+          disabled={working || queuedCount === 0}
           onClick={() => void parseMany(files.filter((item) => item.state === "queued"))}
         >
           {busy ? "Reading…" : `Unlock & read ${queuedCount || ""}`.trim()}
@@ -399,7 +482,7 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
           type="checkbox"
           name="auto-bind"
           checked={autoBind}
-          disabled={busy}
+          disabled={working}
           onChange={(event) => onAutoBindChange(event.target.checked)}
         />
         <span>
@@ -443,11 +526,17 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
             return (
               <li key={item.entry.id} className="batch-row">
                 <div className="batch-row-head">
-                  <span className="batch-file">{item.entry.label}</span>
+                  <span className="batch-file">
+                    {item.entry.label}
+                    {/* Which files the owner did not choose himself. It matters most on the blocked
+                        list — an unreadable local file is a file he picked, and an unreadable
+                        mailbox file is a bank attaching something that is not a statement. */}
+                    {source?.source === "mailbox" ? <span className="batch-source"> · from the mailbox</span> : null}
+                  </span>
                   <button
                     className={done ? "secondary-button" : "primary-button"}
                     type="button"
-                    disabled={busy || !source?.parsed}
+                    disabled={working || !source?.parsed}
                     onClick={() => {
                       if (!source?.parsed) return;
                       onWork({
@@ -485,7 +574,12 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
           {plan.blocked.map((item) => (
             <li key={item.entry.id} className="batch-row">
               <div className="batch-row-head">
-                <span className="batch-file">{item.entry.label}</span>
+                <span className="batch-file">
+                  {item.entry.label}
+                  {files.find((file) => file.id === item.entry.id)?.source === "mailbox"
+                    ? <span className="batch-source"> · from the mailbox</span>
+                    : null}
+                </span>
                 {/* The verdict in words, not the discriminant. `item.reason` is a kebab-case enum
                     for code to switch on; printing it put `not-cross-checked` on screen as though
                     it were a sentence, and it was also the only thing distinguishing a blocked row
@@ -499,12 +593,20 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
         </>
       ) : null}
 
-      {plan.ready.length > 0 || plan.blocked.length > 0 ? (
+      {/* **Shown whenever the batch holds anything at all, not only once something has been read.**
+          It was gated on the *plan*, which is built solely from files that have been through the
+          worker — so a sync that queued forty PDFs the owner did not want offered no way out: no
+          Clear button existed, the cap refused every further add, and the chooser could only
+          append. A page reload was the only escape. Since selection became additive, this button
+          is the one recovery path there is, so it may not depend on having got as far as a parse. */}
+      {files.length > 0 ? (
         <div className="batch-summary">
           <p className="batch-source">
-            {plan.ready.length} ready to bind · {plan.blocked.length} needing attention
+            {plan.ready.length > 0 || plan.blocked.length > 0
+              ? `${plan.ready.length} ready to bind · ${plan.blocked.length} needing attention`
+              : `${files.length} waiting to be unlocked`}
           </p>
-          <button className="secondary-button" type="button" disabled={busy} onClick={clear}>
+          <button className="secondary-button" type="button" disabled={working} onClick={clear}>
             Clear this batch
           </button>
         </div>

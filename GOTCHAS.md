@@ -47,6 +47,10 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - `supabase start` reports "already running" while its database container has exited
 - Windows reserves the whole local Supabase port block, and every container still reports healthy
 - A source-grep guard pinned to one spelling passes when the code is rewritten
+- A guard narrows in meaning without failing, because the behaviour moved to a file it does not name
+- A word-grep in a privacy guard fails on the sentence that documents the rule
+- Stripping comments before a source grep also strips the `//` inside a URL literal
+- Playwright's route glob treats `?` as a wildcard, so a path glob also matches its own sub-paths
 
 ### Database, migrations and pgTAP
 
@@ -397,6 +401,35 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: it asserted `not.toMatch(/find\([^)]*accountLastFour/)` — a *spelling*. The new code used `.filter(...)`, so the pattern did not match and the guard reported success. Every guard in that file reads source text rather than running behaviour, so all of them are exposed to this; the ones matching a **whole call site** are far more fragile than the ones matching a name.
 - Avoid: assert the property, not the phrasing. Slice the function by name and check what it must contain (`matches.length === 1`, both halves of the identity) alongside what it must not (`fuzzy|score|closest`), and make every assertion fail loudly when its marker is missing — `expect(section, "X must exist for this test to mean anything")` — so a rename cannot make it pass vacuously. Where behaviour can be exercised instead of grepped, exercise it: the browser check for the same rule asserts `import_batches` stays at zero, which no rewrite can fake.
 - Verify: 2026-08-23 (D-144). Reproduced by adding auto-binding and watching the guard pass; the rewritten guard fails against the pre-D-144 spelling and passes after, and the browser test in `.runtime/worklist-phone-audit.spec.ts` proves the unrelaxed half independently of any grep.
+
+## A guard narrows in meaning without failing, because the behaviour moved to a file it does not name
+
+- Symptom: a guard that reads "this file sends nothing anywhere" is still green, the file it names is still clean, and the promise it was written to protect is now only half true. Nothing failed, nothing was rewritten, and no review would catch it from the diff of either file.
+- Cause: the *system* changed around a guard scoped to a file list. `tests/privacy.test.ts` asserted that `app/statement-batch.tsx` and `lib/statement-batch.ts` construct no request of any kind, standing for "statement import reads entirely on the device". The hosted Sync button then added `app/statement-sync.tsx`, which fetches — correctly, and by design, since it moves only ciphertext — and the old assertion went on passing while no longer being the whole claim.
+- This is the **quiet** sibling of the spelling trap above and it is worse in one way: there, a rewrite made a green check wrong. Here nothing is wrong yet, and the check's *scope* has silently stopped matching its *sentence*. The same shape has already bitten this repo when a page split into routes and a source-grep test kept passing over files the code had left.
+- Avoid: when a behaviour leaves a guarded file, do not let the guard's silence be the record. Say in the guard's own comment what it still means and what it no longer means on its own, and add the sibling guard in the same commit. Prefer a guard scoped to a *found* file set over a named one where that is possible — the walk in "installs no observation tooling" is the pattern. And be suspicious of a privacy guard that has never failed: ask what would have to move for it to stay green and stop mattering.
+- Verify: 2026-08-23 (D-145). Both halves run in `tests/privacy.test.ts`: the batch still fetches nothing, and the sync surface's two GETs are asserted to be same-origin, body-free and built from a named path constant.
+
+## A word-grep in a privacy guard fails on the sentence that documents the rule
+
+- Symptom: a guard forbidding `password` anywhere in a component fails against a component that has no password — because the component *tells the owner* to "type the document password" into the form below, which is the correct instruction. The same guard against a route fails on "check that the app password is current", the message the owner needs when a mailbox credential expires.
+- Cause: the word is not the secret. A grep for a noun matches prose, help text and the comment explaining the very rule being enforced, and the repo already carries "a source-grep test matches the comment that explains its own rule" for the comment half of this.
+- Avoid: assert the **shapes that would carry a secret** — a prop in the destructured parameter list, a piece of state, a `type="password"` field, a request body, a named environment variable — not the word. Where a comment or a user-facing string must be excluded, strip comments explicitly (`source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/.*/gu, "")`) rather than loosening the pattern, and never strip user-facing strings: if a string genuinely must not contain the word, that is a real assertion and should stay.
+- Verify: 2026-08-23 (D-145). Both failures were reproduced against `app/statement-sync.tsx` and the two mailbox routes before the assertions were narrowed to shapes.
+
+## Stripping comments before a source grep also strips the `//` inside a URL literal
+
+- Symptom: a guard forbidding absolute URLs in a client file passes against a file containing `fetch("https://mail.google.com/…")`. Every other assertion in the same test is sound, and the one written to catch the exact drift that matters is the one that cannot.
+- Cause: the source was pre-processed with `source.replace(/\/\/.*/gu, "")` to keep prose out of the greps — a reasonable step, added for a real reason. But a line-comment stripper knows nothing about string literals, so `"https://…"` becomes `"https:` and the `/https?:\/\//` pattern finds nothing. **The transform removed exactly the two characters the pattern was looking for.**
+- Avoid: run each assertion against the representation it needs, not one shared scrubbed copy. Comment-stripping is right for greps over identifiers and wrong for any pattern containing `//`, `/*` or a quote — those go against the raw source. When both are needed in one test, name the two variables so the choice is visible at each call site rather than inherited from the top of the block.
+- Verify: 2026-08-24 (D-145). Found by `/code-review` against a guard written the same day; reproduced by pasting a third-party `fetch` into `app/statement-sync.tsx` and watching the stripped-source assertion pass and the raw-source one fail.
+
+## Playwright's route glob treats `?` as a wildcard, so a path glob also matches its own sub-paths
+
+- Symptom: an intercept registered for one endpoint silently swallows a different endpoint one path segment deeper, and the test either serves the wrong body or hangs waiting for a request that was already answered.
+- Cause: `page.route()` globs are not URL patterns. `*`, `**` and `?` are all wildcards, and `?` matches exactly one character — so `**/api/v1/imports/mailbox?**`, written to mean "that path with any query", also matches `/api/v1/imports/mailbox/attachment?...`, with `?` consuming the `/`. Registration order does not save you either: Playwright matches the **most recently registered** route first, so which one wins depends on the order the handlers happen to be written in.
+- Avoid: use a URL predicate rather than a glob whenever two endpoints share a prefix — `page.route((url) => url.pathname === "/api/v1/imports/mailbox", handler)`. It states the intent exactly, cannot be shadowed by a sibling, and reads the query through `URLSearchParams` where the query actually matters.
+- Verify: 2026-08-23 (D-145). `.runtime/mailbox-sync.spec.ts` drives the list route and the attachment route separately and asserts each is called with the uid and part it should be.
 
 ### Database, migrations and pgTAP
 

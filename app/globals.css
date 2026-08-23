@@ -253,6 +253,20 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
    select`, `.slip-fields input`, `.batch-direction select` and the three button ranks all sit at
    47. This was the one outlier at 42, which read as deliberate and was not. */
 .batch-fix input { height: 47px; padding: 10px 12px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
+/* The mailbox sync row. It sits above the file chooser because it is the other way files get into
+   the same batch, and it shares that section's 167px heading gutter so the two read as one bench.
+   Flex rather than the five-track grid `.import-controls` uses: this row is a select, a button and
+   a sentence, and it should wrap at whatever width it needs to. */
+.sync-band { display: grid; }
+.sync-controls { margin: 26px 0 0 167px; display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.sync-control { display: grid; gap: 7px; }
+.sync-control > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+/* 47px, like `.account-control select`, `.batch-direction select` and every other control here. */
+.sync-control select { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
+.sync-control select:disabled { opacity: .5; cursor: not-allowed; }
+.sync-controls .batch-source { flex: 1 1 26ch; max-width: 46ch; margin: 0; }
+.sync-failures { margin: 10px 0 0 167px; padding: 0; max-width: 70ch; list-style: none; display: grid; gap: 6px; }
+
 /* The auto-bind switch. Wide measure on the explanation because it is describing a relaxation of a
    rule the rest of the app is built on (D-144), and a one-line label could not carry that. */
 .auto-bind-control { margin: 18px 0 0 167px; max-width: 70ch; display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; color: var(--muted); font-size: 13px; }
@@ -504,6 +518,7 @@ footer p { margin: 0; }
   .slip-bench .status, .slip-bench .notice { margin-left: 0; }
   .cash-bench > .secondary-button, .card-bench > .secondary-button { margin-left: 0; }
   .batch-bench .status, .batch-note, .batch-rows, .batch-summary, .auto-bind-control { margin-left: 0; }
+  .sync-controls, .sync-failures { margin-left: 0; }
   .or-rule { display: none; }
   /* **`1fr` is `minmax(auto, 1fr)`, and that `auto` floor is min-content, not zero.** A select whose
      longest option is an account label therefore refuses to shrink, so the grid sizes itself to its
@@ -586,6 +601,9 @@ footer p { margin: 0; }
   .slip-fields { grid-template-columns: 1fr; }
   .batch-fix { grid-template-columns: 1fr; }
   .slip-controls { flex-direction: column; align-items: stretch; }
+  /* One column at phone width. A select and a button side by side at 390px leaves the select about
+     fourteen characters wide, which is not enough to tell "Last 90 days" from "Last 12 months". */
+  .sync-controls { flex-direction: column; align-items: stretch; }
   .password-control small { position: static; transform: none; }
   .review-heading { align-items: flex-start; flex-direction: column; }
   .review-actions { width: 100%; align-items: stretch; flex-direction: column; }

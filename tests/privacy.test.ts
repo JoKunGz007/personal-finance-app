@@ -229,6 +229,14 @@ describe("privacy guardrails", () => {
     // D-129) — slips and notification cards both go to Google Cloud Vision. Opening many
     // statements at once is exactly where that would erode quietly, so it is asserted rather
     // than intended: no request of any kind is constructed in either file.
+    //
+    // **A sibling now does fetch, and this assertion is narrower than it reads unless that is
+    // said out loud.** The hosted Sync button pulls still-encrypted PDFs from the mailbox through
+    // this app's own routes; it lives in `app/statement-sync.tsx` precisely so that this file can
+    // go on constructing no request at all, and it is guarded separately in the test below. What
+    // this one still means, exactly: the *reading* of a statement — the bytes, the document
+    // password, the parse — never leaves the device. What it no longer means on its own is that
+    // nothing in the import section talks to a server. Read the two together.
     const policy = readFileSync("lib/statement-batch.ts", "utf8");
     const ui = readFileSync("app/statement-batch.tsx", "utf8");
     for (const source of [policy, ui]) {
@@ -240,6 +248,120 @@ describe("privacy guardrails", () => {
     // into anything kept, and never put in a message that outlives the parse.
     expect(ui).toMatch(/worker\.postMessage\(\{ type: "parse", bytes, password \}, \[bytes\]\)/u);
     expect(ui).not.toMatch(/JSON\.stringify\([^)]*password/u);
+
+    // **The sibling is reached as a component and given files, never a password.** If the batch
+    // ever passed `password` down, the assertion above would still pass while the promise it
+    // stands for had been broken one file away — which is the source-grep trap `GOTCHAS.md`
+    // carries, and the reason this names the prop list rather than the import.
+    const mount = /<StatementSync[\s\S]*?\/>/u.exec(ui)?.[0] ?? "";
+    expect(mount, "StatementSync must be mounted for this test to mean anything").toContain("onFetched");
+    expect(mount, "the sync surface is given files to add and nothing else").not.toMatch(/password/u);
+  });
+
+  it("keeps the mailbox sync same-origin, and never lets it carry a statement's contents", () => {
+    // The hosted Sync button (D-141, PLAN task 41). It is the one surface in the import section
+    // that talks to a server, and what it moves is the bank's own ciphertext — a locked PDF this
+    // app cannot open, which was already sitting on Google's servers before it moved. Everything
+    // that would make it *readable* stays on the device.
+    const ui = readFileSync("app/statement-sync.tsx", "utf8");
+    // The negative checks run against code with comments removed. This file *documents* what it
+    // does not do — "no document password", "no PDF bytes" — and a grep for those words would
+    // otherwise be failed by the sentence promising them.
+    const code = ui.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+
+    // Same-origin and under the versioned prefix. Both call sites are built from a named constant
+    // or from `attachmentPath`, so there is no bare URL literal to drift.
+    expect(ui).toContain('const MAILBOX_PATH = "/api/v1/imports/mailbox"');
+    expect(ui).toMatch(/fetch\(`\$\{MAILBOX_PATH\}\?\$\{query\}`/u);
+    expect(ui).toMatch(/fetch\(attachmentPath\(attachment\.uid, attachment\.part\)/u);
+    // Exactly those two fetches and no third.
+    expect(code.match(/\bfetch\s*\(/gu)).toHaveLength(2);
+    // No absolute URL anywhere: a mailbox is reached through this app's own server or not at all.
+    // Widening `connect-src` to call Gmail from the browser is the alternative D-141 rejected and
+    // the CSP is not weakened to make a feature work (D-058).
+    //
+    // **Checked against the raw source, and that is load-bearing.** `code` strips `//` to the end
+    // of the line without knowing about string literals, so `fetch("https://mail.google.com/…")`
+    // becomes `fetch("https:` — and this assertion would pass for exactly the drift it exists to
+    // catch. A comment-stripper is the wrong tool for a pattern that contains `//`.
+    expect(ui).not.toMatch(/https?:\/\//u);
+    expect(code).not.toMatch(/XMLHttpRequest|navigator\.sendBeacon|WebSocket|EventSource/u);
+    expect(code).not.toMatch(/localStorage|sessionStorage|indexedDB|document\.cookie/u);
+
+    // **Two GETs and no body, ever.** Nothing is uploaded: not a document password, not PDF bytes,
+    // not a parse result, not an account. A request body is the shape that would carry any of
+    // them, so its absence is what is asserted rather than the absence of each one by name.
+    expect(code).not.toMatch(/method\s*:\s*["'`](?:POST|PUT|PATCH|DELETE)/iu);
+    expect(code).not.toMatch(/\bbody\s*:/u);
+    expect(code).not.toMatch(/FormData|JSON\.stringify/u);
+
+    // **The document password is not a thing this component can see.** It takes exactly two props
+    // and neither is one, it holds no such state, and it renders no field that could collect one.
+    //
+    // A bare grep for the word is what this started as and it was wrong: the component *tells* the
+    // owner to "type the document password" into the form below, which is the correct instruction
+    // and would have failed a word-grep. Assert the shapes that would actually carry a secret.
+    expect(code).toContain("export function StatementSync({ busy, room, onFetched, onWorkingChange }: {");
+    expect(code).not.toMatch(/type=["']password["']/u);
+    expect(code).not.toMatch(/\[\s*password\s*[,\]]|password\s*[:=]/iu);
+
+    // It hands `File` objects to the batch and decides nothing about them: no parsing, no worker,
+    // no digest, no account. The judgement about whether a downloaded PDF is even a statement
+    // belongs to the reader, which refuses a non-statement outright (D-144).
+    expect(code).toContain("new File([bytes], attachment.name");
+    expect(code).not.toMatch(/new Worker|sha256|assembleImportPayload|readStatement/u);
+  });
+
+  it("gates the mailbox routes exactly as every other owner-bound route, and validates what the page names", () => {
+    const list = readFileSync("app/api/v1/imports/mailbox/route.ts", "utf8");
+    const attachmentRoute = readFileSync("app/api/v1/imports/mailbox/attachment/route.ts", "utf8");
+    // Both routes argue in their own comments about what they deliberately do not do, so the
+    // negative greps run against code with the comments taken out.
+    const codeOnly = (source: string) =>
+      source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/.*/gu, "");
+
+    for (const [name, route] of [["list", list], ["attachment", attachmentRoute]] as const) {
+      // aal2 plus a verified TOTP factor, matching `private.has_strong_owner_access` (D-093).
+      // Reading the owner's bank mail is not a lesser act than reading his ledger.
+      expect(route, `${name}: the mailbox is owner-gated`).toContain("await strongOwnerClient()");
+      expect(route, `${name}: refuses before doing anything`).toMatch(/if \(!auth\.ok\) return routeError/u);
+      // The mailbox credential is read from the environment on the server and never answered back.
+      // `SUPABASE_SERVICE_ROLE_KEY` is deliberately absent from this deployment and stays that way.
+      expect(route, `${name}: no service-role bypass`).not.toMatch(/SERVICE_ROLE/u);
+      expect(route, `${name}: the app password is never in a response`)
+        .not.toMatch(/STATEMENT_MAILBOX_APP_PASSWORD/u);
+      // Nothing about a mailbox belongs in a hosting platform's retained log.
+      expect(route, `${name}: does not log`).not.toMatch(/console\./u);
+      // A TLS socket cannot be opened from the edge runtime, and a route that silently fell back
+      // would fail at request time rather than at build time.
+      expect(route, `${name}: runs on node`).toContain('export const runtime = "nodejs"');
+    }
+
+    // **The pair the page sends back is checked twice, and the second check is the load-bearing
+    // one.** A well-formed uid and part path still names an arbitrary part of an arbitrary
+    // message; `verifyAttachment` re-derives the candidate set from the mailbox and refuses
+    // anything that is not a PDF attachment from a configured sender. Without it, an owner-gated
+    // download route would also be a way to read any mail in that mailbox.
+    expect(attachmentRoute).toContain("parseUid(params.get(\"uid\"))");
+    expect(attachmentRoute).toContain("isSafePartPath(part)");
+    expect(attachmentRoute).toContain("await verifyAttachment(session.client, settings.config.senders, uid, part)");
+    expect(attachmentRoute, "an unverified pair is refused, not downloaded")
+      .toMatch(/if \(!attachment\) \{[\s\S]*?return routeError\([^)]*404\)/u);
+
+    // **Nothing decrypts on the server**, which is the promise the whole design rests on: what
+    // moves is the bank's own ciphertext and this deployment holds nothing that could open it. No
+    // reader, no pdf.js, no decryption of any kind (D-141). The word "password" is deliberately
+    // *not* grepped for — both routes say "the app password is current" in a message the owner
+    // needs when the mailbox credential expires, and that is the rotatable mailbox one, not the
+    // identity-grade document one. `STATEMENT_MAILBOX_APP_PASSWORD` is asserted absent above.
+    for (const route of [list, attachmentRoute]) {
+      expect(codeOnly(route)).not.toMatch(/pdfjs|readStatement|decrypt/iu);
+    }
+    // And no route takes a password from the request, which is the check the word-grep would have
+    // been standing in for.
+    for (const route of [list, attachmentRoute]) {
+      expect(codeOnly(route)).not.toMatch(/(?:get|json|formData)\([^)]*[Pp]assword/u);
+    }
   });
 
   it("does not widen the accounts listing beyond the chooser's needs", () => {

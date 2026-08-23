@@ -16,12 +16,13 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-130 onward** in full,
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-134 onward** in full,
 with D-001…D-059 in [docs/decisions/ARCHIVE-D-001-D-059.md](docs/decisions/ARCHIVE-D-001-D-059.md),
 D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md),
-D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md) and
-D-120…D-129 in [docs/decisions/ARCHIVE-D-120-D-129.md](docs/decisions/ARCHIVE-D-120-D-129.md);
-the index at the top of `DECISIONS.md` covers all five) →
+D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md),
+D-120…D-129 in [docs/decisions/ARCHIVE-D-120-D-129.md](docs/decisions/ARCHIVE-D-120-D-129.md) and
+D-130…D-133 in [docs/decisions/ARCHIVE-D-130-D-133.md](docs/decisions/ARCHIVE-D-130-D-133.md);
+the index at the top of `DECISIONS.md` covers all six) →
 [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture and
@@ -116,21 +117,28 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   app public lib` is the sweep; it is in `GOTCHAS.md` as its own trap.
 - Phone width was measured for the first time behind a sign-in (`.runtime/mobile-audit.spec.ts`,
   throwaway and gitignored); the first pass of PLAN task 28 is applied and the remainder is there.
-- **`DECISIONS.md` is at 93% of its budget and the archive is overdue**, not approaching: 72% on
-  2026-08-19, 93% on 2026-08-22, with roughly 8 KB of headroom left — less than one substantial
-  entry. **Take the boundary before writing the next one.** It goes where an argument ends (D-133),
-  and the raise precedent is `GOTCHAS.md`'s alone: that file is entered through an index rather than
-  read front-to-back, which is not true here.
+- **The archive rate is the thing to watch, and it is faster than "roughly a fortnight".**
+  `DECISIONS.md` went 72% (2026-08-19) → 93% (2026-08-22) → **56% after the fourth boundary**
+  (D-140, 2026-08-23) → **89% by the end of that same day**, on five entries. **The raise precedent
+  is `GOTCHAS.md`'s alone**: that file is entered through an index rather than read front-to-back,
+  which is not true here, so this one is archived instead.
 - **The ledger table overflowed a real phone and no suite could see it** (D-138). The audit now seeds
   rows and asserts a table is present before measuring. **Two surfaces are still unmeasured with
   records in them** — the captured-slips list and the batch worklist — because the audit only clicks
   what a button offers and those need records created first.
-- **Bulk statement import shipped as `6a6f752` on 2026-08-23 and is deployed** (D-141, PLAN task 40) — the day's one push, and **no agent has verified it in the dashboard**. No SQL and no route: eighteen `/api/v1/` routes, every project on 020, backup contract v7.
-- **Three pushes on 2026-08-23, all deployed and none verified in the dashboard by an agent**: `6a6f752` (bulk statement import, D-141), `7f7aa65` (the slip-form review fixes, D-142) and `617c2c8` (the tertiary button rank, D-143).
-- **Auto-import v1 and automatic binding are BUILT AND UNCOMMITTED** (D-144): `lib/server/statement-mailbox.ts`, `scripts/fetch-statements.mjs`, `tests/statement-mailbox.test.ts`, plus `app/import-bench.tsx`, `app/statement-batch.tsx`, `app/globals.css` and `tests/privacy.test.ts`. **The lockfile moved**: `imapflow` is a new devDependency and nothing in the app bundle imports it. No SQL, no route. **Gate green**: Vitest **666 passed / 7 skipped across 33 files**, Playwright owner **31/31** and isolated **18/18**, production build clean at eighteen routes, tsc and ESLint clean, `check:docs --strict` at **144 decisions, 141 traps**. pgTAP not re-run — nothing here moves SQL.
-- **The statement mailbox is live and its credentials are the owner's alone.** A dedicated Gmail with 2FA, an IMAP app password in Bitwarden, and a Gmail filter forwarding three senders. `statement-mailbox.json` at the repo root names the mailbox and the senders — gitignored, no secret in it. **The app password is read from stdin only** and has never been in a file, an argument or an environment variable. `private-statements/inbox/` is where the fetcher writes and is inside the never-read boundary.
+- **The statement mailbox is live and its credentials are the owner's alone.** A dedicated Gmail with 2FA, an IMAP app password in Bitwarden, and a Gmail filter forwarding three senders. `statement-mailbox.json` at the repo root names the mailbox and the senders — gitignored, no secret in it, but it names an address, so **do not quote it into any document or commit**. **The app password is read from stdin only** by `scripts/fetch-statements.mjs` and has never been in a file, an argument or an environment variable there. `private-statements/inbox/` is where the fetcher writes and is inside the never-read boundary.
 - **D-017 is superseded on binding.** A statement whose printed bank and last four resolve to exactly one account is now bound without asking, by default, with a switch in the batch section. **The review and the confirmation are untouched** — a browser test asserts `import_batches` stays at zero after an automatic bind.
-- **`/code-review` is no longer owed on anything.** It ran twice on 2026-08-23: against the uncommitted statement-batch work before `6a6f752`, and against `7be667e`'s files **by path**, which is how a committed commit gets reviewed now that a bare SHA is not one of the skill's documented targets. **The path form found more** — eight findings against shipped code versus five against that day's new work, which is the concrete cost D-125 was written about.
+- **Four pushes on 2026-08-23, all deployed and none verified in the dashboard by an agent**: `6a6f752` (bulk statement import, D-141), `7f7aa65` (the slip-form review fixes, D-142), `617c2c8` (the tertiary button rank, D-143) and `63b5d24` (the mail fetcher and automatic binding, D-144). **The owner verifies a deployment; nothing here can.**
+- **THE HOSTED SYNC BUTTON IS BUILT AND UNCOMMITTED** (D-145, PLAN task 41), and **it does nothing in production until a credential reaches Vercel**. New: `lib/statement-sync.ts`, `lib/server/statement-mailbox-session.ts`, `app/api/v1/imports/mailbox/route.ts`, `app/api/v1/imports/mailbox/attachment/route.ts`, `app/statement-sync.tsx`, `tests/statement-sync.test.ts`. Changed: `app/statement-batch.tsx`, `app/globals.css`, `tests/privacy.test.ts`, `PLAN.md`, `DECISIONS.md`, `GOTCHAS.md`, this file. **The lockfile moved**: `imapflow` went from a devDependency to a dependency, because shipped server code now imports it — read from the build artifact as **one server chunk and zero client chunks**. **Two new routes: twenty `/api/v1/` routes, not eighteen.** No SQL, no contract change, every project still on 020, backup contract still v7.
+- **What the Sync button needs that does not exist, and none of it is grantable by an agent.** The three variables are `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD`; **putting the app password into Vercel is a hosted-resource change needing a fresh ask**, and the password itself is read by the owner and must never be requested. **`/security-review` is owed** — a new route, a stored credential and a mailbox read. And committing is deploying. **Until the variables are set both routes answer 503 with a sentence naming what is unset**, which is proved in a browser against the real route.
+- **`statement-mailbox.json` is gitignored and therefore does not exist in a deployment.** That is why the hosted side reads the same two facts from the environment instead. The variable names are deliberately **not** in `.env.example`, which is inside the never-read boundary and is the owner's to edit.
+- **The document password still never leaves the device, and that is asserted rather than intended.** It is not a parameter of either mailbox route, the deployment does not hold it, and `app/statement-sync.tsx` has no prop, state or field that could carry one. What the routes move is the bank's own ciphertext.
+- **A privacy guard narrowed in meaning without failing, and it is now said out loud** (D-145). `tests/privacy.test.ts` asserts `app/statement-batch.tsx` constructs no request of any kind; the sync fetch lives in a **separate component** so that stays literally true, and a second guard covers the new one. **The old guard's comment now states what it still means and what it no longer means on its own.** Two new `GOTCHAS.md` traps came out of this, plus one about Playwright route globs.
+- **The next actions are the owner's, not an agent's.** Task 41 is built and every remaining step needs him: run `/security-review` over the two new routes, decide whether the app password goes into Vercel, and authorize the commit-and-push that is also a production deployment. **Nothing after that is blocked on code.**
+- **The fifth archive boundary was taken on 2026-08-24 and is deliberately shallow** (D-146). `DECISIONS.md` went 94% → **82%** by moving **D-130 … D-133** to `docs/decisions/ARCHIVE-D-130-D-133.md`. **It could not go deeper without breaking D-133's own rule**: D-134 and D-137 sit immediately behind the boundary holding questions that have not closed — whether `GOTCHAS.md` splits at its next breach, and whether this app really has no dark scheme (*"but we'll see"*). **Closing those two is what buys the sixth boundary its depth**, and both are the owner's calls. `GOTCHAS.md` is at 79% and its next breach is owed a **split** along its section headings, not a third raise.
+- **`.runtime/mailbox-sync.spec.ts` is 6 tests** (throwaway, gitignored) and is the only browser proof this feature has. It drives the unconfigured path through the **real** route, the download path with both routes intercepted and synthetic bytes, a failed download landing as one line, and the band at 390px. **The mailbox itself was never contacted by anything this session** — no IMAP connection was made, and the route has never spoken to a real server.
+- **`/code-review` ran against the Sync button on 2026-08-24 and is discharged** (D-145). **Eleven findings; ten real and fixed, one declined**, the declined one being `playwright.config.ts`'s missing `webServer.timeout` — correct, but that file is the owner's local-only copy and the hazard is already below. **Two were serious and shared a shape: a limit applied after the cost rather than before it** — a batch of unread synced files had no way to be cleared, and the route walked every matching message before applying its own cap. **The agent died once on a session limit before reading the diff**; a failed review is not a passed one, and it was re-run. Two regression tests were added and both fail against the pre-fix code.
+- **`/code-review` is no longer owed on anything else.** It ran twice on 2026-08-23: against the uncommitted statement-batch work before `6a6f752`, and against `7be667e`'s files **by path**, which is how a committed commit gets reviewed now that a bare SHA is not one of the skill's documented targets. **The path form found more** — eight findings against shipped code versus five against that day's new work, which is the concrete cost D-125 was written about.
 - **Phone width is measured for BOTH batch worklists as of 2026-08-23**, by the throwaway `.runtime/worklist-phone-audit.spec.ts`. It signs in at 390px, feeds synthetic files through each form, **asserts rows are on the page**, and only then measures — the D-138 lesson, since an audit that walks routes cannot see a list that does not exist until files are read. **The statement worklist is clean.** **Both worklists now report every tap target at 44px or more**, after D-143 gave the app a `.tertiary-button` rank and corrected `.batch-fix input` from 42px to the 47px every other control uses. **The 44px threshold is still the audit's own and nothing in the gate enforces it** — PLAN task 28 remains unscoped, and D-143 aligned the stylesheet with itself rather than adopting a standard.
 - **The gap that remains: no *committed* spec drives the statement batch form.** Its worklist is proven by unit tests and by a throwaway. The bulk *slip* worklist does have committed browser coverage, in `owner-session.spec.ts`.
 - **Bulk slip upload (D-135) shipped as `7be667e` and is deployed**, on the owner's explicit
@@ -164,7 +172,10 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   bypasses RLS, so `.env.example` must never be copied wholesale. The Supabase redirect allowlist
   names exactly one production callback and no wildcard, so preview deployments cannot complete a
   sign-in; that is intended. The two `NEXT_PUBLIC_*` values are inlined at build time, so changing
-  either needs a rebuild rather than a redeploy.
+  either needs a rebuild rather than a redeploy. **D-145 would add three more and has not**:
+  `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD` are the
+  Sync button's, the last is a credential at a third party, and **setting them is a hosted-resource
+  change needing a fresh ask**. Read the dashboard rather than this line for what is actually set.
 - **`GOOGLE_VISION_KEY` lives in the owner's Windows user environment**, not in this repository, not
   in any file, not in any transcript. Read it with
   `[Environment]::GetEnvironmentVariable("GOOGLE_VISION_KEY","User")`, never print it, and report
@@ -176,15 +187,19 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   can spend without anyone watching**: one read per slip, up to fifty per batch, so a mistaken drop
   of a camera roll is a real bill. That cap is in `app/slip-batch.tsx` and is the only thing bounding
   it. Nothing is sent until the owner presses **Read these slips**.
-  **Statement import is the only path left that reads entirely on the device.** The key never
-  reaches the browser and the CSP is unchanged.
-- **Gate at 2026-08-21**: Vitest **621 passed / 7 skipped across 31 files**, Playwright owner
-  **31/31** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes,
-  `pnpm check:docs --strict` at **136 decisions, 136 traps**, tsc and ESLint clean. **pgTAP was not
-  re-run and that is deliberate** — it stands at **266 across 8** from 2026-08-18, and neither the
-  ledger view split nor bulk slip upload moved any SQL. **Read the skip count, not the total**: it
-  is still 7, and a stopped Docker would turn the database-backed suites into skips while leaving
-  the totals looking the same.
+  **Statement import is still the only path that *reads* entirely on the device, and as of D-145
+  that sentence needs its verb read carefully.** The hosted Sync button proxies the locked PDFs
+  through this app's own server — ciphertext it cannot open — and every bit of the *reading* still
+  happens in the pdf.js worker on the device, with a password the server never sees. The Vision key
+  never reaches the browser and **the CSP is unchanged**: proxying same-origin is what avoided
+  widening `connect-src` to call Gmail directly (D-058).
+- **Gate, all green 2026-08-23 over the uncommitted Sync button** (D-145): Vitest **696 passed /
+  7 skipped across 34 files**, Playwright owner **31/31** and isolated **18/18**, throwaway
+  `.runtime/mailbox-sync.spec.ts` **6/6**, production build clean at **twenty** `/api/v1/` routes,
+  `pnpm check:docs --strict` at **145 decisions, 144 traps**, tsc and ESLint clean. **pgTAP was not
+  re-run and that is deliberate** — it stands at **266 across 8** from 2026-08-18 and nothing since
+  has moved SQL. **Read the skip count, not the total**: it is still 7, and a stopped Docker would
+  turn the database-backed suites into skips while leaving the totals looking the same.
 - **Docker had to be started by hand at the beginning of 2026-08-21's session**, and a full Vitest
   run launched while it was still coming up reported **9 failures in `tests/slip-match-route.test.ts`
   that were purely the race** — every one passed on an immediate re-run against a settled database.
