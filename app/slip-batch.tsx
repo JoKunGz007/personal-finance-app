@@ -461,7 +461,7 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
             {phase === "reading" ? "Reading…" : "Read these slips"}
           </button>
         )}
-        {rows.length > 0 && <button type="button" onClick={clear} disabled={busy}>Discard</button>}
+        {rows.length > 0 && <button type="button" className="tertiary-button" onClick={clear} disabled={busy}>Discard</button>}
       </div>
 
       <p className="field-help batch-note">

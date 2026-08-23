@@ -172,6 +172,7 @@ What this file now holds is the continuity-hygiene arc and the current work: the
 - **D-140** — The fourth archive boundary moves the whole Cloud Vision arc, because a shipped feature closed the question the third boundary was blocked on
 - **D-141** — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 - **D-142** — The bulk slip form threw away work it had already done, and could not be told to try again
+- **D-143** — A third button rank, because "quiet" had been spelled as "unstyled"
 
 ## D-130 — The continuity size guard measured lines while the files grew sideways, and reported green at 332 KB
 
@@ -545,3 +546,30 @@ The policy layer came through clean. **Five defects were in the component, and f
 **A review of shipped code found more than a review of new code did**, and cheaply: eight findings against `7be667e`'s two files versus five against the same day's new work. D-125 exists because five commits shipped in one day without a review; this is the evidence for what that costs.
 
 - Evidence: `lib/slip-batch.ts`, `app/slip-batch.tsx`, `tests/slip-batch.test.ts`, `tests/privacy.test.ts`. Vitest **643 passed / 7 skipped across 32 files** (up 6, all in `tests/slip-batch.test.ts` covering the partial-verdict and refusal behaviour); Playwright owner **31/31** and isolated **18/18**; production build clean at **eighteen** `/api/v1/` routes; tsc and ESLint clean; `.runtime/worklist-phone-audit.spec.ts` still passes both worklists. **pgTAP was not re-run and that is deliberate** — it stands at 266 across 8 from earlier the same day and nothing here moves SQL. D-135 (the form this reviews), D-125 (the review debt this discharges), D-059 (the QR reference's date), D-057 (the WASM fallback behind the await), D-129 (the strict-grammar rule the guard protects).
+
+## D-143 — A third button rank, because "quiet" had been spelled as "unstyled"
+
+- Date: 2026-08-23
+- Status: **Accepted and done.** `app/globals.css` (one new rank, one outlier corrected), `app/slip-batch.tsx` and `app/slip-capture.tsx` (three buttons given the class). Styling only — no logic, no SQL, no route, no contract.
+
+### What was actually there
+
+The phone audit reported two undersized tap targets in the bulk slip worklist: a button at 24px tall and an input at 42px. **They looked like one finding and were two different things.**
+
+The **input** was a plain outlier. Every other control in the stylesheet sits at 47px — `.owner-access-panel input`, `.password-control input`, `.account-control select`, `.slip-fields input`, `.batch-direction select`, and the `min-height` shared by all three button ranks. `.batch-fix input` alone was 42. Nothing was being expressed by that; it read as deliberate and was not.
+
+The **button** was a real position badly executed. Three buttons in the app carried no class at all — `Discard` in `app/slip-batch.tsx`, `Discard` in `app/slip-capture.tsx`, and the amount finder's control. Two of them being the same word in two different forms is a *choice*: a destructive action kept out of the way beside the loud `secondary-button` next to it. **The choice was right and the execution was a browser default**, which is 24px tall and not hittable on a phone.
+
+So promoting them to `secondary-button` would have been the wrong fix — it makes discarding a batch as prominent as reading one.
+
+### The decision
+
+`.tertiary-button`: no border, no fill, muted until hovered — the quietness kept — with `min-height: 47px` so the hit area matches the controls beside it and a row of buttons lines up instead of one sitting short. `min-height` rather than `height`, so a wrapped label grows the button rather than spilling out of it.
+
+Applied to all three bare buttons. **The amount finder's is a different kind of action from a discard** and got the class anyway: it was equally unstyled, it should stay equally quiet, and leaving one bare button behind would recreate the inconsistency this closes.
+
+### Consequences
+
+**The 44px threshold is the audit's, not the repo's, and still nothing in the gate enforces it.** PLAN task 28 remains unscoped and no standard has been agreed; this change aligns the stylesheet with itself rather than adopting a rule. The two existing phone-width raises — `.site-nav a` and `.capture-result .secondary-button` — stay where they are, inside the mobile block, because both are compact by intent on a desktop where a pointer does the aiming. This rank is 47px at every width instead, because it is aligning with siblings that are.
+
+- Evidence: `app/globals.css`, `app/slip-batch.tsx`, `app/slip-capture.tsx`. `.runtime/worklist-phone-audit.spec.ts` now reports **tap targets: all >= 44px** on both worklists, where the slip one previously reported two under. Vitest **643 passed / 7 skipped across 32 files**, Playwright isolated **18/18** — its axe checks are what hold this stylesheet to AA and they cover the changed rules — owner **31/31**, production build clean at eighteen `/api/v1/` routes, tsc and ESLint clean. D-136 and D-137 (the palette these vars carry), D-138 (the phone-width work this belongs to), D-142 (the review that produced the measurement).

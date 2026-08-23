@@ -400,7 +400,7 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
           />
           <b>{identity ? "Slip read" : "Choose or photograph a slip…"}</b>
         </label>
-        {identity && <button type="button" onClick={reset} disabled={busy}>Discard</button>}
+        {identity && <button type="button" className="tertiary-button" onClick={reset} disabled={busy}>Discard</button>}
       </div>
 
       {status && <p className="status" role="status">{status}</p>}
@@ -435,7 +435,7 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
             in a document — the same rule the card form follows (D-120).
           */}
           <div className="amount-finder">
-            <button type="button" onClick={() => void readAmountOnImage()} disabled={busy || readingAmount || !image}>
+            <button type="button" className="tertiary-button" onClick={() => void readAmountOnImage()} disabled={busy || readingAmount || !image}>
               {readingAmount ? "Reading the amount…" : "Read the amount"}
             </button>
             {/*

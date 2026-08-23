@@ -143,6 +143,16 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .primary-button:hover { border-color: var(--blue-dark); background: var(--blue-dark); }
 .secondary-button { color: var(--blue); border: 1px solid var(--blue); background: transparent; }
 .secondary-button:hover { color: white; background: var(--blue); }
+/* The quiet third rank, for an action that should stay out of the way but still be hittable.
+   Two `Discard` buttons and the amount finder's control were bare browser defaults — 24px tall,
+   below any usable tap target on a phone, and the only unstyled buttons in the app. Their quietness
+   was the right call and is kept: no border, no fill, muted until hovered. What changes is that the
+   hit area now matches the controls beside it, so a row of buttons lines up instead of one sitting
+   short. `min-height` rather than `height`, so a wrapped label grows the button rather than
+   spilling out of it. */
+.tertiary-button { min-height: 47px; padding: 11px 14px; color: var(--muted); border: 0; border-radius: var(--radius); background: transparent; font: inherit; font-weight: 600; white-space: nowrap; }
+.tertiary-button:hover:not(:disabled) { color: var(--blue); }
+.tertiary-button:disabled { opacity: .5; cursor: default; }
 .or-rule { padding: 0 3px 14px; color: var(--muted); font-size: 12px; }
 .status-line { margin: 30px 0 0 167px; display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 13px; }
 .status-line span { color: var(--blue); font-size: 8px; }
@@ -239,7 +249,10 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .batch-fix { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: 12px; margin: 4px 0 2px; }
 .batch-fix label { display: grid; gap: 6px; }
 .batch-fix label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
-.batch-fix input { height: 42px; padding: 10px 12px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
+/* 47px like every other control in this stylesheet — `.password-control input`, `.account-control
+   select`, `.slip-fields input`, `.batch-direction select` and the three button ranks all sit at
+   47. This was the one outlier at 42, which read as deliberate and was not. */
+.batch-fix input { height: 47px; padding: 10px 12px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
 .batch-summary { margin: 20px 0 0 167px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; max-width: 720px; }
 .slip-bench .status, .slip-bench .notice { margin: 18px 0 0 167px; color: var(--muted); font-size: 13px; }
 .slip-bench .status.error { color: var(--red); }
