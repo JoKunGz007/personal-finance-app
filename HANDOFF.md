@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-21.
+Last updated: 2026-08-22.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -95,7 +95,7 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
 - **2026-08-21 pushed three times, and each push is a production deployment**: bulk slip upload
   (`7be667e`, D-135), the warm palette with the phone measurement (`76dc46b`, D-136), and cornsilk
   as the ground with the dark scheme dropped (`8319d5d`, D-137). A fourth is the phone-overflow fix
-  (D-138). **Read `git log` and `git status -sb` rather than trusting this sentence** — a hash typed
+  (`558435e`, D-138), and 2026-08-22 adds the card banner pointer (D-139). **Read `git log` and `git status -sb` rather than trusting this** — a hash typed
   before the commit that produces it is the exact class of stale line commit `a2efdc7` was about.
 - **The owner verifies a deployment in the dashboard; nothing here can.** `76dc46b` shipped a
   palette that reached every screen, and the defect D-138 fixes was found **by him on his own phone
@@ -115,11 +115,11 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   app public lib` is the sweep; it is in `GOTCHAS.md` as its own trap.
 - Phone width was measured for the first time behind a sign-in (`.runtime/mobile-audit.spec.ts`,
   throwaway and gitignored); the first pass of PLAN task 28 is applied and the remainder is there.
-- **`DECISIONS.md` is at 89% of its budget**, up from 72% on 2026-08-19 — three days, three entries,
-  seventeen points. **Treat the next substantial entry as the breach.** The remedy is an archive
-  boundary taken where an argument ends (D-133), not a raise: the raise precedent is `GOTCHAS.md`'s
-  and rests on that file being entered through an index rather than read front-to-back, which is not
-  true here.
+- **`DECISIONS.md` is at 93% of its budget and the archive is overdue**, not approaching: 72% on
+  2026-08-19, 93% on 2026-08-22, with roughly 8 KB of headroom left — less than one substantial
+  entry. **Take the boundary before writing the next one.** It goes where an argument ends (D-133),
+  and the raise precedent is `GOTCHAS.md`'s alone: that file is entered through an index rather than
+  read front-to-back, which is not true here.
 - **The ledger table overflowed a real phone and no suite could see it** (D-138). The audit now seeds
   rows and asserts a table is present before measuring. **Two surfaces are still unmeasured with
   records in them** — the captured-slips list and the batch worklist — because the audit only clicks

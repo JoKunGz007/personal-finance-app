@@ -266,6 +266,12 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
    for it leaves a keyboard user with no idea where they are. */
 .capture-result:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .capture-result-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+/* One of these is an `<a>` (D-139). `.secondary-button` was written for a `<button>`, which is
+   already a flex-ish box with a working `min-height`; an inline anchor honours neither, so the
+   link sat a few pixels shorter than the button beside it and its label was not vertically
+   centred. Stated rather than nudged with padding, because the next control borrowed onto a link
+   would have the same problem and the same fix. */
+.capture-result-actions a.secondary-button { display: inline-flex; align-items: center; text-decoration: none; }
 .capture-result .secondary-button { min-height: 36px; padding: 7px 13px; font-size: 13px; }
 .capture-result.captured { color: var(--celadon-ink); border-color: var(--celadon); background: color-mix(in srgb, var(--celadon) 22%, transparent); }
 .capture-result.already { color: var(--navy); border-color: var(--saffron); background: var(--saffron-wash); }
@@ -537,6 +543,10 @@ footer p { margin: 0; }
     wrong on the screen.
   */
   .site-nav a { min-height: 44px; padding: 11px 12px; display: flex; align-items: center; font-size: 13px; }
+  /* **The result banner's controls are 36px by a base rule and the audit has never seen them**, because
+     it only appears after a capture and no automated run captures a card. Raised here rather than in
+     the base rule, which is deliberately compact on a desktop where a pointer is doing the aiming. */
+  .capture-result .secondary-button { min-height: 44px; padding: 10px 15px; }
   .brand { padding-block: 4px; }
   .skip-link { padding: 13px 16px; }
   .link-button { padding-block: 12px; margin-block: -12px; }

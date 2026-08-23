@@ -677,11 +677,20 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
       const remaining = next === null
         ? "That was the last card on this screenshot."
         : `Card ${next + 1} of ${regions!.length} is ready — check each figure against its crop.`;
+      // **"In the ledger" is here rather than under the form, and the placement is the decision**
+      // (D-139). This route lists captured *slips* below and never lists cards, because the ledger
+      // view is where a card and its statement row meet — so the form's own surroundings answer
+      // "where did that go" for one record kind and stay silent for the other. The owner asked.
+      //
+      // A standing line under the form would have paid for a one-time question with permanent
+      // vertical space on the surface PLAN task 28 had just finished tightening. The banner already
+      // exists, already appears only after a capture, and is already scrolled to — so it costs
+      // nothing and lands at the moment the question is actually asked.
       setStatus({
         tone: captured ? "captured" : "already",
         message: captured
-          ? `Captured. A card cannot be deleted or edited once saved. ${remaining}`
-          : `This exact card was already captured, so nothing was added. ${remaining}`
+          ? `Captured, and it is in the ledger rather than in the list below — that list is slips only. A card cannot be deleted or edited once saved. ${remaining}`
+          : `This exact card was already captured, so nothing was added. The one already held is in the ledger. ${remaining}`
       });
       onCaptured?.();
       // `selectCard` resets the typed values itself, so the no-next branch is the only one that
@@ -776,6 +785,10 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                   <button type="button" className="secondary-button" onClick={() => setStatus(null)}>
                     OK
                   </button>
+                  {/* A link rather than only the sentence, because on a phone this banner is a long
+                      way below the header and its nav — so naming the ledger without offering it
+                      costs a scroll back up to act on what the sentence just said. */}
+                  <a className="secondary-button" href="/ledger">Open the ledger</a>
                 </div>
               </div>
             )}

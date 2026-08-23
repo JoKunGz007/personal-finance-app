@@ -160,6 +160,7 @@ This file carries **D-120 onward**. Three settled ranges were relocated unchange
 - **D-136** — The palette becomes warm and the phone gets measured, which found two contrast failures no light-mode look would reveal
 - **D-137** — Cornsilk becomes the ground and the dark scheme is dropped, so the app declares one set of colours and measures only those
 - **D-138** — The ledger table escaped the viewport on a real phone, because an element selector cannot reset a class and an audit cannot measure a table that was never rendered
+- **D-139** — "Where did that card go" is answered in the result banner rather than under the form, because a one-time question must not buy permanent vertical space
 
 ## D-120 — The card reader adopts Cloud Vision behind this app's own route, with no fallback, and slips stay on the device
 
@@ -572,3 +573,32 @@ D-136 stated this gap explicitly in its own entry and in `PLAN.md` task 28: "the
 **Red-proved**: the rewritten audit was run against the shipped CSS and reported `pans sideways: true, scrollWidth 1296 vs 390` with `table.ledger-table.merged [16..1296]` named directly, then against the fix and reported 390 on every route.
 
 - Evidence: `app/globals.css`, `.runtime/mobile-audit.spec.ts`. Playwright isolated **18/18** and owner **31/31**; the audit clean at 390px on all four routes with six seeded rows loaded, every control ≥44px. The one remaining reported overflow is `.stage-nav ol` inside its own `overflow-x: auto`, which is deliberate and does not pan the document. D-136 (the audit this repairs), D-137 (the deployment this followed).
+
+## D-139 — "Where did that card go" is answered in the result banner rather than under the form, because a one-time question must not buy permanent vertical space
+
+- Date: 2026-08-22
+- Status: **Accepted and done**, after the owner asked the question directly while using the app on his phone. Copy and styling only — no logic, no SQL, no route, no contract.
+- What changed: `app/notification-card-capture.tsx` (two message strings and one link), `app/globals.css` (two rules).
+
+### The asymmetry that produced the question
+
+`/slips` carries four things: the single-slip form, the bulk form, the card form, and **"On this ledger" — which lists slips only**. There is no captured-cards component and never has been. Cards appear in the **ledger view** instead (`app/ledger-card-row.tsx`, plus the retired-cards panel), which is deliberate: a card is a bank transaction awaiting its statement row, and the ledger is where the two meet (D-102).
+
+So the route answers "where did that go" for one record kind and stays silent for the other, **with the two forms stacked one above the other**. That is the whole of the confusion, and the owner hit it in ordinary use rather than in review.
+
+### Why not a captured-cards list, and why not a line under the form
+
+**A second list was rejected as duplication.** The ledger already shows every card with its match state; a list here would be a second place to check and a second thing to keep in step, to answer a question the ledger answers better.
+
+**A standing line under the form was rejected on cost.** PLAN task 28 had just finished measuring this exact surface and found that the first control on a route sat ~1,200px down a phone viewport behind prose. Adding a permanent sentence to solve a **one-time** learning moment spends the thing that pass had just recovered — and once the owner knows cards go to the ledger, he does not ask again.
+
+**The banner is where it belongs, and this is the substance of the entry.** The question is not "where do cards go" in the abstract; it is "where did *that one* go", asked in the seconds after a capture. The result banner (D-123, D-124) already exists, already renders only after a capture, and is already scrolled and focused. Putting the sentence there **costs zero permanent space and lands exactly when the question is asked**. Both branches carry it — the already-captured branch too, because "nothing was added" raises the same question about the card already held.
+
+**A link, not only a sentence.** On a phone this banner sits far below the header and its nav, so naming the ledger without offering it costs a scroll back up to act on what the sentence just said.
+
+### Two things the link needed that the sentence did not
+
+- **`.secondary-button` was written for a `<button>`.** An inline `<a>` honours neither `min-height` nor vertical centring, so the link sat shorter than the button beside it with its label off-centre. Fixed as a rule naming `a.secondary-button` rather than nudged with padding, because the next control borrowed onto a link has the same problem.
+- **The banner's controls are 36px and no audit has ever seen them**, since `.runtime/mobile-audit.spec.ts` never captures a card — so they were never in the 44×44 sweep that PLAN task 28 applied everywhere else. Raised to 44px at phone width only; the base stays compact for a desktop where a pointer does the aiming. **This is the same shape as D-138**: a surface that only exists after an action is a surface no walking audit can measure.
+
+- Evidence: `app/notification-card-capture.tsx`, `app/globals.css`. Playwright owner **31/31** (it drives card capture and reads the banner) and isolated **18/18** with its axe checks; `tests/privacy.test.ts` 35/35, including the assertions that hold this form's pre-fill and its banner to their rules; tsc and ESLint clean. D-102 (the ledger is where a card meets its row), D-123 and D-124 (the banner and why it is a region rather than a dialog), D-138 (the audit's blind spot this shares).
