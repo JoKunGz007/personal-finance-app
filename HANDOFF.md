@@ -16,11 +16,12 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-120 onward** in full,
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-130 onward** in full,
 with D-001…D-059 in [docs/decisions/ARCHIVE-D-001-D-059.md](docs/decisions/ARCHIVE-D-001-D-059.md),
-D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md) and
-D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md);
-the index at the top of `DECISIONS.md` covers all four) →
+D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md),
+D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md) and
+D-120…D-129 in [docs/decisions/ARCHIVE-D-120-D-129.md](docs/decisions/ARCHIVE-D-120-D-129.md);
+the index at the top of `DECISIONS.md` covers all five) →
 [GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
 
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture and
@@ -184,9 +185,12 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
 - **The 2026-08-18 TOTP flake has not recurred** in any run since. `owner-access.spec.ts`'s
   returning-owner challenge failed once that day and passed on an immediate re-run. Still
   undiagnosed, now unreproduced across several full owner runs.
-- **Both budgets were dealt with on 2026-08-19, and by different means on purpose.**
-  `DECISIONS.md` is **84 KB/117 KB (72%)**, down from 90%, because **D-114 … D-119** were archived
-  to `docs/decisions/ARCHIVE-D-114-D-119.md`; it now carries **D-120 onward** (D-133).
+- **Both budgets are handled by different means on purpose, and `DECISIONS.md` has now been archived
+  twice in five days.** It is **62 KB/117 KB (53%)** after **D-120 … D-129** moved to
+  `docs/decisions/ARCHIVE-D-120-D-129.md` on 2026-08-23 (D-140), from 93% the day before; the
+  previous boundary took D-114 … D-119 at 90% (D-133). **The rate is the thing to watch** — four
+  days of ordinary work took it 72% → 93%, so expect to take a boundary roughly every fortnight at
+  this pace rather than treating each one as an event.
   `GOTCHAS.md` is **177 KB/254 KB (70%)** because its budget was **raised** from 195 KB on the
   owner's decision (D-134) — retirement had been applied first and moved it only 181 → 177 KB, which
   is the honest ceiling on that remedy since a trap is retired only when its *subject* is gone.
