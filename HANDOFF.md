@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-22.
+Last updated: 2026-08-23.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -125,6 +125,7 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   rows and asserts a table is present before measuring. **Two surfaces are still unmeasured with
   records in them** — the captured-slips list and the batch worklist — because the audit only clicks
   what a button offers and those need records created first.
+- **Bulk statement import is built, fully gated and UNCOMMITTED, 2026-08-23** (D-141, PLAN task 40): `lib/statement-batch.ts`, `app/statement-batch.tsx`, `tests/statement-batch.test.ts`, plus edits to `app/import-bench.tsx` and `tests/privacy.test.ts`. **No SQL, no new route** — the build still emits eighteen `/api/v1/` routes, so every project stays on 020 and the backup contract stays at v7. **`/code-review` has been run and its findings applied** (D-125 satisfied): five defects in `app/statement-batch.tsx` and `app/import-bench.tsx`, four of them the same shape — a failure path that removed information instead of showing it, including one that could leave the whole section disabled until a page reload. **Two findings were deliberately not actioned** because they name `eslint.config.mjs` and `playwright.config.ts`, the owner's local-only files. **The whole gate is green after the fixes**: Vitest **637 passed / 7 skipped across 32 files**, pgTAP **266 across 8**, Playwright isolated **18/18** and owner **31/31**, production build clean at eighteen routes, tsc and ESLint clean, `check:docs --strict` at **141 decisions, 140 traps**. **The phone-width gap is now closed for BOTH worklists**, 2026-08-23, by `.runtime/worklist-phone-audit.spec.ts` — throwaway and gitignored, beside the existing audit. It signs in at 390px, feeds real synthetic files through each form, **asserts the rows are on the page**, and only then measures. **The statement worklist is clean**: nothing overflows, the page does not pan, every tap target is at least 44px. **The slip worklist does not overflow either, but has two undersized tap targets** — the unclassed `Discard` button at `app/slip-batch.tsx:418` renders 24px tall, and `.batch-fix input` is `height: 42px` in `app/globals.css:242`, two short of 44. Both predate today and shipped with `7be667e`; **neither is fixed and both are the owner's call**, since PLAN task 28 never agreed a standard. **The gap that remains**: no *committed* spec drives either batch form, so both worklists are proven by unit tests and by a throwaway. `/code-review` is still owed on `7be667e` alone.
 - **Bulk slip upload (D-135) shipped as `7be667e` and is deployed**, on the owner's explicit
   authorization, 14 files. **The palette and the phone pass (D-136) are NOT committed** — the theme
   was asked for, committing it was not. Uncommitted: `app/globals.css`, the four continuity docs, and
@@ -230,9 +231,12 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   Vision key from the Windows user environment. **That is the 2026-08-18 incident still reachable.**
   Both sibling configs pin the key empty; this one is the owner's file and was left alone. One line
   in its `env` block closes it.
+- **Windows had reserved the whole local Supabase port block, and the fix is now permanent, 2026-08-23.** A dynamic WinNAT reservation over `54243-54342` covered `private-ledger-local` entirely, so Docker started every container and published none of their ports — all ten read `Up (healthy)` while nothing answered on 54321, and `docker restart` could not touch it. **The owner cleared it in an elevated shell** (`net stop winnat`, then `netsh int ipv4 add excludedportrange protocol=tcp startport=54320 numberofports=30 store=persistent`, then `net start winnat`), and `netsh interface ipv4 show excludedportrange protocol=tcp` now shows `54320  54349` as an administered exclusion covering all three projects. **That should stop it recurring**, but the reservation is machine state and nothing in the repository enforces it — if the symptom returns, check `netsh` before suspecting anything that changed. Full trap in `GOTCHAS.md`.
 - **Docker Desktop stops often.** It went down twice on 2026-08-18 alone. **A stopped Docker makes
   the database-backed suites SKIP rather than fail, and the totals read identically** — read the
-  word, not the colour, and run `docker ps` before trusting any database-backed row.
+  word, not the colour, and run `docker ps` before trusting any database-backed row. **A stack that
+  is up but unreachable is worse**: the suites *fail* with `ECONNREFUSED` instead of skipping, which
+  is the port trap above and not a defect in whatever was just changed.
 - **Restarting the database container is not enough.** After `supabase db reset` or a `docker restart`
   of a `supabase_db_…` container, restart that project's `auth`, `rest`, `realtime`, `storage`,
   `pg_meta` and `kong` containers too. They stay `(healthy)` while holding dead connections, and

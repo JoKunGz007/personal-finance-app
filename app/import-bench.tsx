@@ -10,6 +10,7 @@ import type { StatementFrame } from "@/lib/statement-frame";
 import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
+import { StatementBatch, type BatchHandoff } from "@/app/statement-batch";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
 const stages: Array<{ id: Stage; label: string }> = [
@@ -72,6 +73,10 @@ export function ImportBench() {
   const [rowCategories, setRowCategories] = useState<Record<number, string>>({});
   const [backupPassword, setBackupPassword] = useState("");
   const [previewStale, setPreviewStale] = useState(false);
+  // Artifact digests confirmed during this visit, so a worked statement stops inviting a second
+  // pass in the batch worklist. Session-scoped and nothing more: the authority on what is already
+  // imported is `import_artifacts` in the database, which refuses a repeat on its own.
+  const [confirmedDigests, setConfirmedDigests] = useState<readonly string[]>([]);
   const dialog = useRef<HTMLDialogElement>(null);
 
   const reconciliation = useMemo(
@@ -191,6 +196,43 @@ export function ImportBench() {
     worker.postMessage({ type: "parse", bytes, password }, [bytes]);
   }
 
+  /**
+   * Takes one statement off the batch worklist and drives the stage machine to `bind` with it.
+   *
+   * **This is the whole join between the two, and it is deliberately thin.** The batch parses; from
+   * here on a batched statement is indistinguishable from one opened on its own — same binding,
+   * same review table, same confirmation, same route. Nothing downstream needs to know a batch
+   * exists, which is what keeps bulk import from becoming a second way to reach the ledger.
+   */
+  function workBatchEntry(handoff: BatchHandoff) {
+    setArtifactDigest(handoff.artifactDigest);
+    setExtracted({ frame: handoff.frame, rows: handoff.rows, pageCount: handoff.pageCount });
+    setStatement(null);
+    setAssemblyWarnings([]);
+    setBoundAccount(null);
+    setBindingError(null);
+    setChosenAccountId("");
+    setSelectedRow(null);
+    // **Keyed by row index, so it survives a change of statement as a wrong label over real rows.**
+    // Categorise row 2 of one statement, confirm it, then open the next off the worklist and row 2
+    // arrives pre-labelled with a category the owner never chose for it. It never reaches the
+    // ledger — only `payload: statement` is posted — but it is shown over rows it does not
+    // describe. Latent before bulk import; working a worklist is what makes it ordinary.
+    setRowCategories({});
+    // Diagnostics belong to the parse that produced them; carrying one statement's over to the
+    // next would attach a refusal's candidate wordings to a document that never refused.
+    setLabelCandidates([]);
+    setValueLabels([]);
+    setStructure([]);
+    setStage("bind");
+    setStatus(
+      `${handoff.label}: read ${handoff.rows.length} rows across ${handoff.pageCount} page(s) as a `
+      + `${handoff.frame.bankCode} statement, for account ending ${handoff.frame.accountLastFour}, `
+      + `${handoff.frame.periodStart} to ${handoff.frame.periodEnd}. `
+      + "Nothing has left this device. Choose the ledger account it belongs to."
+    );
+  }
+
   async function loadAccounts() {
     setStatus("Loading your ledger accounts…");
     const response = await fetch("/api/v1/accounts", { cache: "no-store" });
@@ -305,6 +347,7 @@ export function ImportBench() {
       return;
     }
     setStage("confirmed");
+    setConfirmedDigests((current) => current.includes(artifactDigest) ? current : [...current, artifactDigest]);
     // The ledger has moved, so whatever backup exists no longer covers it. Said here rather
     // than shown on the recovery route: the two are separate routes now and share no state,
     // and the authoritative check is the sequence `confirm_backup_custody` compares anyway.
@@ -437,6 +480,8 @@ export function ImportBench() {
           </details>
         ) : null}
       </section>
+
+      <StatementBatch onWork={workBatchEntry} confirmedDigests={confirmedDigests} />
 
       {extracted && !boundAccount ? (
         <section className="binding-bench" aria-labelledby="binding-title">

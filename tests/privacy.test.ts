@@ -158,6 +158,47 @@ describe("privacy guardrails", () => {
     expect(ui).not.toMatch(/find\([^)]*accountLastFour/u);
   });
 
+  it("never infers a ledger account when many statements are opened at once", () => {
+    // Bulk import makes the inference D-017 forbids far more tempting than a single import does:
+    // a statement prints a bank code and four digits, `public.accounts` is unique on
+    // (owner_id, bank_code, last_four), so a lookup would resolve unambiguously every time and
+    // would save a choice per statement. It is still the ledger's routing decision.
+    //
+    // Asserted on the policy layer as well as the component, because the structural version of
+    // the promise is that the module has no account to reach for: nothing in it takes a list.
+    const policy = readFileSync("lib/statement-batch.ts", "utf8");
+    const ui = readFileSync("app/statement-batch.tsx", "utf8");
+    for (const source of [policy, ui]) {
+      expect(source).not.toMatch(/accountListSchema|LedgerAccount|accounts\b\s*[:.]/u);
+      expect(source).not.toMatch(/find\([^)]*accountLastFour/u);
+    }
+    // Binding stays where it already was. The batch hands a parse to the stage machine and the
+    // owner chooses there, so a batched statement reaches the ledger by the one path that is
+    // already covered rather than by a second one.
+    // The call shape, not the name: both files discuss `assembleImportPayload` in prose, and a
+    // check that forbids naming it would force the reasoning out of the comments to stay green.
+    expect(ui).not.toMatch(/assembleImportPayload\s*\(/u);
+    expect(policy).not.toMatch(/assembleImportPayload\s*\(/u);
+  });
+
+  it("sends nothing anywhere while reading a batch of statements", () => {
+    // Statement import is the only path in this app that reads entirely on the device (D-128,
+    // D-129) — slips and notification cards both go to Google Cloud Vision. Opening many
+    // statements at once is exactly where that would erode quietly, so it is asserted rather
+    // than intended: no request of any kind is constructed in either file.
+    const policy = readFileSync("lib/statement-batch.ts", "utf8");
+    const ui = readFileSync("app/statement-batch.tsx", "utf8");
+    for (const source of [policy, ui]) {
+      expect(source).not.toMatch(/\bfetch\s*\(/u);
+      expect(source).not.toMatch(/XMLHttpRequest|navigator\.sendBeacon|WebSocket|EventSource/u);
+      expect(source).not.toMatch(/localStorage|sessionStorage|indexedDB|document\.cookie/u);
+    }
+    // The password reaches the worker and nothing else. It is never serialized, never digested
+    // into anything kept, and never put in a message that outlives the parse.
+    expect(ui).toMatch(/worker\.postMessage\(\{ type: "parse", bytes, password \}, \[bytes\]\)/u);
+    expect(ui).not.toMatch(/JSON\.stringify\([^)]*password/u);
+  });
+
   it("does not widen the accounts listing beyond the chooser's needs", () => {
     const route = readFileSync("app/api/v1/accounts/route.ts", "utf8");
     // An explicit column list, never select("*"): a future column must be opted into.

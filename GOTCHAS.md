@@ -45,6 +45,7 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A stopped Docker makes the browser gate print all 18 test names and exit 0 without running one
 - Restarting the Supabase database container breaks every host connection until its dependants restart too
 - `supabase start` reports "already running" while its database container has exited
+- Windows reserves the whole local Supabase port block, and every container still reports healthy
 
 ### Database, migrations and pgTAP
 
@@ -381,6 +382,13 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: the CLI decides "already running" from the presence of the project's containers rather than from their state, so an exited database satisfies it. The two halves of the check disagree, and only the second one talks to Postgres.
 - Avoid: `supabase stop` then `supabase start`. Not `--debug`, and not `docker start` on the database alone — that leaves the service containers holding dead connections, which is the trap directly above this one.
 - Verify: 2026-08-12. Hit on **both** the main project and the recovery destination in the same session, which is what makes it a trap rather than a one-off; `docker ps -a --filter name=supabase_db_` shows the exited container while `supabase start` still claims the project is up. CLI v2.109.1.
+
+## Windows reserves the whole local Supabase port block, and every container still reports healthy
+
+- Symptom: three different failures that look unrelated. Containers come back from a Docker Desktop restart as `Up (healthy)` but nothing answers on `127.0.0.1:54321`, so every database-backed suite fails with `ECONNREFUSED` instead of skipping. `docker restart` on the service containers changes nothing. Then `supabase start` finally names it: `ports are not available: exposing port TCP 0.0.0.0:54322 -> 127.0.0.1:0: bind: An attempt was made to access a socket in a way forbidden by its access permissions`.
+- Cause: WinNAT/Hyper-V takes **dynamic** TCP port reservations at boot, and one of them can swallow the project's whole block. Measured here as `54243-54342`, which covers `private-ledger-local` entirely (54321 gateway, 54322 db, 54323 studio, 54324 inbucket) and reaches into `private-ledger-recovery`'s 5433x. Docker starts the containers anyway and simply does not publish the ports: `docker inspect` shows `HostConfig.PortBindings` carrying `8000/tcp -> 54321` while `NetworkSettings.Ports` is `{"8000/tcp":[]}`. **That gap is the whole diagnosis** — a configured binding that was never established — and no `docker ps` column shows it.
+- Avoid: read the reservation before touching Docker — `netsh interface ipv4 show excludedportrange protocol=tcp` and look for a range covering 54321. Clearing it needs an **elevated** shell (`net stop winnat` then `net start winnat`, then `supabase stop` and `supabase start`), so an agent cannot fix this and must hand it back. Reserving the block permanently is what stops it recurring: `netsh int ipv4 add excludedportrange protocol=tcp startport=54320 numberofports=30 store=persistent`, also elevated. **Do not read a `docker restart` as the remedy** — the trap directly above this one has the same symptom and a different cause, and trying that one first is what costs the time here.
+- Verify: 2026-08-23. `netsh` reported `54243-54342` while all ten `private-ledger-local` containers read `Up (healthy)`, `curl http://127.0.0.1:54321/rest/v1/` returned `000`, and Kong's own log showed a clean start with its workers up — the container was fine and the host binding never existed. `supabase stop` had already backed the data up to `docker volume ls --filter label=com.supabase.cli.project=private-ledger-local`, which survived the failed start, so the cost was the stack being down rather than anything lost.
 
 ### Database, migrations and pgTAP
 
