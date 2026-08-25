@@ -183,6 +183,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-144** — Auto-import v1 is a local fetcher, and binding becomes automatic where the account is unambiguous
 - **D-145** — The hosted Sync button proxies ciphertext, and it is a caller of the mail seam rather than a second one
 - **D-146** — The fifth archive boundary is shallow on purpose, because two open questions sit immediately behind it
+- **D-147** — Binding announces itself where the owner is looking, because the scroll fix was keyed on a stage auto-binding skips
 
 ## D-134 — The traps budget is raised to 260 KB on the lookup-file argument, with the next breach owed a split rather than a third raise
 
@@ -653,3 +654,47 @@ Archiving either would have bought roughly ten more points and hidden a live arg
 **And the rate is now the thing to watch rather than the percentage.** Four days of ordinary work took this file 72% → 93%; *one* day took it 56% → 94%. At five entries a day a boundary is not a fortnightly event, it is part of finishing a feature — which is an argument for shorter entries, not only for more archives.
 
 - Evidence: `docs/decisions/ARCHIVE-D-130-D-133.md`, the index in this file, `pnpm check:docs --strict` passing at **146 decisions, 145 traps** with `DECISIONS.md` back under budget. D-130 (the byte guard that makes this measurable), D-133 (the rule this applies), D-140 (the test it applies), D-134 and D-137 (the two questions that bound it).
+
+
+## D-147 — Binding announces itself where the owner is looking, because the scroll fix was keyed on a stage auto-binding skips
+
+- Date: 2026-08-25
+- Status: **Done, uncommitted at the time of writing.** `app/import-bench.tsx` and `app/globals.css`. No SQL, no route, no contract change: every project stays on migration 020, the backup contract stays at **v7**, and the build still emits **twenty** `/api/v1/` routes.
+- Context: **the first thing the owner did with the hosted Sync button was find a defect in the feature under it.** With the three mailbox variables in Vercel (see below) the button worked on the first real attempt — five statements from the mailbox, read on the device — and pressing **Bind & review** on a row then appeared to do nothing at all.
+
+### What was actually wrong
+
+`workBatchEntry` takes an early return on the automatic path: `if (autoBind && match) { bindTo(...); return; }`. `bindTo` sets the stage to `review`. The scroll effect that brings the answer into view was guarded `if (stage !== "bind" || workingLabel === null) return`.
+
+So the branch that is **on by default** never scrolled. The review table rendered below the worklist and the status sentence landed in the Import / 01 section several screens above, while the worklist under the cursor did not change — its button only flips to "Confirmed — open again" after a confirmation, which is correct and which removed the last visible sign that the press had registered.
+
+**This was a fixed bug that came back.** The scroll exists because the same complaint was made about the manual chooser and answered in D-141; its comment still said so. D-144 then added a path around the stage the fix was keyed on. Nothing failed, because a guard that returns early is indistinguishable from a guard that was not needed.
+
+### The decision, which is about where an answer belongs rather than about scrolling
+
+**An action's result goes where the action was, and it is announced rather than merely rendered.** The scroll is now keyed on the **binding outcome** — a value every branch sets — instead of on a stage that one branch skips. A stage is a waypoint; the outcome is the subject.
+
+Beside it, the anchor the page moves to now carries a **banner** in the established `.capture-result` shape: `role="status"`, `tabIndex={-1}`, focused with `preventScroll`, matching `app/statement-batch.tsx`'s confirmation banner and `app/notification-card-capture.tsx` (D-139). Three states, because a press has three outcomes — bound to an account, read but needing one, or refused by `assembleImportPayload`. **The owner asked for this directly**, in the form "why is there no notification box so it is guaranteed I will see it", and he is right that a scroll alone is a weaker promise than an announced region: scrolling depends on where the viewport was, and `role="status"` does not.
+
+`bindTo` returns the refusal message or null so the banner can state which happened; a `useState` setter does not update the variable it was called with, so the caller could not read `bindingError` back in the same tick.
+
+### What `/code-review` found, and the one that was not mine
+
+Ten findings at high effort, **six fixed**. Two were leaks of the same kind the new banner had just made visible, and one of those predates this change:
+
+- **`workingLabel` was only ever set, never cleared.** Confirm a worklist entry, then confirm an unrelated single import, and the worklist announced that the *earlier* statement had reached the ledger carrying this one's numbers. Latent since D-141 and reachable by hand.
+- **`batchBinding` was not cleared on the single-import paths**, which was the same mistake made fresh.
+- Both, plus `batchConfirmation`, are now cleared by one `leaveTheWorklist()` that the two single-import entry points call.
+- **`setChosenAccountId` sat after the auto-bind early return**, so a refused automatic bind left the previous statement's account selected under a banner saying to choose one. Moved above the branch.
+- **The refusal was announced twice** — the new `role="status"` banner and the existing `role="alert"` carrying the same message. The alert is suppressed only while the banner already carries it.
+- **`.scroll-anchor` became dead CSS** and its comment contradicted the new code; removed, with a note saying not to re-add it without a caller.
+
+**Four were declined and three of those are not this change's to fix**: `playwright.config.ts` and `eslint.config.mjs` are the owner's deliberately local-only files, and the `webServer.timeout` finding is the same one declined on 2026-08-24. The `playwright.config.ts` finding is real and now sharper than `HANDOFF.md` had it — with a production build the owner specs actually execute, and that config has no `testIgnore`, `fullyParallel: true` and default workers, so a bare `pnpm exec playwright test` runs a ledger-wiping spec concurrently with siblings asserting against those tables. It stays in `HANDOFF.md` § Live hazards as the owner's to close.
+
+### Coverage, and the gap this does not close
+
+`.runtime/bind-scroll.spec.ts` — **3 tests, throwaway and gitignored** — drives the automatic branch, the manual branch and the worklist-to-single-import leak. The first two are **red against the pre-fix component and green after**, run by reverting the file and re-running. Honest about how they are red: they fail on the banner's absence rather than on the scroll specifically, since the banner is new.
+
+**No committed spec drives any of this**, which is the gap D-145 widened and this does not close either. The statement batch form and the mailbox sync are still covered by unit tests and throwaways only.
+
+- Evidence: `app/import-bench.tsx`, `app/globals.css`, `.runtime/bind-scroll.spec.ts` (3/3). Vitest **696 passed / 7 skipped across 34 files** — unchanged, which is what a change touching only component wiring should produce — Playwright owner **31/31** and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` clean, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: nothing here moves SQL, and it stands at 266 across 8 from 2026-08-18. **The owner suite reported 30/31 on one run and 31/31 on a full re-run** — `captures a slip from its QR` timed out at 30s, on a route this change does not touch; recorded in `HANDOFF.md` rather than treated as caused here. D-141 (the scroll this restores), D-144 (the path that skipped it), D-139 (the banner pattern), D-125 (review before asking to commit), D-145 (the guard that narrowed without failing, which is this shape one level up).

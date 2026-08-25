@@ -146,6 +146,8 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - `fullyParallel: false` serialises a file, not a suite, and looks serial while there is one file
 - A config that ignores one spec file by name is a list of one, not a rule
 - A 200 from the app proves a server is running, not that it is the one you just started
+- An assertion that a scrolled element sits near the viewport top measures the document's length, not the scroll
+- A fixture whose identifiers match nothing sends the test down the fallback branch, and it passes there
 
 ### App, auth, routing and accessibility
 
@@ -178,6 +180,8 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - A colour declared outside the stylesheet does not move when the stylesheet does
 - An element selector cannot reset a property a class set, and the rule still reads as if it did
 - A layout audit against a page that loads nothing measures the absence of the thing it was written for
+- A fix guarded on an intermediate stage dies silently when a later feature skips that stage
+- State that marks a mode is only ever set, and the stale mode answers a later action
 
 ## Traps
 
@@ -855,6 +859,20 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Avoid: stop the old server before starting a new one, and **verify by timestamp rather than by response**. `Get-NetTCPConnection -LocalPort 3000 -State Listen` gives the pid, `(Get-Process -Id <pid>).StartTime` its age, and `(Get-Item .next\BUILD_ID).LastWriteTime` the build's — the server must be the newer of the two. This is the same lesson as the `reuseExistingServer` entry above, arriving by a different route: there Playwright reused someone else's server, here a new one failed to displace it.
 - Verify: with the stale process killed and the server restarted, `StartTime` is later than `BUILD_ID`'s mtime. Dated 2026-08-11.
 
+## An assertion that a scrolled element sits near the viewport top measures the document's length, not the scroll
+
+- Symptom: a spec asserting `boundingBox().top < 160` after a scroll passes on one branch of the same feature and fails on the other at 296px, with nothing wrong on either.
+- Cause: `scrollIntoView({ block: "start" })` cannot scroll past the end of the document. Where the branch under test renders a long section below the target the element reaches the top; where it renders a short one the page runs out of scroll and the element comes to rest wherever the bottom of the document leaves it. The number the assertion reads is therefore a fact about how much content follows the target, and it changes whenever that content does — so the test fails on a UI change that is not a regression and passes on a build where nothing scrolls at all, provided the page happens to be short.
+- Avoid: assert the claim a person would notice the absence of — the element is **fully inside the viewport** (`top >= 0` and `bottom <= innerHeight`) and the page **scrolled as far as it had to give** (`scrollY >= scrollHeight - innerHeight - 2`). Keep a near-the-top bound only for a branch known to render enough below the target to reach it. And poll rather than measure once: `app/globals.css` sets `scroll-behavior: smooth`, so a single read lands mid-animation.
+- Verify: 2026-08-25 (D-147). `.runtime/bind-scroll.spec.ts` failed at 296 against a correct build with the `top < 160` form and passes on both branches with the in-viewport-and-exhausted form.
+
+## A fixture whose identifiers match nothing sends the test down the fallback branch, and it passes there
+
+- Symptom: a browser test for automatic account binding passes, and would have passed just as well against a build where automatic binding did not exist.
+- Cause: the shared statement fixtures print an account number ending **7890** and the synthetic seed holds accounts ending **4242**. `soleMatchingAccount` therefore finds nothing, the auto-bind branch is never entered, and the press falls through to the manual chooser — which renders, accepts input and satisfies every assertion written about "the statement was taken off the worklist". The branch under test was never executed and nothing said so. This is the same shape as the layout audit that measured an empty page, one level up: the test looked at *a* working path rather than *the* path.
+- Avoid: make the fixture's identifiers match the seed on purpose and **assert the precondition** — here `select count(*) from public.accounts where bank_code = 'SCB' and last_four = '4242'` equals 1 before the press, so a seed change fails the test instead of silently rerouting it. More generally, when a feature has a match/no-match fork, assert which side the fixture lands on rather than inferring it from the outcome.
+- Verify: 2026-08-25 (D-147). With the default fixture the auto-bind test passed while exercising the manual branch; with `accountNumber: "123-456-4242"` and the count assertion it exercises the automatic one and fails red against the pre-fix build.
+
 ## A config that ignores one spec file by name is a list of one, not a rule
 
 - Symptom: a new browser spec fails under a config it was never meant for, four times over — once per project — with `SyntaxError: Unexpected token 'N', "Not Found" is not valid JSON`. That is a 404 body being parsed as the JSON the test expected, and it names neither the route nor the config.
@@ -1247,3 +1265,17 @@ One hundred and thirteen traps, grouped on 2026-08-09 into the eight sections be
 - Cause: nothing in this app loads until an action asks it to, so a harness that signs in and reads the DOM sees empty shells. A `min-width` on a table that was never rendered cannot be measured, and an audit reporting "overflow: none" about a page with no table reads exactly like an audit reporting it about a table that fits. **This is worse than a wrong number**, because a wrong number invites a second look and a clean report closes the question.
 - Avoid: make the harness **assert the subject exists** before it measures — `expect(page.locator("table")).toHaveCount(1)` — so a run that finds nothing fails instead of passing. Then seed whatever the route needs: for `source_transactions` that means `set session_replication_role = replica` (it is append-only and refuses DELETE), a 64-hex-character `fingerprint`, `fingerprint_version = 'fingerprint-v1'`, and components at `position` 1 or 2. The general form: **an audit's first assertion should be that it is looking at something.**
 - Verify: 2026-08-21 (D-138). The previous version of that audit reported four clean routes on the same commit whose ledger table was 1280px wide at 390px; the gap had been named in D-136 and in `PLAN.md` task 28 the day before, and naming it did not stop it.
+
+## A fix guarded on an intermediate stage dies silently when a later feature skips that stage
+
+- Symptom: a defect that was found, fixed and documented comes back on the path most users take, while the fix is still in the file and its test still passes.
+- Cause: the fix was guarded on a *waypoint* rather than on the thing it was about. `app/import-bench.tsx` scrolled the owner to the answer only when its stage machine reached `bind`; automatic binding (D-144) took the statement straight to `review`, so the guard was never true on the branch that is on by default. Nothing failed — the guard is a `return`, so skipping it is indistinguishable from not needing it — and the original comment still described a fix that no longer ran. **A new path around a state is the ordinary way features grow**, which is what makes this class recurrent rather than a one-off; it is the same shape as the privacy guard that narrowed in meaning when the behaviour moved to a file it did not name (D-145), one level up.
+- Avoid: key an effect on **the outcome it exists to announce**, not on a stage the outcome happens to pass through today. Here that is "a worklist entry produced a binding result", which every branch sets. When a feature adds a route around an existing state, grep for guards naming that state and ask which of them the new route silently skips.
+- Verify: 2026-08-25 (D-147). `.runtime/bind-scroll.spec.ts` is red against the stage-keyed guard on both branches and green against the outcome-keyed one; the defect was reported from production by the owner, not by any suite.
+
+## State that marks a mode is only ever set, and the stale mode answers a later action
+
+- Symptom: a confirmation banner names the wrong document — the right row count, account and batch id, attached to a statement worked several minutes earlier.
+- Cause: `workingLabel` recorded which worklist entry was being worked and was assigned in exactly one place, never cleared. Confirming a *single* import afterwards still found it non-null, so the code took the "this belongs to the worklist" branch and labelled the confirmation with a name from the previous task. A mode flag with one writer reads as obviously correct in review, because the bug is not in any line that exists — it is in a line that does not. The related state added beside it repeated the mistake within the same change, which is how it was noticed.
+- Avoid: when adding state that means "the user is in mode X", write the clearing path in the same commit as the setting path, and give every exit from the mode one helper to call rather than three setters to remember. A useful review question: *what puts this back?* — if the answer is "a page reload", it is this trap.
+- Verify: 2026-08-25 (D-147), found by `/code-review`. `leaveTheWorklist()` clears all three, and `.runtime/bind-scroll.spec.ts`'s third test drives a worklist entry then a single import and asserts the banner is gone.

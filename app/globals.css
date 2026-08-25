@@ -289,10 +289,10 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
    so `scrollIntoView` has something to aim at in the same commit that renders the banner. The
    scroll margin is breathing room — the header does not stick, so this is only to keep the result
    off the very top edge of the viewport. An empty anchor collapses so it adds no gap. */
-/* A zero-height marker that keeps a box, so `scrollIntoView` has something to aim at. Distinct
-   from `.capture-result-anchor` below, which hides itself when empty and therefore cannot be a
-   scroll target unless it is holding a banner. */
-.scroll-anchor { display: block; height: 0; scroll-margin-top: 24px; }
+/* `.scroll-anchor` lived here until 2026-08-25 — a zero-height marker for `scrollIntoView` to aim
+   at. Its only user was `app/import-bench.tsx`, whose bind anchor now holds a banner and therefore
+   uses `.capture-result-anchor` instead; `height: 0` would have clipped the banner it holds. Do not
+   re-add it without a caller: an empty rule is how a stylesheet quietly stops describing the app. */
 .capture-result-anchor:empty { display: none; }
 .capture-result-anchor { scroll-margin-top: 24px; }
 .capture-result { margin: 0 0 4px; padding: 14px 16px; display: grid; gap: 12px; border: 1px solid; border-left-width: 4px; border-radius: var(--radius); font-size: 14px; }

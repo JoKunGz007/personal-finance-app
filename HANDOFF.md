@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-23.
+Last updated: 2026-08-25.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -78,7 +78,9 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
-- **Commit and push: granted per session and spent.** Every push to `main` **is a production
+- **Commit and push: granted per session.** Granted again on **2026-08-25** for D-147, as one grant
+  covering build, `/code-review` and the commit-and-push after it. Spent once that grant is used;
+  the next push needs a new ask. **Previously:** Every push to `main` **is a production
   deployment** — see below. Read `git status -sb` and `git log` rather than trusting any sentence
   here. Committed straight to `main`, matching this repo's history; nobody has asked for a
   branch-and-PR flow, so raise it rather than assume it.
@@ -128,13 +130,14 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   what a button offers and those need records created first.
 - **The statement mailbox is live and its credentials are the owner's alone.** A dedicated Gmail with 2FA, an IMAP app password in Bitwarden, and a Gmail filter forwarding three senders. `statement-mailbox.json` at the repo root names the mailbox and the senders — gitignored, no secret in it, but it names an address, so **do not quote it into any document or commit**. **The app password is read from stdin only** by `scripts/fetch-statements.mjs` and has never been in a file, an argument or an environment variable there. `private-statements/inbox/` is where the fetcher writes and is inside the never-read boundary.
 - **D-017 is superseded on binding.** A statement whose printed bank and last four resolve to exactly one account is now bound without asking, by default, with a switch in the batch section. **The review and the confirmation are untouched** — a browser test asserts `import_batches` stays at zero after an automatic bind.
-- **Four pushes on 2026-08-23, all deployed and none verified in the dashboard by an agent**: `6a6f752` (bulk statement import, D-141), `7f7aa65` (the slip-form review fixes, D-142), `617c2c8` (the tertiary button rank, D-143) and `63b5d24` (the mail fetcher and automatic binding, D-144). **The owner verifies a deployment; nothing here can.**
-- **THE HOSTED SYNC BUTTON IS BUILT AND UNCOMMITTED** (D-145, PLAN task 41), and **it does nothing in production until a credential reaches Vercel**. New: `lib/statement-sync.ts`, `lib/server/statement-mailbox-session.ts`, `app/api/v1/imports/mailbox/route.ts`, `app/api/v1/imports/mailbox/attachment/route.ts`, `app/statement-sync.tsx`, `tests/statement-sync.test.ts`. Changed: `app/statement-batch.tsx`, `app/globals.css`, `tests/privacy.test.ts`, `PLAN.md`, `DECISIONS.md`, `GOTCHAS.md`, this file. **The lockfile moved**: `imapflow` went from a devDependency to a dependency, because shipped server code now imports it — read from the build artifact as **one server chunk and zero client chunks**. **Two new routes: twenty `/api/v1/` routes, not eighteen.** No SQL, no contract change, every project still on 020, backup contract still v7.
-- **What the Sync button needs that does not exist, and none of it is grantable by an agent.** The three variables are `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD`; **putting the app password into Vercel is a hosted-resource change needing a fresh ask**, and the password itself is read by the owner and must never be requested. **`/security-review` is owed** — a new route, a stored credential and a mailbox read. And committing is deploying. **Until the variables are set both routes answer 503 with a sentence naming what is unset**, which is proved in a browser against the real route.
+- **Five pushes across 2026-08-23 and 2026-08-24, all deployed and NONE verified in the dashboard by an agent**: `6a6f752` (bulk statement import, D-141), `7f7aa65` (the slip-form review fixes, D-142), `617c2c8` (the tertiary button rank, D-143), `63b5d24` (the mail fetcher and automatic binding, D-144) and `0a4bf9a` (the hosted Sync button and the fifth archive boundary, D-145 and D-146). **The owner verifies a deployment; nothing here can.**
+- **Uncommitted right now: the D-147 fix and four continuity docs, plus the two local-only config files.** `app/import-bench.tsx` and `app/globals.css` are real source implementing the binding banner; `HANDOFF.md`, `PLAN.md`, `DECISIONS.md` and `GOTCHAS.md` carry D-147 and the post-`0a4bf9a` corrections the previous session deliberately held back. **All six are meant to go in one commit.** `eslint.config.mjs` and `playwright.config.ts` are the never-committed pair and are the only entries in `git status --short` that must be left out.
+- **The hosted Sync button is COMMITTED, PUSHED, DEPLOYED and now CONFIGURED** (D-145, PLAN task 41). The owner set the three variables in Vercel at Production scope on **2026-08-25** and redeployed, and **the first real sync worked on the first attempt** — five statements out of the dedicated mailbox, decrypted on the device. That is the first time any of this code had spoken to a real mail server, so the standing warning that it never had is discharged. The 503-when-unset path is still what an unconfigured deployment gets. **D-145's own Status line still reads "uncommitted and not deployed"**: it was true when written, `DECISIONS.md` is append-only, and this line is the correction — which is the division of labour D-052 sets, not an oversight. **The archive boundary went in the same commit rather than its own**, deviating from `592a1b0`'s precedent, because both edits touch interleaved regions of `DECISIONS.md`.
+- **The Sync button's three variables are set and that grant is spent.** `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD`, Production scope, the password Sensitive, none prefixed `NEXT_PUBLIC_`. **The two non-secret values live in `statement-mailbox.json` at the repo root** — gitignored, no secret in it, but it names an address, so do not quote it anywhere. **A sender pasted with its JSON quotes still contains an `@`, so it passes validation and then matches nothing**, which looks exactly like a bank that stopped sending; strip the quotes. **Any further hosted-resource change needs its own ask.** **`/security-review` ran on 2026-08-24 and found nothing** — it verified the owner gate on both routes, that the validated uid/part cannot reach unauthorized bytes, TLS certificate validation, that the app password cannot leak into a body or a log, and that the mail-supplied filename is neither a header-injection nor an XSS vector. **Until the variables are set both routes answer 503 with a sentence naming what is unset**, which is proved in a browser against the real route.
 - **`statement-mailbox.json` is gitignored and therefore does not exist in a deployment.** That is why the hosted side reads the same two facts from the environment instead. The variable names are deliberately **not** in `.env.example`, which is inside the never-read boundary and is the owner's to edit.
 - **The document password still never leaves the device, and that is asserted rather than intended.** It is not a parameter of either mailbox route, the deployment does not hold it, and `app/statement-sync.tsx` has no prop, state or field that could carry one. What the routes move is the bank's own ciphertext.
 - **A privacy guard narrowed in meaning without failing, and it is now said out loud** (D-145). `tests/privacy.test.ts` asserts `app/statement-batch.tsx` constructs no request of any kind; the sync fetch lives in a **separate component** so that stays literally true, and a second guard covers the new one. **The old guard's comment now states what it still means and what it no longer means on its own.** Two new `GOTCHAS.md` traps came out of this, plus one about Playwright route globs.
-- **The next actions are the owner's, not an agent's.** Task 41 is built and every remaining step needs him: run `/security-review` over the two new routes, decide whether the app password goes into Vercel, and authorize the commit-and-push that is also a production deployment. **Nothing after that is blocked on code.**
+- **The next action, 2026-08-25: commit and push D-147, on the owner's explicit authorization given this session.** He authorized building it, running `/code-review`, and committing and pushing afterwards, in one grant. `/code-review` ran at high effort and is discharged — ten findings, six fixed. **`/security-review` is not owed**: D-147 adds no route, no credential and no external call. **Two questions remain the owner's and nothing is queued behind them**: D-134 and D-137, which is what the sixth archive boundary is waiting on.
 - **The fifth archive boundary was taken on 2026-08-24 and is deliberately shallow** (D-146). `DECISIONS.md` went 94% → **82%** by moving **D-130 … D-133** to `docs/decisions/ARCHIVE-D-130-D-133.md`. **It could not go deeper without breaking D-133's own rule**: D-134 and D-137 sit immediately behind the boundary holding questions that have not closed — whether `GOTCHAS.md` splits at its next breach, and whether this app really has no dark scheme (*"but we'll see"*). **Closing those two is what buys the sixth boundary its depth**, and both are the owner's calls. `GOTCHAS.md` is at 79% and its next breach is owed a **split** along its section headings, not a third raise.
 - **`.runtime/mailbox-sync.spec.ts` is 6 tests** (throwaway, gitignored) and is the only browser proof this feature has. It drives the unconfigured path through the **real** route, the download path with both routes intercepted and synthetic bytes, a failed download landing as one line, and the band at 390px. **The mailbox itself was never contacted by anything this session** — no IMAP connection was made, and the route has never spoken to a real server.
 - **`/code-review` ran against the Sync button on 2026-08-24 and is discharged** (D-145). **Eleven findings; ten real and fixed, one declined**, the declined one being `playwright.config.ts`'s missing `webServer.timeout` — correct, but that file is the owner's local-only copy and the hazard is already below. **Two were serious and shared a shape: a limit applied after the cost rather than before it** — a batch of unread synced files had no way to be cleared, and the route walked every matching message before applying its own cap. **The agent died once on a session limit before reading the diff**; a failed review is not a passed one, and it was re-run. Two regression tests were added and both fail against the pre-fix code.
@@ -172,10 +175,11 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   bypasses RLS, so `.env.example` must never be copied wholesale. The Supabase redirect allowlist
   names exactly one production callback and no wildcard, so preview deployments cannot complete a
   sign-in; that is intended. The two `NEXT_PUBLIC_*` values are inlined at build time, so changing
-  either needs a rebuild rather than a redeploy. **D-145 would add three more and has not**:
-  `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD` are the
-  Sync button's, the last is a credential at a third party, and **setting them is a hosted-resource
-  change needing a fresh ask**. Read the dashboard rather than this line for what is actually set.
+  either needs a rebuild rather than a redeploy. **D-145's three are set as of 2026-08-25, so the count is six**:
+  `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD`, the last
+  a credential at a third party, marked Sensitive, none prefixed `NEXT_PUBLIC_`. They are read at
+  request time, so they took a redeploy rather than a rebuild. Read the dashboard rather than this
+  line for what is actually set.
 - **`GOOGLE_VISION_KEY` lives in the owner's Windows user environment**, not in this repository, not
   in any file, not in any transcript. Read it with
   `[Environment]::GetEnvironmentVariable("GOOGLE_VISION_KEY","User")`, never print it, and report
@@ -193,10 +197,10 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   happens in the pdf.js worker on the device, with a password the server never sees. The Vision key
   never reaches the browser and **the CSP is unchanged**: proxying same-origin is what avoided
   widening `connect-src` to call Gmail directly (D-058).
-- **Gate, all green 2026-08-23 over the uncommitted Sync button** (D-145): Vitest **696 passed /
+- **Gate, all green 2026-08-25 with D-147 in the tree**: Vitest **696 passed /
   7 skipped across 34 files**, Playwright owner **31/31** and isolated **18/18**, throwaway
-  `.runtime/mailbox-sync.spec.ts` **6/6**, production build clean at **twenty** `/api/v1/` routes,
-  `pnpm check:docs --strict` at **145 decisions, 144 traps**, tsc and ESLint clean. **pgTAP was not
+  `.runtime/bind-scroll.spec.ts` **3/3**, production build clean at **twenty** `/api/v1/` routes,
+  `pnpm check:docs --strict` at **147 decisions, 149 traps**, tsc and ESLint clean. **pgTAP was not
   re-run and that is deliberate** — it stands at **266 across 8** from 2026-08-18 and nothing since
   has moved SQL. **Read the skip count, not the total**: it is still 7, and a stopped Docker would
   turn the database-backed suites into skips while leaving the totals looking the same.
@@ -205,6 +209,13 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   that were purely the race** — every one passed on an immediate re-run against a settled database.
   Worth knowing before diagnosing anything: check `docker ps` first, and re-run once before
   believing a database-backed failure.
+- **A SECOND intermittent appeared in the owner suite on 2026-08-25**, distinct from the TOTP one.
+  `captures a slip from its QR and stores it as a provisional entry` timed out at 30s in one full
+  run, passed when run alone, and passed in a complete 31/31 re-run minutes later. It is on `/slips`
+  and the change in the tree that day touches only `/import`. **Undiagnosed. The likeliest cause is
+  the local-only `playwright.config.ts` hazard below**, if a bare `pnpm exec playwright test` was
+  ever run against this stack — that config wipes the ledger from one spec while siblings assert
+  against it. Re-run before believing any single failure in this suite.
 - **The 2026-08-18 TOTP flake has not recurred** in any run since. `owner-access.spec.ts`'s
   returning-owner challenge failed once that day and passed on an immediate re-run. Still
   undiagnosed, now unreproduced across several full owner runs.
@@ -252,7 +263,15 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   the reader spec, and it pins three environment variables while `next start` inherits the real
   Vision key from the Windows user environment. **That is the 2026-08-18 incident still reachable.**
   Both sibling configs pin the key empty; this one is the owner's file and was left alone. One line
-  in its `env` block closes it.
+  in its `env` block closes it. **`/code-review` sharpened this on 2026-08-25 and it is worse than
+  the paragraph above says.** Because the working copy runs a real build, the owner specs actually
+  execute — and this config has no `testIgnore`, `fullyParallel: true`, the default worker count and
+  two projects. So a bare `pnpm exec playwright test` collects `owner-session.spec.ts` and
+  `owner-access.spec.ts` and runs them **concurrently against one seeded owner**, while one of those
+  tests issues a full ledger wipe that its siblings are asserting against. That is the exact
+  configuration `playwright.owner.config.ts` sets `workers: 1` and one project to prevent.
+  **`testIgnore: /owner-(session|access)\.spec\.ts/u` closes it, and it is the owner's call**;
+  the unexplained slip-capture timeout recorded above is what this hazard would look like.
 - **Windows had reserved the whole local Supabase port block, and the fix is now permanent, 2026-08-23.** A dynamic WinNAT reservation over `54243-54342` covered `private-ledger-local` entirely, so Docker started every container and published none of their ports — all ten read `Up (healthy)` while nothing answered on 54321, and `docker restart` could not touch it. **The owner cleared it in an elevated shell** (`net stop winnat`, then `netsh int ipv4 add excludedportrange protocol=tcp startport=54320 numberofports=30 store=persistent`, then `net start winnat`), and `netsh interface ipv4 show excludedportrange protocol=tcp` now shows `54320  54349` as an administered exclusion covering all three projects. **That should stop it recurring**, but the reservation is machine state and nothing in the repository enforces it — if the symptom returns, check `netsh` before suspecting anything that changed. Full trap in `GOTCHAS.md`.
 - **Docker Desktop stops often.** It went down twice on 2026-08-18 alone. **A stopped Docker makes
   the database-backed suites SKIP rather than fail, and the totals read identically** — read the
