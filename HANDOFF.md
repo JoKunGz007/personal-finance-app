@@ -86,10 +86,19 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Commit and push: granted per session, and the grant is SPENT.** Granted on **2026-08-26** and
   used four times that day — `f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60` — all pushed and so deployed.
   **The next commit needs a new ask.**
-- **A migration is unblocked but NOT authorized.** The owner exported a backup on 2026-08-26 and said
-  so, which removes the artifact that was blocking one. `supabase db push` still needs its own ask at
-  the time, and the backup should be verified from the database first rather than taken on trust.
-  **Task 45 is scoped and waiting on his go-ahead**, not on anything technical. **Previously:** Every push to `main` **is a production
+- **Task 45 is AUTHORIZED to be built, 2026-08-26.** The owner read the scope in plain terms — the
+  18x saving, and why a careless page makes totals quietly wrong — and said *"do the big one"*.
+  **That authorizes writing migration 021, the RPCs, the route and the client, and running it all
+  locally. It does NOT authorize `supabase db push`**, which keeps its own ask at the time, nor the
+  deploy. **The backup he exported has not been verified from the database by anyone** — he said he
+  took it, which is his word and not a reading; verify the sequence from the database before the
+  push is asked for, and note the last agent reading was 33 on 2026-08-18.
+- **The first thing to settle is the open question in task 45, not the SQL.** The status filter is
+  derived from reconciliation rather than stored, so whether it can be computed for a page decides
+  the shape of both RPCs. D-155's payload question was answered before its code was written and that
+  is what made it a small change instead of a wrong one; this is the same move.
+- **Take the free step first**: `fingerprint` is ~14% of every row and the ledger view never reads it
+  — a route-side deletion and a schema line, no migration, independent of everything else in task 45. **Previously:** Every push to `main` **is a production
   deployment** — see below. Read `git status -sb` and `git log` rather than trusting any sentence
   here. Committed straight to `main`, matching this repo's history; nobody has asked for a
   branch-and-PR flow, so raise it rather than assume it.
