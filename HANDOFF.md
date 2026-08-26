@@ -115,19 +115,25 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **PLAN task 45 is built and is UNCOMMITTED.** `main` is at `48a2259`, `origin/main` matches it, and
-  the working tree carries the whole of D-158 — migration `202608260021_ledger_paging.sql`, two routes,
-  `lib/ledger-window.ts`, `lib/transactions.ts`, `app/transactions-view.tsx`,
-  `supabase/tests/009_ledger_paging.sql`, `tests/ledger-window.test.ts`, and edits to
-  `tests/e2e/owner-session.spec.ts`, `tests/fixtures/synthetic-slip.ts` and `tests/privacy.test.ts`.
-  **Nothing is committed and nothing is pushed** — both need their own ask. `/code-review` and
-  `/security-review` are owed first (D-125; it touches a money path, a migration and route grants).
-  **`eslint.config.mjs` and `playwright.config.ts` are still the two deliberately local-only files**
-  and must stay out of any commit; `git status --short` is what distinguishes them from the above.
-- **Migration 021 is applied to `private-ledger-local` only.** Every other project — including hosted —
-  is still on **020**. Backup contract **unchanged at v7**, since no table gains a column. Applying 021
-  anywhere beyond the local synthetic project is its own ask, and D-152's rule stands: **verify the
-  backup sequence from the database before asking.**
+- **PLAN task 45 is committed and NOT pushed.** `main` is at `a462a81`, **two ahead of
+  `origin/main`**: `5418ba2` (the paging work, D-158) and `a462a81` (the trap-section split). Both
+  reviews ran before the first of them. **A `git push` is a production deployment and has not been
+  asked for** — and note the ordering that makes the current state safe: the migration is on hosted
+  while the *old* app code is deployed, and 021 is purely additive with
+  `list_account_transactions` still present, so the running app is unaffected. The reverse order
+  would have broken it. **`eslint.config.mjs` and `playwright.config.ts` are the two deliberately
+  local-only files** and stayed out of both commits; `git status --short` is what distinguishes them.
+- **EVERY project is on migration 021, hosted included, as of 2026-08-27.** The owner ran
+  `supabase db push --linked` himself after the backup was verified from the database; the local
+  synthetic project, the recovery destination and hosted all carry it. Read from the hosted database
+  afterwards: **21 applied, head `202608260021`**, and the two new functions carry the same grants they
+  do locally — `SECURITY DEFINER` with a pinned `search_path`, `authenticated` only, and
+  `private.ledger_transaction_json` granted to nobody. Backup contract **unchanged at v7**.
+  `private-ledger-live` stays frozen on 012 and is untouched.
+- **The backup verified before that push is still current.** `sequence` and `last_exported_sequence`
+  both read **37** before and after, and the backup record at sequence 37 dates from 2026-08-26 13:02
+  UTC — the migration changed schema and no owner data, so nothing about it staled the file. Row count
+  unchanged at 1,604. That reading supersedes the last agent reading of 33 on 2026-08-18.
 - **`main` was at `fda6c60` and `origin/main` matched it**, pushed 2026-08-26. Four pushes went out
   that day: `f46ee64` (the ledger restructure, which also carried the long-local `1d2ca59`),
   `b4bc6be` and `fda6c60` (docs), and `d7411b3` (the typeface sizing, the route titles and the
