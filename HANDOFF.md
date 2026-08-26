@@ -83,10 +83,10 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
-- **Commit and push: granted per session, and NOTHING is granted right now.** The last commit grant was
-  spent on `1d2ca59` (D-153) and **the push was never granted**, so that commit is still local — and the
-  ledger restructure (D-155, D-156) sits uncommitted on top of it. **The next ask should cover both
-  together**: a commit for the restructure and the push that carries `1d2ca59` with it. **Previously:** Every push to `main` **is a production
+- **Commit and push: granted per session, and the grant is SPENT.** It was granted on **2026-08-26**
+  for the ledger restructure and used on `f46ee64`, whose push also carried `1d2ca59` (D-153) — the
+  typeface switch, which had been sitting local since the previous session. **Both are on
+  `origin/main` and therefore deployed.** The next commit needs a new ask. **Previously:** Every push to `main` **is a production
   deployment** — see below. Read `git status -sb` and `git log` rather than trusting any sentence
   here. Committed straight to `main`, matching this repo's history; nobody has asked for a
   branch-and-PR flow, so raise it rather than assume it.
@@ -102,11 +102,13 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **`main` is at `1d2ca59`, ONE COMMIT AHEAD OF `origin/main`, NOT PUSHED — and the working tree now
-  also holds the ledger restructure, uncommitted** (D-155, D-156). Twenty-one files, three of them new:
-  `app/ledger-note.tsx`, `lib/owner-ready.ts`, `tests/owner-ready.test.ts`. **`eslint.config.mjs` and
-  `playwright.config.ts` are the two deliberately local-only files and are untouched by it** — run
-  `git status --short` and keep them out of any commit.
+- **`main` is at `f46ee64` and `origin/main` matches it, pushed 2026-08-26** — the ledger restructure
+  (D-155, D-156), 25 files with three new: `app/ledger-note.tsx`, `lib/owner-ready.ts`,
+  `tests/owner-ready.test.ts`. **That push also carried `1d2ca59`**, the typeface switch, which had
+  been local since the previous session — so **two deployments' worth of change went out at once**.
+  **Nobody has confirmed either as Ready in the dashboard, and nobody has opened the deployed page.**
+  The owner is the only one who can. **`eslint.config.mjs` and `playwright.config.ts` stayed out of
+  the commit**, which is what `git status --short` is for.
 - **The full gate is green with all of it in the tree, 2026-08-26**: Vitest **823 passed / 7 skipped
   across 39 files**, Playwright owner **31/31**, isolated **34 passed / 4 skipped**, production build
   clean at **twenty-one** `/api/v1/` routes, `check:docs --strict` at **156 decisions, 156 traps**, `tsc`

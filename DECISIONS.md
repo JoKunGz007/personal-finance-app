@@ -333,7 +333,7 @@ Six boundaries in a row were contiguous, and that had quietly hardened into an a
 ## D-155 — The ledger loads on arrival, and what bounds the payload is the width of a row rather than a page of them
 
 - Date: 2026-08-26
-- Status: **Done, uncommitted.** `app/transactions-view.tsx`, `app/ledger-controls.tsx`, `app/api/v1/accounts/[id]/transactions/route.ts`, `lib/transactions.ts`, `lib/wire.ts`, `lib/owner-ready.ts` (new), `app/owner-access.tsx`, `app/site-header.tsx`, `tests/owner-ready.test.ts` (new), `tests/wire.test.ts`, `tests/transactions.test.ts`, `tests/e2e/owner-session.spec.ts`, `tests/e2e/ledger.spec.ts`. **No SQL, no new route, no contract version change.** Supersedes the task 17 decision quoted below.
+- Status: **Shipped 2026-08-26 as `f46ee64`, deployed, unconfirmed in the dashboard.** `app/transactions-view.tsx`, `app/ledger-controls.tsx`, `app/api/v1/accounts/[id]/transactions/route.ts`, `lib/transactions.ts`, `lib/wire.ts`, `lib/owner-ready.ts` (new), `app/owner-access.tsx`, `app/site-header.tsx`, `tests/owner-ready.test.ts` (new), `tests/wire.test.ts`, `tests/transactions.test.ts`, `tests/e2e/owner-session.spec.ts`, `tests/e2e/ledger.spec.ts`. **No SQL, no new route, no contract version change.** Supersedes the task 17 decision quoted below.
 - Context: PLAN task 43, decided by the owner on 2026-08-26. Task 17 recorded *"Nothing loads until asked"*, and `app/transactions-view.tsx` said the same in its own words.
 
 ### The rule that was reversed was a consistency argument, and it never was an invariant
@@ -384,7 +384,7 @@ The same reversal lets two loads overlap for the first time, so each is now stam
 ## D-156 — Standing copy folds behind an `(i)`; a warning about an irreversible write does not, and moves closer to the control
 
 - Date: 2026-08-26
-- Status: **Done, uncommitted.** `app/ledger-note.tsx` (new), `app/ledger/page.tsx`, `app/ledger-controls.tsx`, `app/cash-entry.tsx`, `app/globals.css`, `tests/e2e/ledger.spec.ts`, `tests/e2e/owner-session.spec.ts`. No SQL, no route, no contract change.
+- Status: **Shipped 2026-08-26 as `f46ee64`, deployed, unconfirmed in the dashboard.** `app/ledger-note.tsx` (new), `app/ledger/page.tsx`, `app/ledger-controls.tsx`, `app/cash-entry.tsx`, `app/globals.css`, `tests/e2e/ledger.spec.ts`, `tests/e2e/owner-session.spec.ts`. No SQL, no route, no contract change.
 - Context: PLAN task 42's restructure. The owner's three critiques of the ledger page, in his words: *"there is too much text, it's almost like its an ad for a product, not product itself"*; *"the transactions/ledger table should be what's most visible/dominant in the page"*; *"record a cash payment might better be contracted into smaller button and section"*.
 
 ### The distinction that decided every sentence, and it is not word count
