@@ -84,7 +84,7 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
 - **Commit and push: granted per session, and the grant is SPENT.** Granted on **2026-08-26** and
-  used three times that day — `f46ee64`, `b4bc6be`, `d7411b3` — all pushed and therefore deployed.
+  used four times that day — `f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60` — all pushed and so deployed.
   **The next commit needs a new ask.**
 - **A migration is unblocked but NOT authorized.** The owner exported a backup on 2026-08-26 and said
   so, which removes the artifact that was blocking one. `supabase db push` still needs its own ask at
@@ -105,9 +105,10 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **`main` is at `d7411b3` and `origin/main` matches it**, pushed 2026-08-26. Three pushes went out
+- **`main` is at `fda6c60` and `origin/main` matches it**, pushed 2026-08-26. Four pushes went out
   that day: `f46ee64` (the ledger restructure, which also carried the long-local `1d2ca59`),
-  `b4bc6be` (docs) and `d7411b3` (the typeface sizing, the route titles and the phone header).
+  `b4bc6be` and `fda6c60` (docs), and `d7411b3` (the typeface sizing, the route titles and the
+  phone header).
   **The owner opened `f46ee64` in a browser and reported on it, so that one is confirmed by use
   rather than only Ready.** `d7411b3` has not been looked at by anyone. **`eslint.config.mjs` and
   `playwright.config.ts` stayed out of every commit**, which is what `git status --short` is for.
