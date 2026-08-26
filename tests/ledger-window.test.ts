@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  combinedBalanceFloor,
   deeperPages,
   emptyWindow,
   hasDeeperPage,
@@ -14,10 +13,10 @@ import {
   STATUS_POPULATION
 } from "@/lib/ledger-window";
 import {
-  combinedBalanceByTransaction,
   cursorAfter,
   type AccountTransaction,
   type LedgerPage,
+  type LedgerPageRow,
   type LedgerTransaction
 } from "@/lib/transactions";
 
@@ -35,8 +34,11 @@ function row(
   date: string,
   time: string | null,
   movement: string,
-  postBalance: string
-): LedgerTransaction {
+  postBalance: string,
+  // Page rows carry the whole ledger's balance at them since migration 022. These fixtures are
+  // about the window's own bookkeeping, so the value only has to be present and canonical.
+  combined = postBalance
+): LedgerPageRow {
   return {
     id,
     source_date: date,
@@ -54,7 +56,8 @@ function row(
       amount_minor: movement,
       currency: "THB"
     }],
-    transaction_overlays: []
+    transaction_overlays: [],
+    combined_balance_minor: combined
   };
 }
 
@@ -72,7 +75,7 @@ const TX5 = row("dddddddd-0000-4000-8000-000000000005", "2026-07-03", null, "-50
 
 const A_TOTALS: LedgerPage["totals"] = { rows: 5, deposits: "60000", withdrawals: "-55000", net: "5000" };
 
-function page(rows: LedgerTransaction[], hasMore: boolean, totals = A_TOTALS): LedgerPage {
+function page(rows: LedgerPageRow[], hasMore: boolean, totals = A_TOTALS): LedgerPage {
   return { rows, hasMore, totals };
 }
 
@@ -157,107 +160,24 @@ describe("totals are whole-account facts, never totals over the window", () => {
   });
 });
 
-describe("the balance walk, and the prediction it did not fulfil", () => {
-  const withAccount = (rows: LedgerTransaction[]): AccountTransaction[] =>
-    rows.map((r) => ({ ...r, account_id: ACCOUNT_A }));
-
-  /**
-   * **PLAN task 45 predicted this would break under paging, and it does not.**
-   *
-   * The reasoning was that the rule seeds each account from `post_balance − movement` of its
-   * oldest row, and a page's oldest row is not the account's — so a page would seed from the wrong
-   * row and every figure would be wrong. But that expression is a fact about the row it is applied
-   * to: the balance immediately *before* it, whichever row it is. Handed a window it yields the
-   * balance carried into the window, which is exactly what was thought to need a server round trip.
-   *
-   * This is asserted on the case that would have exposed the error if there were one — a page
-   * whose oldest row is mid-ledger, on an account that moved 30000 before it. A wrong seed would
-   * put every figure on the page out by that.
-   */
-  it("is already correct for a mid-ledger page, with no help from the server", () => {
-    const paged = withAccount([TX2, TX1]);
-    const balances = combinedBalanceByTransaction(paged);
-    expect(balances.get(TX1.id)).toBe("120000");
-    expect(balances.get(TX2.id)).toBe("100000");
-  });
-
-  it("agrees with the whole ledger about the rows they share", () => {
-    const whole = combinedBalanceByTransaction(withAccount([TX5, TX4, TX2, TX1, TX3]));
-    const paged = combinedBalanceByTransaction(withAccount([TX2, TX1]));
-    expect(paged.get(TX1.id)).toBe(whole.get(TX1.id));
-    expect(paged.get(TX2.id)).toBe(whole.get(TX2.id));
-  });
-
-  it("still derives an account's opening when the window reaches it", () => {
-    expect(combinedBalanceByTransaction(withAccount([TX5, TX4, TX2, TX1, TX3])).get(TX3.id)).toBe("70000");
-  });
-});
-
-describe("the merged combined balance, and where it stops being knowable", () => {
-  // Account A: opening 0, moves in January and June. Loaded to its opening.
-  const A1 = row("11111111-0000-4000-8000-000000000001", "2026-01-10", "09:00", "100", "100");
-  const A2 = row("11111111-0000-4000-8000-000000000002", "2026-06-10", "09:00", "50", "150");
-  // Account B: opening 0, moves in February and July. Only July is loaded.
-  const B1 = row("22222222-0000-4000-8000-000000000001", "2026-02-10", "09:00", "1000", "1000");
-  const B2 = row("22222222-0000-4000-8000-000000000002", "2026-07-10", "09:00", "500", "1500");
-
-  const AB_TOTALS: LedgerPage["totals"] = { rows: 2, deposits: "150", withdrawals: "0", net: "150" };
-
-  /** A complete; B windowed to its newest row, with an older one it has not fetched. */
-  function unevenWindows() {
-    const held = withPage(emptyWindow(), ACCOUNT_A, page([A2, A1], false, AB_TOTALS), null);
-    return withPage(held, ACCOUNT_B, page([B2], true, AB_TOTALS), cursorAfter([B2]));
-  }
-
-  /**
-   * **The defect, written down as the case that produces it.**
-   *
-   * Per account the balance walk is exact at any depth, which is why task 45's predicted breakage
-   * did not happen. The merged view is where it goes wrong: the walk hands each account its seed
-   * for every row older than that account's oldest *held* row, so A's January row would be summed
-   * against B's July balance — 1100 where the truth is 100, because B had not moved yet. And
-   * pressing "Load older rows" would re-seed B and silently rewrite a figure already on screen.
-   *
-   * The floor is the date at and above which every account in scope has a known balance. B has
-   * more to fetch, so it contributes its oldest held row's date; A is complete, so its seed is its
-   * real opening and holds arbitrarily far back.
-   */
-  it("names the date below which the merged figure is not knowable", () => {
-    expect(combinedBalanceFloor(unevenWindows(), null)).toBe("2026-07-10");
-  });
-
-  // Per account there is nothing unknown: A is complete, and B's own walk is exact within its
-  // window. The floor only ever describes the *merged* view.
-  it("has no floor for an account whose window is complete", () => {
-    expect(combinedBalanceFloor(unevenWindows(), ACCOUNT_A)).toBeNull();
-  });
-
-  it("has no floor at all once every account is fully loaded", () => {
-    let held = withPage(emptyWindow(), ACCOUNT_A, page([A2, A1], false, AB_TOTALS), null);
-    held = withPage(held, ACCOUNT_B, page([B2, B1], false, AB_TOTALS), null);
-    expect(combinedBalanceFloor(held, null)).toBeNull();
-  });
-
-  /**
-   * The arithmetic the floor is protecting, shown both ways so the wrong number is on record.
-   * Above the floor the merged figure is right; below it, it is 1000 out — which is exactly B's
-   * unfetched February movement leaking backwards into January.
-   */
-  it("is exact above the floor and would be wrong below it", () => {
-    const held = unevenWindows();
-    const rows = [
-      { ...A1, account_id: ACCOUNT_A }, { ...A2, account_id: ACCOUNT_A },
-      { ...B2, account_id: ACCOUNT_B }
-    ];
-    const balances = combinedBalanceByTransaction(rows);
-    expect(balances.get(B2.id)).toBe("1650");
-    expect(balances.get(A1.id)).toBe("1100");
-    expect(combinedBalanceFloor(held, null)! > A1.source_date).toBe(true);
-  });
-});
+/*
+ * Two suites stood here on 2026-08-27 and are gone with what they tested. The first held that the
+ * per-account walk was exact at any window depth, which was true; the second held the **floor** that
+ * hid the merged figure where a per-account window could not know it, which was correct and, on the
+ * real ledger, blanked most of the column. Migration 022 computes the combined balance in SQL over
+ * every account, so there is no client derivation left to test and no unknowable range left to name.
+ * `supabase/tests/010_combined_balance.sql` carries the cases, including the merged one that failed
+ * here — two accounts of unequal window depth.
+ */
 
 describe("reconciliation sees more than the page", () => {
-  const candidate = (r: LedgerTransaction): AccountTransaction => ({ ...r, account_id: ACCOUNT_A });
+  // A candidate carries no combined balance — it is evidence for the matching rule and is never
+  // displayed, so the field is stripped here rather than left over from the page fixture.
+  const candidate = (r: LedgerPageRow): AccountTransaction => {
+    const rest: Record<string, unknown> = { ...r };
+    delete rest.combined_balance_minor;
+    return { ...(rest as LedgerTransaction), account_id: ACCOUNT_A };
+  };
 
   it("unions the window with the candidates", () => {
     const rows = reconciliationRows(windowOfA(A_PAGE_1), [candidate(TX1)]);

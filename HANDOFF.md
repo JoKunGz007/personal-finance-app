@@ -83,9 +83,11 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
-- **Commit and push: granted per session, and the grant is SPENT.** Granted on **2026-08-26** and
-  used four times that day — `f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60` — all pushed and so deployed.
-  **The next commit needs a new ask.**
+- **Commit and push: granted per session, and the grant is SPENT.** Granted again on **2026-08-27**
+  and used for three commits — `5418ba2` (task 45), `a462a81` (the trap split), `cbf1c58` (the hosted
+  migration record) — pushed as `48a2259..cbf1c58` and **therefore deployed**. **The next commit needs
+  a new ask.** Earlier: granted 2026-08-26 and used four times that day (`f46ee64`, `b4bc6be`,
+  `d7411b3`, `fda6c60`), all pushed.
 - **Task 45's build grant is DISCHARGED, 2026-08-27.** The owner authorized migration 021, the RPCs,
   the route, the client and the tests, run locally, and all of that is built and green (D-158). **The
   grant covered building and running locally and nothing else.** It did not cover `supabase db push`,
@@ -94,6 +96,13 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **The backup the owner exported on 2026-08-26 is still unverified from the database.** He said he
   took it, which is his word rather than a reading. **Verify the sequence from the database before
   asking for any push of 021** — the last agent reading was 33 on 2026-08-18. D-152's rule stands.
+- **The deployed ledger was looked at by the owner and found three things the gate could not**
+  (D-159): the first load fetches **297 rows, not 100**, because paging is per account and three
+  accounts hold rows; the **Load older rows control rendered as prose** for want of a class; and the
+  **all-accounts column was blank on every visible row**, because D-158's floor is set by the largest
+  account. All three are fixed, the third by moving the derivation into SQL (migration 022).
+  **This is the second time in two days that looking at the real deployment found what a green gate
+  could not.**
 - **Both reviews have run and their findings are fixed.** `/security-review` found nothing, checked
   against live `pg_proc` rather than the migration text. `/code-review` at high effort found nine and
   **six were fixed**, the serious one being that the *merged* combined balance was wrong under uneven
@@ -115,15 +124,19 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **PLAN task 45 is committed and NOT pushed.** `main` is at `a462a81`, **two ahead of
-  `origin/main`**: `5418ba2` (the paging work, D-158) and `a462a81` (the trap-section split). Both
-  reviews ran before the first of them. **A `git push` is a production deployment and has not been
-  asked for** — and note the ordering that makes the current state safe: the migration is on hosted
-  while the *old* app code is deployed, and 021 is purely additive with
-  `list_account_transactions` still present, so the running app is unaffected. The reverse order
-  would have broken it. **`eslint.config.mjs` and `playwright.config.ts` are the two deliberately
-  local-only files** and stayed out of both commits; `git status --short` is what distinguishes them.
-- **EVERY project is on migration 021, hosted included, as of 2026-08-27.** The owner ran
+- **PLAN task 45 is deployed at `cbf1c58`, and D-159 is committed on top of it and NOT deployed.**
+  `cbf1c58` was pushed 2026-08-27 as `48a2259..cbf1c58`. **The database went first and the code followed**, which is the
+  only safe order here: 021 is additive and `list_account_transactions` was still present, so the
+  running deployment was unaffected in the window between them. **Nobody has looked at the deployed
+  result yet**, and the paging bullet below says what to look at. **`eslint.config.mjs` and `playwright.config.ts` are the two deliberately
+  local-only files** and stayed out of all three commits; `git status --short` distinguishes them.
+- **The local project and the recovery destination are on 022; HOSTED IS ON 021.** Migration
+  `202608270022_combined_balance.sql` (D-159) is built, validated and committed but **not pushed to
+  hosted** — that is its own ask, and the backup reading below is what it needs. **The deployed app
+  does not need it**: what is deployed is the D-158 code, which does not read
+  `combined_balance_minor`. Pushing the *code* without the migration would break the ledger, so if
+  both go out, **the migration goes first**.
+- **EVERY project was on migration 021, hosted included, as of 2026-08-27.** The owner ran
   `supabase db push --linked` himself after the backup was verified from the database; the local
   synthetic project, the recovery destination and hosted all carry it. Read from the hosted database
   afterwards: **21 applied, head `202608260021`**, and the two new functions carry the same grants they
@@ -210,6 +223,19 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   rows and asserts a table is present before measuring. **Two surfaces are still unmeasured with
   records in them** — the captured-slips list and the batch worklist — because the audit only clicks
   what a button offers and those need records created first.
+- **`cbf1c58` IS DEPLOYED AND UNVERIFIED, 2026-08-27** — task 45, the largest user-visible change to
+  the ledger since it started loading on arrival. **What to look at, on `/ledger`, signed in:**
+  the table should show **100 rows** and a line reading *Showing 100 of 1,604 confirmed rows* with a
+  **Load older rows** button; pressing it should add rows without the ones above changing. **The
+  totals strip must still read 1,604 rows** — it is computed in SQL over the whole account, and a
+  figure matching the rows on screen instead would mean the page's totals are being shown, which is
+  the defect this whole task exists to avoid.
+  **Two things are new and may look wrong when they are right.** An **em dash** in the *All accounts*
+  column means the merged balance is not knowable that far back because some account's window is
+  shallower — honest rather than broken, and it should not appear at all while one account holds
+  almost every row. And the **Status filter no longer claims completeness** for *Verified*, because a
+  verified row can sit outside the loaded window.
+  **The remedy for a bad deploy is Instant Rollback in the dashboard, not a revert push.**
 - **The statement mailbox is live and its credentials are the owner's alone.** A dedicated Gmail with 2FA, an IMAP app password in Bitwarden, and a Gmail filter forwarding three senders. `statement-mailbox.json` at the repo root names the mailbox and the senders — gitignored, no secret in it, but it names an address, so **do not quote it into any document or commit**. **The app password is read from stdin only** by `scripts/fetch-statements.mjs` and has never been in a file, an argument or an environment variable there. `private-statements/inbox/` is where the fetcher writes and is inside the never-read boundary.
 - **D-017 is superseded on binding.** A statement whose printed bank and last four resolve to exactly one account is now bound without asking, by default, with a switch in the batch section. **The review and the confirmation are untouched** — a browser test asserts `import_batches` stays at zero after an automatic bind.
 - **Five pushes across 2026-08-23 and 2026-08-24, all deployed and NONE verified in the dashboard by an agent**: `6a6f752` (bulk statement import, D-141), `7f7aa65` (the slip-form review fixes, D-142), `617c2c8` (the tertiary button rank, D-143), `63b5d24` (the mail fetcher and automatic binding, D-144) and `0a4bf9a` (the hosted Sync button and the fifth archive boundary, D-145 and D-146). **The owner verifies a deployment; nothing here can.**

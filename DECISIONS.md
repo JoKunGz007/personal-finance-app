@@ -209,6 +209,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-156** — Standing copy folds behind an `(i)`; a warning about an irreversible write does not, and moves closer to the control
 - **D-157** — The pixel faces get a measured `size-adjust`, every route opens with a title, and the standing copy folds the rest of the way
 - **D-158** — The ledger pages, and reconciliation keeps its rule: a candidate set narrows the input instead of a second engine deciding the answer
+- **D-159** — The combined balance is computed once in SQL, because a per-account window cannot see another account's history
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -531,3 +532,89 @@ Records are complete on the client at any window depth, so their contribution is
 Nothing in the app calls it after this. It is left in place and still granted because `supabase/tests/001_security.sql` pins its grants, and dropping a published, granted function is a contract change of its own rather than a side effect of this one.
 
 - Evidence, after the review's fixes: Vitest **845 passed / 7 skipped across 40 files** (from 823/7/39) — 21 in the new `tests/ledger-window.test.ts` and 1 in `tests/transactions.test.ts`, skip count unchanged at 7. pgTAP **299 across 9 files** (from 266 across 8) with migrations 001–**021**: 33 assertions covering the keyset order including `nulls last`, three pages covering the ledger with no repeat and no gap, whole-account totals from any page, the limit clamp, the refused partial cursor, all four clauses of the candidate predicate, a weak session reading nothing, and the page's key set pinned at three so `carriedBalance` cannot quietly return. Playwright owner **32/32** including a new end-to-end paging spec over 105 seeded rows; isolated **34 passed / 4 skipped**. Production build clean at **twenty-two** `/api/v1/` routes, up one. `tsc` and `pnpm exec eslint .` clean with zero warnings. `check:docs --strict` clean. Backup contract **unchanged at v7** — no table gains a column. **`/security-review` found nothing**, verified against live `pg_proc` rather than read off the migration: both new functions are `SECURITY DEFINER` with a pinned `search_path`, granted to `authenticated` only, and `private.ledger_transaction_json` — which takes an owner id — is granted to nobody and is not `SECURITY DEFINER`. No dynamic SQL anywhere. D-063 (reconciliation over the whole ledger, preserved), D-067 (the manual override reaching past the automatic window), D-120 (the two-engines refusal this obeys), D-125 (review before asking to commit, four for four now), D-155 (superseded), D-157 (the change before this one).
+
+
+## D-159 — The combined balance is computed once in SQL, because a per-account window cannot see another account's history
+
+- Date: 2026-08-27
+- Status: **Done.** Migration `202608270022_combined_balance.sql`, `lib/transactions.ts`,
+  `lib/ledger-window.ts`, `app/transactions-view.tsx`, `supabase/tests/010_combined_balance.sql` (new),
+  `tests/transactions.test.ts`, `tests/ledger-window.test.ts`. Applied to the local synthetic project
+  and the recovery destination; **hosted is on 021 and this has not been pushed there.**
+- Context: the owner ran the deployed ledger from D-158 and sent a screenshot. Supersedes the
+  **floor** that D-158 shipped hours earlier, and closes the last of that entry's open behaviour.
+
+### What the deployment showed, which no test could have
+
+Three things at once, and two were defects. **The first load fetched 297 rows, not 100** — paging is
+per account and three accounts hold rows (about 1,259, 248 and 97), so the first load is one page
+each. Correct, and three times the figure the scoping had quoted; the saving is real but nearer
+170 KB against 785 KB than the 50 KB claimed. **The "Load older rows" control rendered as prose**,
+because it was given no class and inherited the surrounding paragraph — the only route to the rest
+of the ledger read as the last three words of a sentence. `.link-button` already existed for exactly
+this. **And the all-accounts column was an em dash on every visible row.**
+
+### The floor was correct and the wrong shape
+
+D-158's floor suppressed the combined figure below the date where every account's balance is known,
+rather than printing a plausible number that is not the ledger's. That judgement stands and would
+stand again. What it could not survive is the real distribution: **the largest account sets the
+floor**, its window reaches back only a hundred rows, and everything older went blank. A column that
+is right and empty is better than one that is wrong, and worse than one that works.
+
+### Why the derivation moved to SQL, and why that is not D-120's mistake
+
+D-120 refused re-implementing the **matching rule** in PL/pgSQL, because that would be one rule in
+two languages with tests for only one. This is the opposite move. The balance had a client
+implementation that a page **cannot feed correctly** — the combined figure is a fact about *every*
+account at a moment, and a per-account window has no way to know another account's history further
+back than its own rows reach. So it now has exactly one implementation instead of one-and-a-floor,
+and `combinedBalanceByTransaction` is deleted rather than left to disagree.
+
+**The owner's reason is the better one and is why it is a helper rather than an inlined query.**
+PLAN task 44 wants this number too: the combined balance over time is the series any balance chart
+is drawn from. `private.combined_balances(uuid)` is callable by whatever task 44 becomes, which is
+the same argument D-158 made for one candidate query serving two callers.
+
+### The identity, which is what makes it one pass rather than a lateral join
+
+An account's balance at a row is its opening plus everything it has moved since, so summed over
+accounts the combined balance is `sum(openings) + running total of every account's movement`. That
+is a window function over one ordering, not a per-row subquery over every account.
+
+**`delta` is the difference between printed balances, not the row's own movement**, and the
+distinction is load-bearing rather than stylistic. They agree whenever a statement chain is intact.
+They differ across a gap between two separately imported statements — and there the printed balance
+is the truth while a movement sum would drift from it silently. The client's walk read printed
+balances for that reason and this keeps the property. `010_combined_balance.sql` asserts it by
+writing a gap directly, since no import path produces one on purpose.
+
+**The ordering had to match `compareTransactions` reversed exactly**, which is `source_date asc,
+source_time asc nulls first, id DESC`. The id direction is the one to get wrong: it does not flip in
+the display sort, so negating the first two clauses and keeping the third gives a different sequence
+at every tie — and untimed rows sharing a date are ordinary here.
+
+### Exact money
+
+Every term is a `bigint` of minor units and nothing divides. `sum(...) over (...)` over `bigint`
+returns `numeric`, so the running total is cast back explicitly; an implicit numeric leaking into a
+money path is the habit this app does not have, and pgTAP caught the same thing in the test's own
+cross-check before it caught anything else.
+
+### What moved rather than being lost
+
+The client's combined-balance suite moved to `supabase/tests/010_combined_balance.sql` with the
+derivation: an account seeded from its own opening, the answer being independent of the order rows
+arrive in, an account with no rows contributing nothing — plus the case the client could never
+satisfy, two accounts of unequal window depth. **That case is the defect written down**: the client
+printed 110000 against an early row where the truth was 10000, because the shallow account's later
+balance leaked backwards.
+
+- Evidence: Vitest **830 passed / 7 skipped across 40 files** (from 845/7/40 — nine client
+  balance assertions moved into pgTAP and are not lost, plus the slip-exclusion test whose subject
+  no longer exists). pgTAP **312 across 10 files** (from 299 across 9) with migrations 001–**022**,
+  13 of them the new suite. Playwright owner **32/32**, isolated **34 passed / 4 skipped**, portable
+  recovery re-run against a destination rebuilt on 022. Production build clean at **twenty-two**
+  `/api/v1/` routes, unchanged. `tsc`, `pnpm exec eslint .` and `check:docs --strict` clean. Backup
+  contract **unchanged at v7** — no table, no column. D-120 (the two-engines refusal, and why this is
+  not it), D-158 (superseded on the floor), and PLAN task 44, which is the reason this is reusable.

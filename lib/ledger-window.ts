@@ -85,48 +85,14 @@ export function windowRows(window: LedgerWindow, accountId: string | null): Acco
   return rows.sort(compareTransactions);
 }
 
-/**
- * The oldest date at which the **combined** balance is exactly known, or null when it is known
- * everywhere.
- *
- * ## The defect this exists to close, which is subtler than the one task 45 predicted
- *
- * `combinedBalanceByTransaction` seeds each account from `post_balance − movement` of the oldest
- * row it was handed. **Per account that is exact at any window depth** — the expression is the
- * balance immediately before whatever row it is applied to, so task 45's predicted breakage does
- * not happen and the server needs to tell us nothing.
- *
- * **The merged view is where it goes wrong, and that is the only view rendering the column.** The
- * combined figure at a row is the sum of *every* account's balance at that moment, and the walk
- * supplies an account's seed for every row older than that account's oldest held row. Unpaged the
- * seed is the account's true opening, so that is right. Paged it is the account's balance
- * somewhere in the middle of its history, and every earlier row in the merged list is then summed
- * against a balance from that account's future.
- *
- * Concretely, with A loaded to its opening and B windowed to its newest row: a January row of A is
- * printed with B's July balance added in. Pressing "Load older rows" re-seeds B deeper and the
- * figure printed against a row already on screen silently changes.
- *
- * ## What is knowable, stated as a date
- *
- * An account's balance at a row is known when the account has a held row at or before it — or when
- * its window is **complete**, in which case its seed really is its opening and holds arbitrarily
- * far back. So each account with more to fetch contributes a floor of its oldest held row's date,
- * and the combined figure is exact at and after the newest of those floors. Below it the answer is
- * **not shown at all**, because a running total that quietly means something else is exactly what
- * this task exists to prevent.
+/*
+ * `combinedBalanceFloor` lived here for a few hours on 2026-08-27 and is gone with the defect it
+ * was covering for. It named the date below which the merged balance could not be known from a
+ * per-account window, so the column could show nothing rather than something wrong. That was the
+ * right call while the figure was derived on the client; migration 022 computes it in SQL over
+ * every account, so every page row now arrives already carrying it and there is no unknowable
+ * range left to name.
  */
-export function combinedBalanceFloor(window: LedgerWindow, accountId: string | null): string | null {
-  let floor: string | null = null;
-  for (const id of scopeIds(window, accountId)) {
-    const held = window.byAccount.get(id);
-    // A complete window seeds from the account's real opening, which is valid at any date.
-    if (held == null || !held.hasMore || held.rows.length === 0) continue;
-    const oldest = [...held.rows].sort((a, b) => -compareTransactions(a, b))[0]!;
-    if (floor === null || oldest.source_date > floor) floor = oldest.source_date;
-  }
-  return floor;
-}
 
 /**
  * The whole-ledger confirmed totals for the accounts in scope — **not** a total over the window.

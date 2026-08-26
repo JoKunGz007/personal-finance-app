@@ -79,8 +79,30 @@ export const ledgerTransactionSchema = z.object({
 
 export type LedgerTransaction = z.infer<typeof ledgerTransactionSchema>;
 
-/** A transaction carrying the account it was read from, for the merged view. */
-export type AccountTransaction = LedgerTransaction & { account_id: string };
+/**
+ * One row **of a page**, which carries the combined balance the whole ledger had at it.
+ *
+ * Only a page row has it. A candidate is fetched as evidence for the matching rule and is never
+ * displayed, so computing a combined balance for one would be work nobody reads — and the field
+ * being absent there is what keeps that distinction structural rather than remembered.
+ */
+export const ledgerPageRowSchema = ledgerTransactionSchema.extend({
+  combined_balance_minor: minorUnitStringSchema
+}).strict();
+
+export type LedgerPageRow = z.infer<typeof ledgerPageRowSchema>;
+
+/**
+ * A transaction carrying the account it was read from, for the merged view.
+ *
+ * `combined_balance_minor` is optional because this type covers both populations: rows from a page
+ * carry it, candidates do not. The table only ever renders rows it holds in the window, so the
+ * optionality is never reached on screen.
+ */
+export type AccountTransaction = LedgerTransaction & {
+  account_id: string;
+  combined_balance_minor?: MinorUnitString;
+};
 
 /**
  * How many rows one page of an account's ledger holds.
@@ -97,17 +119,16 @@ export const LEDGER_PAGE_SIZE = 100;
 /**
  * One page of an account's ledger, as `list_account_transactions_page` returns it.
  *
- * **It deliberately carries no balance.** A draft returned the balance walked into the page,
- * because task 45 predicted `combinedBalanceByTransaction` would otherwise seed from the wrong
- * row; it does not, and the field was removed rather than kept as a cross-check that could raise a
- * false alarm about money. What the merged view needs is a different fact and is derived from
- * window depth — `combinedBalanceFloor` in `lib/ledger-window.ts`.
+ * **Every row carries its own `combined_balance_minor`** (migration 022), which is what the client
+ * cannot derive once the ledger pages: the combined figure is a fact about *every* account at that
+ * moment, and a per-account window has no way to know a different account's balance further back
+ * than its own rows reach.
  *
  * `totals` are **whole-account and unpaged**. A total over a page would answer a question nobody
  * asked, and the strip above the ledger has always meant "this ledger", not "this screenful".
  */
 export const ledgerPageSchema = z.object({
-  rows: z.array(ledgerTransactionSchema),
+  rows: z.array(ledgerPageRowSchema),
   hasMore: z.boolean(),
   totals: z.object({
     rows: z.number().int().nonnegative(),
@@ -203,65 +224,20 @@ export function compareTransactions(a: LedgerTransaction, b: LedgerTransaction):
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/**
- * The balance across every account in scope, after each row.
+/*
+ * `combinedBalanceByTransaction` lived here until 2026-08-27 and is **deliberately gone**, not
+ * mislaid. It walked the rows the client held and seeded each account from `post_balance −
+ * movement` of the oldest one — exact per account at any depth, and wrong for the merged figure
+ * the moment the ledger paged, because it then seeded a shallow account from the middle of its
+ * own history. A floor was shipped first, suppressing the column where it could not be known;
+ * on the real ledger that blanked most of the screen, because the largest of three accounts sets
+ * the floor.
  *
- * A merged list needs a total that means something at each row, and it is exactly
- * determined: an account's balance before its first imported row is that row's
- * printed balance minus its own movement, so every account has a known balance at
- * every point, including dates before its statement begins. Walking the merged list
- * oldest-first and replacing one account's balance at a time gives the combined
- * figure after each row.
- *
- * Keyed by transaction id, which is a primary key, so the map is total.
- *
- * Pass the whole account scope, never a text-filtered subset: the combined balance
- * is a fact about the ledger at that row, not about the rows a search happened to
- * match. Filtering first would produce a running total of an arbitrary selection.
- *
- * An account holding no transactions at all contributes nothing and cannot: there is
- * no row to derive an opening from. The caller is expected to say how many accounts
- * are in that state rather than let the total quietly stand for all of them.
- *
- * ## Paging did not change this rule, and the reason is worth writing down
- *
- * PLAN task 45 predicted that paging would break this: seeded from the newest N rows it would
- * "seed from the wrong row and every figure on screen would be wrong". **That prediction was
- * wrong, and `tests/ledger-window.test.ts` is what showed it.** `post_balance − movement` is a
- * fact about the row itself — the balance immediately *before* it — and it is that whichever row
- * it happens to be. Handed a window, the seed is the balance carried into the window, exactly,
- * with no help from anyone.
- *
- * So this function is unchanged by paging and takes no new argument. What the server's
- * `carriedBalance` is used for instead is checking that claim rather than replacing it: see
- * `openingDisagreements` in `lib/ledger-window.ts`. A figure this can derive and the database can
- * also state is worth comparing, because a disagreement means the window skipped a row.
+ * `private.combined_balances` (migration 022) is the one implementation now, and every page row
+ * arrives carrying `combined_balance_minor`. Keeping this function as well would be two answers
+ * to one question about money, which is the shape D-120 refused for the matching rule and is no
+ * better here. PLAN task 44 wants the same series for its charts and calls the same function.
  */
-export function combinedBalanceByTransaction(
-  transactions: readonly AccountTransaction[]
-): Map<string, MinorUnitString> {
-  const byAccount = new Map<string, AccountTransaction[]>();
-  for (const transaction of transactions) {
-    const rows = byAccount.get(transaction.account_id);
-    if (rows) rows.push(transaction);
-    else byAccount.set(transaction.account_id, [transaction]);
-  }
-
-  const balances = new Map<string, bigint>();
-  for (const [accountId, rows] of byAccount) {
-    const first = [...rows].sort((a, b) => -compareTransactions(a, b))[0]!;
-    balances.set(accountId, BigInt(first.post_balance_minor) - BigInt(movementMinor(first)));
-  }
-
-  const combined = new Map<string, MinorUnitString>();
-  for (const row of [...transactions].sort((a, b) => -compareTransactions(a, b))) {
-    balances.set(row.account_id, BigInt(row.post_balance_minor));
-    let total = 0n;
-    for (const balance of balances.values()) total += balance;
-    combined.set(row.id, total.toString() as MinorUnitString);
-  }
-  return combined;
-}
 
 // The merged-entry helpers that briefly lived here (D-062) moved to `lib/slip-reconcile.ts`
 // when matching arrived a few hours later (D-063): a ledger row is no longer "a transaction

@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-**One hundred and sixty-six traps, and this file is now the index to them rather than the file that holds them** (D-149, 2026-08-25). They were grouped on 2026-08-09 into the sections below — eight then, nine since `app.md` split on 2026-08-27 — added to since, and their bodies moved into `docs/gotchas/` — one file per section — when this file breached its budget a second time. **The split was owed rather than chosen**: D-134 raised the budget once and said the next breach was owed a split along these exact section headings, not a third raise. Neither move changed anything inside a trap; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. **The index below still lists every trap in every section**, which is what makes finding one cost a scan of this file and then exactly one open. `pnpm check:docs --strict` fails if the index and the bodies disagree.
+**One hundred and sixty-eight traps, and this file is now the index to them rather than the file that holds them** (D-149, 2026-08-25). They were grouped on 2026-08-09 into the sections below — eight then, nine since `app.md` split on 2026-08-27 — added to since, and their bodies moved into `docs/gotchas/` — one file per section — when this file breached its budget a second time. **The split was owed rather than chosen**: D-134 raised the budget once and said the next breach was owed a split along these exact section headings, not a third raise. Neither move changed anything inside a trap; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. **The index below still lists every trap in every section**, which is what makes finding one cost a scan of this file and then exactly one open. `pnpm check:docs --strict` fails if the index and the bodies disagree.
 
 ## Index
 
@@ -70,6 +70,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A version or count written into `SPEC.md` is a claim no gate re-reads
 - Every push to `main` is a production deployment, including a docs-only one
 - A correction overlay's `kind` and `amount_minor` are one fact, and writing either alone violates a check
+- A figure that is right and empty is not the same as a figure that works
 
 ### Backup, restore and recovery
 
@@ -202,6 +203,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Under paging, a count scoped to the filter cannot decide whether the ledger is empty
 - A dedup downstream of paging hides a page that repeats a row, but not one that skips
 - A per-account balance walk is exact under paging; the merged one across accounts is not
+- A control with no class inherits the prose around it, and a suite that asks whether it exists cannot see that
 
 ## Traps
 
@@ -215,11 +217,11 @@ these section headings rather than a third raise. The owner chose the split.
 | --- | --- | --- |
 | Environment, shell and toolchain | 19 | [`docs/gotchas/environment.md`](docs/gotchas/environment.md) |
 | Docker and the local Supabase projects | 15 | [`docs/gotchas/docker-supabase.md`](docs/gotchas/docker-supabase.md) |
-| Database, migrations and pgTAP | 16 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
+| Database, migrations and pgTAP | 17 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
 | Backup, restore and recovery | 10 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |
 | Statement and slip parsing | 17 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 29 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
-| App, auth, routing and accessibility | 38 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
+| App, auth, routing and accessibility | 39 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
 | Layout, typography and accessibility | 14 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 

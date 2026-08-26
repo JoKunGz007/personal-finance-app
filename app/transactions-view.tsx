@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
-import type { MinorUnitString } from "@/lib/money";
 import {
-  combinedBalanceByTransaction,
   cursorAfter,
   ledgerPageSchema,
   matchCandidateListSchema,
@@ -17,7 +15,6 @@ import {
 import {
   deeperPages,
   emptyWindow,
-  combinedBalanceFloor,
   hasDeeperPage,
   reconciliationRows,
   scopeTotals,
@@ -342,31 +339,12 @@ export function TransactionsView() {
    * to, so handed a window it yields the balance carried into that window. The server's own figure
    * is used to *check* that (`openingDisagreements`) rather than to replace it.
    */
-  /**
-   * The combined balance, **kept only where it is exactly knowable**.
-   *
-   * Per account the walk is exact at any window depth, which is why task 45's predicted breakage
-   * did not happen. The merged view is different: the walk supplies an account's seed for every
-   * row older than that account's oldest held row, so with one account windowed shallower than
-   * another, an early row is summed against a balance from the shallow account's *future* — and
-   * pressing "Load older rows" silently rewrites a figure already on screen.
-   *
-   * `combinedBalanceFloor` is the date below which that is the case. Entries below it are dropped
-   * rather than approximated, and the row renders an em dash, because the one thing this column
-   * must never do is print a plausible number that is not the ledger's.
+  /*
+   * The combined balance is no longer derived here at all — every page row arrives carrying it
+   * (migration 022). The client walked it until 2026-08-27 and could not: the figure is a fact
+   * about *every* account at a row, and a per-account window cannot see another account's history
+   * further back than its own rows reach.
    */
-  const combined = useMemo(() => {
-    const balances = combinedBalanceByTransaction(scope);
-    const floor = ledgerWindow === null ? null : combinedBalanceFloor(ledgerWindow, scopedAccount);
-    if (floor === null) return balances;
-    const exact = new Map<string, MinorUnitString>();
-    for (const row of scope) {
-      if (row.source_date < floor) continue;
-      const balance = balances.get(row.id);
-      if (balance !== undefined) exact.set(row.id, balance);
-    }
-    return exact;
-  }, [scope, ledgerWindow, scopedAccount]);
 
   /** How much of the confirmed ledger is on screen, and whether more can be fetched. */
   const reach = useMemo(
@@ -1215,7 +1193,7 @@ export function TransactionsView() {
                         layout={layout}
                         modes={modes}
                         account={accountsById.get(row.transaction.account_id)}
-                        combinedBalance={combined.get(row.transaction.id) ?? null}
+                        combinedBalance={row.transaction.combined_balance_minor ?? null}
                         matchingCardRecord={matchingCardRecord}
                         slipCorrected={row.slip !== null && slipCorrectionBySlip.has(row.slip.id)}
                         openPair={openPair}
@@ -1248,7 +1226,11 @@ export function TransactionsView() {
                 ? " This filter reads every record, so it is complete whatever is loaded."
                 : null}
               {" "}
-              <button type="button" onClick={() => void loadMore()} disabled={loadingMore || busy}>
+              {/* `.link-button` rather than a bare one: with no class it inherited the surrounding
+                  prose and the only route to the rest of the ledger read as the last three words of
+                  a sentence. Seen on the real deployment, not in the suite — a control that looks
+                  wrong is invisible to an assertion that only asks whether it exists. */}
+              <button type="button" className="link-button" onClick={() => void loadMore()} disabled={loadingMore || busy}>
                 {loadingMore ? "Loading…" : "Load older rows"}
               </button>
             </p>
