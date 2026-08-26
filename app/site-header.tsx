@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { FontPicker } from "@/app/font-picker";
 import { OwnerAccess } from "@/app/owner-access";
 import type { FontChoice } from "@/lib/ui-font";
+import { announceOwnerReady } from "@/lib/owner-ready";
 
 // The shell every route renders inside (PLAN task 19).
 //
@@ -65,6 +66,12 @@ export function SiteHeader({ font }: { font: FontChoice }) {
     }
     const warning = typeof record.warning === "string" ? ` ${record.warning}` : "";
     setSession(`Signed in as the synthetic owner at ${String(record.level)} with ${String(record.verifiedFactors)} verified factors.${warning}`);
+    // **The second producer of this announcement, and the one the browser suites drive.** Like the
+    // real login it mints a session without navigating, so anything already refused for want of
+    // one is sitting there refused — the ledger loads on arrival now (PLAN task 43), so on this
+    // route that is the whole table. `lib/owner-ready.ts` says what listens and why it is told
+    // rather than asked.
+    announceOwnerReady();
   }
 
   return (

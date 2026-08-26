@@ -38,15 +38,20 @@ export const transactionOverlaySchema = z.object({
   updated_at: z.string()
 }).strict();
 
-export const importBatchRowSchema = z.object({
-  batch_id: z.string().uuid(),
-  source_index: z.number().int().nonnegative(),
-  page: z.number().int().positive(),
-  row_number: z.number().int().positive(),
-  parser_fields: z.unknown(),
-  linked_existing: z.boolean()
-}).strict();
-
+/**
+ * One confirmed row as the ledger view reads it.
+ *
+ * **`import_batch_rows` is deliberately absent, and `.strict()` is what keeps it absent.**
+ * `list_account_transactions` still builds it — changing the RPC needs a migration — so
+ * `app/api/v1/accounts/[id]/transactions/route.ts` drops it from the response instead. It was
+ * parsed here and read by nothing: no component, no reconciliation, no total. Measured on a row
+ * with the field shape the parsers actually write, it was **241 of 848 bytes, 28.4%** of the
+ * object, and the ledger now loads on arrival (PLAN task 43) — so it was a third of a payload
+ * fetched on every visit to carry provenance nothing displays.
+ *
+ * If the route ever regresses and sends it again, this parse fails by name rather than quietly
+ * paying for it, which is the same reason the overlay object is strict.
+ */
 export const ledgerTransactionSchema = z.object({
   id: z.string().uuid(),
   source_date: isoDateSchema,
@@ -60,7 +65,6 @@ export const ledgerTransactionSchema = z.object({
   currency: z.literal("THB"),
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   source_components: z.array(ledgerComponentSchema),
-  import_batch_rows: z.array(importBatchRowSchema),
   transaction_overlays: z.array(transactionOverlaySchema)
 }).strict();
 

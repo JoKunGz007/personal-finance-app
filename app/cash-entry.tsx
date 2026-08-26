@@ -5,6 +5,7 @@ import { formatThb, parseThb } from "@/lib/money";
 import { cashDateWindow, CASH_KINDS } from "@/lib/cash";
 import { bangkokToday } from "@/lib/dates";
 import { readError } from "@/lib/wire";
+import { LedgerNote } from "@/app/ledger-note";
 
 type Category = { id: string; name: string; archived: boolean };
 type Kind = (typeof CASH_KINDS)[number];
@@ -111,28 +112,39 @@ export function CashEntryForm({ onRecorded }: { onRecorded?: () => void }) {
   }
 
   return (
-    <section className="cash-bench" aria-labelledby="cash-title">
-      <div className="bench-heading">
+    <section className="cash-bench compact" aria-labelledby="cash-title">
+      {/* **Contracted to one line** (PLAN task 42). This owned a titled section and a paragraph
+          above the table, which is a lot of the page for something used a few times a week. The
+          heading level is unchanged — h1, h2, h2 is still the outline, and axe's `heading-order`
+          rule runs on this route — it is only smaller and inline with its own button.
+
+          **The two sentences did not go to the same place, and that is the distinction.** Why
+          cash is recorded here at all is a principle and is behind the `(i)`. That it can never
+          be edited is a warning about the write itself, so it stays on the screen and has moved
+          *down*, next to the button that performs it. */}
+      <div className="cash-heading">
         <p className="section-index">Cash</p>
-        <div>
-          <h2 id="cash-title">Record a cash payment</h2>
-          <p>
-            Cash leaves no statement row and no slip, so what you type here is the only record
-            the amount has. It is written once and never edited — a mistake is corrected, and
-            both figures stay on the record.
-          </p>
-        </div>
+        {/* Named for the thing rather than for the act, so the heading and the button beside it
+            are not the same sentence read twice. */}
+        <h2 id="cash-title">Cash payments</h2>
+        {/* Sibling, not a child. The heading names the `<section>` through `aria-labelledby`, so a
+            button inside it would be read as part of that name. See `app/ledger-note.tsx`. */}
+        <LedgerNote label="About cash entries">
+          Cash leaves no statement row and no slip, so what you type here is the only record
+          the amount has.
+        </LedgerNote>
+        {!open ? (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => { setOpen(true); setStatus(null); void loadCategories(); }}
+          >
+            Record a payment
+          </button>
+        ) : null}
       </div>
 
-      {!open ? (
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={() => { setOpen(true); setStatus(null); void loadCategories(); }}
-        >
-          Record a cash payment
-        </button>
-      ) : (
+      {!open ? null : (
         <form className="slip-form" onSubmit={(event) => void submit(event)}>
           <div className="slip-fields">
             <label>
@@ -213,6 +225,14 @@ export function CashEntryForm({ onRecorded }: { onRecorded?: () => void }) {
 
           {status && <p className="status" role="status">{status}</p>}
           {error && <p className="status error" role="alert">{error}</p>}
+
+          {/* The append-only warning, beside the control that performs the write rather than in
+              the section heading where it used to sit. It is the one sentence here the owner has
+              to have read *before* pressing, so it is the one that does not fold away. */}
+          <p className="write-warning">
+            Written once and never edited — a mistake is corrected, and both figures stay on the
+            record.
+          </p>
 
           <div className="slip-actions">
             <button type="submit" className="primary-button" disabled={busy || !parsedAmount?.ok}>

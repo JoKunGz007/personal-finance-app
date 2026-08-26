@@ -60,16 +60,31 @@ import {
 import { LedgerSlipRow } from "@/app/ledger-slip-row";
 import { LedgerStatementRow } from "@/app/ledger-statement-row";
 import { LedgerSummary } from "@/app/ledger-summary";
+import { onOwnerReady, ownerReadyGeneration } from "@/lib/owner-ready";
 import { ledgerRequest, readError } from "@/lib/wire";
 
 /**
- * Reads the confirmed ledger back (PLAN task 17). Front-end only: it calls the two
- * endpoints that already exist and adds no route, RPC or migration.
+ * Reads the confirmed ledger back (PLAN task 17). Front-end only: it calls the endpoints that
+ * already exist and adds no route, RPC or migration.
  *
- * Nothing loads until asked. Every other read surface in this app is driven by an
- * explicit action, and this one reaches real financial records, so a section that
- * fetched the whole ledger on page load would be the one place that stopped being
- * deliberate about it.
+ * **It loads on arrival, and that reverses what task 17 decided** (PLAN task 43). The old rule
+ * was "nothing loads until asked", justified by consistency: every other read surface here is
+ * driven by an explicit action, so a section fetching on page load would be the one place that
+ * stopped being deliberate. That is a consistency argument and **not an invariant** — no money,
+ * privacy or append-only property rested on it, which is what made it reversible.
+ *
+ * The owner's reason for reversing it is the better one: **the page read like an advertisement
+ * partly because it was empty**, and the standing copy was filling the hole the table should
+ * occupy. A press that the owner performs every single time is not a decision, it is a toll.
+ *
+ * **The payload was measured before this was written, because auto-loading an unbounded fetch is
+ * a different thing from auto-loading a bounded one.** `list_account_transactions` bounds
+ * nothing — no `limit`, no `offset`, one `jsonb_agg` of every row for the account. It is
+ * deliberately still unpaged: the balances here are derived over *whole accounts* and
+ * reconciliation runs over the *whole* ledger before any filter (D-063), so a first page would
+ * silently change both. What was bounded instead is the width of a row —
+ * `app/api/v1/accounts/[id]/transactions/route.ts` drops the one field nothing read, 28.4% of
+ * the object. Paging this properly means computing balances in SQL, which means a migration.
  */
 export function TransactionsView() {
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
@@ -124,6 +139,18 @@ export function TransactionsView() {
   const [status, setStatus] = useState<StatusFilter>(ALL_STATUSES);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * What to say when the load on arrival was refused for want of a session — the sentence itself,
+   * not a flag. Null when there is nothing to say.
+   *
+   * **It holds a message rather than a boolean because 403 means two different things here**, and
+   * the first version discarded that. `strongOwnerClient` answers 403 both for an identity that is
+   * not the ledger owner and for one that has not cleared aal2. Rendering one fixed line for both
+   * told an owner signed in on the wrong Google account to "sign in", which he had just done —
+   * and the retry could never repair it, because signing in again produces the same 403. The
+   * route's own words are the only thing that distinguishes them, so they are what is shown.
+   */
+  const [signInNote, setSignInNote] = useState<string | null>(null);
 
   const accountsById = useMemo(
     () => new Map((accounts ?? []).map((account) => [account.id, account])),
@@ -190,6 +217,57 @@ export function TransactionsView() {
   useEffect(() => {
     if (picking || pickingCard) cancelMatching.current?.focus();
   }, [picking, pickingCard]);
+
+  /**
+   * The load on arrival (PLAN task 43).
+   *
+   * Guarded by a ref rather than by `transactions === null`, because React's development
+   * StrictMode mounts every component twice and the state has not landed by the second mount —
+   * a null check would fire the whole fan-out of requests a second time, against real financial
+   * records, and only in the mode nobody runs the suites in.
+   */
+  const loadSequence = useRef(0);
+  const loadRequested = useRef(false);
+  useEffect(() => {
+    if (loadRequested.current) return;
+    loadRequested.current = true;
+    void load(true);
+    // Mount-only on purpose, and for the same reason `app/slip-capture.tsx` is: `load` is
+    // redefined every render, so listing it would re-fetch the whole ledger on each one. The ref
+    // above is what actually enforces that, rather than the empty dependency list.
+  }, []);
+
+  /**
+   * The second half of loading on arrival: arriving *before* the session does.
+   *
+   * Signing in does not navigate, so the owner can land here signed out, have the automatic load
+   * answered 401, and then sign in from the header with nothing below reacting — an empty table
+   * and a "sign in" line in front of someone who just did. `app/owner-access.tsx` announces the
+   * transition and this listens for it.
+   *
+   * **Registered only while `signInNote` is set**, which is what keeps it from being a second
+   * load on every ordinary visit: the announcement fires whenever that component settles into
+   * `ready`, including on a page that loaded its rows perfectly well a moment earlier. Gating on
+   * the state that the announcement can actually repair means there is nothing to ignore.
+   */
+  const retriedAtGeneration = useRef(0);
+  useEffect(() => {
+    if (signInNote === null) return;
+    const retry = () => {
+      const current = ownerReadyGeneration();
+      // Nothing has been announced yet, or this view already acted on the latest announcement.
+      // The second half is what makes a repeated refusal stop here instead of retrying forever:
+      // being refused again re-runs this effect, and the comparison is what ends it.
+      if (current === 0 || retriedAtGeneration.current >= current) return;
+      retriedAtGeneration.current = current;
+      void load(true);
+    };
+    // Read first, then listen. The announcement usually fires *before* the 401 that makes this
+    // view want it — the refusal travels over the network and the sign-in does not — so a view
+    // that only listened would subscribe to news that had already broken.
+    retry();
+    return onOwnerReady(retry);
+  }, [signInNote]);
 
   // The account scope, before any text filter. Balances are derived from this rather
   // than from `visible`, because a running total of whatever a search matched would
@@ -379,9 +457,28 @@ export function TransactionsView() {
     return (accounts ?? []).filter((account) => withRows.has(account.id));
   }, [scope, accounts]);
 
-  async function load() {
+  /**
+   * Loads everything the view shows.
+   *
+   * `automatic` says who asked. It changes exactly one thing — how a 401 or 403 from the first
+   * request is reported — and nothing else, because a load the page performs by itself and a load
+   * the owner pressed for should otherwise behave identically or the Reload button is testing a
+   * different path from the one that runs.
+   */
+  async function load(automatic = false) {
+    // **Which load is allowed to write the state.** Two can overlap now in a way they could not
+    // when nothing loaded until asked: the load on arrival can still be in flight when recording a
+    // cash payment starts a second one. Whichever *starts* last is the one holding the newer
+    // truth, so an older load that resolves late must drop its results rather than overwrite them
+    // — otherwise a row the owner has just written disappears from a money view for no visible
+    // reason. Checked before every state commit below, not only at the end.
+    const mine = loadSequence.current + 1;
+    loadSequence.current = mine;
+    const superseded = () => loadSequence.current !== mine;
+
     setBusy(true);
     setError(null);
+    setSignInNote(null);
     try {
       // **The two blocking loads used to be the two least defended.** Both parsed their body with
       // a bare `.json()` while the three optional loads below guarded theirs, so a platform error
@@ -394,7 +491,27 @@ export function TransactionsView() {
         unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
         offContract: "The accounts response did not match its contract. Run the unit tests before trusting this view."
       });
+      if (superseded()) return;
       if (!accountsResult.ok) {
+        // **Signed out is not a failure, and this page is where that distinction became visible.**
+        // The ledger loads on arrival, so a visitor who is not signed in now issues a request
+        // before touching anything, and `strongOwnerClient` correctly answers 401 — 403 for a
+        // signed-in identity that is not the owner, or is the owner without aal2. Reporting any of
+        // those as "Not loaded" would put a red alert on the first surface anyone sees, describing
+        // a route working exactly as designed. A press still reports it in full, as an alert: the
+        // owner asked, so the owner is answered.
+        //
+        // **Only 401 gets wording of this view's own.** A 403 keeps the route's sentence, because
+        // its two cases need telling apart and only the route knows which one it is — "This
+        // identity is not the ledger owner" is not answered by signing in again.
+        if (automatic && accountsResult.status === 401) {
+          setSignInNote("Sign in to read the ledger.");
+          return;
+        }
+        if (automatic && accountsResult.status === 403) {
+          setSignInNote(accountsResult.why);
+          return;
+        }
         setError(accountsResult.why);
         return;
       }
@@ -434,6 +551,7 @@ export function TransactionsView() {
         fallback: "Captured slips could not be loaded, so none are shown.",
         offContract: "The slips response did not match its contract, so none are shown."
       });
+      if (superseded()) return;
       if (slipsResult.ok) {
         setSlips(slipsResult.data.slips);
         setMatches(slipsResult.data.matches);
@@ -452,6 +570,7 @@ export function TransactionsView() {
         fallback: "Cash entries could not be loaded, so none are shown.",
         offContract: "The cash response did not match its contract, so none are shown."
       });
+      if (superseded()) return;
       if (cashResult.ok) {
         setCash(cashResult.data.entries);
         setCashCorrections(cashResult.data.corrections);
@@ -472,18 +591,24 @@ export function TransactionsView() {
         fallback: "Captured notification cards could not be loaded, so none are shown.",
         offContract: "The notification cards response did not match its contract, so none are shown."
       });
+      if (superseded()) return;
       if (cardsResult.ok) {
         setCards(cardsResult.data.cards);
         setCardCorrections(cardsResult.data.corrections);
         setCardDecisions(cardsResult.data.decisions);
       } else setCardsError(cardsResult.why);
 
+      if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
       setTransactions(loaded);
     } catch {
+      if (superseded()) return;
       setError("The ledger could not be reached. Check that the local Supabase stack is running.");
     } finally {
-      setBusy(false);
+      // **Only the newest load owns `busy`.** A superseded one clearing it would put the control
+      // back to "Reload" while a load is still in flight — and the owner suite waits on exactly
+      // that label to know rows have arrived, so it would be waiting on a lie.
+      if (!superseded()) setBusy(false);
     }
   }
 
@@ -659,10 +784,26 @@ export function TransactionsView() {
     <>
     {/* A sibling of the ledger rather than a child of it, so the page keeps a flat outline —
         but rendered from here, because recording a cash payment must refresh the rows below
-        and a capture is an event, not something an effect should react to (D-075). Nothing
-        reloads unless the ledger has already been asked for once. */}
-    <CashEntryForm onRecorded={() => { if (transactions !== null) void load(); }} />
+        and a capture is an event, not something an effect should react to (D-075).
+
+        **It stays above the table, contracted rather than moved** (PLAN task 42). Dropping it
+        below would have made the table start marginally higher and cost more than it bought:
+        recording a payment reloads the rows, and the row that was just written would then appear
+        in a table the owner had scrolled past. It is one line now, which does not compete with a
+        table for the eye.
+
+        **It reloads unconditionally, and the guard it used to carry was a real defect.** It read
+        `if (transactions !== null)`, which was right when nothing loaded until asked and wrong the
+        moment the ledger loaded itself: signing in on this page starts a load, and a payment
+        recorded while that load is still in flight found `transactions` still null and refreshed
+        nothing, so the row just written was missing from the table. There is no case left for the
+        guard to cover — this fires only after the write succeeded, which means the session is
+        good, which means the load will be too. The owner suite failed on exactly this. */}
+    <CashEntryForm onRecorded={() => { void load(); }} />
     <section className="ledger-band" aria-labelledby="ledger-title">
+      {/* `onLoad` is `() => void load()` and not `load`: React hands a click handler the
+          MouseEvent, which would arrive as `automatic` and be truthy — silently turning every
+          manual Reload into one that swallows an authentication refusal. */}
       <LedgerControls
         busy={busy}
         loaded={transactions !== null}
@@ -672,7 +813,7 @@ export function TransactionsView() {
         status={status}
         query={query}
         modes={modes}
-        onLoad={load}
+        onLoad={() => void load()}
         onSelectAccount={setSelected}
         onOrderChange={setOrder}
         onStatusChange={setStatus}
@@ -684,6 +825,13 @@ export function TransactionsView() {
           <strong>Not loaded</strong>
           <span>{error}</span>
         </div>
+      ) : null}
+
+      {/* Not an alert and not styled as a warning: nothing has gone wrong. The header above owns
+          signing in — this only says why the table is empty, which is the question the empty
+          space would otherwise raise. */}
+      {signInNote ? (
+        <p className="ledger-status" role="status">{signInNote}</p>
       ) : null}
 
       {transactions ? (

@@ -1,6 +1,6 @@
 # Private Ledger gotchas — App, auth, routing and accessibility
 
-Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **40 traps.**
+Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **46 traps.**
 
 `GOTCHAS.md` keeps the index across every section and is still the way in — it lists every
 trap in this file, so a reader finds the one that applies without loading any body. Add a trap
@@ -300,3 +300,45 @@ the top of `GOTCHAS.md`.
 - **A helper is not the fix, and this trap proved it on itself within one day.** `leaveTheWorklist()` was written as the remedy above and was then called at **two of the four** ways a statement stops being a worklist entry — the file picker and the failed-parse branch were both missed, so choosing an unrelated PDF left the previous statement's binding banner over the controls for this one. One helper to remember is still a thing to remember. **Count the exits before trusting the helper**: grep every assignment of the state, then every place the mode can end, and check the two lists have the same length. The structural answer is for the mode to be *one* value whose absence is the only way to be out of it, so clearing cannot be done by halves — proposed and not built, D-148 § What is deliberately not done.
 - **The general answer is that the mode should be one value whose absence is the only way out, and where that is too large a change, the list must be checkable.** Both were done on 2026-08-26 (D-150, D-151). The worklist became one `Worklist | null`, so it cannot be cleared by halves. The *document* being reviewed is still eleven slots cleared by a helper, because grouping it is a much larger change to a path that writes money — so a guard now reads the component and requires **every** `useState` to be either cleared by that helper or named in an allowlist **with a reason**. A twelfth slot that is neither fails the gate. **The failure message is the point**: not "you forgot", but "say which of these two this is".
 - Verify: 2026-08-25 (D-147), found by `/code-review`. `leaveTheWorklist()` clears all three, and `.runtime/bind-scroll.spec.ts`'s third test drives a worklist entry then a single import and asserts the banner is gone. **Extended the same day (D-148)** after the two uncalled exits were found by `/thermo-nuclear-code-quality-review`; the picker now clears, which is the one point every single-import path passes through. **Extended again 2026-08-26 (D-151)**: `tests/import-flow.test.ts` holds the accounting guard, proved by injecting a 27th `useState` and watching it fail by name. It found two real omissions when written — `chosenAccountId` and `createAccountError` — and rejected its author's own lazy `"as above"` reason.
+
+## A click handler's event arrives as the first optional parameter, so a default of `false` is silently `true`
+
+- Symptom: a function written as `load(automatic = false)` behaves as though `automatic` were always true when it is reached from a button, and every branch guarded on it takes the wrong side — including one that swallows an authentication refusal without reporting it.
+- Cause: `onClick={load}` hands React's synthetic `MouseEvent` to the first parameter. An object is truthy, and TypeScript does not complain, because `() => void` accepts a function taking arguments.
+- Avoid: wrap it — `onClick={() => void load()}` — whenever the callee has *any* optional parameter. The hazard is created by adding a parameter to a function that already had call sites, so it appears in a diff that does not touch the call site at all.
+- Verify: `app/transactions-view.tsx` passes `onLoad={() => void load()}` and says why beside it. Reverting to the bare reference makes a manual Reload treat a 401 as "signed out" and show nothing. Dated 2026-08-26.
+
+## An announcement between components races the network refusal that makes anyone want it
+
+- Symptom: a component subscribes to an event on the exact condition the event is meant to repair, and never hears it. The producer fired first; the subscriber was not there yet, and the state it was waiting to fix is permanent.
+- Cause: the two halves have different latencies and it is not close. The refusal that sets the condition travels over the network; the local action producing the announcement does not. Landing signed out on `/ledger` and signing in immediately fires the announcement well before the 401 lands.
+- Avoid: publish a **monotonic count** alongside the event, not a flag, and have a subscriber read it once at subscription time as well as listening. The same comparison is what stops the retry loop that the naive repair creates — a page acts once per generation, so being refused again ends the sequence instead of restarting it.
+- Verify: `lib/owner-ready.ts` and `tests/owner-ready.test.ts` (10 tests). The owner suite failed by name on this — `waiting for … 'Reload'` against a page reading "Sign in to read the ledger." Dated 2026-08-26.
+
+## A development sign-in bypasses the component that owns session state, so that component never notices
+
+- Symptom: an announcement published from the component that owns sign-in never fires under the browser suites, though it fires by hand. The header reports an aal2 session and the sign-in panel beside it still offers "Sign in with Google".
+- Cause: there are two ways into a session here and only one goes through `app/owner-access.tsx`. The development route in `app/site-header.tsx` mints the cookie directly, so `OwnerAccess` keeps whatever state it last read — `signed-out` — and any effect keyed on that state stays silent. It is the path every browser suite drives, so a producer wired only to `OwnerAccess` is untested exactly where it is used most.
+- Avoid: announce from **every** producer of the thing, not from the component that conceptually owns it. `lib/owner-ready.ts` names both and says which paths need no announcement at all — Google sign-in returns through `/auth/callback` and the full page load carries the session into the first render.
+- Verify: `app/site-header.tsx` calls `announceOwnerReady()` after the dev route answers, and `app/owner-access.tsx` calls it on reaching `ready`. Removing either leaves one path silent. Dated 2026-08-26.
+
+## A descendant's accessible name joins its ancestor's, and axe reports no violation for it
+
+- Symptom: a landmark or heading is announced with text that belongs to a control inside it — measured here as the ledger region named `"Transactions About these transactions Everything committed to the ledger…"` once a disclosure was open. Every accessibility check still passes.
+- Cause: accessible-name computation walks descendants. A `<button>` inside an `<h2>` contributes its own name to the heading's, and if that heading is an `aria-labelledby` target the whole thing becomes the `<section>`'s name too. **axe has nothing to report**: the name is non-empty and contains the visible text, which is all it checks.
+- Avoid: put an interactive affordance **beside** the heading, not inside it, whenever the heading names a region. `aria-label` on the button does not help — an ancestor's name computation uses a descendant's `aria-label` just as readily as its text.
+- Verify: `tests/e2e/ledger.spec.ts`, "keeps the disclosure out of the name of the heading and the landmark", which matches with `exact: true` — the only form that catches it. Red-proved by putting the button back inside the `<h2>` and watching it fail. Dated 2026-08-26.
+
+## `display: block` on a flex item is blockified away, so it cannot break onto its own line
+
+- Symptom: a panel written as `display: block` inside an `inline-flex` wrapper renders *beside* its trigger instead of below it, shrink-to-fit against whatever width is left — at 390px a narrow tall column wedged into a heading. The rule reads as if it should work and the comment beside it says so.
+- Cause: a flex container blockifies every child's `display`, so `block` is exactly equivalent to the `flex item` it already was. Nothing about `display` affects line breaking inside a flex row.
+- Avoid: `flex-wrap: wrap` on the container and `flex-basis: 100%` on the item that must own a line. `.session-state` in `app/globals.css` was already doing it that way.
+- Verify: `app/globals.css`, `.heading-note` / `.note-panel`. Dated 2026-08-26, found by `/code-review`.
+
+## A guard written for "nothing loads until asked" becomes a defect the moment something does
+
+- Symptom: recording a cash payment refreshed nothing and the row just written was absent from the ledger — intermittently, and only when the page had been arrived at signed out.
+- Cause: the refresh was guarded `if (transactions !== null)`, which meant "only if the owner has already pressed Load". Once the page loads itself that condition is no longer about intent, it is about **timing**: sign in on `/ledger`, and a payment recorded while the first load is still in flight finds `transactions` still null. The guard had no case left to cover — the callback fires only after a successful write, so the session is good and the load will be too.
+- Avoid: when reversing a load-on-demand decision, grep for every condition that was standing in for "has the owner asked yet". They read as null-safety and they are not. The same reversal also makes two loads able to overlap, so the newest must own the state — `app/transactions-view.tsx` stamps each load with a sequence number and drops the results, and the `busy` flag, of any load a newer one has superseded.
+- Verify: `tests/e2e/owner-session.spec.ts`, "records a cash payment into the ledger", which fails by name on the stale guard. Dated 2026-08-26.

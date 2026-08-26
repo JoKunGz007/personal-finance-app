@@ -1,6 +1,6 @@
 # Private Ledger gotchas — Tests, Playwright and the gate
 
-Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **25 traps.**
+Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **26 traps.**
 
 `GOTCHAS.md` keeps the index across every section and is still the way in — it lists every
 trap in this file, so a reader finds the one that applies without loading any body. Add a trap
@@ -196,3 +196,10 @@ the top of `GOTCHAS.md`.
 - Cause: on 2026-07-31 the bare-port `.next` grep was hit again, investigated from scratch, and written up as new. **The existing entry above already covered it** — "Do not grep the bare port. That check was valid until 2026-07-28 and is not any more" — including the same `containerFor` cause and the same remedy. The duplicate was caught only by a validation pass on the following day.
 - Avoid: grep this file for the symptom before writing an entry. It is long enough that reading it end to end is not realistic, which is exactly why the grep is the habit — and the same applies before "discovering" anything in `DECISIONS.md`.
 - Verify: 2026-08-01. The duplicate was removed and this entry replaces it; the original coverage is under the build-target entry earlier in this file.
+
+## Next.js mounts an empty `role="alert"` of its own, so a page-wide alert count never reaches zero
+
+- Symptom: `expect(page.getByRole("alert")).toHaveCount(0)` fails with `Received: 1` on a page that renders no alert, and the snapshot shows a bare `- alert` after `contentinfo`, outside the app's own tree.
+- Cause: the Next.js route announcer is an always-present element with `role="alert"`, empty until a navigation gives it text. Nothing in `app/` renders it and nothing can remove it.
+- Avoid: scope the assertion to the region under test rather than to the page — `page.locator("section.ledger-band").getByRole("alert")`. The same applies to any page-wide count of a role the framework also uses.
+- Verify: `tests/e2e/ledger.spec.ts`, the signed-out ledger test, which asserts a 401 on the automatic load raises no alert. Unscoped it fails against a correct page. Dated 2026-08-26.

@@ -1,6 +1,7 @@
 "use client";
 
 import { type LedgerAccount } from "@/lib/accounts";
+import { LedgerNote } from "@/app/ledger-note";
 import {
   ALL_ACCOUNTS,
   ALL_STATUSES,
@@ -34,7 +35,7 @@ export function LedgerControls({
   onQueryChange
 }: {
   busy: boolean;
-  /** Whether the ledger has been asked for at all. Nothing but Reload is shown until it has. */
+  /** Whether rows have arrived. The filters are meaningless until they have, so they wait. */
   loaded: boolean;
   accounts: LedgerAccount[] | null;
   selected: string;
@@ -52,15 +53,22 @@ export function LedgerControls({
 
   return (
     <>
-      <div className="bench-heading">
+      {/* The heading is one line and a disclosure. The paragraph that stood here described what
+          the table already shows and what the rows already say, and it did it above the fold on
+          the one page whose point is the table. It is unchanged, just folded (PLAN task 42). */}
+      <div className="bench-heading compact">
         <p className="section-index">Ledger</p>
         <div>
+          {/* Sibling of the heading, not a child: this `<h2>` names the `<section>` through
+              `aria-labelledby`, and a button inside it joins that name. See `app/ledger-note.tsx`. */}
           <h2 id="ledger-title">Transactions</h2>
-          <p>
-            Everything committed to the ledger, and every slip still waiting for the statement
-            that will confirm it. Source facts are immutable here — the one thing this view
-            writes is your say over a match, which is stored beside them and never in them.
-          </p>
+          <div className="heading-note">
+            <LedgerNote label="About these transactions">
+              Everything committed to the ledger, and every slip still waiting for the statement
+              that will confirm it. Source facts are immutable here — the one thing this view
+              writes is your say over a match, which is stored beside them and never in them.
+            </LedgerNote>
+          </div>
         </div>
       </div>
 
@@ -68,6 +76,9 @@ export function LedgerControls({
         {/* Every control here is suspended while a slip is being matched — including Reload,
             which would drop the choice half-made. The mode is a different question about the
             ledger, not a filter of it. */}
+        {/* **"Load transactions" is now the retry, not the way in.** The ledger loads on arrival
+            (PLAN task 43), so the label the owner ordinarily sees is Reload; the other wording is
+            what is left after a first load that failed, and pressing it is the way back. */}
         <button type="button" className="secondary-button" disabled={busy || suspended} onClick={onLoad}>
           {busy ? "Loading…" : loaded ? "Reload" : "Load transactions"}
         </button>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browserSupabase } from "@/lib/browser/supabase";
+import { announceOwnerReady } from "@/lib/owner-ready";
 import {
   abandonedFactors,
   ownerAccessState,
@@ -67,6 +68,22 @@ export function OwnerAccess() {
   useEffect(() => {
     if (state.kind === "challenge" || enrolment) codeField.current?.focus();
   }, [state.kind, enrolment]);
+
+  /**
+   * Says so, once, when the owner becomes `ready`.
+   *
+   * **Signing in does not navigate.** The owner can land on `/ledger` signed out, have the load
+   * on arrival answered 401 (PLAN task 43), and complete a sign-in from the header without a
+   * single thing on the page below changing — leaving an empty table and a "sign in" line in
+   * front of someone who just did. This is what closes that, and it is announced rather than
+   * observed so that this component stays the only reader of the session, for the reason given
+   * at the top of this file.
+   *
+   * Keyed on `state.kind`, so it fires on the transition and not on every render.
+   */
+  useEffect(() => {
+    if (state.kind === "ready") announceOwnerReady();
+  }, [state.kind]);
 
   if (!supabase) {
     return <p className="owner-access-note">Supabase is not configured, so there is nothing to sign in to.</p>;

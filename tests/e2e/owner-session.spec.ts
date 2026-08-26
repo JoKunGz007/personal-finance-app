@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { bangkokToday } from "../../lib/dates";
 import { formatThb } from "../../lib/money";
@@ -7,6 +7,24 @@ import { validStatement } from "../fixtures/krungthai-layout-v1";
 import { kbankStatement, scbStatement } from "../fixtures/statement-layouts";
 import { buildStatementPdf } from "../fixtures/synthetic-pdf";
 import { containerReachable, ownerId, psql, resetOwnerImportSurface } from "../helpers/local-owner";
+
+/**
+ * Waits for the ledger to have loaded itself.
+ *
+ * **There is no longer a press to wait behind.** The ledger loads on arrival (PLAN task 43),
+ * which reversed task 17's "nothing loads until asked" — so every `Load transactions` click that
+ * used to open this table is gone, and what replaced it is this wait.
+ *
+ * The settle signal is the control's own label, which is a real assertion rather than a sleep:
+ * it reads `Loading…` while a load is in flight and becomes `Reload` only once rows have arrived.
+ * Waiting for `Reload` therefore waits for exactly the state the press used to produce **and**
+ * proves the automatic load happened at all — if it silently stopped firing, the label would stay
+ * at `Load transactions` and every one of these would fail by name rather than time out on a row
+ * count and look like a data problem.
+ */
+async function ledgerLoaded(ledger: Locator) {
+  await expect(ledger.getByRole("button", { name: "Reload" })).toBeVisible({ timeout: 30_000 });
+}
 
 // The three paths that were unreachable in a browser until a session could be minted:
 // the binding chooser, the authenticated import path, and the charset rejection path
@@ -420,9 +438,12 @@ test("reads a confirmed import back, and switches between merged and per-account
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  // Nothing loads until asked, so the table cannot exist before the button is pressed.
-  await expect(ledger.locator("table")).toHaveCount(0);
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  // **The ledger loads on arrival** (PLAN task 43). This asserted the opposite until 2026-08-26 —
+  // that the table could not exist before the button was pressed — and the reversal is the whole
+  // of what task 43 changed, so it is asserted here rather than merely no longer contradicted.
+  // Nothing is pressed between arriving and the rows appearing.
+  await ledgerLoaded(ledger);
+  await expect(ledger.getByRole("button", { name: "Load transactions" })).toHaveCount(0);
 
   const rows = ledger.locator("tbody tr");
   await expect(rows).toHaveCount(4, { timeout: 30_000 });
@@ -457,7 +478,7 @@ test("orders both ways and derives the all-accounts balance from every account",
   const owner = ownerId();
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
 
   const rows = ledger.locator("tbody tr");
   await expect(rows).toHaveCount(7, { timeout: 30_000 });
@@ -803,7 +824,7 @@ test("collapses a slip onto the statement row it matches, and counts the payment
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
 
   // Four rows, not five: the pair is one payment. This is the assertion that would fail if
   // matching regressed to showing both records.
@@ -849,7 +870,7 @@ test("keeps a slip with no matching row as its own provisional entry, counted in
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
 
   await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
   const provisional = ledger.locator("tr.provisional-row");
@@ -888,7 +909,7 @@ test("lets the owner overrule a match and put it back, and stores every decision
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
   await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 30_000 });
 
   // The rule paired these two. The owner disagrees, and that is the whole feature.
@@ -970,7 +991,7 @@ test("says a statement row is already another slip's before letting this one tak
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
   await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
   await expect(ledger.locator("tr.verified-row")).toHaveCount(1);
 
@@ -1001,7 +1022,7 @@ test("records a cash payment into the ledger and corrects it without losing what
   await signIn(page, "/ledger");
 
   const cash = page.locator("section.cash-bench");
-  await cash.getByRole("button", { name: "Record a cash payment" }).click();
+  await cash.getByRole("button", { name: "Record a payment" }).click();
   await cash.getByLabel("Amount (THB)").fill("250.00");
   await cash.getByLabel("Date", { exact: true }).fill("2026-01-09");
   await cash.getByLabel("Counterparty (optional)").fill("Browser synthetic stall");
@@ -1010,7 +1031,7 @@ test("records a cash payment into the ledger and corrects it without losing what
   await expect(cash.getByText(/cannot be deleted/)).toBeVisible({ timeout: 15_000 });
 
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
 
   const row = ledger.locator("tr.cash-row");
   await expect(row).toHaveCount(1, { timeout: 30_000 });
@@ -1058,7 +1079,7 @@ test("matches a slip only after the amount is corrected to the one the statement
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
 
   // Five rows: nothing carries 505.00, so the slip is its own row.
   await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
@@ -1135,7 +1156,7 @@ test("collapses a notification card onto its statement row, and the printed bala
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
 
   // Four rows, not five: the pair is one payment, exactly as a matched slip is.
   await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 30_000 });
@@ -1184,7 +1205,7 @@ test("refuses to pair a card whose printed balance contradicts the row that othe
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
 
   // Five rows, not four: refusing to pair means the card stays its own row and the statement row
   // stays unclaimed. Both halves are asserted, because a rule that dropped the card instead would
@@ -1224,7 +1245,7 @@ test("retires a card out of the ledger and the totals, and brings it back", asyn
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
   await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
   await expect(ledger.locator("tr.card-row")).toHaveCount(1);
   await expect(ledger.locator(".ledger-strip dd").first()).toContainText("5");
@@ -1270,7 +1291,7 @@ test("lets the owner match a card whose balance disagrees, after saying so in wo
 
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
-  await ledger.getByRole("button", { name: "Load transactions" }).click();
+  await ledgerLoaded(ledger);
   await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
   await expect(ledger.locator("tr.card-row").getByText("Balance disagrees")).toBeVisible();
 

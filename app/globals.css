@@ -213,11 +213,59 @@ main { width: min(1380px, calc(100% - clamp(40px, 10vw, 152px))); margin: 0 auto
 h1, h2, h3, p { overflow-wrap: anywhere; }
 h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weight: 500; line-height: .98; letter-spacing: -.055em; text-wrap: balance; }
 .intro-copy { margin: 0 0 5px; max-width: 440px; color: var(--muted); font-size: 17px; line-height: 1.65; }
+/* **The ledger page's intro, and only that page's** (PLAN task 42). The other three routes explain
+   a thing the owner is about to do; this one sits above the table that *is* the page, and up to
+   112px of padding plus a paragraph was pushing the rows off a phone screen entirely. The second
+   grid column went with the paragraph, so this collapses to one. */
+.intro.tight { padding: clamp(28px, 4vw, 48px) 0 24px; grid-template-columns: 1fr; gap: 0; }
+.intro.tight h1 { font-size: clamp(30px, 4vw, 52px); }
+
+/* **The `(i)` disclosure** (PLAN task 42, `app/ledger-note.tsx`). A button rather than a hover
+   tooltip: the owner reads this ledger on a phone, where hover does not exist, and `title` is
+   unreachable by keyboard either way.
+
+   **Every size here is absolute, and that is deliberate**, because one of these sits inside an
+   `h1` whose `font-size` is `clamp(40px, 6.2vw, 86px)`. An `em` anywhere in this rule would make
+   the badge track the heading and land at the size of a thumbnail. The same trap bit the font
+   picker's note in D-153, where a `ch` cap grew with the face it was capping. */
+/* **A real flex row, and `flex-wrap` is what makes the panel drop below.** The first version put
+   the button and the panel in an `inline-flex` span and relied on `display: block` to break the
+   line; `/code-review` caught that a flex item is **blockified**, so `display: block` on one does
+   nothing at all and the panel sat beside a 26px button, shrink-to-fit — at 390px a narrow column
+   wedged into a heading. `flex-basis: 100%` on the panel is what actually gives it a line, which
+   is the pattern `.session-state` in this file already uses. */
+.heading-note, .cash-heading { display: flex; flex-wrap: wrap; align-items: baseline; }
+.heading-note { margin-top: 10px; gap: 0; }
+.note-toggle {
+  /* 26px, not the 18px the glyph needs: WCAG 2.2 wants a 24px target and this is the smallest
+     control on the page. It is checked by axe on every route, not judged by eye. */
+  width: 26px; height: 26px; padding: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--blue); border: 1px solid var(--line); border-radius: 50%;
+  background: var(--paper-strong);
+  font: 600 13px/1 var(--font-data); font-style: italic;
+  cursor: pointer; vertical-align: middle;
+}
+.note-toggle:hover { color: var(--blue-dark); border-color: var(--blue); }
+.note-toggle[aria-expanded="true"] { color: var(--paper-strong); border-color: var(--blue); background: var(--blue); }
+/* `display: block` inside an inline-flex parent so the panel drops onto its own line rather than
+   stretching the heading it hangs off. `max-width` in `ch` is fine here — this is body text and
+   it is *supposed* to re-measure when the face changes. */
+.note-panel {
+  flex-basis: 100%; max-width: 62ch; margin: 10px 0 0;
+  padding: 12px 14px; color: var(--muted);
+  border: 1px solid var(--line); border-left: 3px solid var(--saffron); border-radius: var(--radius);
+  background: var(--mist);
+  font: 400 14px/1.6 var(--font-body); letter-spacing: normal; text-transform: none;
+}
 
 .import-bench { padding: 34px 0 42px; border-bottom: 1px solid var(--line); }
 .bench-heading { display: grid; grid-template-columns: 145px 1fr; gap: 22px; }
 .bench-heading h2, .review-heading h2, .backup-band h2 { margin: 0; font-size: clamp(25px, 3vw, 38px); font-weight: 500; line-height: 1.15; letter-spacing: -.03em; }
 .bench-heading p:not(.section-index), .review-heading p, .backup-band p { margin: 7px 0 0; color: var(--muted); }
+/* A heading whose standing paragraph moved behind the `(i)`: the h2 keeps its level and its
+   indent, and only loses the block underneath it. */
+.bench-heading.compact h2 { font-size: clamp(21px, 2.2vw, 30px); }
 .import-controls { margin: 26px 0 0 167px; display: grid; grid-template-columns: minmax(240px, 1.25fr) minmax(240px, 1fr) auto auto auto; align-items: end; gap: 12px; }
 .file-control, .password-control, .backup-form label { display: grid; gap: 7px; }
 .file-control > span, .password-control > span, .backup-form label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
@@ -309,6 +357,35 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .field-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .slip-form button[type="submit"] { justify-self: start; }
 .slip-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+/* **The cash bench, contracted** (PLAN task 42). It owned a titled section and a paragraph above
+   the ledger table for something used a few times a week. It is now one line: the index, the
+   heading, its `(i)`, and the button that opens the form.
+
+   **The heading lines up with the other benches; the button deliberately does not.** `145px` and a
+   `22px` gap put the heading text at the same 167px as `.bench-heading` and `.ledger-controls` —
+   an earlier comment here claimed that alignment while the numbers produced 145px, which
+   `/code-review` caught. The opening control is pushed to the far edge by `margin-left: auto`,
+   because on one line it reads as the row's action rather than as another column.
+
+   The `>` in the old opening-control rule below no longer selects that button, because it has
+   moved inside `.cash-heading`. The rule is kept for the card bench, which still has one. */
+.cash-bench.compact { padding: 20px 0 22px; }
+/* `center`, not the `baseline` the shared rule sets: this row carries a 47px button, and a
+   button sitting on the heading's baseline hangs below the line it belongs to. */
+.cash-heading { gap: 22px; align-items: center; }
+.cash-heading .section-index { width: 145px; margin: 0; flex: none; }
+.cash-heading h2 { margin: 0; font-size: clamp(19px, 1.9vw, 25px); font-weight: 500; letter-spacing: -.02em; }
+.cash-heading .secondary-button { margin-left: auto; }
+/* **This is the sentence that did not fold away.** Everything explaining *why* cash lives on the
+   ledger page went behind the `(i)`; that a cash entry can never be edited is a warning about the
+   write the owner is one press from making, so it stays on the screen and sits with the button
+   that makes it. Bordered rather than muted for the same reason. */
+.write-warning {
+  margin: 0; padding: 11px 13px; color: var(--navy);
+  border: 1px solid var(--line); border-left: 3px solid var(--saffron);
+  border-radius: var(--radius); background: var(--mist);
+  font-size: 13px; line-height: 1.55;
+}
 /* The cash form's opening control sits where the slip bench's file picker does, so the two
    benches line up rather than each starting at a different indent. */
 .cash-bench > .secondary-button { margin-left: 167px; }
@@ -605,6 +682,9 @@ footer p { margin: 0; }
   .slip-controls, .slip-form, .cash-bench .slip-form, .card-bench .slip-form { margin-left: 0; }
   .slip-bench .status, .slip-bench .notice { margin-left: 0; }
   .cash-bench > .secondary-button, .card-bench > .secondary-button { margin-left: 0; }
+  /* The contracted cash bar gives up its right-aligned button before it gives up the heading. */
+  .cash-heading .section-index { width: auto; }
+  .cash-heading .secondary-button { margin-left: 0; }
   .batch-bench .status, .batch-note, .batch-rows, .batch-summary, .auto-bind-control { margin-left: 0; }
   .sync-controls, .sync-failures { margin-left: 0; }
   .or-rule { display: none; }

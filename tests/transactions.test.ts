@@ -30,7 +30,6 @@ function transaction(overrides: Partial<LedgerTransaction> = {}): LedgerTransact
     currency: "THB",
     fingerprint: FINGERPRINT,
     source_components: [{ id: "22222222-2222-4222-8222-222222222222", kind: "deposit", amount_minor: "100000", currency: "THB" }],
-    import_batch_rows: [],
     transaction_overlays: [],
     ...overrides
   };
@@ -54,6 +53,35 @@ describe("transaction wire contract", () => {
   it("rejects an unknown column rather than ignoring it", () => {
     const parsed = transactionListSchema.safeParse({
       transactions: [{ ...transaction(), settled_at: "2026-06-01" }]
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  /**
+   * The trim, asserted from the side that would notice it coming back.
+   *
+   * `list_account_transactions` still builds `import_batch_rows` — dropping it in SQL needs a
+   * migration — so `app/api/v1/accounts/[id]/transactions/route.ts` deletes the key on the way
+   * out. Nothing read it: it was 241 of 848 bytes on a row carrying the field shape the parsers
+   * write, 28.4% of a payload the ledger now fetches on arrival rather than on a press.
+   *
+   * This is what makes that route's `withoutBatchProvenance` load-bearing rather than decorative.
+   * If it is ever removed or bypassed, the ledger view stops parsing and says so by name, instead
+   * of quietly paying for provenance it does not display.
+   */
+  it("rejects the batch provenance the route is responsible for dropping", () => {
+    const parsed = transactionListSchema.safeParse({
+      transactions: [{
+        ...transaction(),
+        import_batch_rows: [{
+          batch_id: "55555555-5555-4555-8555-555555555555",
+          source_index: 0,
+          page: 1,
+          row_number: 1,
+          parser_fields: { contractVersion: "krungthai-layout-v1" },
+          linked_existing: false
+        }]
+      }]
     });
     expect(parsed.success).toBe(false);
   });

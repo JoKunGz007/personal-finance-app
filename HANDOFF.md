@@ -83,9 +83,10 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
-- **Commit and push: granted per session.** Granted again on **2026-08-25** for D-147, as one grant
-  covering build, `/code-review` and the commit-and-push after it. Spent once that grant is used;
-  the next push needs a new ask. **Previously:** Every push to `main` **is a production
+- **Commit and push: granted per session, and NOTHING is granted right now.** The last commit grant was
+  spent on `1d2ca59` (D-153) and **the push was never granted**, so that commit is still local — and the
+  ledger restructure (D-155, D-156) sits uncommitted on top of it. **The next ask should cover both
+  together**: a commit for the restructure and the push that carries `1d2ca59` with it. **Previously:** Every push to `main` **is a production
   deployment** — see below. Read `git status -sb` and `git log` rather than trusting any sentence
   here. Committed straight to `main`, matching this repo's history; nobody has asked for a
   branch-and-PR flow, so raise it rather than assume it.
@@ -101,6 +102,28 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
+- **`main` is at `1d2ca59`, ONE COMMIT AHEAD OF `origin/main`, NOT PUSHED — and the working tree now
+  also holds the ledger restructure, uncommitted** (D-155, D-156). Twenty-one files, three of them new:
+  `app/ledger-note.tsx`, `lib/owner-ready.ts`, `tests/owner-ready.test.ts`. **`eslint.config.mjs` and
+  `playwright.config.ts` are the two deliberately local-only files and are untouched by it** — run
+  `git status --short` and keep them out of any commit.
+- **The full gate is green with all of it in the tree, 2026-08-26**: Vitest **823 passed / 7 skipped
+  across 39 files**, Playwright owner **31/31**, isolated **34 passed / 4 skipped**, production build
+  clean at **twenty-one** `/api/v1/` routes, `check:docs --strict` at **156 decisions, 156 traps**, `tsc`
+  and `pnpm exec eslint .` clean with zero warnings. **pgTAP deliberately not re-run** — 266 across 8 from
+  2026-08-18, and no SQL has moved since.
+- **`docs/gotchas/app.md` is now at 83% (65 KB/78 KB)**, up from 75%, because six of the seven new traps
+  are app traps — three of them from `/code-review`. **It is the section to watch**, and D-134's condition says a breach splits it in two
+  rather than raising the budget. `DECISIONS.md` is at **48% (57 KB/117 KB)** after two entries.
+- **`list_account_transactions` bounds nothing and is still unpaged, deliberately** (D-155). Paging it
+  properly means deriving balances in SQL, so it means a migration — **that is an ask, not a task**, and
+  it is the largest thing the ledger page still owes. What was done instead is a width bound: the route
+  drops `import_batch_rows`, 28.4% of every row, which nothing read.
+- **On a phone the shell header still eats most of the first screen** before the ledger's own heading
+  begins — brand, privacy chip, typeface picker and its note, two sign-in buttons, the route row, the
+  session line. The table cannot be the most visible thing on that device while that holds, and no
+  trimming below it changes that. **Measured at iPhone 13 width, left alone, and owed to the owner as a
+  question** — it is the shell every route shares and his critiques were about the ledger page.
 - **2026-08-21 pushed three times, and each push is a production deployment**: bulk slip upload
   (`7be667e`, D-135), the warm palette with the phone measurement (`76dc46b`, D-136), and cornsilk
   as the ground with the dark scheme dropped (`8319d5d`, D-137). A fourth is the phone-overflow fix

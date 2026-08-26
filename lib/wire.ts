@@ -36,7 +36,23 @@ export type WireFailureKind = "unreachable" | "refused" | "off-contract";
 
 export type WireResult<T> =
   | { readonly ok: true; readonly data: T }
-  | { readonly ok: false; readonly kind: WireFailureKind; readonly why: string };
+  | {
+      readonly ok: false;
+      readonly kind: WireFailureKind;
+      readonly why: string;
+      /**
+       * The HTTP status, for `refused` only; `null` for the two kinds where nothing usable
+       * answered. It is here because one caller needs to tell a refusal apart from a *reason*
+       * for refusing: the ledger now loads on arrival (PLAN task 43), and on a signed-out page
+       * that first request is answered 401 by design. Reporting that as a failure would put a
+       * red alert on the one surface a visitor sees first, for a route behaving correctly.
+       *
+       * **`why` stays the thing to show.** This is for deciding whether to show anything at all,
+       * and a caller that branches on a status it has not thought about should branch on `kind`
+       * instead.
+       */
+      readonly status: number | null;
+    };
 
 /**
  * Wording for each way a request can fail. `fallback` is the only one required, because a route
@@ -92,7 +108,7 @@ export async function ledgerRequest<T>(
   } catch {
     // A transport failure carries nothing worth quoting — no status, no body, and the browser's own
     // message is about sockets rather than about a ledger.
-    return { ok: false, kind: "unreachable", why: wording.unreachable ?? wording.fallback };
+    return { ok: false, kind: "unreachable", why: wording.unreachable ?? wording.fallback, status: null };
   }
 
   // **Never `.json()` bare.** A route that fails inside the platform rather than inside this app
@@ -107,17 +123,18 @@ export async function ledgerRequest<T>(
       // `body` is `UNREADABLE` rather than parsed JSON when the answer was not JSON at all;
       // `readError` finds no `error` key on it and falls through to the caller's wording, which
       // is the right outcome for both cases.
-      why: readError(body, wording.fallback)
+      why: readError(body, wording.fallback),
+      status: response.status
     };
   }
 
   if (body === UNREADABLE) {
-    return { ok: false, kind: "unreachable", why: wording.unreachable ?? wording.fallback };
+    return { ok: false, kind: "unreachable", why: wording.unreachable ?? wording.fallback, status: null };
   }
 
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return { ok: false, kind: "off-contract", why: wording.offContract ?? wording.fallback };
+    return { ok: false, kind: "off-contract", why: wording.offContract ?? wording.fallback, status: null };
   }
   return { ok: true, data: parsed.data };
 }
