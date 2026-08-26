@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-**One hundred and sixty-six traps, and this file is now the index to them rather than the file that holds them** (D-149, 2026-08-25). They were grouped on 2026-08-09 into the eight sections below, added to since, and their bodies moved into `docs/gotchas/` — one file per section — when this file breached its budget a second time. **The split was owed rather than chosen**: D-134 raised the budget once and said the next breach was owed a split along these exact section headings, not a third raise. Neither move changed anything inside a trap; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. **The index below still lists every trap in every section**, which is what makes finding one cost a scan of this file and then exactly one open. `pnpm check:docs --strict` fails if the index and the bodies disagree.
+**One hundred and sixty-six traps, and this file is now the index to them rather than the file that holds them** (D-149, 2026-08-25). They were grouped on 2026-08-09 into the sections below — eight then, nine since `app.md` split on 2026-08-27 — added to since, and their bodies moved into `docs/gotchas/` — one file per section — when this file breached its budget a second time. **The split was owed rather than chosen**: D-134 raised the budget once and said the next breach was owed a split along these exact section headings, not a third raise. Neither move changed anything inside a trap; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. **The index below still lists every trap in every section**, which is what makes finding one cost a scan of this file and then exactly one open. `pnpm check:docs --strict` fails if the index and the bodies disagree.
 
 ## Index
 
@@ -154,6 +154,23 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - `pnpm supabase:test` exits non-zero on a passing run, so the exit code is not the result
 - A pgTAP plan that undercounts reports every subtest passing, and fails anyway
 
+### Layout, typography and accessibility
+
+- A `role="status"` added to a static notice breaks every existing spec that looks one up by role
+- A second `role="status"` in the shell makes every existing status assertion ambiguous
+- An `aria-label` replaces a button's words rather than adding to them, and axe says nothing
+- A control that disables itself takes the focus with it
+- A token that inverts between colour schemes makes every hardcoded partner a latent failure
+- The browser suite that covers the signed-in app is desktop-only, so phone width is unmeasured there
+- A colour declared outside the stylesheet does not move when the stylesheet does
+- An element selector cannot reset a property a class set, and the rule still reads as if it did
+- A layout audit against a page that loads nothing measures the absence of the thing it was written for
+- A descendant's accessible name joins its ancestor's, and axe reports no violation for it
+- `display: block` on a flex item is blockified away, so it cannot break onto its own line
+- A typeface's cap height, not its `font-size`, decides how big it looks
+- A disclosure component that renders a `<p>` breaks the moment it is used inside one
+- Wrapping existing children in a element to make them collapsible re-lays-out every viewport
+
 ### App, auth, routing and accessibility
 
 - Strict production CSP can block the Next.js development runtime
@@ -162,11 +179,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A guard keyed on `NODE_ENV` is unreachable in the build that must exercise it
 - A leftover TOTP factor makes a later sign-in unable to reach aal2
 - Creating a ledger account before the import is proven leaves one that cannot be removed
-- A `role="status"` added to a static notice breaks every existing spec that looks one up by role
 - Splitting one page into routes breaks specs whose subject has nothing to do with routing
-- A second `role="status"` in the shell makes every existing status assertion ambiguous
-- An `aria-label` replaces a button's words rather than adding to them, and axe says nothing
-- A control that disables itself takes the focus with it
 - `readError` takes a parsed body, so handing it a `Response` silently shows the fallback
 - A route test that stubs `globalThis.fetch` breaks the owner's own session lookup
 - A `setx` variable does not reach a shell an already-running tool spawns
@@ -180,22 +193,12 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A size bound checked after the body is read bounds nothing
 - A `FileList` is a live view of its input, so resetting the input empties it mid-handler
 - Shipped, tested code with no caller looks identical to code that does not exist
-- A token that inverts between colour schemes makes every hardcoded partner a latent failure
-- The browser suite that covers the signed-in app is desktop-only, so phone width is unmeasured there
-- A colour declared outside the stylesheet does not move when the stylesheet does
-- An element selector cannot reset a property a class set, and the rule still reads as if it did
-- A layout audit against a page that loads nothing measures the absence of the thing it was written for
 - A fix guarded on an intermediate stage dies silently when a later feature skips that stage
 - State that marks a mode is only ever set, and the stale mode answers a later action
 - A click handler's event arrives as the first optional parameter, so a default of `false` is silently `true`
 - An announcement between components races the network refusal that makes anyone want it
 - A development sign-in bypasses the component that owns session state, so that component never notices
-- A descendant's accessible name joins its ancestor's, and axe reports no violation for it
-- `display: block` on a flex item is blockified away, so it cannot break onto its own line
 - A guard written for "nothing loads until asked" becomes a defect the moment something does
-- A typeface's cap height, not its `font-size`, decides how big it looks
-- A disclosure component that renders a `<p>` breaks the moment it is used inside one
-- Wrapping existing children in a element to make them collapsible re-lays-out every viewport
 - Under paging, a count scoped to the filter cannot decide whether the ledger is empty
 - A dedup downstream of paging hides a page that repeats a row, but not one that skips
 - A per-account balance walk is exact under paging; the merged one across accounts is not
@@ -217,5 +220,6 @@ these section headings rather than a third raise. The owner chose the split.
 | Statement and slip parsing | 17 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 29 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
-| App, auth, routing and accessibility | 52 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
+| App, auth, routing and accessibility | 38 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
+| Layout, typography and accessibility | 14 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 

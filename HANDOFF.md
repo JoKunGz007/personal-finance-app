@@ -154,8 +154,12 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   installed bytes, and the owner suite passes **32/32 with no network at all**. `copy-zxing-wasm.mjs`
   was the long-standing suspect and is innocent: it copies the *reader*, which the app needs served
   from its own origin, and the writer never runs in the app.
-- **`docs/gotchas/app.md` is the file to watch: 90%** (70 KB/78 KB), up from 87% — D-158 added two app
-  traps. It was 75% at the start of 2026-08-26. **D-134's condition is that a breach splits the
+- **`docs/gotchas/app.md` was split on 2026-08-27 and is no longer the file to watch: 70%**
+  (54 KB/78 KB), down from 92%. Fourteen layout, typography, colour and accessibility traps moved to
+  the new **`docs/gotchas/appearance.md`** (19 KB, 25%), which is a subject of its own rather than a
+  cut at the halfway mark. **This is D-134's standing condition discharged a second time** — a breach
+  splits a section rather than raising a budget, as D-149 did for `GOTCHAS.md` itself. The reasoning
+  is in `appearance.md`'s own header. **The file to watch now is `docs/gotchas/tests.md` at 54%.** **D-134's condition is that a breach splits the
   section in two rather than raising the budget**, and D-149 has already honoured it once. The next
   substantial app change is likely to be the one that pays it. **It is the section to watch**, and D-134's condition says a breach splits it in two
   rather than raising the budget. `DECISIONS.md` is at **65% (77 KB/117 KB)** after D-158.
