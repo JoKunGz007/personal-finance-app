@@ -53,6 +53,77 @@
   --font-data: "IBM Plex Mono", "Cascadia Mono", monospace;
 }
 
+/*
+  The typeface switch (PLAN task 42).
+
+  `data-font` is written on `<html>` by `app/layout.tsx` from a cookie, server-side, so the page is
+  drawn in the chosen face on its first paint rather than swapped after one. `lib/ui-font.ts` owns
+  which values exist; nothing but those four can reach this attribute.
+
+  **Every switched stack keeps `"IBM Plex Sans Thai"` behind the pixel face, and that is load-bearing
+  rather than tidy.** All three pixel faces are Latin-only. Thai reaches this app as *data* — a
+  counterparty name off a statement, a note the owner typed — never as interface copy, since `app/`
+  contains no Thai at all. Drop the Thai family from these stacks and those cells fall through to
+  whatever the device happens to have, which on Windows is Tahoma and on a phone may be nothing.
+
+  `--font-data` carries the figures: the amount, the balance, the account digits, the timestamps.
+  Under `system` that is IBM Plex Mono, whose zero is slashed and whose `1` has a foot. A pixel face
+  has neither, which is the whole of what the trial is for (D-114, D-115, D-123 — the owner reads a
+  figure off a cropped enlargement and types it, so `8`/`B` and `0`/`O` have to be unmistakable).
+  `font-variant-numeric: tabular-nums` on `.numeric` still applies; a pixel face is monospaced by
+  construction, so the columns stay aligned either way.
+*/
+:root[data-font="press-start-2p"] {
+  --font-body: "Press Start 2P", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Press Start 2P", "IBM Plex Mono", "Cascadia Mono", monospace;
+}
+:root[data-font="pixelify-sans"] {
+  --font-body: "Pixelify Sans", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Pixelify Sans", "IBM Plex Mono", "Cascadia Mono", monospace;
+}
+:root[data-font="silkscreen"] {
+  --font-body: "Silkscreen", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Silkscreen", "IBM Plex Mono", "Cascadia Mono", monospace;
+}
+
+/*
+  Press Start 2P is drawn on an 8px em and runs about twice the advance width of IBM Plex Mono at the
+  same size, so the 10px table headers and the 12–13px figure cells overflow their columns unmodified.
+  Stepped down where the app sets a fixed small size rather than letting the columns grow, because the
+  column widths are a contract with the ledger's horizontal scroll (`.ledger-table` min-width).
+  Measured against the widest real shape — a seven-figure amount with separators and a sign.
+*/
+/* **Both selectors name `th`, because `.numeric` is a class and `th` is an element.** Written as a
+   bare `th` rule beside a bare `.numeric` rule, the header step-down lost every `<th class="numeric">`
+   on specificity — (0,2,1) against (0,3,0) — so `Movement`, `Balance` and `All accounts` silently
+   kept the cell size while every other header shrank. The same shape as the `table` versus
+   `.ledger-table` trap already in GOTCHAS: an element selector cannot out-rank a class. */
+:root[data-font="press-start-2p"] th,
+:root[data-font="press-start-2p"] th.numeric { font-size: 8px; letter-spacing: .02em; }
+/* Scoped to `td` so it cannot reach a header and re-open the clash above.
+   **Measured, not assumed** — the previous 10px here carried a comment claiming it had been, and it
+   had not. Press Start 2P advances exactly 1em per glyph, so the widest real shape, `-1,234,567.89`
+   at 13 characters, is 13 × the size. The amount and balance columns are 145px less `td` padding of
+   14px a side = 117px: 10px spills at 130px, 8px fits at 104px. `tests/e2e/font-picker.spec.ts`
+   re-measures rather than trusting this paragraph. */
+:root[data-font="press-start-2p"] td.numeric,
+:root[data-font="press-start-2p"] td time,
+:root[data-font="press-start-2p"] td .mono { font-size: 8px; }
+:root[data-font="press-start-2p"] .eyebrow,
+:root[data-font="press-start-2p"] .section-index { font-size: 9px; letter-spacing: .04em; }
+:root[data-font="press-start-2p"] .brand small,
+:root[data-font="press-start-2p"] td em { font-size: 8px; letter-spacing: .02em; }
+/* It has no lowercase at all, so uppercasing buys nothing and costs the width of wider glyphs. */
+:root[data-font="press-start-2p"] th,
+:root[data-font="press-start-2p"] .eyebrow,
+:root[data-font="press-start-2p"] .section-index { text-transform: none; }
+
+/* Silkscreen sits between the two: narrower than Press Start 2P, still short of Plex Mono. Same
+   `th`-and-`th.numeric` pairing for the same specificity reason. */
+:root[data-font="silkscreen"] th,
+:root[data-font="silkscreen"] th.numeric { font-size: 9px; }
+:root[data-font="silkscreen"] td.numeric { font-size: 12px; }
+
 * { box-sizing: border-box; }
 html { background: var(--mist); color: var(--navy); scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; font-family: var(--font-body); font-size: 16px; line-height: 1.5; background: var(--mist); }
@@ -72,6 +143,17 @@ button:disabled { cursor: wait; opacity: .65; }
 .brand strong { font-weight: 600; letter-spacing: -.01em; }
 .brand small { margin-top: 1px; color: var(--muted); font: 400 10px/1.2 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 .privacy-chip { display: inline-flex; align-items: center; gap: 8px; color: var(--celadon-ink); font-size: 13px; font-weight: 500; }
+/* The typeface switch (PLAN task 42). Its note carries the Thai-fallback warning, and a refusal
+   when one happens, so it must be able to wrap without changing the header's height on a phone. */
+.font-picker { display: grid; gap: 4px; }
+.font-picker label { display: inline-flex; align-items: center; gap: 8px; }
+.font-picker label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.font-picker select { height: 34px; padding: 4px 8px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-size: 13px; }
+.font-picker select:disabled { opacity: .6; cursor: wait; }
+/* **`px`, not `ch`.** `ch` is a unit of the font being switched, so a `34ch` cap grew from 208px to
+   353px the moment a pixel face was chosen — the note got wider exactly when the header had least
+   room. A fixed cap is the one thing here that must not scale with the choice. */
+.font-picker .field-help { max-width: 240px; margin: 0; font-size: 11px; }
 .privacy-chip i { width: 8px; height: 8px; border-radius: 50%; background: #7d8c47; box-shadow: 0 0 0 4px color-mix(in srgb, var(--celadon) 55%, transparent); }
 
 /* One row of routes, since routing replaced the single page (PLAN task 19). Deliberately
@@ -81,7 +163,13 @@ button:disabled { cursor: wait; opacity: .65; }
 .site-nav a { display: block; padding: 9px 14px; color: var(--muted); font-size: 14px; font-weight: 500; text-decoration: none; border-radius: var(--radius); }
 .site-nav a:hover { color: var(--navy); background: color-mix(in srgb, var(--line) 38%, transparent); }
 .site-nav a.current { color: var(--navy); font-weight: 600; box-shadow: inset 0 -2px var(--blue); }
-.header-side { display: flex; align-items: center; gap: 16px; }
+/* **`flex-wrap` is load-bearing since the typeface became switchable** (D-153). Without it this row
+   could only grow, and a pixel face grows it a lot: measured at a 390px layout viewport, choosing
+   Press Start 2P took `scrollWidth` from 455px to 734px — the page shrink-to-fits and every glyph
+   gets *smaller*, which is the opposite of what the trial is for. That is D-138 again, the defect
+   the owner found on his own phone and no suite could see. `tests/e2e/font-picker.spec.ts` now
+   measures it under iPhone 13 for every face. */
+.header-side { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 /* The session line, announced politely rather than as a status role: every route already
    has a status line of its own, and a second would make both ambiguous. */
 .session-state { order: 9; flex-basis: 100%; margin: 0; color: var(--muted); font: 400 12px/1.4 var(--font-data); }

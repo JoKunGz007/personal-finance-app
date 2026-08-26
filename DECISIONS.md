@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141 onward**. Six settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24, and **D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md) on 2026-08-25. The index below covers all seven files, so a reader can find any entry without opening any body.
+This file carries **D-141 and D-153 onward** — a gap, and the seventh boundary is the reason: it began at D-142 rather than at D-141, because **D-141 is still an open question** (the mailbox archive) and a boundary excludes those. `scripts/check-docs.mjs` pools this file with every archive, so the ids stay whole across the set. Six settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24, and **D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md) on 2026-08-25. The index below covers all seven files, so a reader can find any entry without opening any body.
 
 **Every boundary sits where an argument ends rather than where a number is round**, and the fourth one is the clearest case of that rule so far. It was taken at **93%** of this file's byte budget and moved the whole arc in which both readers went to Cloud Vision and the local OCR engine was deleted. **The third boundary had explicitly refused to move D-120**, on the grounds that whether pre-fill stays was undecided and that question attached to D-120 and D-129 — which was true when written. **What closed it was not an argument but a shipped feature**: D-135 files a machine-read amount into the ledger without the owner looking at it at all, which is a stronger commitment than the trial ever asked for. *A question is closed when the code has stopped asking it*, and that is the test to apply at the next boundary rather than re-reading the prose.
 
@@ -183,6 +183,10 @@ What this file now holds is the current work and the two open questions the fift
  this file
 
 - **D-141** — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
+### Archived 
+—
+ `docs/decisions/ARCHIVE-D-142-D-152.md`
+
 - **D-142** — The bulk slip form threw away work it had already done, and could not be told to try again
 - **D-143** — A third button rank, because "quiet" had been spelled as "unstyled"
 - **D-144** — Auto-import v1 is a local fetcher, and binding becomes automatic where the account is unambiguous
@@ -194,6 +198,13 @@ What this file now holds is the current work and the two open questions the fift
 - **D-150** — The announce-and-scroll becomes one module and the worklist becomes one value, so two classes of defect stop being representable
 - **D-151** — The list of state a discarded statement clears is no longer trusted, because a list is exactly what went stale twice
 - **D-152** — The card form's decisions become a tested module, and this time the tests were written before the component moved
+
+### Current 
+—
+ this file
+
+- **D-153** — The typeface is a per-device preference in a cookie, because a font is a fact about the screen and not about the ledger
+- **D-154** — The seventh archive boundary steps over an open question instead of stopping short of it, and the maintained file now has a gap
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -241,471 +252,78 @@ The policy layer came through clean. **Five defects were in the component, and f
 
 - Evidence: `lib/statement-batch.ts`, `app/statement-batch.tsx`, `app/import-bench.tsx`, `tests/statement-batch.test.ts`, `tests/privacy.test.ts`. Vitest **637 passed / 7 skipped across 32 files** — up 16 on 2026-08-21's 621/7, with the skip count back at its baseline. pgTAP **266 across 8**, Playwright isolated **18/18** and owner **31/31**, production build clean at **eighteen** `/api/v1/` routes, tsc and ESLint clean, `pnpm check:docs --strict` at 141 decisions and 140 traps. Re-run in full after the review fixes. **Phone width is measured for both batch worklists** by `.runtime/worklist-phone-audit.spec.ts` (throwaway): the statement worklist is clean at 390px, and the slip worklist does not overflow but carries two tap targets under 44px that predate this change. D-017 (binding is a user decision), D-043 (refusal over labelling), D-055 (the reordering warning this is built around), D-128/D-129 (device-only statement reading), D-135 (the bulk pattern this follows and where it deliberately differs).
 
-## D-142 — The bulk slip form threw away work it had already done, and could not be told to try again
-
-- Date: 2026-08-23
-- Status: **Accepted and done.** `lib/slip-batch.ts`, `app/slip-batch.tsx`, `tests/slip-batch.test.ts` (+6), `tests/privacy.test.ts` (one guard rewritten). **No SQL, no route, no contract change** — eighteen `/api/v1/` routes, every project on 020, backup contract v7.
-- Context: `/code-review` run against the two files `7be667e` added, discharging the debt D-125 records. Eight findings, four medium. The form had shipped and been in production since 2026-08-21.
-
-### The one theme, and it is not the one the findings were filed under
-
-**Four of the eight were the same defect wearing different clothes: a failure path that discards information rather than showing it, on a form whose failures cost money.** Bulk slip upload caps at fifty files precisely because every slip is a billed Cloud Vision read (D-135) — and every recovery path it offered was "discard the batch and read all fifty again".
-
-- A transient reader 503 or a momentary `createImageBitmap` failure left rows in `review`/`failed`, and `readAll` processed only `queued` rows. No `queued` rows remained, so the button was permanently disabled.
-- A network error on the capture POST set `refused`, which `rowIsSubmittable` excluded forever.
-- An unparsable 201 body fell to the outer `catch` and marked the row `refused` — **reporting as rejected a slip `capture_slip` had already written**, with no retry to reveal the truth and a summary line that under-reported the ledger.
-- And the sharpest: **when the reader was unreachable, `classifySlip` returned before `resolveSlipDate` ever ran.** But `slipDateFromReference` reads the date out of the QR's CRC-covered reference and never touches a recognised word (D-059). For SCB and the longer Krungthai variant the app **already held the exact date** and discarded it, making the owner hand-type across a whole batch the one value this module's own docstring calls unable to pair and unable to self-correct.
-
-### What changed
-
-`SlipBatchDecision`'s review branch now carries `date` and `amountMinor`, either of which may be null. **Neither field relaxes a rule** — each is the same value the ready path would have carried, so a pre-filled row is still a row the owner is looking at. The disagreement refusal (D-059) still pre-fills nothing: carrying either reading would quietly pick a winner, which is the decision this module declines to make.
-
-`readAll` claims `phase` **before** awaiting `resolveDetector()` and wraps the loop in `try/finally`. The await downloads ~1.1 MB of WebAssembly on any browser without a native `BarcodeDetector` (D-057); throughout that window every control was live, so a second press started a concurrent loop over the same snapshot and **sent every image to the metered reader twice**. `app/slip-capture.tsx` had always set its flag before the identical await. The `finally` closes the other half: a throw anywhere in the loop used to leave the phase at `reading` for good, disabling Discard along with everything else.
-
-`readAll` also reprocesses `failed` rows and `rowIsSubmittable` accepts `refused`. **Re-sending is safe by construction** — `capture_slip` writes nothing for a slip already in the ledger (migration 011), which is the same property that makes the whole batch re-runnable.
-
-`signedSlipAmount` returns `null` instead of `?? 0n`. It had been answering `"0"` for a non-canonical input — a request that looks well-formed, renders as ฿0.00 on the row, and is refused by `slipCaptureSchema`'s sign cross-check at the far end. **The docstring one line above claimed the caller refused it; the database was doing the refusing.** Now the claim is true.
-
-`dateWindow` is recomputed when a pass starts rather than pinned at mount, so a tab left open across midnight stops refusing a slip dated today.
-
-### A privacy guard had to be loosened, and the reasoning is the point
-
-`tests/privacy.test.ts` pinned `plainThb` to **exactly one** call site. Pre-filling a review row is a second, and both take `verdict.amountMinor`. **The count was never the invariant — the source is**: no machine-read digit may reach a stored value except through the strict grammar. The guard now asserts the set of *distinct arguments* is `["verdict.amountMinor"]` and that at least one fill exists. Pinning the count would have blocked a legitimate second fill while proving nothing extra; asserting the source catches the thing the guard exists for, including a fill site added later.
-
-### Consequences
-
-**Two findings were deliberately not actioned**, both naming `eslint.config.mjs` and `playwright.config.ts` — the owner's deliberately local-only files, never committed. One of the two (`webServer.timeout` absent for a cold `pnpm build && pnpm start`) is already recorded in `HANDOFF.md` § Live hazards.
-
-**A review of shipped code found more than a review of new code did**, and cheaply: eight findings against `7be667e`'s two files versus five against the same day's new work. D-125 exists because five commits shipped in one day without a review; this is the evidence for what that costs.
-
-- Evidence: `lib/slip-batch.ts`, `app/slip-batch.tsx`, `tests/slip-batch.test.ts`, `tests/privacy.test.ts`. Vitest **643 passed / 7 skipped across 32 files** (up 6, all in `tests/slip-batch.test.ts` covering the partial-verdict and refusal behaviour); Playwright owner **31/31** and isolated **18/18**; production build clean at **eighteen** `/api/v1/` routes; tsc and ESLint clean; `.runtime/worklist-phone-audit.spec.ts` still passes both worklists. **pgTAP was not re-run and that is deliberate** — it stands at 266 across 8 from earlier the same day and nothing here moves SQL. D-135 (the form this reviews), D-125 (the review debt this discharges), D-059 (the QR reference's date), D-057 (the WASM fallback behind the await), D-129 (the strict-grammar rule the guard protects).
-
-## D-143 — A third button rank, because "quiet" had been spelled as "unstyled"
-
-- Date: 2026-08-23
-- Status: **Accepted and done.** `app/globals.css` (one new rank, one outlier corrected), `app/slip-batch.tsx` and `app/slip-capture.tsx` (three buttons given the class). Styling only — no logic, no SQL, no route, no contract.
-
-### What was actually there
-
-The phone audit reported two undersized tap targets in the bulk slip worklist: a button at 24px tall and an input at 42px. **They looked like one finding and were two different things.**
-
-The **input** was a plain outlier. Every other control in the stylesheet sits at 47px — `.owner-access-panel input`, `.password-control input`, `.account-control select`, `.slip-fields input`, `.batch-direction select`, and the `min-height` shared by all three button ranks. `.batch-fix input` alone was 42. Nothing was being expressed by that; it read as deliberate and was not.
-
-The **button** was a real position badly executed. Three buttons in the app carried no class at all — `Discard` in `app/slip-batch.tsx`, `Discard` in `app/slip-capture.tsx`, and the amount finder's control. Two of them being the same word in two different forms is a *choice*: a destructive action kept out of the way beside the loud `secondary-button` next to it. **The choice was right and the execution was a browser default**, which is 24px tall and not hittable on a phone.
-
-So promoting them to `secondary-button` would have been the wrong fix — it makes discarding a batch as prominent as reading one.
-
-### The decision
-
-`.tertiary-button`: no border, no fill, muted until hovered — the quietness kept — with `min-height: 47px` so the hit area matches the controls beside it and a row of buttons lines up instead of one sitting short. `min-height` rather than `height`, so a wrapped label grows the button rather than spilling out of it.
-
-Applied to all three bare buttons. **The amount finder's is a different kind of action from a discard** and got the class anyway: it was equally unstyled, it should stay equally quiet, and leaving one bare button behind would recreate the inconsistency this closes.
-
-### Consequences
-
-**The 44px threshold is the audit's, not the repo's, and still nothing in the gate enforces it.** PLAN task 28 remains unscoped and no standard has been agreed; this change aligns the stylesheet with itself rather than adopting a rule. The two existing phone-width raises — `.site-nav a` and `.capture-result .secondary-button` — stay where they are, inside the mobile block, because both are compact by intent on a desktop where a pointer does the aiming. This rank is 47px at every width instead, because it is aligning with siblings that are.
-
-- Evidence: `app/globals.css`, `app/slip-batch.tsx`, `app/slip-capture.tsx`. `.runtime/worklist-phone-audit.spec.ts` now reports **tap targets: all >= 44px** on both worklists, where the slip one previously reported two under. Vitest **643 passed / 7 skipped across 32 files**, Playwright isolated **18/18** — its axe checks are what hold this stylesheet to AA and they cover the changed rules — owner **31/31**, production build clean at eighteen `/api/v1/` routes, tsc and ESLint clean. D-136 and D-137 (the palette these vars carry), D-138 (the phone-width work this belongs to), D-142 (the review that produced the measurement).
-
-## D-144 — Auto-import v1 is a local fetcher, and binding becomes automatic where the account is unambiguous
-
-- Date: 2026-08-23
-- Status: **Accepted and built**, both halves on the owner's decision. **Supersedes D-017** on the binding question; everything else D-017 said still holds.
-- What changed: `lib/server/statement-mailbox.ts`, `scripts/fetch-statements.mjs`, `tests/statement-mailbox.test.ts` (23) for the fetcher; `app/import-bench.tsx`, `app/statement-batch.tsx`, `app/globals.css`, `tests/privacy.test.ts` for the binding and the two pieces of import feedback. **No SQL, no route, no contract change** — eighteen `/api/v1/` routes, every project on 020, backup contract v7. One new **devDependency**, `imapflow`, which nothing in the app bundle imports.
-
-### The mailbox half, and why the design got cheaper rather than dearer
-
-D-141 recommended a hosted "Sync" button: a route fetching the encrypted attachment and streaming it to the browser to decrypt. **That was right when the import queue did not exist and wrong once it did.** With bulk statement import shipped, a local script that drops files in a folder reaches the same place with **no route, no server-side credential, no CSP question and no security review** — and it is strictly more private, because the app password never leaves the machine and the PDFs never touch a server.
-
-So v1 is `scripts/fetch-statements.mjs`. The IMAP work lives in `lib/server/statement-mailbox.ts` **so that the hosted button, if it is ever wanted, is a second caller of that module rather than a second implementation of the protocol** — the same seam as `lib/slip-batch.ts` against its form.
-
-**The app password is read from stdin only**, never an argument, a file or an environment variable. That is D-035's rule for document passwords applied to a merely-rotatable credential, because the habit is what protects the stronger secret. Input is masked with a star per character: hiding it entirely gave no way to tell a failed paste from a wrong password, and the length is not the secret. Raw mode rather than `readline` — muting readline breaks its line editing, and a paste then renders wrongly, which looks like the paste failing.
-
-**Retention: the mail is left untouched.** The owner's reasoning, and it is better than the concern it answers: the files already live in his main mail, so the second mailbox duplicates an archive rather than creating one.
-
-**Two things the first real fetch taught us.** A statement mail carries **more than one PDF** — one bank sent two months in a single message, another sent a statement beside an unrelated document — so the fetcher takes every PDF and decides nothing about which is which. And the Gmail *filter* that forwards them needs `OR` rather than a comma-separated `from:` list; the comma form works in the search box and silently does not in a filter. The IMAP grammar has the same trap in different syntax, which is why `senderSearch` nests `or` two arguments at a time.
-
-### Binding: what D-017 said, and what is left of it
-
-**D-017 held that account binding is a checked user decision, not a parser inference.** The owner asked for it to be automatic. It now is, by default, with a switch in the batch section.
-
-**The argument for relaxing it is that the match is a lookup, not a guess.** `public.accounts` is unique on `(owner_id, bank_code, last_four)`, so a statement's printed bank code and last four digits identify **at most one** account. `soleMatchingAccount` binds only when exactly one matches and returns null otherwise — an ambiguous match is refused rather than resolved, and a partial one yields nothing rather than a best effort.
-
-**What is not relaxed is the part that mattered.** Auto-binding removes the dropdown, not the owner: `assembleImportPayload` still re-checks bank, suffix and currency and still refuses a mismatch; the review table still shows every balance; and confirming is still an explicit act. **That last one is load-bearing** — `out-of-order-run` says rows were reordered to make the balance close (D-055), and nothing but the review surfaces it. A refused automatic bind lands on the chooser rather than the review, so the refusal appears beside the control that can answer it.
-
-### The guard that was supposed to prevent this, and did not
-
-`tests/privacy.test.ts` carried a test named "never infers which ledger account a statement belongs to". **It passed after auto-binding was added.** It asserted `not.toMatch(/find\([^)]*accountLastFour/)` — a *spelling* — and the new code uses `.filter(...)`. The guard written to stop precisely this change never noticed it.
-
-That is the source-grep trap `GOTCHAS.md` already records, hit by the test meant to enforce a rule. It is now rewritten to assert the behaviour: the match is exact on **both** halves of the identity, `matches.length === 1` is required, no fuzzy matching exists anywhere in the file, and **no binding path reaches the confirmation**. A `section()` helper slices a function by name instead of matching a phrasing, and every assertion first checks its own marker so it cannot pass vacuously.
-
-### Import feedback, on the owner's report from using it
-
-**Pressing "Bind & review" appeared to do nothing**, because it changed a section far above the fold. It now scrolls the chooser into view. **Confirming left its sentence at the bottom of the single-import section**, several screens from the list being worked — so a confirmation banner now appears in the batch section, naming the file, the rows, the account and the batch, then takes focus. That is D-139's finding in a second place: a one-time answer belongs where the question was asked.
-
-**Three defects were found only in a browser, and all three would have passed a source review.** The scroll anchor used `.capture-result-anchor`, which carries `:empty { display: none }` and is therefore invisible when always-empty, so `scrollIntoView` did nothing. Then the check for it was wrong twice: first accepting anything inside the viewport, and passing while the chooser sat at y=635 of 664; then tightening the bound but measuring before the animation finished, and failing a scroll that worked. `scroll-behavior: smooth` means any such assertion must poll.
-
-**And the audit caught a regression within minutes of the fix that produced it**: the new checkbox measured 20x20. It is 24 now, and the audit learned that a control wrapped in its own label is hit by tapping the label — the measurement had been aimed at the wrong element.
-
-- Evidence: the files above. Vitest **666 passed / 7 skipped across 33 files** (up 23, all `tests/statement-mailbox.test.ts`), Playwright owner **31/31** and isolated **18/18**, production build clean at **eighteen** `/api/v1/` routes, tsc and ESLint clean. `.runtime/worklist-phone-audit.spec.ts` is **4 tests** now and covers the bind scroll and the auto-bind path end to end, asserting `import_batches` stays at zero — the browser proof that binding does not confirm. **pgTAP not re-run and deliberately so**: nothing here moves SQL. **The fetcher was run against the real mailbox**: 3 messages, 5 PDFs, and all four statements imported by the owner. D-141 (the design this completes and revises), D-017 (superseded on binding), D-035 (the stdin rule), D-055 (why confirming stays manual), D-139 (the banner precedent), D-138 (why a browser check).
-
-## D-145 — The hosted Sync button proxies ciphertext, and it is a caller of the mail seam rather than a second one
-
-- Date: 2026-08-23
-- Status: **Built, uncommitted, and not deployed — and it cannot work until the owner puts a credential into Vercel, which is a gate that has not been asked for.** `lib/statement-sync.ts` (policy), `lib/server/statement-mailbox-session.ts` (the server-side caller), `app/api/v1/imports/mailbox/route.ts` and `app/api/v1/imports/mailbox/attachment/route.ts` (the two routes), `app/statement-sync.tsx` (the button), plus `app/statement-batch.tsx`, `app/globals.css`, `tests/statement-sync.test.ts` (29) and `tests/privacy.test.ts` (two guards added, one comment corrected). **No SQL and no contract change**; every project stays on migration 020 and the backup contract stays at **v7**. **Two new routes**: the build emits **twenty** `/api/v1/` routes where it emitted eighteen.
-- Context: PLAN task 41, asked for by the owner on 2026-08-23 immediately after auto-import v1 landed (D-144). **The design was settled in D-141 and was not re-derived**: the server proxies the still-encrypted bytes and the browser decrypts them.
-
-### What was already decided, and what this had to decide
-
-D-141 chose the shape and rejected the two alternatives for reasons that have not changed. **Server-side decrypt** would put a secret derived from the owner's citizen ID onto a third party's infrastructure and would end statements being the only path in this app that reads entirely on the device (D-128, D-129). **A browser calling Gmail directly** would need `connect-src` widened past `'self'` and the Supabase origin, and the CSP is not weakened to make a feature work (D-058). Proxying ciphertext needs neither: what crosses is a file the bank locked and this app cannot open, and it was already sitting on Google's servers before it moved.
-
-**`lib/server/statement-mailbox.ts` is reused byte-for-byte unchanged**, which is what its own header said it existed for. This adds a *caller*. The IMAP session handling that both callers need — sign in, take the INBOX lock, release once — is a new sibling rather than an edit to the seam, so `scripts/fetch-statements.mjs` is untouched too.
-
-**Task 41 left two questions open and both are answered here.**
-
-**One: the route lists first and fetches on demand.** Fetching everything in one call would hold every attachment in one server process and return them in one response body — a memory bound nobody set, and a response size the hosting platform caps independently of anything in this repository, which would surface as a truncated PDF rather than an error. Listing first keeps the server holding one attachment at a time and makes a failure specific: one statement that will not download is one row saying so. The cost is one IMAP session per request rather than one per sync, which is seconds on a button pressed by hand. **The page still spends both calls on one press**, because what the owner asked for was a Sync button and the split is the server's concern.
-
-**Two: it never claims a statement is already present, and that is a refusal rather than an omission.** The local fetcher skips by filename because it owns the directory it writes to; a route has no folder. The alternative was inventing server-side state to hold a watermark — a new persisted thing, for a button pressed by hand. The import worklist already blocks a repeat on the PDF's own SHA-256 (D-141), which is a stronger check than a filename and happens where the bytes actually are. A weaker check that *sounded* authoritative would be worse than none.
-
-### The credential, and why it is a different risk class from the one the rules were written about
-
-**The app password moves from stdin to an environment variable, and that is a real change that the design accepts rather than hides.** D-035's rule — passwords from stdin only, never a file, an argument or an environment — was written about *document* passwords, which derive from the owner's date of birth and citizen ID and are therefore identity-grade and non-rotatable. The mailbox app password is rotatable from a Google account page and scoped to reading one mailbox that receives nothing but bank mail. A route cannot prompt anybody, so a hosted deployment necessarily holds it.
-
-**The document password never comes near any of this.** It is not a parameter of either route, is not held by the deployment, and no path there could use it. `app/statement-sync.tsx` takes two props and neither is one; it has no such state and renders no field that could collect one. The PDFs move locked and are opened by pdf.js on the device, exactly as before.
-
-**Three environment variables, and the routes fail closed and say which is missing**: `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD`. Absent, both routes answer **503** with a sentence naming the unset variables and pointing at local files — the same shape `strongOwnerClient()` uses for an unconfigured Supabase, because "not set up" and "broken" want different words. `statement-mailbox.json` is gitignored and therefore does not exist in a deployment, so the configuration comes from the environment instead. **The variable names are not in `.env.example`**, which is inside the never-read boundary and is the owner's to edit.
-
-### Two checks on the pair the browser names, and the second is the load-bearing one
-
-`uid` and `part` arrive from the page, so they are **client input into a mail server query**. `lib/statement-sync.ts` refuses anything that is not a positive integer and a dotted-digit part path — a part path is a selector, not a value with a safe encoding, so an unexpected one is refused rather than escaped.
-
-**That is not sufficient on its own, and assuming it was would have been the defect.** A *well-formed* pair still names an arbitrary part of an arbitrary message. So the mailbox is asked a second question before anything is downloaded: is this uid in the set matching the configured senders, and is this part one of its PDF attachments? Either no is a **404**, and deliberately the same 404 for "no such message", "not from a configured sender" and "not a PDF part" — distinguishing them would let the shape of the mailbox be mapped one request at a time. Without that check, an owner-gated download route would also be a way to read any mail in the mailbox, which is more than this feature needs and therefore more than it should have.
-
-Both routes take `strongOwnerClient()` — aal2 plus a verified TOTP factor, matching `private.has_strong_owner_access` (D-093). **Reading the owner's bank mail is not a lesser act than reading his ledger.** Both pin `runtime = "nodejs"`, because a TLS socket cannot be opened from the edge runtime and a silent fallback would fail at request time rather than at build time. Neither logs, and `imapflow`'s own logger is off: the library prints subjects and addresses at info level, and a hosting platform retains stdout.
-
-### The guard that changed meaning, and why it is said out loud
-
-`tests/privacy.test.ts` asserted that `app/statement-batch.tsx` and `lib/statement-batch.ts` **construct no request of any kind**. That assertion still passes — and it would have gone on passing while meaning less, which is precisely the trap D-144 was written about one file along.
-
-**So the fetching lives in a separate component on purpose.** `app/statement-sync.tsx` talks to the server and hands `File` objects across; the batch still fetches nothing. The old guard's comment now states what it still means (the bytes, the password and the parse never leave the device) and what it no longer means on its own (that nothing in the import section talks to a server), and a second guard covers the new file: two GETs and no third, both built from a named constant or from `attachmentPath`, no absolute URL anywhere, no request body of any kind, no storage API, and no worker, digest or reader.
-
-**One of those assertions was written as a word-grep and was wrong the way word-greps are.** It forbade `password` anywhere in `app/statement-sync.tsx` — and the component *tells* the owner to "type the document password" into the form below, which is the correct instruction. Asserting the shapes that would actually carry a secret (a prop, a state, a `type="password"` field) is what the grep was standing in for, so that is what it asserts now. The same correction applies to the routes: they say "check that the app password is current" in a message the owner needs when the mailbox credential expires, and that is the rotatable one.
-
-### The dependency moved, and it had to
-
-**`imapflow` was a devDependency and shipped server code now imports it.** It is a runtime dependency and is declared as one; the lockfile moved three lines and nothing else. Confirmed from the build artifact rather than from the file: `imapflow` and `imap.gmail.com` appear in **one server chunk and zero client chunks**.
-
-### What is proved in a browser, and what is not
-
-**`.runtime/mailbox-sync.spec.ts` is 4 tests** (throwaway, gitignored) and exists because the sharpest lesson of this day was that three defects were visible only in a browser and would each have passed a source review. It proves, at 390px behind a real sign-in:
-
-- **The unconfigured path, through the real route.** This machine has no mailbox credential and must not have one, so pressing the button actually runs `strongOwnerClient()` and `mailboxConfig()` and returns a 503 — and the owner sees a sentence naming the unset variable, with the button enabled again rather than left dead.
-- **The download path**, with both routes intercepted and synthetic bytes served: a manifest becomes `File` objects, they land in the batch, they are marked as ones he did not choose, the pdf.js worker opens them, binding reaches the review — and `import_batches` is asserted to stay at zero.
-- **A failed download is one line, not a failed sync.** The one that arrived still reaches the batch. That is the "failure path that discards work" shape D-142 was about.
-- **The band is clean at 390px** with every tap target at 44px or more.
-
-**What is not proved is the mailbox.** No IMAP connection was made by anything this session; the route has never spoken to a real server, and it cannot until the credential is in Vercel. The seam it calls *is* proven against the real mailbox, by the fetcher, on 2026-08-23 (D-144).
-
-### Two smaller decisions, recorded because they change shipped behaviour
-
-**Choosing local files now adds to the batch instead of replacing it.** It replaced the batch before, which was harmless while the chooser was the only way in and stopped being harmless the moment a sync could fill the list — one local PDF chosen afterwards would have silently discarded everything downloaded. "Clear this batch" is now the only way to start over. The entry id became a monotonic counter for the same reason: `${index}-${name}` is unique within one selection and is not unique across two arrivals, and a duplicate React key makes two rows render as one.
-
-**A synced row says "from the mailbox".** It matters most on the blocked list: a local file that will not open is one the owner picked, and a mailbox one is a bank attaching something that is not a statement — which is a thing the owner's real banks do (D-144).
-
-### What `/code-review` found, run before asking to commit (D-125)
-
-Eleven findings. **Ten were real and are fixed; one was declined.** The agent died once on a session limit before reading the diff and was re-run — a failed review is not a passed one, and the second run is the one that counts.
-
-**Two were serious, and both are the same mistake: a limit applied after the cost instead of before it.**
-
-1. **A batch of unread files could not be cleared, and there was no other way out.** Making selection additive (below) removed the old escape — re-choosing used to replace the batch — and "Clear this batch" was rendered only when `plan` had rows. `plan` is built solely from files that have been through the worker, so a sync that queued forty unwanted PDFs left **no** Clear button, a cap refusing every further add, and a chooser that could only append. A page reload was the only recovery. It is now shown whenever the batch holds anything, reading "*n* waiting to be unlocked" before any parse. **The lesson is that a change which removes a recovery path owes a replacement in the same commit**, and this one silently did not.
-
-2. **The route walked every matching message before applying its own cap.** `findAttachments` issued one `fetchOne` per UID and `buildManifest` capped afterwards — while the page offers "everything the senders ever sent". On a mailbox holding years of bank mail that is thousands of sequential IMAP round trips inside one request, ending as a gateway timeout with no sentence in it: **exactly the failure the bounded socket timeouts were added to prevent, reached by a different road.** The loop now stops at `MAX_SYNC_ATTACHMENTS`, and because it stops it can no longer count what it did not look at — so `omitted: number` became `truncated: boolean`, which says *there is more* without inventing a figure. Counting would have been the scan the cap exists to avoid.
-
-**Three more were the same shape in the browser.** The sync capped its manifest against an *empty* batch, so with thirty-five files already queued it downloaded forty and discarded thirty-five **after** paying for them over the network — the opposite of the reason the cap was documented to exist. It now receives the remaining room and trims before downloading. It also announced what it had downloaded rather than what was accepted, putting "40 added" beside the batch's own correct "5 added, and 35 left out" — two contradictory sentences with the false one nearer the button; `onFetched` now returns the accepted count. And `room` was computed from a render-time `files.length` captured at click time, so choosing local files during a long sync could leave a batch capped at forty holding seventy; it reads a ref written in the same handler that queues the files, and the chooser is held while a sync runs.
-
-**One was a defect in a route that no test would have reached.** `Content-Disposition` interpolated the attachment's name directly. `safeFileName` preserves non-ASCII — correctly, since it names a file on disk — and Node refuses a header value carrying a code point above `\xFF`. **The banks this app reads are Thai**, so a Thai filename would have failed the whole download with `ERR_INVALID_CHAR` rather than delivering the PDF: the ordinary case, not an exotic one. `contentDisposition` now emits both RFC 6266 forms, and it percent-encodes against RFC 5987's `attr-char` set explicitly because `encodeURIComponent` leaves `!'()*` alone.
-
-**And one was in a guard written this same day, which is the sharpest of them.** The "no absolute URL" assertion ran against a comment-stripped copy of the source — and `.replace(/\/\/.*/gu, "")` knows nothing about string literals, so `fetch("https://mail.google.com/…")` becomes `fetch("https:` before the pattern looks at it. **The check would have passed for precisely the drift it was written to catch.** It runs against the raw source now. This is the third distinct way a source-grep guard has failed at its own job in two days — after the spelling trap (D-144) and the word-grep on prose (above) — and all three are in `GOTCHAS.md`.
-
-**The remaining three were small and are fixed**: the "stream" drained its source inside `async start`, which enqueues everything regardless of the consumer and buffers the whole PDF — the memory profile a buffered response was rejected for, while calling itself a stream; it reads one chunk per `pull` now, releasing the session on all three exits. `messages` counted every mail with a body structure, so a mailbox of ordinary correspondence could report "2 PDF(s) across 60 message(s)", which reads like 58 statements went missing. And the local file chooser's label was fed by the whole batch, so it read "40 chosen" after a sync the owner chose nothing in — the one place the new `source` field earns its keep.
-
-**One finding was declined**, and on precedent rather than judgement: `playwright.config.ts` sets no `webServer.timeout` for a cold `pnpm build && pnpm start`. It is correct — the sibling config sets 180 s for the same shape — but that file is the owner's deliberately local-only copy, is never committed, and the same hazard is already recorded in `HANDOFF.md` § Live hazards. D-141 declined findings against it for the same reason.
-
-**One of the review's assertions was itself wrong and the spec settled it.** A new test claimed `!` must be percent-encoded in an extended filename; `!` is a legitimate RFC 5987 `attr-char`, and only the other four of `!'()*` are not. The implementation was right and the test was corrected.
-
-
-### What this is still owed
-
-- **`/security-review`.** Two new routes, a stored credential and a mailbox read is exactly what it exists for, and only the owner can run it. **`/code-review` is discharged**: it ran against this work before asking to commit, per D-125, and its ten real findings are fixed above.
-- **The credential in Vercel**, which is a hosted-resource change and needs the owner's authorization at the time. Until then the feature is inert in production and says so.
-- **A committed spec.** The gap D-141 left is unchanged and this widens it: the statement batch is covered by unit tests and a throwaway, and the sync now is too.
-
-- Evidence: the files above. Vitest **696 passed / 7 skipped across 34 files** (up 30, one new file), Playwright owner **31/31** and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, tsc and ESLint clean. `.runtime/mailbox-sync.spec.ts` is **6 tests** — two of them added for the review findings above, and both fail against the code as it stood before the fix. All re-run in full after the review. **pgTAP not re-run and deliberately so**: nothing here moves SQL, and it stands at 266 across 8 from 2026-08-18. D-141 (the design this implements, not revisits), D-144 (the seam this calls, and the guard-spelling trap), D-035 (the stdin rule and why a mailbox credential is a different class), D-058 (why the CSP was not widened), D-093 (the gate both routes take), D-125 (review before asking to commit), D-128/D-129 (device-only statement reading, which is unchanged).
-
-
-## D-146 — The fifth archive boundary is shallow on purpose, because two open questions sit immediately behind it
-
-- Date: 2026-08-24
-- Status: **Done.** **D-130 … D-133** relocated unchanged to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md). No entry was rewritten, no index bullet was lost, and every cross-reference still resolves — `check:docs --strict` reads the archives, so a reference to an archived id is not a dangling one.
-- Context: `DECISIONS.md` hit **94% of its 120 KB budget** on 2026-08-24, one day after the fourth boundary had taken it to 56%. Five entries did that — D-141 … D-145, of which D-145 alone is 18 KB.
-
-### What moved, and why the range ends where it does
-
-The four are the continuity-hygiene arc and they close on each other: the size guard that measured lines while the files grew sideways (D-130), the handoff and plan rewrites that followed (D-131), the ledger view's markup split (D-132), and the third archive boundary (D-133) — which is the first statement of the rule this entry is a later application of.
-
-### The finding, which is not the archive itself
-
-**This boundary lands at 82% where the fourth landed at 56%, and that is not a failure of nerve.** D-133's rule is that *a boundary excludes every open question*, and D-140 sharpened it into a test: *a question is closed when the code has stopped asking it.* Applying that test honestly stops the range at D-133, because the next two entries both still ask:
-
-- **D-134** raises the traps budget and says the **next** breach is owed a split rather than a third raise. That condition has not fired — `GOTCHAS.md` is at 79% — and the code is still asking it: the rule sits in `scripts/check-docs.mjs` beside the constant and in its failure message.
-- **D-137** drops the dark scheme with the owner's own qualifier on it, *"but we'll see"*. Nobody has looked at a bright page on a dark-OS phone at night, so the code is asking that question every time it serves `color-scheme: light`.
-
-Archiving either would have bought roughly ten more points and hidden a live argument to get them. **The cheaper cut was available and was refused**, which is the whole content of this entry.
-
-### What this means for the sixth boundary
-
-**Depth is bought by closing questions, not by cutting harder.** The two above are the owner's to close — one is a decision about how `GOTCHAS.md` grows, the other needs a phone in a dark room — and until they do, the sixth boundary faces the same wall at the same place. **The alternative worth naming rather than doing quietly**: this file's budget has never been raised, and D-134's own argument for raising `GOTCHAS.md`'s does not transfer, because that file is entered through an index and this one is read front to back. So the answer here stays archiving.
-
-**And the rate is now the thing to watch rather than the percentage.** Four days of ordinary work took this file 72% → 93%; *one* day took it 56% → 94%. At five entries a day a boundary is not a fortnightly event, it is part of finishing a feature — which is an argument for shorter entries, not only for more archives.
-
-- Evidence: `docs/decisions/ARCHIVE-D-130-D-133.md`, the index in this file, `pnpm check:docs --strict` passing at **146 decisions, 145 traps** with `DECISIONS.md` back under budget. D-130 (the byte guard that makes this measurable), D-133 (the rule this applies), D-140 (the test it applies), D-134 and D-137 (the two questions that bound it).
-
-
-## D-147 — Binding announces itself where the owner is looking, because the scroll fix was keyed on a stage auto-binding skips
-
-- Date: 2026-08-25
-- Status: **Done, uncommitted at the time of writing.** `app/import-bench.tsx` and `app/globals.css`. No SQL, no route, no contract change: every project stays on migration 020, the backup contract stays at **v7**, and the build still emits **twenty** `/api/v1/` routes.
-- Context: **the first thing the owner did with the hosted Sync button was find a defect in the feature under it.** With the three mailbox variables in Vercel (see below) the button worked on the first real attempt — five statements from the mailbox, read on the device — and pressing **Bind & review** on a row then appeared to do nothing at all.
-
-### What was actually wrong
-
-`workBatchEntry` takes an early return on the automatic path: `if (autoBind && match) { bindTo(...); return; }`. `bindTo` sets the stage to `review`. The scroll effect that brings the answer into view was guarded `if (stage !== "bind" || workingLabel === null) return`.
-
-So the branch that is **on by default** never scrolled. The review table rendered below the worklist and the status sentence landed in the Import / 01 section several screens above, while the worklist under the cursor did not change — its button only flips to "Confirmed — open again" after a confirmation, which is correct and which removed the last visible sign that the press had registered.
-
-**This was a fixed bug that came back.** The scroll exists because the same complaint was made about the manual chooser and answered in D-141; its comment still said so. D-144 then added a path around the stage the fix was keyed on. Nothing failed, because a guard that returns early is indistinguishable from a guard that was not needed.
-
-### The decision, which is about where an answer belongs rather than about scrolling
-
-**An action's result goes where the action was, and it is announced rather than merely rendered.** The scroll is now keyed on the **binding outcome** — a value every branch sets — instead of on a stage that one branch skips. A stage is a waypoint; the outcome is the subject.
-
-Beside it, the anchor the page moves to now carries a **banner** in the established `.capture-result` shape: `role="status"`, `tabIndex={-1}`, focused with `preventScroll`, matching `app/statement-batch.tsx`'s confirmation banner and `app/notification-card-capture.tsx` (D-139). Three states, because a press has three outcomes — bound to an account, read but needing one, or refused by `assembleImportPayload`. **The owner asked for this directly**, in the form "why is there no notification box so it is guaranteed I will see it", and he is right that a scroll alone is a weaker promise than an announced region: scrolling depends on where the viewport was, and `role="status"` does not.
-
-`bindTo` returns the refusal message or null so the banner can state which happened; a `useState` setter does not update the variable it was called with, so the caller could not read `bindingError` back in the same tick.
-
-### What `/code-review` found, and the one that was not mine
-
-Ten findings at high effort, **six fixed**. Two were leaks of the same kind the new banner had just made visible, and one of those predates this change:
-
-- **`workingLabel` was only ever set, never cleared.** Confirm a worklist entry, then confirm an unrelated single import, and the worklist announced that the *earlier* statement had reached the ledger carrying this one's numbers. Latent since D-141 and reachable by hand.
-- **`batchBinding` was not cleared on the single-import paths**, which was the same mistake made fresh.
-- Both, plus `batchConfirmation`, are now cleared by one `leaveTheWorklist()` that the two single-import entry points call.
-- **`setChosenAccountId` sat after the auto-bind early return**, so a refused automatic bind left the previous statement's account selected under a banner saying to choose one. Moved above the branch.
-- **The refusal was announced twice** — the new `role="status"` banner and the existing `role="alert"` carrying the same message. The alert is suppressed only while the banner already carries it.
-- **`.scroll-anchor` became dead CSS** and its comment contradicted the new code; removed, with a note saying not to re-add it without a caller.
-
-**Four were declined and three of those are not this change's to fix**: `playwright.config.ts` and `eslint.config.mjs` are the owner's deliberately local-only files, and the `webServer.timeout` finding is the same one declined on 2026-08-24. The `playwright.config.ts` finding is real and now sharper than `HANDOFF.md` had it — with a production build the owner specs actually execute, and that config has no `testIgnore`, `fullyParallel: true` and default workers, so a bare `pnpm exec playwright test` runs a ledger-wiping spec concurrently with siblings asserting against those tables. It stays in `HANDOFF.md` § Live hazards as the owner's to close.
-
-### Coverage, and the gap this does not close
-
-`.runtime/bind-scroll.spec.ts` — **3 tests, throwaway and gitignored** — drives the automatic branch, the manual branch and the worklist-to-single-import leak. The first two are **red against the pre-fix component and green after**, run by reverting the file and re-running. Honest about how they are red: they fail on the banner's absence rather than on the scroll specifically, since the banner is new.
-
-**No committed spec drives any of this**, which is the gap D-145 widened and this does not close either. The statement batch form and the mailbox sync are still covered by unit tests and throwaways only.
-
-- Evidence: `app/import-bench.tsx`, `app/globals.css`, `.runtime/bind-scroll.spec.ts` (3/3). Vitest **696 passed / 7 skipped across 34 files** — unchanged, which is what a change touching only component wiring should produce — Playwright owner **31/31** and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` clean, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: nothing here moves SQL, and it stands at 266 across 8 from 2026-08-18. **The owner suite reported 30/31 on one run and 31/31 on a full re-run** — `captures a slip from its QR` timed out at 30s, on a route this change does not touch; recorded in `HANDOFF.md` rather than treated as caused here. D-141 (the scroll this restores), D-144 (the path that skipped it), D-139 (the banner pattern), D-125 (review before asking to commit), D-145 (the guard that narrowed without failing, which is this shape one level up).
-
-## D-148 — The client tier gets its first seam, because every route call had been open-coding the same five steps and had already diverged
-
-- Date: 2026-08-25
-- Status: **Done, uncommitted.** `lib/wire.ts`, `tests/wire.test.ts` (new), `app/transactions-view.tsx`, `app/import-bench.tsx`, `app/slips-bench.tsx`. No SQL, no route, no contract change: every project stays on migration 020, the backup contract stays at **v7**, and the build still emits **twenty** `/api/v1/` routes.
-- Context: the owner installed two review skills and asked for both to be run, then delegated the follow-up work. `/improve-codebase-architecture` produced this as its first candidate; `/thermo-nuclear-code-quality-review` had independently found the same duplication one level down. **Both were treated as opinions to judge, not verdicts** — see § What was declined.
-
-### The measurement this turns on
-
-**33 of this repo's 34 unit-test files import from `lib/`. None imports from `app/`** — 696 passing tests, none crossing roughly 7,400 lines of client-tier orchestration, verified by import rather than inferred. That is the tier every defect of the preceding week lived in: D-139, D-141, D-142, D-147 and the leaks beside it. The cause is structural, not diligence: `lib/` is made of deep modules (`import-assembly.ts`, 151 lines behind one exported function; `statement-layout.ts`, 1,174 behind three) so each has an interface to test through, while in `app/` the interface *is* the rendered component and the only test surface is a browser. **A file-size review would have flagged `statement-layout.ts` and been wrong** — 1,174 lines behind three functions is depth, and line count means nothing until it is checked against interface width.
-
-### What was actually wrong
-
-`lib/wire.ts` held one 10-line function, `readError(body: unknown, fallback)`. The other five steps of a route call — issue it, survive a body that is not JSON, check `ok`, read the route's own `{ error }`, validate against the contract — were open-coded at **26 `fetch` call sites**, each re-deciding them independently. **They had already diverged, and the divergence was backwards.** `app/transactions-view.tsx` guarded three of its five loads with `.catch(() => null)` and left the two **blocking** ones bare, so a platform error page on the accounts or transactions path threw, was caught by the outer handler, and reported as *"the ledger could not be reached — check that the local Supabase stack is running"* — sending the owner to diagnose Docker while the route had in fact answered him. Nine of the twenty-six validated nothing at all.
-
-`readError` is shallow in the way that bites: its parameter is `unknown`, so handing it the wrong thing type-checks and fails **silently**. That has happened — passing the `Response` instead of its parsed body replaced every specifically-worded refusal with the generic sentence, in two files, and is in `GOTCHAS.md`. A trap that a caller must remember to avoid is an interface defect, not a discipline problem.
-
-### The decision
-
-`ledgerRequest(path, schema, wording, init?)` owns the whole round trip and returns a discriminated `WireResult<T>`, so a caller cannot read `data` without having checked `ok`. Three properties are the substance:
-
-- **`schema` is a required parameter**, so validation cannot be the step a hurried call site leaves out. Nine sites had left it out and the omission was invisible at each one.
-- **`ok` is read before the schema**, so a route that refuses in its own words is never reported as a contract failure.
-- **Three failure kinds, because they send the owner to three different places**: `unreachable` (diagnose the stack), `refused` (read the route's words), `off-contract` (diagnose the build). Each keeps the wording the call site already owned.
-
-`cache: "no-store"` is the default, because all thirteen call sites that named a cache mode named that one and a ledger read served from a cache is a wrong answer rather than a fast one.
-
-### What is deliberately not done
-
-**The write paths have not moved.** `POST /api/v1/imports/confirm`, the slip and cash captures, and the two `PUT` decision routes still call `fetch` directly, because they carry idempotency keys and money and deserve their own pass rather than being swept along with a read migration. `readError` therefore stays exported and stays a trap for those seven callers until it moves; it becomes private to `lib/wire.ts` when they do.
-
-**Two further candidates were surfaced and not built**: a shared capture-outcome module (the announce-and-scroll sequence is on its third verbatim copy, and the newest one queries `data-bind-result` where the other two query `data-capture-result`), and lifting the import stage machine into a pure reducer. The second is close enough to `PLAN.md` task 19 that it is the owner's call and not an agent's, and it is the one that would actually close the committed-spec gap.
-
-### Two defects fixed alongside it
-
-`leaveTheWorklist()` was called at **two of the four** ways a statement stops being a worklist entry, so choosing a different PDF through the picker left the previous statement's *"is bound to …"* banner over the controls for this one. **This is the trap D-147 wrote down and did not finish closing**; the sharpened entry is in `GOTCHAS.md`. Fixed at the picker, the one point every single-import path passes through. Separately, `loadSynthetic` checked no `ok` and parsed bare, so a refusal reported as *"the synthetic fixture failed its own contract"* and a non-JSON answer threw out of an `onClick` and hung the status line permanently.
-
-### Coverage
-
-`tests/wire.test.ts` — **17 tests, committed, not a throwaway.** What the app shows when a route answers HTML, 500s with no body, returns JSON its schema rejects, or does not answer; and that `ok` is read before the schema. One test documents the `readError` trap by passing it a `Response` and asserting the fallback comes back.
-
-**The stale-banner fix has no committed spec**, stated rather than glossed: nothing committed drives the batch worklist. It rests on the owner suite still passing and on the reasoning above.
-
-- Evidence: Vitest **713 passed / 7 skipped across 35 files**, up exactly the 17 new tests from 696/7/34 with the skip count unchanged at **7** — the number to read, not the total. Playwright owner **31/31** (no intermittent this run) and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` clean, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: no SQL moved, and it stands at 266 across 8 from 2026-08-18. D-147 (the trap this finishes closing), D-145 and D-141 (the committed-spec gap), D-125 (review before asking to commit).
-
-## D-149 — The owner closed the two questions the fifth boundary was stuck behind, so the traps split and the sixth boundary went seven entries deep
-
-- Date: 2026-08-25
-- Status: **Done, uncommitted.** `GOTCHAS.md`, `docs/gotchas/` (eight new files), `docs/decisions/ARCHIVE-D-134-D-140.md` (new), `DECISIONS.md`, `scripts/check-docs.mjs`, `PLAN.md`, `HANDOFF.md`. No source, no SQL, no route, no contract change.
-- Context: D-146 recorded that the fifth archive boundary landed at 82% where the fourth landed at 56%, and named exactly what was blocking it — **D-134 and D-137, both the owner's to close.** He closed both on 2026-08-25, in one sentence each, which is all either needed.
-
-### What he decided
-
-- **`GOTCHAS.md` splits along its section headings.** D-134 had raised the budget once from 200 KB to 260 KB and attached a condition: *the next breach is owed a split, not a third raise.* The breach came and the condition was honoured.
-- **There is no dark scheme, and the qualifier is withdrawn.** D-137 dropped it with the owner's own *"but we'll see"* attached, which is why D-146 could not file it as settled. He settled it: no dark scheme, and he will say so if that changes. **This does not reverse D-137 — it removes the hedge on it.** `color-scheme: light` in `:root` and `app/layout.tsx` stands, and a bright page on a dark-OS phone at night is now an accepted cost rather than an unexamined one.
-
-### The split, and what it changed about the budget
-
-**149 trap bodies moved to `docs/gotchas/`, one file per section, byte-identical.** `GOTCHAS.md` goes **208 KB → 14 KB** and keeps the index alone, which is the part read in full. Nothing inside a trap changed and no index bullet was lost.
-
-**The 260 KB figure is retired rather than raised**, and that is the substantive part. It bounded a single body nobody read front-to-back, and there is no longer a single body to bound. Two budgets replace it in `scripts/check-docs.mjs`, each measuring something a reader actually pays: **40 KB for the index**, because its scannability was the whole condition D-134 attached, and **80 KB per section**, because a reader arrives through the index and opens exactly one. A section that breaches splits in two and both halves get index entries. There is still no archive for traps, by design — retirement remains the only lever, and it is bounded by how many traps actually die.
-
-The checker had to follow the bodies. `gotchaFiles()` gathers them, the index is still verified against every trap one for one — the property the split existed to preserve — and **the Verify-line scan runs per file rather than over a concatenation**, because a trap's block ends at the next heading in its own file and a joined scan would let the last trap of a section swallow the next section's header and borrow its date.
-
-### The sixth boundary, and why it stops where it does
-
-**D-134 … D-140 relocated unchanged** to `docs/decisions/ARCHIVE-D-134-D-140.md`. `DECISIONS.md` goes **110 KB → 82 KB**, from 94% to about 68%, and now carries **D-141 onward**. Seven entries where the fifth boundary managed four, which is precisely the depth the two closures bought — D-146 predicted this and said so: *depth is bought by closing questions, not by cutting harder.*
-
-**It stops at D-140 because D-141 still asks.** Its mailbox questions were written before the mailbox existed and most have since been answered by building it (D-144, D-145) — but **whether the source is deleted after import, and so whether the mailbox becomes a permanent archive of every statement under a password derived from a citizen ID and therefore non-rotatable, is deliberately deferred and unanswered.** Filing D-141 as settled would be false in exactly the way D-146 refused to be. The rule that bought this boundary its depth is the same rule that stops it here.
-
-**One deviation from "relocated unchanged" is worth naming.** D-140's body links to `ARCHIVE-D-120-D-129.md` by a repo-root-relative path, which stops resolving once the file sits inside `docs/decisions/`. The link **target** was corrected to the sibling path; the display text is byte-identical, so the entry still reads exactly as it did. `check:docs --strict` caught it, which is the check earning its keep on the first archive that ever contained one.
-
-- Evidence: `pnpm check:docs --strict` passing at **149 decisions, 149 traps**, indexes matching and every reference and path resolving — the same 149 traps as before the split, which is what proves nothing was dropped. `DECISIONS.md` **82 KB/117 KB**, `GOTCHAS.md` **14 KB/39 KB**, largest section `docs/gotchas/app.md` **56 KB/78 KB**. D-134 and D-137 (the two closed), D-146 (which named them and predicted this depth), D-133 (the rule), D-140 (the test it applies), D-130 (the byte guard that makes any of this measurable).
-
-## D-150 — The announce-and-scroll becomes one module and the worklist becomes one value, so two classes of defect stop being representable
+## D-153 — The typeface is a per-device preference in a cookie, because a font is a fact about the screen and not about the ledger
 
 - Date: 2026-08-26
-- Status: **Done, uncommitted.** `app/result-banner.ts` and `lib/import-flow.ts` (both new), `tests/import-flow.test.ts` (new), `app/import-bench.tsx`, `app/statement-batch.tsx`, `app/notification-card-capture.tsx`, `tests/privacy.test.ts`. No SQL, no route, no contract change: migration 020, backup contract **v7**, still **twenty** `/api/v1/` routes.
-- Context: the owner read the architecture review (D-148) and asked for its second and third candidates to be built. They are one entry because they are one finding at two altitudes — the same three capture surfaces, the same drift, one in the markup and one in the state behind it.
+- Status: **Done, uncommitted.** New `lib/ui-font.ts`, `tests/ui-font.test.ts`, `app/api/v1/ui/font/route.ts`, `app/font-picker.tsx`; `app/layout.tsx`, `app/site-header.tsx`, `app/globals.css`, `package.json`. No SQL, no contract change, **no CSP change**.
+- Context: the owner asked for a Stardew Valley direction (`PLAN.md` task 42) and, having compared three pixel faces on a design canvas, asked for a way to switch between them rather than a single baked choice.
 
-### Candidate 2 — the announce-and-scroll was on its third copy
+### Where the preference lives, and why it is not a row
 
-`requestAnimationFrame` → `scrollIntoView({ block: "start" })` → `focus({ preventScroll: true })`, with its six-line rationale about `prefers-reduced-motion` and `scroll-margin-top`, existed **three times**: in the card form, the batch worklist, and — as of D-147 — the import bench. **They had already drifted**: the newest queried `[data-bind-result]` where its two siblings queried `[data-capture-result]`, for the same role, under the same CSS class.
+Three places were possible and the argument that settled it is **not** cost.
 
-`app/result-banner.ts` is now the only copy. **It offers two call shapes because the three sites genuinely have two**: pass a value and the banner is revealed when it becomes non-null (the batch worklist, the import bench), or call `reveal()` where the announcement has several origins (the card form announces from three handlers). Neither wraps the other — the first is an effect that calls the second.
+**A typeface is a fact about the screen, not about the ledger.** The owner reads this app on a phone and on a desktop; a pixel face that is comfortable at arm's length on a monitor is a different proposition at 390px. A per-device preference is therefore the *correct* semantics, and a row in PostgreSQL would force one answer across every device and then need overriding. Server-side storage stays right for preferences that are genuinely account-scoped and must travel — a default account, category rules, saved views for task 44 — and this is not one.
 
-**The markup deliberately did not move.** The three banners differ in content and one carries action buttons, so a shared component would have taken arbitrary children and become the pass-through wrapper this review was written to remove. What is shared is the behaviour and the accessibility contract, which is what was actually duplicated.
+The cost side happens to agree, and is recorded so nobody re-opens it casually. A row would have meant migration 021 on every project **including hosted**, a decision about whether the table joins `BACKUP_TABLE_KINDS` (versioned v2→v6 purely by accretion, so a new table is a contract question rather than a detail), RLS and an owner-bound RPC to satisfy the boundary rule, and pgTAP coverage — to store one of four known words.
 
-### Candidate 3 — the worklist was three `useState` slots
+**Browser storage was refused for the guard, not for the data.** `tests/privacy.test.ts` forbids every client storage API across `app/`, and **the guard is only worth having while it is a blanket grep**. "No client storage except this one" cannot be checked by the same rule, and the next thing stored there would have no tripwire — which is D-148, D-151 and D-152 in different clothes. A server-set cookie keeps `app/` free of those APIs entirely.
 
-`workingLabel`, `batchBinding` and `batchConfirmation` each said "a worklist entry is being worked", each set independently. **The seam between them is where both of the week's defects lived** — D-147 (a flag only ever set, so a confirmation was labelled with an earlier statement's name) and D-148 (the helper written to fix that, called at two of four exits). `GOTCHAS.md` already recorded that a helper is not the answer, because a helper is still a thing to remember.
+It also resolves **before first paint**. The layout reads the cookie server-side and writes `data-font` on `<html>`; the browser-storage version paints the default face and swaps, and the only cure is a blocking inline script the CSP would then have to admit.
 
-They are one `Worklist | null` now, with the phase a **discriminated union** rather than two nullable strings carrying a prose invariant that they are never both set. `null` is the only way to be out of the worklist, so it cannot be cleared by halves; the confirmation is **derived** rather than stored; and `bindTo` returns a `BindOutcome` instead of `string | null` with null meaning success.
+### The allowlist is the security story
 
-**The refusal suppression now asks where a message came from rather than what it says.** It was `bindingError !== batchBinding?.refusal` — string equality between two independently-set states, which held only while no two wordings converged and would have made the alert vanish silently on the day they did.
+The chosen value reaches the DOM as an attribute. React escapes attribute values, so this is not an injection today — but "it is escaped downstream" is a property of a renderer someone can change, and a closed set is a property of `fontChoiceFrom` that they cannot. It is **total over untrusted input**: given `undefined`, `null`, the wrong case, a quote-and-attribute payload or a value of the wrong type, it returns a member of `FONT_CHOICES`. There is no failure branch, deliberately — a preference that cannot be read is not an error to report, it is a device that gets the default.
 
-### What this is not
+**The route is not owner-bound, and that is the one thing here worth arguing.** Every other route under `/api/v1/` opens with `strongOwnerClient()` because it reaches records. This one reaches nothing: no database client, no RPC, no query — it parses a four-value enum and writes it back as a cookie on the caller's own response. There is no boundary for an owner check to defend, and requiring aal2 to change a typeface would mean the signed-out page could not be made legible. The strict schema is what bounds it: an unknown key is refused rather than ignored, because a caller sending `{font, theme}` has a broken model of this endpoint and answering it as though the extra key were fine is how a second preference gets half-built.
 
-**It is not the whole stage machine as a reducer**, which is what the review proposed. `stage`, the parsed statement and the bound account stay in the component: moving them is a far larger change to the path that files money into an append-only ledger, the defects were never there, and the benefit the reducer was proposed *for* — testable decisions, an unrepresentable stale mode — is delivered by the part that moved. `app/import-bench.tsx` is 891 lines from 931 and holds 29 `useState` rather than 30; the win is not the count, it is that the three that mattered became one.
+### What the faces are, and the one thing that must never be removed
 
-### Coverage, and the gap this actually closes
+All three are **Fontsource packages at OFL-1.1**, matching the two IBM Plex packages `app/layout.tsx` already imported. **The first attempt hand-downloaded `.woff2` files into `public/fonts/` and was wrong** — it missed that this app already had a font mechanism, on the strength of a grep for `next/font` that was simply aimed at the wrong thing. Bundled rather than fetched either way: `font-src 'self'` admits no external host, and weakening the CSP for typography is not a trade this app makes.
 
-`tests/import-flow.test.ts` — **17 tests, committed.** Both defects are asserted as properties rather than fixed as incidents: confirming off the worklist cannot label anything (D-147), and every derived value goes at once when the one value goes (D-148). **This is the first committed coverage the batch worklist has ever had** — the gap `PLAN.md` calls the largest thing owed, closed for the decisions, still open for the markup.
+**Every switched stack keeps `IBM Plex Sans Thai` behind the pixel face.** All three cover Latin only. Thai reaches this app as *data* — a counterparty name off a statement, a note the owner typed — and never as interface copy, since `app/` contains no Thai at all. Removing the Thai family from those stacks would drop those cells to whatever the device happens to have. The picker says so beside the control rather than leaving it to be discovered in a table and read as a defect.
 
-**`tests/privacy.test.ts` moved with the code and is stronger for it.** Its focus-and-scroll guard read `scrollToResult` out of the card form — the only copy when written, one of three by D-147, so it covered two thirds of the rule while appearing to cover all of it. It now asserts the shared module and then walks **all three surfaces**, requiring each to go through it, to carry no private `scrollIntoView` call, and to spell the focus target one way. **The guard failed when the code moved**, which is what `GOTCHAS.md` asks of a source grep and what the two traps about narrowing guards are about.
+**The default is `system`, not the owner's leading candidate.** He leans to Press Start 2P and can choose it in one gesture, which the cookie then remembers per device; defaulting to it would impose a face nobody had lived with on every fresh device, including whichever one he next opens to check a balance. The pixel faces are on trial, and the way back to something legible must not itself depend on the trial going well. Flipping `DEFAULT_FONT` is the whole of that change.
 
-Two of those traps were then hit while writing this, both in the same shape and both caught by the gate: a comment naming `scrollIntoView` failed a grep for the word (fixed by matching the **call**), and a comment naming the browser-logging API failed the no-observation-tooling walk. **A runtime warning was written and then removed** for that second reason — `app/` may not log, and a guard firing in the gate beats one firing in a browser nobody is watching.
+### Proved where it can be
 
-- Evidence: Vitest **730 passed / 7 skipped across 36 files**, up the 17 new tests with the skip count unchanged at **7**. Playwright owner **31/31** — the suite that drives the import flow end to end, which is what protects this refactor — and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` clean, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: no SQL moved, 266 across 8 from 2026-08-18. D-148 (the review that proposed both), D-147 and D-141 (the defects this makes unrepresentable), D-139 and D-124 (the banner pattern), D-125 (focus follows the eye).
+`tests/ui-font.test.ts` is **17 tests**, most of them about untrusted input, and they are the half a source grep cannot do. The other half needed a browser: the cookie is `httpOnly`, so a throwaway spec under `.runtime/` watches `data-font` change, survive a reload, and lead the computed `font-family` with Thai still behind it — and watches an unknown face refused **422** with the stored value unchanged.
 
-## D-151 — The list of state a discarded statement clears is no longer trusted, because a list is exactly what went stale twice
+**The client-storage guard fired on this change's own comments, which is the fifth time this trap has bitten in this repo** — the prose explaining why browser storage was *avoided* named the API it forbids. The comments were reworded and the guard left alone, which is the **opposite** of the remedy `docs/gotchas/app.md` records for `aria-modal`: that one was narrowed to the construct. The distinction is that this is a **prohibition on an API with non-dotted uses** (`const s = localStorage`, `window.localStorage`, destructuring), so narrowing it to `localStorage\.` would open a real bypass. A bare-word ban is correct where the word *is* the capability; match-the-construct is correct where the word also names a concept. Both are now in the trap.
 
-- Date: 2026-08-26
-- Status: **Done, uncommitted.** `app/import-bench.tsx`, `tests/import-flow.test.ts`, `docs/gotchas/app.md`. No SQL, no route, no contract change.
-- Context: the owner asked whether finishing the stage-machine reducer was worth it for future development. **The answer measured out as no**, and this is the cheaper thing that was worth doing instead.
+### What `/code-review` caught, and the guard that could not fail
 
-### Why not the reducer
+**Choosing a pixel face pushed the page wider than the phone, which is D-138 arriving from a new direction.** `.header-side` was `display: flex` with no wrap, and `.font-picker .field-help` capped its width in **`ch`** — a unit of the very font being switched, so the note grew from 208px to 353px exactly when the header had least room. Measured on `/ledger` under iPhone 13: `scrollWidth` 390 → **504**. The page then shrink-to-fits and every glyph gets *smaller*, which is the opposite of what the trial is for. `flex-wrap` and a px cap fix it.
 
-Refactoring is paid for by future change, so the question is where change actually lands. Over the last 60 commits: `app/notification-card-capture.tsx` **13** times, `app/transactions-view.tsx` **11**, `app/slip-capture.tsx` **10**, and `app/import-bench.tsx` **4**. The churn that produced this week's defects was the bulk-import and mailbox arc, and that arc is finished (task 41). **Completing the reducer would pay full price for a benefit that mostly will not arrive**, on the path that writes money into an append-only ledger. Recorded so a later review does not re-suggest it without first re-measuring where changes land.
+**The guard written for that defect passed with the defect fully present, and that is the more useful finding.** It asserted `scrollWidth <= window.innerWidth` — which is the same number twice, because a phone widens its *layout* viewport to fit overflowing content: measured at 504 and 504. `document.documentElement.clientWidth` stayed at **390** and is the only honest reference. Same family as the trap about asserting a scrolled element sits near the viewport top: **a ratio that adjusts to the thing it is checking cannot fail.** Red-proved after correction by reverting both fixes and watching it name the face and the numbers.
 
-### What was worth doing
+**An element selector cannot out-rank a class, again.** `:root[data-font=…] th` is (0,2,1) and `:root[data-font=…] .numeric` is (0,3,0), so the header step-down silently lost every `<th class="numeric">` — Movement, Balance and All accounts kept the cell size while every other header shrank. The same shape as the `table` versus `.ledger-table` trap already recorded. Both selectors now name `th`, and the cell rule is scoped to `td` so it cannot reach back.
 
-`discardLoadedStatement()` — written the same day under D-148 — clears eleven pieces of state by hand. **That is the same shape as the two defects it was fixing, one level up**: a helper is a list, lists go stale, and a twelfth `useState` added without a line here fails silently and looks exactly like a slot meant to survive.
+**A comment claimed a measurement that had not been taken.** The 10px figure size said *measured against the widest real shape* and was asserted. Press Start 2P advances 1em per glyph, so `-1,234,567.89` at 13 characters is 130px against a 117px content box — it spilled. 8px fits at 104px. The lesson is not the number: **this repo's own rule is that a measurement beats a conclusion, and a comment saying *measured* is a claim that has to be true.**
 
-The list is now checkable rather than trusted. A guard in `tests/import-flow.test.ts` reads the component and requires **every** `useState` to be either cleared by the helper or named in an allowlist **with a stated reason**. It matches the setter *call*, not the word, because the helper's own comment names a setter in prose. It also keeps the allowlist honest: an entry the helper actually clears, or one naming state that no longer exists, fails — a stale entry would otherwise hide a real omission.
+**Two picker defects.** `disabled` covered only the refresh and not the request, so the control was live and silent through the slow half — it snapped back to the old face with no busy affordance, which invites a second click and a second concurrent POST whose `Set-Cookie` races the first. And a failed `router.refresh()` was silent: the cookie stored, the page unchanged, nothing said. The control now shows the in-flight choice while disabled, and says which of *refused* and *stored but not shown* happened, because those read identically and their remedies are opposite.
 
-**It found two omissions the moment it was written.** `chosenAccountId` was reset by `workBatchEntry` and never by the file picker, so choosing a PDF by hand kept the previous statement's account selected in the chooser — never a wrong import, since `assembleImportPayload` still checks the printed bank code and last four, but the same misdirection the batch path had already been fixed for. `createAccountError` likewise outlived the document that produced it. Both now clear.
+**The only test of the mechanism was gitignored**, which is the committed-spec gap in another costume: the feature rests on Next re-rendering the **root layout**, a framework behaviour rather than app code, and the spec proving it lived under `.runtime/`. It is now `tests/e2e/font-picker.spec.ts` and runs on both projects.
 
-**It also rejected its author's own entry**: `newAccountType` was given the reason `"as above"`, and the minimum-length check refused it. A guard that its writer cannot satisfy carelessly is the kind worth having.
+- Evidence: Vitest **807 passed / 7 skipped across 38 files** (up 17). Playwright owner **31/31**, isolated **28/28** (up ten — the promoted spec, four of them the per-face viewport measurement) including the axe pass on every route, production build clean at **twenty-one** `/api/v1/` routes, `check:docs --strict`, tsc and ESLint clean. pgTAP not re-run and deliberately so — no SQL has moved since 2026-08-18. D-148 (the wire seam the picker calls through), D-147 (why the control holds no optimistic value), D-137 (the one declared colour scheme this sits beside), D-152 (the guard-follows-the-code discipline).
 
-**Proved by making it fail.** A 27th `useState` was injected, the guard named it and said what to do, and the injection was reverted — a guard that has only ever passed has not been shown to guard anything.
-
-- Evidence: Vitest **734 passed / 7 skipped across 36 files**, up the 4 tests this adds, skip count unchanged at **7**. Playwright owner **31/31**, production build clean, tsc and ESLint clean. D-148 (the helper this makes checkable), D-147 and D-150 (the defect class), D-130 (measuring before deciding).
-
-## D-152 — The card form's decisions become a tested module, and this time the tests were written before the component moved
+## D-154 — The seventh archive boundary steps over an open question instead of stopping short of it, and the maintained file now has a gap
 
 - Date: 2026-08-26
-- Status: **Done, uncommitted.** New `lib/notification-card-form.ts` and `tests/notification-card-form.test.ts`; `app/notification-card-capture.tsx`, `tests/privacy.test.ts`, `docs/gotchas/app.md`. No SQL, no route, no contract change, no CSP change.
-- Context: D-151 named this file as the next structural target and D-150 established the pattern. The owner asked for it explicitly.
+- Status: **Done, uncommitted.** `docs/decisions/ARCHIVE-D-142-D-152.md` (new), `DECISIONS.md`, `HANDOFF.md`. No code, no SQL.
+- Context: `DECISIONS.md` hit **95% (112 KB/117 KB)** with 5 KB of headroom, against recent entries running 3–10 KB. The next one would have failed `check:docs --strict` mid-task, which is the interruption `HANDOFF.md` warns about.
 
-### The measurement, re-run rather than quoted
+### The rule did not change; its shape did
 
-D-151 chose *not* to finish the import reducer on churn, so the same measurement had to justify doing this. Re-taken 2026-08-26 over the last 60 commits (2026-08-13 → 2026-08-26): `app/notification-card-capture.tsx` **14**, `lib/notification-card-ocr.ts` **6**, `app/import-bench.tsx` **5**, `app/transactions-view.tsx` **4**, `app/slip-capture.tsx` **3**. It is the top hot spot by a wider margin than the 13-to-11 recorded yesterday, and `app/transactions-view.tsx` — the runner-up in that reading — has dropped to fourth as the ledger-view arc finished. `app/globals.css` moves more often than either and is a stylesheet, not a structural target. **The conclusion strengthened when re-measured, which is the only reason it was acted on.**
+D-133 set it — **a boundary excludes every open question** — and D-140 sharpened it into a test: *a question is closed when the code has stopped asking it*. Every boundary since has begun where the last one ended, and the sixth stopped at **D-140** precisely because **D-141 was still asking**: whether the mailbox source is deleted after import, and so whether it becomes a permanent archive under a password derived from a citizen ID and therefore non-rotatable. That question is **still deferred by the owner and was not re-raised**.
 
-### The ordering, which is the point of the entry
+Six boundaries in a row were contiguous, and that had quietly hardened into an assumption. It was never the rule. **Eleven entries had accumulated behind one deferred question**, so obeying contiguity meant either waiting for an answer nobody was going to give this session, or raising the budget. The boundary begins at **D-142** instead and leaves D-141 in place, which keeps the rule exactly — nothing unresolved has been filed away — at the price of a gap.
 
-**The pure module and its tests were written and proved first; the component was not touched until they were green.** D-150 did it the other way round and got away with it because the owner Playwright suite covers the import path end to end. **Card capture has no such cover** — 31 owner specs and not one drives this form — so there was nothing to catch a mistake made while moving it.
+**The alternative was the raise, and it was declined for the reason D-134 records.** That entry raised the traps budget once, attached the condition that the next breach be paid with a split rather than a third raise, and D-149 then paid it. Repeating the move here would have been a knowing repeat of a precedent this repo has already decided against.
 
-That ordering paid immediately: `tests/notification-card-form.test.ts` was **55 tests passing against a component that still contained the old copy of every rule**, which is what made the component change a mechanical substitution rather than a rewrite under no observation.
+### Why the gap is safe, which is a fact about the checker and not a hope
 
-### What became one value
+`scripts/check-docs.mjs` pools the maintained file with **every** archive and then checks ids for duplicates and omissions across the whole set. It has never required the maintained file to be contiguous; six boundaries simply happened to leave it that way. Verified rather than assumed: the check passes at **153 decisions, 149 traps, indexes match** with D-141 sitting alone above D-153.
 
-Twenty-three `useState` slots became eight. Three groups were each one concept spread across several — the shape D-147 and D-148 were both defects of:
+**One thing did have to change and it is worth knowing before the eighth.** "Relocated unchanged" means the prose is unchanged, **not** that every byte is. A markdown link target written relative to the repo root resolves two directories wrong once the entry lives in `docs/decisions/`, and `check:docs --strict` caught exactly that — D-146's link to `ARCHIVE-D-130-D-133.md`. The sixth boundary had already met this and solved it the same way: the **label** keeps the full path, the **target** becomes the bare sibling filename. The eleven entries are otherwise byte-identical, proved by diffing them against the pre-split file rather than by reading them.
 
-- **`CardReading`** replaces `regions`, `chosen`, `crops`, `notes`, `reading` and `readerNote`. Those six made an illegal state ordinary: cutting up to six crops takes long enough for the owner to switch cards while it runs, so `crops` belonging to a card other than `chosen` was a routine intermediate — one card's picture beside another card's figures, above an append-only Capture button. Choosing a card and dropping its predecessor's crops is now one transition. The separate `reading` boolean is gone with it: every exit leaves a phase, so the flag cannot desync from what it describes.
-- **`CardTyped`** replaces the nine boxes and the remembered offer. `resetTyped()` named nine setters by hand and `offerPrefill` named six by hand — two lists of the same fields with nothing checking they agreed. `GOTCHAS` records the general answer (*a helper is not the fix, because a helper is still a list*); this is it. **`typedFromPrefill` returns a whole form built from the empty one**, so "a refused field is blank rather than inherited" (D-114) is a property of the type instead of a thing to remember.
-- **`CardResult`** replaces `status` and `error`, which were mutually exclusive in fact and independent in the type — both could stand at once and show two banners with contradictory news.
-
-### The gate returns the request, so the button and the body are one decision
-
-The rule guarding the append-only row was written **twice**: as `ready`, which disabled the button, and restated condition by condition at the top of `submit`, because a submit can arrive by routes that never touched the button. That restatement was defence-in-depth against a drift it could equally well cause — it is only as current as the last person to remember it, which is exactly what D-148 was.
-
-`captureRequest` now answers with the **body** rather than with a boolean. `ready` is `captureRequest(...) !== null` and `submit` sends what it returned. What enables the button is literally what is sent. The test parses its output through `notificationCardCaptureSchema`, so the client and the route agree about the body or the suite fails — rather than the disagreement surfacing as a rejected capture of a real card.
-
-### What deliberately did not move
-
-- **The banner markup stayed in the component.** D-150 refused to extract it because the banners differ in content and one carries action buttons, so a shared component would take arbitrary children and be a pass-through wrapper. Nothing here changes that.
-- **`useResultBanner` was reused, not rewritten.** It already existed and this file was already a caller.
-- **`lib/notification-card-prefill.ts` is untouched**, as are `lib/notification-card.ts`, `lib/notification-cards.ts` and the strict CSP. The pre-fill guarantees are load-bearing and this change routes around them rather than through them.
-
-### Behaviour that did change, stated rather than buried
-
-- **A new screenshot now clears the free-text boxes too.** Choosing a different card on the same screenshot already cleared counterparty, category and note; loading a *different screenshot* did not, so those three could ride from one image to the next while every other box was replaced. Counterparty has a crop of its own, so that was the same inheritance hazard by a slower route. Both paths now clear everything.
-- **A success and a failure can no longer be shown at once.**
-- **The reference-data failures now use the same one banner** rather than a second independent slot.
-
-### The guards followed the code, and were red-proved doing it
-
-`tests/privacy.test.ts` guards this file with source greps, and three of them failed the moment the code moved — the direction gate, the pre-fill's single door, and the audit trail's field-names-never-values. **That is them working.** Each was moved to where the behaviour now is rather than loosened, and the banner/scroll guard added by D-150 passed untouched, which is the evidence that the markup really did stay put.
-
-Two were also strengthened. The pre-fill guard now enumerates **every `setTyped(` call in the component** and requires each to be an emptying or the tested pre-fill — the machine-checked list D-151 established for `discardLoadedStatement`, applied to the value that replaced nine boxes. The audit guard now asserts the component assembles **no request body of its own**, so a second contract with migration 019 cannot appear beside the tested one.
-
-**Everything was proved by breaking it.** Filling the direction control from the word failed 3 tests by name including the KBank-incoming case a grep cannot see; the loose `!== "contradicted"` gate failed the test that separates *no second signal* from *a second signal that failed*; letting a crop outlive its card failed the illegal-state test; and a rogue second write into the boxes failed the new enumeration guard, which named the offending call. All four were reverted.
-
-### What `/code-review` caught, which is the reason it runs before the ask (D-125)
-
-**It found a real regression, introduced by this change, in the gate on an append-only row.** `readImage` establishes the `read` phase and then cuts crops inside the same `try`; the `catch` called `readerRefused`, which **replaced the whole reading**. The old code could not do this — its `catch` only set `readerNote`, so `regions` stayed committed and the cross-check stayed armed.
-
-What that costs is not a missing picture. With no card in hand `directionAgrees` returns `true`, because there is genuinely no second signal — so **`captureRequest` stops requiring D-099's printed-word cross-check**, while the boxes still hold the amount, balance, digits and date `typedFromPrefill` put there from that very card, now with no crops to check them against. A pre-filled form, freshly submittable on one signal, under a banner reading *This image could not be read. Type the values from the card yourself.* A crop failure is reachable — `selectCard` guards its own call for exactly that reason, which is what makes the omission fifteen lines below it the ordinary kind of mistake.
-
-**The remedy is a value, not a `.catch()`.** `readerFailed(current, why)` refuses to downgrade a reading that found cards, so the invariant holds wherever a failure arrives rather than where someone remembered to guard. The `.catch()` was added too, because the owner should still be told the crops failed. Red-proved by restoring the one-line bug and watching the test fail by name.
-
-Three smaller findings, all taken: a **false claim about the build config** — a comment said the React Compiler was enabled and it is not (`next.config.ts` sets no `experimental.reactCompiler`; the rule that had rejected the `useMemo` ships with `eslint-config-next`'s `react-hooks` set and runs lint-only), so nothing was memoising the derivations at all; both `useMemo`s are restored in the form the rule accepts, keyed on `channel` rather than the derived `layout`. A **self-contradicting docstring** — *nothing here fills a value in from the image* has been false since D-114 and this change rewrote the block around it without removing it. And `readyToCapture` was **dead code whose only test was its own body restated**; both are deleted, with a comment where each stood saying why, because the property now holds by construction.
-
-- Evidence: Vitest **790 passed / 7 skipped across 37 files** (up 56 from 734/36; skip count unchanged at **7**). Playwright owner **31/31**, isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` at 151 decisions and 149 traps, tsc and ESLint clean. pgTAP not re-run and deliberately so — no SQL has moved since 2026-08-18. `app/notification-card-capture.tsx` 1,081 → 895 lines, against 591 in the new module and 652 in its tests — **this is not a line-count win and is not claimed as one**. What changed is that ~500 lines of decisions moved behind an interface and acquired 55 committed tests, which is the lens D-151 already established for `lib/statement-layout.ts`. D-150 (the pattern), D-151 (the target and the ordering), D-114/D-115 (the pre-fill guarantees), D-123 (sign not word), D-099 (two signals), D-122 (the absent key), D-148/D-147 (the defect class).
+- Evidence: `DECISIONS.md` **112 KB → 37 KB, 95% → 31%** — the deepest boundary yet at **eleven entries**, where the sixth managed seven and the fifth four. Counts unchanged at **153 decisions, 149 traps**, which is what proves nothing was dropped. D-133 (the rule), D-140 (the test that sharpened it), D-146 (the fifth boundary, and the entry whose link had to be re-pointed), D-149 (the sixth, and the split that paid D-134's condition), D-130 (the byte budget).

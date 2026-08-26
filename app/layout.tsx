@@ -3,9 +3,21 @@ import "@fontsource/ibm-plex-sans-thai/500.css";
 import "@fontsource/ibm-plex-sans-thai/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
+// The three pixel faces the interface can be switched to (PLAN task 42). All OFL-1.1, all Latin
+// only — Thai falls back to IBM Plex Sans Thai above, which is why that stack is never removed from
+// any of the switched families in `globals.css`. Bundled rather than fetched: `font-src 'self'`
+// admits no external font host, and weakening the CSP for typography is not a trade this app makes.
+import "@fontsource/press-start-2p/400.css";
+import "@fontsource/pixelify-sans/400.css";
+import "@fontsource/pixelify-sans/500.css";
+import "@fontsource/pixelify-sans/600.css";
+import "@fontsource/silkscreen/400.css";
+import "@fontsource/silkscreen/700.css";
 import "./globals.css";
+import { cookies } from "next/headers";
 import type { Metadata, Viewport } from "next";
 import { SiteHeader } from "@/app/site-header";
+import { FONT_COOKIE, fontChoiceFrom } from "@/lib/ui-font";
 
 export const metadata: Metadata = {
   title: "Private Ledger",
@@ -31,15 +43,22 @@ export const viewport: Viewport = { colorScheme: "light", themeColor: "#fefae0" 
 // lives here instead of inside a page component. Each route renders its own sections into
 // `main` and owns its own state; nothing is shared across a navigation but the session
 // cookie, which is what makes the split honest rather than cosmetic.
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // **Resolved on the server, before first paint.** Holding the choice in browser storage instead
+  // would paint the default face and then swap, and the only cure is a blocking inline script this
+  // app's CSP would have to admit. Read through `fontChoiceFrom`, which is total over untrusted
+  // input: a cookie is client-supplied, and the only thing that can reach this attribute is one of
+  // four known tokens. (`lib/ui-font.ts` carries the full reasoning — it can name the API this file
+  // may not, because the guard against client storage covers `app/` and nothing else.)
+  const font = fontChoiceFrom((await cookies()).get(FONT_COOKIE)?.value);
   return (
-    <html lang="en">
+    <html lang="en" data-font={font}>
       <body>
         <nav aria-label="Skip links">
           <a className="skip-link" href="#main">Skip to content</a>
         </nav>
         <div className="app-shell">
-          <SiteHeader />
+          <SiteHeader font={font} />
           <main id="main">{children}</main>
           <footer><span>Private Ledger</span><p>No analytics · no session replay · no financial response caching</p></footer>
         </div>
