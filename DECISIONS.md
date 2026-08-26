@@ -207,6 +207,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-154** — The seventh archive boundary steps over an open question instead of stopping short of it, and the maintained file now has a gap
 - **D-155** — The ledger loads on arrival, and what bounds the payload is the width of a row rather than a page of them
 - **D-156** — Standing copy folds behind an `(i)`; a warning about an irreversible write does not, and moves closer to the control
+- **D-157** — The pixel faces get a measured `size-adjust`, every route opens with a title, and the standing copy folds the rest of the way
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -423,3 +424,47 @@ On a phone the **shell header** occupies most of the first screen before the led
 A third comment claimed the contracted cash bench still sat at the shared 167px indent while the numbers produced 145px. The numbers were corrected to match the claim rather than the claim softened, because the alignment was the intent.
 
 - Evidence: Playwright isolated **34 passed / 4 skipped** (from 28) — three new specs across both desktop and phone projects: the disclosure driven by keyboard-reachable role with the collapsed copy asserted absent from the DOM, the accessible names of heading and landmark pinned with `exact`, and a 401 on the load-on-arrival raising no alert. Axe clean on every route with the panels closed and after the review's own pass. Owner suite **31/31**. Screenshots at both widths under `.runtime/shots/` (throwaway, synthetic project, gitignored). D-114 (the other warning of this class), D-137 (Cornsilk as the ground, which the panel treatment uses), D-153 (the `ch`-cap trap), D-155 (the loading half of the same restructure).
+
+## D-157 — The pixel faces get a measured `size-adjust`, every route opens with a title, and the standing copy folds the rest of the way
+
+- Date: 2026-08-26
+- Status: **Done.** `app/globals.css`, `app/layout.tsx`, `app/site-header.tsx`, `app/ledger-note.tsx`, `app/ledger-summary.tsx`, `app/transactions-view.tsx`, the four route intros, `tests/e2e/font-picker.spec.ts`, `DESIGN.md`. No SQL, no route, no contract change.
+- Context: the owner ran the deployed app in Press Start 2P and asked why that face was so much bigger than the others; he also judged the ledger headline advertising rather than naming, asked for the same pattern on every route, and found the totals block still too verbose. Supersedes **D-136** and **D-137** on the palette's documentation, and completes PLAN task 42.
+
+### Why one face was bigger, which is a measurement and not a preference
+
+Cap heights per 100px of font-size, measured in the real browser through `TextMetrics`: IBM Plex **70**, Press Start 2P **100**, Pixelify Sans **63**, Silkscreen **63**. **Press Start 2P draws its capitals on a full em** — most faces sit near 0.7 — so at the same CSS size every heading, button and label came out **1.43x** what the layout was designed for, while the other two came out slightly small.
+
+**The previous answer was a symptom fix and could only ever be partial.** It stepped down individual selectors — table headers, figure cells, the eyebrow, the brand line — and reached only what somebody remembered to name. Everything else stayed 43% too big, which is exactly what the owner was looking at.
+
+`size-adjust` fixes it at the cause: the descriptor scales glyphs against the em, so one CSS `font-size` means one visual size in every face. 70% / 111% / 111% put all three on IBM Plex's cap height. The faces are therefore declared **locally** rather than imported from Fontsource's CSS, since a descriptor can only be set on the `@font-face` rule — and under a **different family name**, because two rules with matching descriptors resolve by declaration order and CSS bundling does not promise one.
+
+**Heights normalise; widths do not**, and pretending otherwise would have re-opened D-138. After adjustment the widest real shape measures 910 units in Press Start 2P and 958 in Silkscreen against IBM Plex Mono's 780, so the numeric columns keep a step-down — 12px where it used to be 8px, which is the size the measurement allows rather than the one that looked right. `tests/e2e/font-picker.spec.ts` re-measures every face at phone width.
+
+### A title is not a headline
+
+*"Every confirmed row, and nothing else."* was the owner's own example of the problem he had named a day earlier: a line written to sell the thing rather than to name it. Every route now opens with a plain noun — **Ledger, Import, Slips, Recovery** — with what stood there behind the `(i)` where it was worth keeping. Two of the four sentences were worth keeping and are: where a slip's image goes, and where a backup's password does not.
+
+The two-column intro band went with them. It existed to hold a paragraph in its right-hand column.
+
+**The totals block folded on the same rule** (D-156's rule, applied where it had not been): each line was a bold count followed by three or four sentences of matching rule. The count is what changes and what the owner is looking for; the rule is true, worth writing down once, and was being re-read on every visit.
+
+### The header was the real obstacle on a phone, and the page could not fix it
+
+D-156 recorded this and declined to act on it, because the owner's critiques were about the ledger page and the header is every route's. He then asked for it directly. At iPhone 13 width the shell ran past 600px before any page's own heading began — brand, privacy chip, typeface picker and its two-line note, two sign-in controls, the route row, the session line.
+
+**The route row and the brand stay; everything touched about once a week folds behind one Settings control.** The wrapper is `display: contents` above 700px, so the desktop header is laid out exactly as before rather than re-derived — its children go on being flex items of the header itself. The strapline is hidden on phones because it is decoration costing a line of the first screen.
+
+**A disclosure that hides a control the suite drives has to be opened by the suite**, and `tests/e2e/font-picker.spec.ts` now does — by checking whether the toggle is visible rather than by checking the project name, so the breakpoint stays the stylesheet's business.
+
+### One defect written and caught in the same change
+
+Folding the totals prose put a `LedgerNote` inside `<p className="ledger-status">`, and the note rendered a `<p>`. **A `<p>` cannot contain a `<p>`**: the browser closes the outer one where the inner begins and the rest of the line escapes the paragraph. The panel is a `<span>` now, carrying both `display: block` and `flex-basis: 100%` because it lands in two kinds of container and each ignores the other's mechanism.
+
+### What supersedes D-136 and D-137, and what does not
+
+**The palette itself is unchanged** — Cornsilk still the ground, Copper still the action colour, no dark scheme. What is superseded is their *documentation*: `DESIGN.md` described the cool-mist/navy palette for five days after the app stopped using it, and `check:docs --strict` could not see it because it reads structure rather than meaning. It is rewritten from `app/globals.css` rather than from memory, and it now carries the panel chrome, the type measurements and the standing-copy rule as well as the tokens.
+
+**Panel chrome is the last of task 42's visual direction**: a doubled edge — `--frame-outer` outside the hairline, `--frame-inner` inside — on the surfaces that are genuinely panels, as `box-shadow` so nothing moves. Page furniture deliberately does not get it, because framing everything is the same mistake as explaining everything.
+
+- Evidence: Vitest **823 passed / 7 skipped across 39 files**, unchanged — this touches no `lib/` decision. Playwright isolated **34 passed / 4 skipped** including the per-face viewport measurement at phone width and axe on every route; owner **31/31** on a re-run, after one run hit the documented `captures a slip from its QR` wasm intermittent on two adjacent slip specs. `tsc` and `pnpm exec eslint .` clean. D-136 and D-137 (the palette, superseded as documentation only), D-138 (the phone overflow this had to avoid re-opening), D-153 (the switch itself), D-156 (the rule this applies).

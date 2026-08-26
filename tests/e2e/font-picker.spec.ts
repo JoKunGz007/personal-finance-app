@@ -15,7 +15,23 @@ import { FONT_CHOICES, type FontChoice } from "@/lib/ui-font";
 
 const HTML = "html";
 
+/**
+ * Opens the header's Settings panel if this viewport keeps one closed.
+ *
+ * The picker moved behind a disclosure on phones (PLAN task 42), because the header was taking most
+ * of the first screen there before any page's own heading began. Above 700px the toggle is
+ * `display: none` and this does nothing — which is why it is a visibility check rather than a
+ * project-name check: the breakpoint is the CSS's business, not this spec's.
+ */
+async function openHeaderPanel(page: import("@playwright/test").Page) {
+  const toggle = page.getByRole("button", { name: "Settings" });
+  if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") === "false") {
+    await toggle.click();
+  }
+}
+
 async function pick(page: import("@playwright/test").Page, font: FontChoice) {
+  await openHeaderPanel(page);
   await page.getByLabel("Typeface").selectOption(font);
   await expect(page.locator(`html[data-font="${font}"]`)).toBeVisible({ timeout: 15_000 });
 }
@@ -32,6 +48,9 @@ test("applies a typeface, and remembers it across a reload", async ({ page }) =>
   await page.reload();
   await expect(page.locator(HTML), "it must survive a reload or it is not a setting")
     .toHaveAttribute("data-font", "press-start-2p");
+  // The disclosure is per-visit state and the face is not: the panel closes on reload and the
+  // typeface does not, which is the distinction the cookie exists to make.
+  await openHeaderPanel(page);
 
   const family = await page.locator("body").evaluate((node) => getComputedStyle(node).fontFamily);
   expect(family, "the chosen face must lead the stack").toContain("Press Start 2P");

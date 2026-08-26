@@ -17,6 +17,7 @@ import {
 } from "@/lib/import-flow";
 import { ledgerRequest } from "@/lib/wire";
 import { StatementBatch, type BatchHandoff } from "@/app/statement-batch";
+import { LedgerNote } from "@/app/ledger-note";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
 const stages: Array<{ id: Stage; label: string }> = [
@@ -568,12 +569,21 @@ export function ImportBench() {
 
   return (
     <>
+      {/* A title and an `(i)`, matching every other route (PLAN task 42). Both folded sentences
+          are claims about a boundary — where the PDF is opened, and what is allowed across the
+          confirmation — so they are worth being able to check and not worth re-reading. */}
       <section className="intro" aria-labelledby="page-title">
         <div>
           <p className="eyebrow">Statement import · private workspace</p>
-          <h1 id="page-title">Review every balance<br />before anything is saved.</h1>
+          <h1 id="page-title">Import</h1>
+          <div className="heading-note">
+            <LedgerNote label="About importing">
+              Review every balance before anything is saved. The PDF is unlocked and parsed in a
+              dedicated browser worker, and only validated transaction facts can cross the
+              confirmation boundary.
+            </LedgerNote>
+          </div>
         </div>
-        <p className="intro-copy">The PDF is unlocked and parsed in a dedicated browser worker. Only validated transaction facts can cross the confirmation boundary.</p>
       </section>
 
       <nav className="stage-nav" aria-label="Statement import progress" tabIndex={0}>

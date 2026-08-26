@@ -63,7 +63,13 @@ export function LedgerNote({ label, children }: {
         <span aria-hidden="true">i</span>
         <span className="sr-only">{label}</span>
       </button>
-      {open ? <p id={panelId} className="note-panel">{children}</p> : null}
+      {/* **A `<span>`, not a `<p>`, and that is a correctness constraint rather than a style.** These
+          now sit in two kinds of container: a flex row beside a heading, and *inside* a
+          `<p className="ledger-status">` beside a count. A `<p>` cannot contain a `<p>` — the
+          browser closes the outer one where the inner begins and the rest of the line escapes the
+          paragraph. A `<span>` is valid in both, and `display: block` gives it its own line in the
+          paragraph while `flex-basis: 100%` does the same job in the flex row. */}
+      {open ? <span id={panelId} className="note-panel">{children}</span> : null}
     </>
   );
 }

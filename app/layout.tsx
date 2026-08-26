@@ -3,16 +3,14 @@ import "@fontsource/ibm-plex-sans-thai/500.css";
 import "@fontsource/ibm-plex-sans-thai/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
-// The three pixel faces the interface can be switched to (PLAN task 42). All OFL-1.1, all Latin
-// only — Thai falls back to IBM Plex Sans Thai above, which is why that stack is never removed from
-// any of the switched families in `globals.css`. Bundled rather than fetched: `font-src 'self'`
-// admits no external font host, and weakening the CSP for typography is not a trade this app makes.
-import "@fontsource/press-start-2p/400.css";
-import "@fontsource/pixelify-sans/400.css";
-import "@fontsource/pixelify-sans/500.css";
-import "@fontsource/pixelify-sans/600.css";
-import "@fontsource/silkscreen/400.css";
-import "@fontsource/silkscreen/700.css";
+// **The three pixel faces are declared in `globals.css`, not imported here, and that is deliberate.**
+// Each needs a `size-adjust` descriptor — Press Start 2P draws its capitals at a full em, 1.43x
+// IBM Plex at the same `font-size`, which is why it looked enormous beside the others — and a
+// descriptor can only be set on the `@font-face` rule itself. Fontsource's own CSS carries none, so
+// the rules are written locally against its `.woff2` files. Still bundled rather than fetched:
+// `font-src 'self'` admits no external font host, and weakening the CSP for typography is not a
+// trade this app makes. All OFL-1.1, all Latin only — Thai falls back to IBM Plex Sans Thai above,
+// which is why that stack is never removed from any of the switched families.
 import "./globals.css";
 import { cookies } from "next/headers";
 import type { Metadata, Viewport } from "next";

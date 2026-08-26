@@ -7,6 +7,7 @@ import { type LedgerTotals, type SlipMatches } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
 import { type CapturedSlip } from "@/lib/slips";
 import { formatDate, type LedgerModes } from "@/app/ledger-shared";
+import { LedgerNote } from "@/app/ledger-note";
 
 /**
  * What sits above the table: either the matching banner, or the totals and what they rest on.
@@ -121,10 +122,22 @@ export function LedgerSummary({
         <div><dt>Net movement</dt><dd>{formatThb(totals.net)}</dd></div>
       </dl>
 
+      {/* **The counts stay; the rule behind them folds** (PLAN task 42). Each of these lines was a
+          bold count followed by three or four sentences explaining how the matching rule works —
+          true, worth having written down once, and re-read on every visit by an owner who has
+          known it for weeks. The count is the part that changes and the part he is looking for.
+
+          Rendered only when there is something to count, as before: a rule nobody has any records
+          under is not worth even an `(i)`. */}
       {slipCount > 0 ? (
         <p className="ledger-status">
           <b>Slips: {matches.bySlip.size} verified · {slipCount - matches.bySlip.size - matches.needsReview.size} awaiting a statement{matches.needsReview.size > 0 ? ` · ${matches.needsReview.size} needing review` : ""}</b>
-          {" · a slip is matched to a statement row only when the bank, the exact amount and a date within one day identify one row and no other slip claims it. No layout prints the slip's reference, so a match is a proposal from those three facts rather than an identifier the two records share."}
+          <LedgerNote label="How slips are matched">
+            A slip is matched to a statement row only when the bank, the exact amount and a date
+            within one day identify one row and no other slip claims it. No layout prints the
+            slip&apos;s reference, so a match is a proposal from those three facts rather than an
+            identifier the two records share.
+          </LedgerNote>
         </p>
       ) : null}
 
@@ -135,7 +148,13 @@ export function LedgerSummary({
             {cardMatches.needsReview.size > 0 ? ` · ${cardMatches.needsReview.size} needing review` : ""}
             {cardMatches.balanceConflict.size > 0 ? ` · ${cardMatches.balanceConflict.size} whose balance disagrees` : ""}
           </b>
-          {" · a card matches on the account it was bound to, the exact amount, a date within one day, and the balance it printed being equal to the row's. The balance is what a slip does not have: it breaks a tie between two rows of the same amount, and a card that fits on everything else while contradicting the balance refuses to pair rather than guessing. Recomputed on every load, and nothing about a card's match is stored yet."}
+          <LedgerNote label="How notification cards are matched">
+            A card matches on the account it was bound to, the exact amount, a date within one day,
+            and the balance it printed being equal to the row&apos;s. The balance is what a slip
+            does not have: it breaks a tie between two rows of the same amount, and a card that
+            fits on everything else while contradicting the balance refuses to pair rather than
+            guessing. Recomputed on every load, and nothing about a card&apos;s match is stored yet.
+          </LedgerNote>
         </p>
       ) : null}
     </>

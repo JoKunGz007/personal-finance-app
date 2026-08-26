@@ -49,6 +49,12 @@
   --saffron-wash: #f8edd7;
   --red: #9b2c2c;
   --radius: 6px;
+  /* **The panel frame** (PLAN task 42). A darkened Copper outer line with a Light Caramel inner
+     one — the treatment drawn on the design canvas, built from this app's own palette rather than
+     from anything of the game's. It is a `box-shadow` pair rather than two real borders, so it
+     costs no layout and reverts by deleting one declaration. */
+  --frame-outer: #8a4a15;
+  --frame-inner: #f0e2bd;
   --font-body: "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
   --font-data: "IBM Plex Mono", "Cascadia Mono", monospace;
 }
@@ -73,25 +79,103 @@
   `font-variant-numeric: tabular-nums` on `.numeric` still applies; a pixel face is monospaced by
   construction, so the columns stay aligned either way.
 */
+/*
+  **The three pixel faces, declared here so each can carry a `size-adjust`.**
+
+  This is the answer to "why is Press Start 2P bigger than the others", and it was measured rather
+  than guessed. At the same `font-size`, cap heights per 100px are: IBM Plex **70**, Press Start 2P
+  **100**, Pixelify Sans **63**, Silkscreen **63**. Press Start 2P puts its capitals on a *full em*,
+  which is unusual — most faces sit near 0.7 — so every heading, button and label drawn in it came
+  out **1.43x** the size the layout was designed for, while the other two came out slightly small.
+
+  `size-adjust` scales the glyphs against the em, so one CSS `font-size` now means one visual size
+  in every face. **That is the whole point: it fixes the cause once instead of the symptom per
+  element.** The previous approach stepped down individual selectors — table headers, figure cells,
+  the eyebrow, the brand line — and could only ever reach the ones somebody remembered.
+
+  The percentages are `70 / cap-height`, so each face's capitals land at IBM Plex's. A different
+  family name rather than an override of Fontsource's, because two `@font-face` rules with matching
+  descriptors resolve by declaration order and CSS bundling does not promise one.
+
+  Widths do not normalise with heights and still need their own attention below: after adjustment
+  the widest real amount is 910 units in Press Start 2P and 958 in Silkscreen against IBM Plex
+  Mono's 780, so the numeric columns keep a step-down — a much smaller one than before.
+*/
+@font-face {
+  font-family: "Press Start 2P Fitted";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 70%;
+  src: url("../node_modules/@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pixelify Sans Fitted";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 111%;
+  src: url("../node_modules/@fontsource/pixelify-sans/files/pixelify-sans-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pixelify Sans Fitted";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  size-adjust: 111%;
+  src: url("../node_modules/@fontsource/pixelify-sans/files/pixelify-sans-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Pixelify Sans Fitted";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  size-adjust: 111%;
+  src: url("../node_modules/@fontsource/pixelify-sans/files/pixelify-sans-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Silkscreen Fitted";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 111%;
+  src: url("../node_modules/@fontsource/silkscreen/files/silkscreen-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Silkscreen Fitted";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  size-adjust: 111%;
+  src: url("../node_modules/@fontsource/silkscreen/files/silkscreen-latin-700-normal.woff2") format("woff2");
+}
+
 :root[data-font="press-start-2p"] {
-  --font-body: "Press Start 2P", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
-  --font-data: "Press Start 2P", "IBM Plex Mono", "Cascadia Mono", monospace;
+  --font-body: "Press Start 2P Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Press Start 2P Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
 :root[data-font="pixelify-sans"] {
-  --font-body: "Pixelify Sans", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
-  --font-data: "Pixelify Sans", "IBM Plex Mono", "Cascadia Mono", monospace;
+  --font-body: "Pixelify Sans Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Pixelify Sans Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
 :root[data-font="silkscreen"] {
-  --font-body: "Silkscreen", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
-  --font-data: "Silkscreen", "IBM Plex Mono", "Cascadia Mono", monospace;
+  --font-body: "Silkscreen Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Silkscreen Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
 
 /*
-  Press Start 2P is drawn on an 8px em and runs about twice the advance width of IBM Plex Mono at the
-  same size, so the 10px table headers and the 12–13px figure cells overflow their columns unmodified.
-  Stepped down where the app sets a fixed small size rather than letting the columns grow, because the
-  column widths are a contract with the ledger's horizontal scroll (`.ledger-table` min-width).
-  Measured against the widest real shape — a seven-figure amount with separators and a sign.
+  **What `size-adjust` does not fix is width**, so the numeric columns still get a step-down — a far
+  smaller one than they needed before it. Heights normalise, advances do not: after adjustment the
+  widest real shape, `-1,234,567.89` at 13 characters, measures **910** units per 100px in Press
+  Start 2P and **958** in Silkscreen against IBM Plex Mono's **780**.
+
+  The amount and balance columns are 145px less 14px of `td` padding a side = **117px** of content.
+  Press Start 2P at 12px is 109px and fits; at 13px it is 118px and spills by one. Silkscreen at
+  12px is 115px and fits with two to spare. **These are the sizes the measurement allows, not the
+  ones that looked right** — `tests/e2e/font-picker.spec.ts` re-measures every face at phone width
+  rather than trusting this paragraph.
+
+  Headers stay a step below their cells because they carry words rather than figures and wrap badly.
 */
 /* **Both selectors name `th`, because `.numeric` is a class and `th` is an element.** Written as a
    bare `th` rule beside a bare `.numeric` rule, the header step-down lost every `<th class="numeric">`
@@ -99,30 +183,40 @@
    kept the cell size while every other header shrank. The same shape as the `table` versus
    `.ledger-table` trap already in GOTCHAS: an element selector cannot out-rank a class. */
 :root[data-font="press-start-2p"] th,
-:root[data-font="press-start-2p"] th.numeric { font-size: 8px; letter-spacing: .02em; }
-/* Scoped to `td` so it cannot reach a header and re-open the clash above.
-   **Measured, not assumed** — the previous 10px here carried a comment claiming it had been, and it
-   had not. Press Start 2P advances exactly 1em per glyph, so the widest real shape, `-1,234,567.89`
-   at 13 characters, is 13 × the size. The amount and balance columns are 145px less `td` padding of
-   14px a side = 117px: 10px spills at 130px, 8px fits at 104px. `tests/e2e/font-picker.spec.ts`
-   re-measures rather than trusting this paragraph. */
+:root[data-font="press-start-2p"] th.numeric { font-size: 9px; letter-spacing: .02em; }
 :root[data-font="press-start-2p"] td.numeric,
 :root[data-font="press-start-2p"] td time,
-:root[data-font="press-start-2p"] td .mono { font-size: 8px; }
-:root[data-font="press-start-2p"] .eyebrow,
-:root[data-font="press-start-2p"] .section-index { font-size: 9px; letter-spacing: .04em; }
-:root[data-font="press-start-2p"] .brand small,
-:root[data-font="press-start-2p"] td em { font-size: 8px; letter-spacing: .02em; }
+:root[data-font="press-start-2p"] td .mono { font-size: 12px; }
 /* It has no lowercase at all, so uppercasing buys nothing and costs the width of wider glyphs. */
 :root[data-font="press-start-2p"] th,
 :root[data-font="press-start-2p"] .eyebrow,
 :root[data-font="press-start-2p"] .section-index { text-transform: none; }
 
-/* Silkscreen sits between the two: narrower than Press Start 2P, still short of Plex Mono. Same
-   `th`-and-`th.numeric` pairing for the same specificity reason. */
+/* Silkscreen is the widest of the three once heights are equal, which is the opposite of what it
+   looks like unadjusted. Same `th`-and-`th.numeric` pairing for the same specificity reason. */
 :root[data-font="silkscreen"] th,
-:root[data-font="silkscreen"] th.numeric { font-size: 9px; }
+:root[data-font="silkscreen"] th.numeric { font-size: 10px; }
 :root[data-font="silkscreen"] td.numeric { font-size: 12px; }
+
+
+/* **Panel chrome** (PLAN task 42, the Stardew direction). Applied to the surfaces that are
+   genuinely *panels* — something lifted off the page with its own edge — and deliberately not to
+   the page furniture: the intro rule, the bench dividers and the table keep the single hairline
+   they had, because framing everything is the same mistake as explaining everything.
+
+   `box-shadow` and not `border`, so nothing moves: the outer ring sits outside the existing 1px
+   border and the inner one just inside it. */
+.note-panel,
+.owner-access-panel,
+.slip-identity {
+  box-shadow: 0 0 0 1px var(--frame-inner) inset, 0 0 0 2px var(--frame-outer);
+  border-color: var(--frame-inner);
+}
+/* The totals strip is a band rather than a box, so it takes the frame on its two long edges only. */
+.statement-strip {
+  border-block-color: var(--frame-outer);
+  border-block-width: 2px;
+}
 
 * { box-sizing: border-box; }
 html { background: var(--mist); color: var(--navy); scroll-behavior: smooth; }
@@ -169,6 +263,18 @@ button:disabled { cursor: wait; opacity: .65; }
    gets *smaller*, which is the opposite of what the trial is for. That is D-138 again, the defect
    the owner found on his own phone and no suite could see. `tests/e2e/font-picker.spec.ts` now
    measures it under iPhone 13 for every face. */
+/* **The header's secondary controls, folded on a phone** (PLAN task 42).
+
+   `display: contents` is what keeps the desktop header byte-identical to what it was: the wrapper
+   vanishes from layout and its children go on being flex items of `.site-header` itself. Only
+   below 700px does it become a real row that the toggle opens and closes.
+
+   The measurement that forced this: at iPhone 13 width the header ran past 600px before the ledger
+   page's own heading began — brand, privacy chip, typeface picker and its two-line note, two
+   sign-in controls, the route row and the session line. The route row and the brand are what a
+   person needs on arrival; the rest is touched about once a week. */
+.header-panel { display: contents; }
+.header-toggle { display: none; }
 .header-side { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 /* The session line, announced politely rather than as a status role: every route already
    has a status line of its own, and a second would make both ambiguous. */
@@ -208,17 +314,16 @@ button:disabled { cursor: wait; opacity: .65; }
 .stage-nav li.done span { color: var(--celadon-ink); border-color: var(--celadon-ink); background: var(--celadon); }
 
 main { width: min(1380px, calc(100% - clamp(40px, 10vw, 152px))); margin: 0 auto; }
-.intro { padding: clamp(56px, 8vw, 112px) 0 52px; display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(260px, .7fr); align-items: end; gap: 64px; border-bottom: 1px solid var(--navy); }
+/* **One shape for all four routes** (PLAN task 42). This was a two-column band with up to 112px of
+   padding and a paragraph in the right-hand column; every route now carries a short title, an
+   eyebrow and an `(i)`, so there is no second column and no reason to spend a third of a phone
+   screen before the page starts. */
+.intro { padding: clamp(28px, 4vw, 48px) 0 24px; display: grid; gap: 0; border-bottom: 1px solid var(--navy); }
 .eyebrow, .section-index { margin: 0 0 12px; color: var(--blue); font: 500 11px/1.3 var(--font-data); text-transform: uppercase; letter-spacing: .1em; }
 h1, h2, h3, p { overflow-wrap: anywhere; }
 h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weight: 500; line-height: .98; letter-spacing: -.055em; text-wrap: balance; }
-.intro-copy { margin: 0 0 5px; max-width: 440px; color: var(--muted); font-size: 17px; line-height: 1.65; }
-/* **The ledger page's intro, and only that page's** (PLAN task 42). The other three routes explain
-   a thing the owner is about to do; this one sits above the table that *is* the page, and up to
-   112px of padding plus a paragraph was pushing the rows off a phone screen entirely. The second
-   grid column went with the paragraph, so this collapses to one. */
-.intro.tight { padding: clamp(28px, 4vw, 48px) 0 24px; grid-template-columns: 1fr; gap: 0; }
-.intro.tight h1 { font-size: clamp(30px, 4vw, 52px); }
+/* A title rather than a sentence, so it no longer needs the size a headline did. */
+.intro h1 { font-size: clamp(28px, 3.4vw, 44px); }
 
 /* **The `(i)` disclosure** (PLAN task 42, `app/ledger-note.tsx`). A button rather than a hover
    tooltip: the owner reads this ledger on a phone, where hover does not exist, and `title` is
@@ -251,8 +356,11 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 /* `display: block` inside an inline-flex parent so the panel drops onto its own line rather than
    stretching the heading it hangs off. `max-width` in `ch` is fine here — this is body text and
    it is *supposed* to re-measure when the face changes. */
+/* `display: block` **and** `flex-basis: 100%`, because this lands in two kinds of container and
+   each ignores the other's mechanism: inside a `<p class="ledger-status">` the block is what gives
+   it a line, and inside a flex row the block is blockified away and the basis does it. */
 .note-panel {
-  flex-basis: 100%; max-width: 62ch; margin: 10px 0 0;
+  display: block; flex-basis: 100%; max-width: 62ch; margin: 10px 0 0;
   padding: 12px 14px; color: var(--muted);
   border: 1px solid var(--line); border-left: 3px solid var(--saffron); border-radius: var(--radius);
   background: var(--mist);
@@ -667,8 +775,6 @@ footer p { margin: 0; }
 .immutability-note { margin: 22px 0 0; padding: 13px; color: var(--muted); border: 1px solid var(--line); background: var(--mist); font-size: 13px; }
 
 @media (max-width: 980px) {
-  .intro { grid-template-columns: 1fr; gap: 28px; }
-  .intro-copy { max-width: 650px; }
   .import-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .binding-controls { margin-left: 0; grid-template-columns: 1fr 1fr; }
   .binding-bench .warning { margin-left: 0; }
@@ -707,6 +813,19 @@ footer p { margin: 0; }
   .site-header { height: auto; min-height: 68px; padding-block: 12px; }
   .privacy-chip { max-width: 130px; font-size: 11px; }
   .site-nav { order: 3; flex-basis: 100%; }
+  /* The toggle takes the brand's row; the panel takes a row of its own under the nav. */
+  .header-toggle {
+    display: inline-flex; align-items: center; min-height: 40px; padding: 8px 14px;
+    color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--paper-strong); font-size: 13px; font-weight: 600;
+  }
+  .header-toggle[aria-expanded="true"] { color: var(--paper-strong); border-color: var(--blue); background: var(--blue); }
+  .header-panel { order: 4; flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 12px; }
+  .header-panel[data-open="false"] { display: none; }
+  .header-panel .header-side { flex-basis: 100%; }
+  /* The face note is the tallest thing in here and the least needed twice: it says the pixel faces
+     are Latin-only, which is true of all three and read once. */
+  .font-picker .field-help { max-width: none; font-size: 10px; }
   .stage-nav { overflow-x: auto; }
   .stage-nav ol { min-width: 810px; }
   main { width: calc(100% - 32px); }
@@ -725,9 +844,7 @@ footer p { margin: 0; }
   /* **A 47px heading eats a quarter of a phone screen before a word of content.** `12vw` was
      written against a desktop clamp where the floor never bound; at 390px the floor is what runs,
      and it was set for a tablet. The ceiling still governs everything above this breakpoint. */
-  .intro { padding: 34px 0 26px; }
   h1 { font-size: clamp(29px, 8.4vw, 40px); }
-  .intro-copy p { font-size: 15px; }
 
   /* **The first control on `/ledger` sat roughly 1,200px down**, behind an intro and a bench
      paragraph, on a viewport 844px tall. The prose is worth reading once and is in the way every
@@ -752,7 +869,10 @@ footer p { margin: 0; }
      it only appears after a capture and no automated run captures a card. Raised here rather than in
      the base rule, which is deliberately compact on a desktop where a pointer is doing the aiming. */
   .capture-result .secondary-button { min-height: 44px; padding: 10px 15px; }
-  .brand { padding-block: 4px; }
+  .brand { padding-block: 4px; min-width: 0; }
+  /* The strapline is decoration, and on a phone it is decoration costing a line of the first
+     screen — which is the whole of what the header work was about. */
+  .brand small { display: none; }
   .skip-link { padding: 13px 16px; }
   .link-button { padding-block: 12px; margin-block: -12px; }
 

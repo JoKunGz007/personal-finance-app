@@ -14,18 +14,24 @@ export const dynamic = "force-dynamic";
 export default function LedgerPage() {
   return (
     <>
-      <section className="intro tight" aria-labelledby="page-title">
+      {/* **A title, not a sentence.** This read "Every confirmed row, and nothing else." until
+          2026-08-26, and the owner's objection to it was the same one he had made about the page
+          as a whole: it is a line written to sell the thing rather than to name it. Every route
+          now carries a plain noun for the surface, with the sentence that used to sit here behind
+          the `(i)` if it was worth keeping at all.
+
+          The `(i)` is a **sibling** of the heading, never a child. This `<h1>` is the
+          `aria-labelledby` target for the section, so a button inside it would put its own label —
+          and the disclosed paragraph — into the name of both the heading and the landmark.
+          `app/ledger-note.tsx` carries the measurement. */}
+      <section className="intro" aria-labelledby="page-title">
         <div>
           <p className="eyebrow">Ledger · private workspace</p>
-          {/* The `(i)` is a **sibling** of the heading, never a child of it. This `<h1>` is the
-              `aria-labelledby` target for the section, so a button inside it would put its own
-              label — and the disclosed paragraph — into the name of both the heading and the
-              landmark. `app/ledger-note.tsx` carries the measurement. */}
-          <h1 id="page-title">Every confirmed row,<br />and nothing else.</h1>
+          <h1 id="page-title">Ledger</h1>
           <div className="heading-note">
             <LedgerNote label="About this ledger">
-              Balances are exact and computed over whole accounts, never over the rows a filter
-              happened to match.
+              Every confirmed row and nothing else. Balances are exact and computed over whole
+              accounts, never over the rows a filter happened to match.
             </LedgerNote>
           </div>
         </div>

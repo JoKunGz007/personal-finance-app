@@ -27,6 +27,18 @@ const ROUTES = [
 export function SiteHeader({ font }: { font: FontChoice }) {
   const pathname = usePathname();
   const [session, setSession] = useState("");
+  /**
+   * Whether the header's secondary controls are on screen. **Phone only** — above 700px the panel
+   * is `display: contents` and this decides nothing, which is why there is no media query in here.
+   *
+   * The reason it exists: on a phone this header was taking most of the first screen before any
+   * route's own heading began — brand, privacy chip, typeface picker and its two-line note, two
+   * sign-in controls, the route row and the session line. The ledger page's whole point is the
+   * table, and it could not be the most visible thing on the device while that held. The route row
+   * and the brand stay; everything a person touches once a week folds behind one control, which is
+   * the same trade the `(i)` disclosures make with copy.
+   */
+  const [panelOpen, setPanelOpen] = useState(false);
 
   // Share-to-app registers its worker here rather than on the slips page, and the move is
   // routing's doing. The share target delivers a POST that only a registered worker can
@@ -96,6 +108,23 @@ export function SiteHeader({ font }: { font: FontChoice }) {
         </ul>
       </nav>
 
+      {/* Phone only: `display: none` above 700px. Placed before the panel so it keeps its position
+          in the flex row when the panel collapses. */}
+      <button
+        type="button"
+        className="header-toggle"
+        aria-expanded={panelOpen}
+        aria-controls="header-panel"
+        onClick={() => setPanelOpen((current) => !current)}
+      >
+        Settings
+      </button>
+
+      {/* **`display: contents` above 700px**, so the desktop header is laid out exactly as it was:
+          these children go on participating in the header's own flex row rather than being wrapped
+          in a box. Below it the wrapper becomes a real full-width row that `panelOpen` shows or
+          hides. Nothing here is a landmark, so flattening it costs no semantics. */}
+      <div className="header-panel" id="header-panel" data-open={panelOpen}>
       <div className="header-side">
         <span className="privacy-chip"><i aria-hidden="true" /> Documents stay on this device</span>
         <FontPicker value={font} />
@@ -111,9 +140,9 @@ export function SiteHeader({ font }: { font: FontChoice }) {
         ) : null}
       </div>
 
-      {/* A direct child of the header rather than of `.header-side`, so it can take the
-          full row when it has a panel to show — the enrolment square and its key do not fit
-          beside the nav, and neither does a code field. Ordered before the session line. */}
+      {/* A sibling of `.header-side` rather than a child, so it can take the full row when it has a
+          panel to show — the enrolment square and its key do not fit beside the nav, and neither
+          does a code field. Ordered before the session line. */}
       <OwnerAccess />
 
       {/* Always mounted, so the announcement is a change to a live region rather than a new
@@ -121,6 +150,7 @@ export function SiteHeader({ font }: { font: FontChoice }) {
           line of its own, and a second would make `getByRole("status")` ambiguous on every
           page — including in the specs that read those lines. */}
       <p className="session-state" aria-live="polite">{session}</p>
+      </div>
     </header>
   );
 }

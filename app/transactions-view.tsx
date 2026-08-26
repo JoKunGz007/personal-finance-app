@@ -48,6 +48,7 @@ import { CashEntryForm } from "@/app/cash-entry";
 import { LedgerCardRow } from "@/app/ledger-card-row";
 import { LedgerCashRow } from "@/app/ledger-cash-row";
 import { LedgerControls } from "@/app/ledger-controls";
+import { LedgerNote } from "@/app/ledger-note";
 import { LedgerRetiredCards } from "@/app/ledger-retired-cards";
 import {
   ALL_ACCOUNTS,
@@ -888,15 +889,20 @@ export function TransactionsView() {
             </p>
           ) : null}
 
+          {/* The count and the account names are data and stay. The sentence explaining *why* the
+              combined balance covers only these is a rule, and folds (PLAN task 42). */}
           {!picking &&showCombined && accounts ? (
             <p className="ledger-status">
               <b>Imported accounts: {importedAccounts.length} of {accounts.length}</b>
               {importedAccounts.length > 0
                 ? ` · ${importedAccounts.map((account) => `${account.label} ···· ${account.last_four}`).join(" · ")}`
                 : null}
-              {importedAccounts.length < accounts.length
-                ? " · the all-accounts balance covers these only, since an account with no rows has no balance to derive"
-                : null}
+              {importedAccounts.length < accounts.length ? (
+                <LedgerNote label="Why some accounts are missing">
+                  The all-accounts balance covers the imported accounts only, since an account with
+                  no rows has no balance to derive.
+                </LedgerNote>
+              ) : null}
             </p>
           ) : null}
 
