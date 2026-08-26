@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useResultBanner } from "@/app/result-banner";
 import { encodeForReader, readImageWords, type ImageWordsRead } from "@/lib/browser/ocr-reader";
 import { bangkokToday } from "@/lib/dates";
 import { formatThb, parseThb } from "@/lib/money";
@@ -243,36 +244,15 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
    * scroll — React has not committed the new element yet. The anchor is always in the tree, so its
    * position is knowable whether or not a message is showing.
    */
-  const resultBanner = useRef<HTMLDivElement | null>(null);
-
   /**
    * Brings the result and the fields below it into view after a capture (D-124).
    *
-   * **No `behavior` is passed, and that is the accessible choice rather than an omission.** Left
-   * unspecified, the browser follows the CSS `scroll-behavior`, which `app/globals.css` sets to
-   * `smooth` and overrides to `auto` under `prefers-reduced-motion`. Passing `"smooth"` here would
-   * ignore that preference for the one person who set it.
-   *
-   * Deferred a frame because it runs in the same commit that puts the banner on screen: scrolling
-   * before the layout includes it lands short by the banner's own height.
+   * **The imperative shape, because this form announces from three different handlers** rather than
+   * from one piece of state — which is why `app/result-banner.ts` offers both and this is not the
+   * odd one out. The scroll, the focus move (D-125) and the reasoning behind both live there,
+   * shared with the batch worklist and the import bench (D-150).
    */
-  function scrollToResult() {
-    requestAnimationFrame(() => {
-      const anchor = resultBanner.current;
-      if (!anchor) return;
-      anchor.scrollIntoView({ block: "start" });
-      // **Focus follows the eye** (D-125). The scroll moves the viewport and nothing else, so a
-      // keyboard capture would leave the caret on the submit button that has just gone off-screen
-      // at the bottom — Tab would continue from a control the owner can no longer see. Moving it
-      // to the result is the standard pattern for a region like this and is **not** a focus trap:
-      // Tab and Escape behave normally and nothing on the page is hidden, which is exactly the
-      // difference from the modal dialog D-123 declined.
-      //
-      // `preventScroll` because the scroll above already chose the position; letting focus scroll
-      // as well overrides `scroll-margin-top` and jams the banner against the viewport edge.
-      anchor.querySelector<HTMLElement>("[data-capture-result]")?.focus({ preventScroll: true });
-    });
-  }
+  const { anchor: resultBanner, reveal: scrollToResult } = useResultBanner();
 
   const layout = channel === "" ? null : layoutForChannel(channel);
   const region = regions?.[chosen] ?? null;

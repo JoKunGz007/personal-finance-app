@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-134 onward**. Five settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, and **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24. The index below covers all six files, so a reader can find any entry without opening any body.
+This file carries **D-141 onward**. Six settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24, and **D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md) on 2026-08-25. The index below covers all seven files, so a reader can find any entry without opening any body.
 
 **Every boundary sits where an argument ends rather than where a number is round**, and the fourth one is the clearest case of that rule so far. It was taken at **93%** of this file's byte budget and moved the whole arc in which both readers went to Cloud Vision and the local OCR engine was deleted. **The third boundary had explicitly refused to move D-120**, on the grounds that whether pre-fill stays was undecided and that question attached to D-120 and D-129 — which was true when written. **What closed it was not an argument but a shipped feature**: D-135 files a machine-read amount into the ledger without the owner looking at it at all, which is a stronger commitment than the trial ever asked for. *A question is closed when the code has stopped asking it*, and that is the test to apply at the next boundary rather than re-reading the prose.
 
@@ -166,9 +166,9 @@ What this file now holds is the current work and the two open questions the fift
 - **D-132** — The ledger view's markup became seven files, and the derivation pipeline deliberately did not move
 - **D-133** — Both continuity budgets were acted on rather than raised, and the archive boundary excluded every open question
 
-### Current 
+### Archived 
 —
- this file
+ `docs/decisions/ARCHIVE-D-134-D-140.md`
 
 - **D-134** — The traps budget is raised to 260 KB on the lookup-file argument, with the next breach owed a split rather than a third raise
 - **D-135** — Bulk slip upload files a slip unseen only when its date is exact, and the printed-date reader that made that possible had shipped uncalled
@@ -177,6 +177,11 @@ What this file now holds is the current work and the two open questions the fift
 - **D-138** — The ledger table escaped the viewport on a real phone, because an element selector cannot reset a class and an audit cannot measure a table that was never rendered
 - **D-139** — "Where did that card go" is answered in the result banner rather than under the form, because a one-time question must not buy permanent vertical space
 - **D-140** — The fourth archive boundary moves the whole Cloud Vision arc, because a shipped feature closed the question the third boundary was blocked on
+
+### Current 
+—
+ this file
+
 - **D-141** — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 - **D-142** — The bulk slip form threw away work it had already done, and could not be told to try again
 - **D-143** — A third button rank, because "quiet" had been spelled as "unstyled"
@@ -184,200 +189,9 @@ What this file now holds is the current work and the two open questions the fift
 - **D-145** — The hosted Sync button proxies ciphertext, and it is a caller of the mail seam rather than a second one
 - **D-146** — The fifth archive boundary is shallow on purpose, because two open questions sit immediately behind it
 - **D-147** — Binding announces itself where the owner is looking, because the scroll fix was keyed on a stage auto-binding skips
-
-## D-134 — The traps budget is raised to 260 KB on the lookup-file argument, with the next breach owed a split rather than a third raise
-
-- Date: 2026-08-19
-- Status: **Accepted and done**, on the owner's decision, taken after D-133 applied the sanctioned remedy and reported what it could and could not achieve. Tooling and documentation only.
-- **`GOTCHAS.md`'s budget goes 200 KB → 260 KB** (`scripts/check-docs.mjs`). It sits at **177 KB, so 70%**. `DECISIONS.md` is unchanged at 120 KB.
-
-### Why raising it is not the same as abandoning it
-
-- **The remedy was applied first, and the raise is a response to what it measured.** D-133 retired both traps whose subject no longer existed and moved the file 181 KB → 177 KB. **That 4 KB is the honest ceiling on retirement**: a sweep of all 132 traps found no further dead subjects, because a trap is retired when its *subject* is gone and this project's traps mostly describe things that still exist. Retirement is bounded by how many traps die, which is far fewer than are written.
-- **There is no archive for traps and that stays true** — relocating them only moves the reading cost, which is why `check-docs.mjs` says so at the point the remedy is printed. So retirement was the only lever, and it was not enough.
-- **The number follows the argument the budgets were already set from.** They are set from what a read costs, and `GOTCHAS.md` was already given the looser one because it is *entered through its index* rather than read front-to-back. Taken to its conclusion: what a reader pays is **the index plus one trap**, and the index is about 10 KB of the 177. The body is therefore bounded by what keeps the file greppable, not by what fits in one context window.
-
-### The condition, which is the substance of this entry
-
-- **The thing that must stay readable in one pass is the index, not the file.** When the index stops being scannable, the answer is **structural** — split along the eight existing section headings, each with its own index — and not a third raise.
-- **A budget raised twice has been abandoned.** That sentence is now in `check-docs.mjs` beside the constant and in the failure message the next breach prints, because D-130 established that a rule living only in a log nobody opens while editing is a rule that gets re-broken, and D-131 found the same thing again.
-- **What this does not do**: it does not touch `DECISIONS.md`'s 120 KB, which is the tighter budget precisely because that file *is* read front-to-back, and which D-133 just brought to 69% by archiving rather than by raising. The two files have different remedies for a reason and this changes only one of them.
-- Evidence: `pnpm check:docs --strict` passes at **134 decisions, 132 traps**, `GOTCHAS.md` **177 KB/254 KB (70%)** and `DECISIONS.md` 84 KB/117 KB (72%). Red-proved by lowering the new constant until the check failed and restoring it, which is how D-130 proved the byte budget in the first place. D-130 (the budgets and why bytes), D-133 (the remedy applied and its ceiling), D-131 (a rule must live where it is read).
-
-## D-135 — Bulk slip upload files a slip unseen only when its date is exact, and the printed-date reader that made that possible had shipped uncalled
-
-- Date: 2026-08-21
-- Status: **Accepted and built**, uncommitted at the time of writing. The owner asked for many slips at once with no second look at each. Application code and tests only; **no SQL moved, no route was added**, and the backup contract stays at **v7**.
-- What ships: `lib/slip-batch.ts` (policy), `app/slip-batch.tsx` (the form), `lib/browser/qr-detector.ts` (the QR reader both slip forms now share), and the form mounted under the single-slip one on `/slips`.
-
-### The request, and the two things that stood between it and unconditional auto-submit
-
-The owner's reasoning was that a misread slip fails to pair and surfaces as unmatched once the statements are in, so a second look per slip buys little. **That was checked against the matching rules rather than accepted**, and it holds for the amount and not for two other fields.
-
-- **Direction.** `lib/slip-reconcile.ts` compares the **signed** movement, so a deposit filed as a withdrawal has the wrong sign, **can never pair with any row**, and skews the deposit, withdrawal and net totals until corrected by hand. Not self-healing, so not something a default may quietly get wrong.
-- **Date.** `slipDateFromReference` returns a date only where the reference embeds eight date-shaped digits — SCB and Krungthai's longer variant (D-059). The single-slip form falls back to today, which is right for a payment just made. **A backlog dated today can never pair**, because `MATCH_WINDOW_DAYS` is 1. The safety net the request rests on fails precisely in the case the feature is for.
-
-### What changed the shape: a reader that was already built and called by nothing
-
-**`readPrintedDate` (D-086, 2026-08-10) reads the date printed on the slip, and no shipped code called it** — only its own tests. Since a batch already sends every image to Vision for the amount, the same words yield the date at **no extra request and no extra byte leaving the device**. That turns "no date in the QR" from the blocking case into a much smaller residue: **KBANK alone**, whose printed year is two digits and which `readPrintedDate` refuses outright rather than completing a century (D-031). Finding shipped, tested, uncalled code is worth recording as its own class of finding — the handoff scoped this feature around a limitation that a function already in the repository had removed.
-
-### The rules, and why each is where it is
-
-- **Ready means every value that could be wrong was read exactly.** The amount through `proposeAmount` — its own label, the strict money grammar, no lenient second path. The date from the QR reference **or** the printed line, never from the clock. Anything else goes to a review list with the refusing reader's own sentence.
-- **The QR's date wins over the printed one**, because the reference is CRC-covered and already Gregorian while the print is pixels plus a 543-year conversion. When only the print carries a **time**, that time travels with the QR's date; nothing reconciles on a time.
-- **Two readings that disagree refuse rather than pick.** Nothing available can say which is right, and a wrong date is the failure that never heals. This costs nothing in the ordinary case, where they agree.
-- **A printed date is re-checked against the slip window.** `gregorianFromPrintedYear` fails closed on a *year* while `slipDateWindow` bounds a *date*, so the two do not coincide and a slip in the earlier part of the tenth year back passes one and not the other.
-- **Direction is asked once for the whole batch and is never read from the image.** A slip prints who paid whom; **which side is the owner is not on the image and is not in this app**, so there is nothing to measure. The handoff proposed measuring it across the 23 real samples before defaulting it; that measurement was **declined as unanswerable rather than skipped for cost**, and one batch-level control replaces it. A mixed batch is two batches, and the form says so.
-- **The magnitude is classified and the sign applied at submit**, so changing the direction re-signs every row without re-reading a single image.
-
-### What makes it safe at all, and what it does not change
-
-- **Identity never comes from OCR**: the bank and reference are re-derived server-side from the QR payload under its own CRC (`lib/slips.ts`), so bulk upload cannot misidentify a record.
-- **Re-capture is a no-op** (migration 011), so an interrupted batch is re-run over the whole folder. The browser suite proves this through the form with a different amount on the second pass, so a silent overwrite would be visible in the stored figure.
-- **No new server surface.** The production build still emits **eighteen** `/api/v1/` routes: the batch reuses `POST /api/v1/ocr/read` and `POST /api/v1/slips`. Nothing new was owed a security review.
-- **One read and one write at a time**, deliberately: an unbounded burst at a metered third party, and a queue of captures contending for one owner's advisory lock, are both worse than a slower pass. A batch is capped at **50 files** for the same reason — a mistaken drop of a camera roll should cost a sentence, not a bill.
-- Counterparty and category are not captured in bulk. Neither is readable from a slip, and both are correctable afterwards (migration 013).
-
-### Two defects found on the way, one of them by the browser test
-
-- **`app/slip-capture.tsx` dated a slip in UTC**, `new Date().toISOString().slice(0, 10)`, so between midnight and 07:00 Bangkok it named *yesterday*. **D-110 fixed exactly this in the cash and card forms and missed the slip form.** Now `bangkokToday()`. The browser spec asserting that fallback was deriving its expectation the same wrong way, so it moved with the code — it would otherwise have failed for seven hours a day and read as a broken fallback rather than a stale expectation.
-- **A `FileList` is live, not a snapshot.** The batch handler cleared previous state first, and `clear()` sets `input.value = ""`, which **empties the `FileList` the handler is still reading**. Every chosen slip vanished and the form went on saying "Choose slip images…" — no error anywhere. Caught by the browser spec on its first run, not by any unit test, because it only exists once a real input holds real files.
-- A third was found in the guard rather than the code: the privacy assertion pinning the amount fill anchored on a trailing newline, and an injected second fill one line later passed straight through it. This is the `GOTCHAS.md` trap about a source-grep test passing over code that has moved out from under it, **hit while writing the test meant to prevent it**. It now compares the set of every `plainThb` call.
-- Evidence: `tests/slip-batch.test.ts` (16 tests over the date order, the disagreement refusal, the two-digit-year refusal, the window re-check, the amount grammar and the sign rule, with no browser and no engine), two `tests/e2e/owner-session.spec.ts` specs, and two new assertions in `tests/privacy.test.ts` — both **red-proved**, one by making the policy date a slip today and one by adding a second amount fill. The reader-client privacy check now **walks `app/` for `readImageWords(`** instead of naming two files, so a third reader form is covered the moment it is written. Vitest **621 passed / 7 skipped across 31 files**, Playwright owner **31/31** and isolated **18/18**, production build clean at eighteen `/api/v1/` routes, `pnpm check:docs --strict` at 134 decisions and 132 traps, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: no SQL moved. D-059 (which references carry a date), D-086 (the printed-date reader), D-031 (why a two-digit year is refused), D-110 (the UTC date fixed twice before), D-129 (the strict-grammar rule this inherits).
-
-## D-136 — The palette becomes warm and the phone gets measured, which found two contrast failures no light-mode look would reveal
-
-- Date: 2026-08-21
-- Status: **Accepted and done**, on the owner's choice of palette. Styling and a throwaway harness only — no application logic, no SQL, no route, no contract.
-- What changed: `app/globals.css` alone. **No `.tsx` reads a custom property**, which is what made a whole-app retheme a single-file edit and is worth knowing before anyone proposes a theming abstraction.
-
-### The palette, and the one problem it creates
-
-Olive Leaf `#606C38`, Black Forest `#283618`, Cornsilk `#FEFAE0`, Light Caramel `#DDA15E`, Copper `#BC6C25`.
-
-**It is entirely warm, and the old palette got its state separation for free from blue-versus-amber.** That separation has to be manufactured here: action is copper, verified is olive, provisional is caramel, and `--red` is pushed deliberately toward crimson so an error is not read as a link. In dark mode the two nearest — action and provisional — are pulled further apart than in light, because on a dark ground both otherwise collapse into one warm tan. **What makes near-neighbour hues tolerable rather than a defect is that colour was never the only carrier**: every one of those states also says what it is in words (D-123), and that rule is what this palette spends.
-
-**Contrast was computed, not eyeballed**, and two palette values were darkened until they cleared AA: `--muted` 5.9:1 and `--blue` 5.3:1 against `--paper`, `--red` 7.1:1, `--celadon-ink` on `--celadon` 6.3:1. Both browser suites' axe checks pass unchanged.
-
-### Two failures the retheme surfaced that predate it
-
-Neither is caused by the new palette; both were found by having to reason about every filled surface at once.
-
-- **`.skip-link` and `.brand-mark` were `color: white` over `background: var(--navy)`.** In dark mode `--navy` *is* the light colour, so both were white-on-cream — invisible. They take `var(--paper)` now, which is correct in both directions by construction rather than by two hardcoded values kept in step.
-- **`.stage-nav li.active span` and `.secondary-button:hover` are filled with `--blue` and inked white.** `.primary-button` already had a dark-mode override flipping that ink and **the other two did not** — white on the brightened action colour is 2.5:1, a clear failure. All three share the override now. **No amount of looking at this file in light mode would have shown either**, which is the general point: a token that inverts between schemes makes every hardcoded partner a latent failure in exactly one of them.
-
-### The phone measurement (PLAN task 28)
-
-**The committed owner config is desktop-only**, so every signed-in surface had never been rendered at phone width by anything. `.runtime/mobile-audit.spec.ts` signs in, walks the four routes at 390 CSS px, screenshots each, and reports elements wider than the viewport and controls under 44×44.
-
-**Nothing was broken.** No route pans sideways, and the single over-wide element is inside its own scroll container by design. What was wrong was legibility: a `12vw` heading floor rendering at **47px**, the first control on `/ledger` roughly **1,200px down** an 844px viewport, **every nav link 36px tall**, and the active-route marker rendering as a detached rounded box because an inset `box-shadow` is clipped by the link's own `border-radius`. All four are fixed; `/ledger` is ~13% shorter and every control clears 44px.
-
-**What the audit still cannot see, stated so it is not mistaken for coverage**: it signs in but loads no data, because nothing in this app loads until asked. So the ledger table, the captured-slips list and the batch worklist have **still never been seen at phone width with rows in them** — and the table is the surface most likely to read badly. That is the remainder of task 28, not a thing this entry closed.
-
-- Evidence: `app/globals.css`; `.runtime/mobile-audit.spec.ts` and its config, gitignored and throwaway; before-and-after screenshots at 390px. Playwright isolated **18/18** and owner **31/31**, both carrying the axe checks that hold this file to AA; Vitest **621 passed / 7 skipped across 31 files**, tsc and ESLint clean. D-123 (colour is never the only carrier), D-124 (the reduced-motion rule this file already honours).
-
-## D-137 — Cornsilk becomes the ground and the dark scheme is dropped, so the app declares one set of colours and measures only those
-
-- Date: 2026-08-21
-- Status: **Accepted and done**, on the owner's instruction, hours after D-136. **Amends D-136 rather than reversing it** — the palette and the phone measurement stand; what changes is which colour is the ground and whether a second scheme exists.
-- What changed: `app/globals.css` and `app/layout.tsx`.
-
-### Cornsilk is the ground, not a card colour
-
-D-136 put `#FEFAE0` on the raised surfaces and a duller `#f1ecd4` under them, so the colour a reader actually saw most of was the duller one and the palette's own cornsilk was a highlight. The owner's instruction was that `#FEFAE0` **is** the background. The ladder is now `--mist: #fefae0` → `--paper: #fffdf0` → `--paper-strong: #fffffa`, lifting toward a **warm** white rather than a pure one, which keeps the depth without introducing the one cold value in the file.
-
-**The contrast figures in D-136 were computed against `--paper` and still hold**, because everything above the ground is now lighter than the ground. They are a floor rather than an average, and that is stated in the file so the next person does not re-derive it.
-
-### The dark scheme is dropped, and that is a decision
-
-The owner's reasoning: cornsilk is warm enough to read against for long stretches, so a dark scheme is not buying what a dark scheme is for. Recorded with his own qualifier — *"but we'll see"* — so this is a position taken and reversible, not a conclusion.
-
-**What it costs, stated rather than glossed:** a reader on a dark-OS phone at night now gets a bright page. Nobody has tried that, and the qualifier is why it is worth trying before this is treated as settled.
-
-**What it buys is the part worth keeping.** A second scheme is a second complete set of contrast facts, and **nothing here measures them**: both browser suites' axe checks run in the default scheme only, which is exactly why the two failures D-136 found had survived. Declaring one scheme means the colours that ship are the colours that were measured.
-
-**`color-scheme: light` is what makes the decision real.** Without it a date picker and a select dropdown render dark on a dark-OS device against a cream page — the native controls follow the OS, not the stylesheet, unless told otherwise. This is the whole substance of dropping a scheme properly rather than deleting a media block.
-
-**The `GOTCHAS.md` trap about tokens that invert between schemes is deliberately kept although its subject is gone.** Retirement is for a trap whose subject no longer exists, and the *pairings* still exist — `background: var(--…)` beside a literal colour is still all over this file and will fail again the moment a dark block returns. The palette comment points at it for exactly that reader.
-
-### A colour no screenshot could have caught
-
-**`app/layout.tsx` still declared `themeColor: "#eaf0f4"`** — the pre-retheme blue-grey — for a full day after the palette changed, including across two deployments. It tints the browser's own chrome around the page on a phone, so it renders as a band in the wrong colour above the app and is invisible to a headless audit, which never draws chrome. It is `#fefae0` now, and the file says it must equal `--mist`. **And the sweep that finding prescribes immediately found three more**: the PWA manifest carried the old blue-grey as both `background_color` and `theme_color` — the installed-app splash and chrome, which matter here because share-to-app is why this app is installable at all — and `public/icon.svg` was still a navy plate with blue-grey rules, which is the app icon and the favicon. Four stale colours in total, none reachable by any suite, type-check or screenshot. **The general shape is worth carrying: a colour declared outside the stylesheet does not move when the stylesheet does**, and nothing in this repo's gate looks at it.
-
-- Evidence: `app/globals.css`, `app/layout.tsx`, `public/manifest.webmanifest`, `public/icon.svg`. Playwright isolated **18/18** and owner **31/31**, both carrying the axe checks; `.runtime/mobile-audit.spec.ts` re-run at 390px with every control still clearing 44px and no route panning sideways; tsc and ESLint clean. D-136 (the palette and the phone measurement this amends), D-123 (colour is never the only carrier).
-
-## D-138 — The ledger table escaped the viewport on a real phone, because an element selector cannot reset a class and an audit cannot measure a table that was never rendered
-
-- Date: 2026-08-21
-- Status: **Accepted and fixed.** Found by the owner on his own device, minutes after the deployment that D-137 shipped. Styling and a harness only — no application logic, no SQL, no contract.
-- What changed: `app/globals.css` (two rules), and `.runtime/mobile-audit.spec.ts` rewritten so it could have found this.
-
-### The defect
-
-`.ledger-table` sets `min-width: 1160px` and `.ledger-table.merged` sets `1280px`. The phone block reset it with `table, tbody { display: block; min-width: 0; }` — and **`table` is an element selector at specificity 0,0,1 while `.ledger-table` is a class at 0,1,0**, so the reset lost and the table stayed 1280px wide. Directly above it, `.table-scroll { overflow: visible; }` removes the horizontal scroll container that holds this table in on desktop, so the width had nothing to scroll inside and escaped to the document. A real phone rendered the whole page zoomed to roughly a third to fit 1296px of scrollable width into 390px of screen.
-
-**A second, independent overflow sat behind it** and was only visible once the first was fixed: `.ledger-controls` used `grid-template-columns: 1fr 1fr`, and **`1fr` is `minmax(auto, 1fr)` whose floor is min-content, not zero**. A select whose longest option is an account label will not shrink, so the grid sized itself to its contents — 591px inside a 358px `main`. `minmax(0, 1fr)` is the fix, and the tracks are now written the long way so the floor is explicit.
-
-### Why nothing caught it, which is the part worth keeping
-
-**The audit written for D-136 signed in and looked, and reported four clean routes.** It was not lying: nothing in this app loads until asked, so the ledger table was **absent** rather than narrow, and *a `min-width` rule with no element to apply to cannot be measured wrong*. The measurement was honest about a page that did not contain the thing being measured — which is a worse failure than a wrong number, because it reads as coverage.
-
-D-136 stated this gap explicitly in its own entry and in `PLAN.md` task 28: "the ledger table has still never been seen at phone width with rows in them". **Naming a gap is not closing one**, and the interval between naming it and the owner hitting it was under a day.
-
-**The audit now seeds rows and asserts the table is really on the page** before it believes anything it measures about it — `expect(page.locator("table")).toHaveCount(1)`, so a future run cannot pass by finding nothing. Seeding needs `session_replication_role = replica`, because `source_transactions` is append-only and refuses DELETE; the components carry `position` in `{1,2}` and the fingerprint must be 64 hex characters. All seeded values are invented.
-
-**Red-proved**: the rewritten audit was run against the shipped CSS and reported `pans sideways: true, scrollWidth 1296 vs 390` with `table.ledger-table.merged [16..1296]` named directly, then against the fix and reported 390 on every route.
-
-- Evidence: `app/globals.css`, `.runtime/mobile-audit.spec.ts`. Playwright isolated **18/18** and owner **31/31**; the audit clean at 390px on all four routes with six seeded rows loaded, every control ≥44px. The one remaining reported overflow is `.stage-nav ol` inside its own `overflow-x: auto`, which is deliberate and does not pan the document. D-136 (the audit this repairs), D-137 (the deployment this followed).
-
-## D-139 — "Where did that card go" is answered in the result banner rather than under the form, because a one-time question must not buy permanent vertical space
-
-- Date: 2026-08-22
-- Status: **Accepted and done**, after the owner asked the question directly while using the app on his phone. Copy and styling only — no logic, no SQL, no route, no contract.
-- What changed: `app/notification-card-capture.tsx` (two message strings and one link), `app/globals.css` (two rules).
-
-### The asymmetry that produced the question
-
-`/slips` carries four things: the single-slip form, the bulk form, the card form, and **"On this ledger" — which lists slips only**. There is no captured-cards component and never has been. Cards appear in the **ledger view** instead (`app/ledger-card-row.tsx`, plus the retired-cards panel), which is deliberate: a card is a bank transaction awaiting its statement row, and the ledger is where the two meet (D-102).
-
-So the route answers "where did that go" for one record kind and stays silent for the other, **with the two forms stacked one above the other**. That is the whole of the confusion, and the owner hit it in ordinary use rather than in review.
-
-### Why not a captured-cards list, and why not a line under the form
-
-**A second list was rejected as duplication.** The ledger already shows every card with its match state; a list here would be a second place to check and a second thing to keep in step, to answer a question the ledger answers better.
-
-**A standing line under the form was rejected on cost.** PLAN task 28 had just finished measuring this exact surface and found that the first control on a route sat ~1,200px down a phone viewport behind prose. Adding a permanent sentence to solve a **one-time** learning moment spends the thing that pass had just recovered — and once the owner knows cards go to the ledger, he does not ask again.
-
-**The banner is where it belongs, and this is the substance of the entry.** The question is not "where do cards go" in the abstract; it is "where did *that one* go", asked in the seconds after a capture. The result banner (D-123, D-124) already exists, already renders only after a capture, and is already scrolled and focused. Putting the sentence there **costs zero permanent space and lands exactly when the question is asked**. Both branches carry it — the already-captured branch too, because "nothing was added" raises the same question about the card already held.
-
-**A link, not only a sentence.** On a phone this banner sits far below the header and its nav, so naming the ledger without offering it costs a scroll back up to act on what the sentence just said.
-
-### Two things the link needed that the sentence did not
-
-- **`.secondary-button` was written for a `<button>`.** An inline `<a>` honours neither `min-height` nor vertical centring, so the link sat shorter than the button beside it with its label off-centre. Fixed as a rule naming `a.secondary-button` rather than nudged with padding, because the next control borrowed onto a link has the same problem.
-- **The banner's controls are 36px and no audit has ever seen them**, since `.runtime/mobile-audit.spec.ts` never captures a card — so they were never in the 44×44 sweep that PLAN task 28 applied everywhere else. Raised to 44px at phone width only; the base stays compact for a desktop where a pointer does the aiming. **This is the same shape as D-138**: a surface that only exists after an action is a surface no walking audit can measure.
-
-- Evidence: `app/notification-card-capture.tsx`, `app/globals.css`. Playwright owner **31/31** (it drives card capture and reads the banner) and isolated **18/18** with its axe checks; `tests/privacy.test.ts` 35/35, including the assertions that hold this form's pre-fill and its banner to their rules; tsc and ESLint clean. D-102 (the ledger is where a card meets its row), D-123 and D-124 (the banner and why it is a region rather than a dialog), D-138 (the audit's blind spot this shares).
-
-## D-140 — The fourth archive boundary moves the whole Cloud Vision arc, because a shipped feature closed the question the third boundary was blocked on
-
-- Date: 2026-08-23
-- Status: **Accepted and done**, on the owner's decision, taken before the next entry forced it rather than after. Documentation only.
-- **D-120 … D-129 relocated unchanged** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md). `DECISIONS.md` goes **109 KB → 62 KB**, from **93% to 53%** of its 117 KB budget, and now carries **D-130 onward**.
-
-### Why this boundary, and why it was not available four days ago
-
-**D-133 explicitly refused to move D-120**, and said why in its own text: *"whether pre-fill stays is still undecided on both paths, and that question attaches to D-120 and D-129, so filing either as settled would have been false."* That was correct when written, and it is the reason the third boundary stopped at D-119 and left a ten-entry arc behind.
-
-**What closed it is not an argument but a shipped feature.** D-135 built bulk slip upload, which files a machine-read amount into the ledger **without the owner looking at it at all** — a stronger commitment to the pre-fill than the trial D-114 opened ever asked for, and one the owner requested directly. *A question is closed when the code has stopped asking it.* That is the test worth carrying to the next boundary, because it is checkable against the repository rather than against how confident the prose sounds.
-
-**The arc that moved is coherent and finished**: both readers going to Cloud Vision (D-120, D-129), the label and tone-mark work that bounded what a misread mark can do (D-121, D-127), the empty-list refusal and the migration closing it (D-122, D-126), the direction cross-check and the result banner (D-123, D-124), the self-review that found three defects in one day's own work (D-125), and the slip measurement (D-128). **Nothing after D-129 reopens the engine question**, and no entry in the range carries an open one.
-
-### What the rate says, which is the part worth acting on
-
-**Four days of ordinary work took this file 72% → 93%.** The third boundary was treated as an event; at this pace a boundary is due roughly every fortnight and should be routine. The failure mode is not a breach — `check:docs` catches that loudly — it is taking the boundary *under pressure*, where the temptation is to cut at a round number instead of where an argument ends, or to raise the budget because a raise is quicker. **`GOTCHAS.md`'s budget was raised and this one has not been**, and the difference stands: that file is entered through an index, this one is read front to back.
-
-- Evidence: `docs/decisions/ARCHIVE-D-120-D-129.md` (the ten entries, byte-identical to their previous text, under a header carrying the boundary argument), `DECISIONS.md` (index re-pointed, header prose rewritten, bodies removed), `HANDOFF.md`. `pnpm check:docs --strict` passes at **139 decisions, 139 traps** — the same 139 as before the move, which is what proves nothing was dropped — with indexes matching and every reference and path resolving. `DECISIONS.md` **62 KB/117 KB (53%)**, `GOTCHAS.md` **189 KB/254 KB (74%)**. D-133 (the boundary this one was blocked by), D-130 (the byte budget and why bytes), D-134 (the raise precedent and why it does not transfer), D-135 (the feature that closed the question).
+- **D-148** — The client tier gets its first seam, because every route call had been open-coding the same five steps and had already diverged
+- **D-149** — The owner closed the two questions the fifth boundary was stuck behind, so the traps split and the sixth boundary went seven entries deep
+- **D-150** — The announce-and-scroll becomes one module and the worklist becomes one value, so two classes of defect stop being representable
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -698,3 +512,112 @@ Ten findings at high effort, **six fixed**. Two were leaks of the same kind the 
 **No committed spec drives any of this**, which is the gap D-145 widened and this does not close either. The statement batch form and the mailbox sync are still covered by unit tests and throwaways only.
 
 - Evidence: `app/import-bench.tsx`, `app/globals.css`, `.runtime/bind-scroll.spec.ts` (3/3). Vitest **696 passed / 7 skipped across 34 files** — unchanged, which is what a change touching only component wiring should produce — Playwright owner **31/31** and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` clean, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: nothing here moves SQL, and it stands at 266 across 8 from 2026-08-18. **The owner suite reported 30/31 on one run and 31/31 on a full re-run** — `captures a slip from its QR` timed out at 30s, on a route this change does not touch; recorded in `HANDOFF.md` rather than treated as caused here. D-141 (the scroll this restores), D-144 (the path that skipped it), D-139 (the banner pattern), D-125 (review before asking to commit), D-145 (the guard that narrowed without failing, which is this shape one level up).
+
+## D-148 — The client tier gets its first seam, because every route call had been open-coding the same five steps and had already diverged
+
+- Date: 2026-08-25
+- Status: **Done, uncommitted.** `lib/wire.ts`, `tests/wire.test.ts` (new), `app/transactions-view.tsx`, `app/import-bench.tsx`, `app/slips-bench.tsx`. No SQL, no route, no contract change: every project stays on migration 020, the backup contract stays at **v7**, and the build still emits **twenty** `/api/v1/` routes.
+- Context: the owner installed two review skills and asked for both to be run, then delegated the follow-up work. `/improve-codebase-architecture` produced this as its first candidate; `/thermo-nuclear-code-quality-review` had independently found the same duplication one level down. **Both were treated as opinions to judge, not verdicts** — see § What was declined.
+
+### The measurement this turns on
+
+**33 of this repo's 34 unit-test files import from `lib/`. None imports from `app/`** — 696 passing tests, none crossing roughly 7,400 lines of client-tier orchestration, verified by import rather than inferred. That is the tier every defect of the preceding week lived in: D-139, D-141, D-142, D-147 and the leaks beside it. The cause is structural, not diligence: `lib/` is made of deep modules (`import-assembly.ts`, 151 lines behind one exported function; `statement-layout.ts`, 1,174 behind three) so each has an interface to test through, while in `app/` the interface *is* the rendered component and the only test surface is a browser. **A file-size review would have flagged `statement-layout.ts` and been wrong** — 1,174 lines behind three functions is depth, and line count means nothing until it is checked against interface width.
+
+### What was actually wrong
+
+`lib/wire.ts` held one 10-line function, `readError(body: unknown, fallback)`. The other five steps of a route call — issue it, survive a body that is not JSON, check `ok`, read the route's own `{ error }`, validate against the contract — were open-coded at **26 `fetch` call sites**, each re-deciding them independently. **They had already diverged, and the divergence was backwards.** `app/transactions-view.tsx` guarded three of its five loads with `.catch(() => null)` and left the two **blocking** ones bare, so a platform error page on the accounts or transactions path threw, was caught by the outer handler, and reported as *"the ledger could not be reached — check that the local Supabase stack is running"* — sending the owner to diagnose Docker while the route had in fact answered him. Nine of the twenty-six validated nothing at all.
+
+`readError` is shallow in the way that bites: its parameter is `unknown`, so handing it the wrong thing type-checks and fails **silently**. That has happened — passing the `Response` instead of its parsed body replaced every specifically-worded refusal with the generic sentence, in two files, and is in `GOTCHAS.md`. A trap that a caller must remember to avoid is an interface defect, not a discipline problem.
+
+### The decision
+
+`ledgerRequest(path, schema, wording, init?)` owns the whole round trip and returns a discriminated `WireResult<T>`, so a caller cannot read `data` without having checked `ok`. Three properties are the substance:
+
+- **`schema` is a required parameter**, so validation cannot be the step a hurried call site leaves out. Nine sites had left it out and the omission was invisible at each one.
+- **`ok` is read before the schema**, so a route that refuses in its own words is never reported as a contract failure.
+- **Three failure kinds, because they send the owner to three different places**: `unreachable` (diagnose the stack), `refused` (read the route's words), `off-contract` (diagnose the build). Each keeps the wording the call site already owned.
+
+`cache: "no-store"` is the default, because all thirteen call sites that named a cache mode named that one and a ledger read served from a cache is a wrong answer rather than a fast one.
+
+### What is deliberately not done
+
+**The write paths have not moved.** `POST /api/v1/imports/confirm`, the slip and cash captures, and the two `PUT` decision routes still call `fetch` directly, because they carry idempotency keys and money and deserve their own pass rather than being swept along with a read migration. `readError` therefore stays exported and stays a trap for those seven callers until it moves; it becomes private to `lib/wire.ts` when they do.
+
+**Two further candidates were surfaced and not built**: a shared capture-outcome module (the announce-and-scroll sequence is on its third verbatim copy, and the newest one queries `data-bind-result` where the other two query `data-capture-result`), and lifting the import stage machine into a pure reducer. The second is close enough to `PLAN.md` task 19 that it is the owner's call and not an agent's, and it is the one that would actually close the committed-spec gap.
+
+### Two defects fixed alongside it
+
+`leaveTheWorklist()` was called at **two of the four** ways a statement stops being a worklist entry, so choosing a different PDF through the picker left the previous statement's *"is bound to …"* banner over the controls for this one. **This is the trap D-147 wrote down and did not finish closing**; the sharpened entry is in `GOTCHAS.md`. Fixed at the picker, the one point every single-import path passes through. Separately, `loadSynthetic` checked no `ok` and parsed bare, so a refusal reported as *"the synthetic fixture failed its own contract"* and a non-JSON answer threw out of an `onClick` and hung the status line permanently.
+
+### Coverage
+
+`tests/wire.test.ts` — **17 tests, committed, not a throwaway.** What the app shows when a route answers HTML, 500s with no body, returns JSON its schema rejects, or does not answer; and that `ok` is read before the schema. One test documents the `readError` trap by passing it a `Response` and asserting the fallback comes back.
+
+**The stale-banner fix has no committed spec**, stated rather than glossed: nothing committed drives the batch worklist. It rests on the owner suite still passing and on the reasoning above.
+
+- Evidence: Vitest **713 passed / 7 skipped across 35 files**, up exactly the 17 new tests from 696/7/34 with the skip count unchanged at **7** — the number to read, not the total. Playwright owner **31/31** (no intermittent this run) and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` clean, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: no SQL moved, and it stands at 266 across 8 from 2026-08-18. D-147 (the trap this finishes closing), D-145 and D-141 (the committed-spec gap), D-125 (review before asking to commit).
+
+## D-149 — The owner closed the two questions the fifth boundary was stuck behind, so the traps split and the sixth boundary went seven entries deep
+
+- Date: 2026-08-25
+- Status: **Done, uncommitted.** `GOTCHAS.md`, `docs/gotchas/` (eight new files), `docs/decisions/ARCHIVE-D-134-D-140.md` (new), `DECISIONS.md`, `scripts/check-docs.mjs`, `PLAN.md`, `HANDOFF.md`. No source, no SQL, no route, no contract change.
+- Context: D-146 recorded that the fifth archive boundary landed at 82% where the fourth landed at 56%, and named exactly what was blocking it — **D-134 and D-137, both the owner's to close.** He closed both on 2026-08-25, in one sentence each, which is all either needed.
+
+### What he decided
+
+- **`GOTCHAS.md` splits along its section headings.** D-134 had raised the budget once from 200 KB to 260 KB and attached a condition: *the next breach is owed a split, not a third raise.* The breach came and the condition was honoured.
+- **There is no dark scheme, and the qualifier is withdrawn.** D-137 dropped it with the owner's own *"but we'll see"* attached, which is why D-146 could not file it as settled. He settled it: no dark scheme, and he will say so if that changes. **This does not reverse D-137 — it removes the hedge on it.** `color-scheme: light` in `:root` and `app/layout.tsx` stands, and a bright page on a dark-OS phone at night is now an accepted cost rather than an unexamined one.
+
+### The split, and what it changed about the budget
+
+**149 trap bodies moved to `docs/gotchas/`, one file per section, byte-identical.** `GOTCHAS.md` goes **208 KB → 14 KB** and keeps the index alone, which is the part read in full. Nothing inside a trap changed and no index bullet was lost.
+
+**The 260 KB figure is retired rather than raised**, and that is the substantive part. It bounded a single body nobody read front-to-back, and there is no longer a single body to bound. Two budgets replace it in `scripts/check-docs.mjs`, each measuring something a reader actually pays: **40 KB for the index**, because its scannability was the whole condition D-134 attached, and **80 KB per section**, because a reader arrives through the index and opens exactly one. A section that breaches splits in two and both halves get index entries. There is still no archive for traps, by design — retirement remains the only lever, and it is bounded by how many traps actually die.
+
+The checker had to follow the bodies. `gotchaFiles()` gathers them, the index is still verified against every trap one for one — the property the split existed to preserve — and **the Verify-line scan runs per file rather than over a concatenation**, because a trap's block ends at the next heading in its own file and a joined scan would let the last trap of a section swallow the next section's header and borrow its date.
+
+### The sixth boundary, and why it stops where it does
+
+**D-134 … D-140 relocated unchanged** to `docs/decisions/ARCHIVE-D-134-D-140.md`. `DECISIONS.md` goes **110 KB → 82 KB**, from 94% to about 68%, and now carries **D-141 onward**. Seven entries where the fifth boundary managed four, which is precisely the depth the two closures bought — D-146 predicted this and said so: *depth is bought by closing questions, not by cutting harder.*
+
+**It stops at D-140 because D-141 still asks.** Its mailbox questions were written before the mailbox existed and most have since been answered by building it (D-144, D-145) — but **whether the source is deleted after import, and so whether the mailbox becomes a permanent archive of every statement under a password derived from a citizen ID and therefore non-rotatable, is deliberately deferred and unanswered.** Filing D-141 as settled would be false in exactly the way D-146 refused to be. The rule that bought this boundary its depth is the same rule that stops it here.
+
+**One deviation from "relocated unchanged" is worth naming.** D-140's body links to `ARCHIVE-D-120-D-129.md` by a repo-root-relative path, which stops resolving once the file sits inside `docs/decisions/`. The link **target** was corrected to the sibling path; the display text is byte-identical, so the entry still reads exactly as it did. `check:docs --strict` caught it, which is the check earning its keep on the first archive that ever contained one.
+
+- Evidence: `pnpm check:docs --strict` passing at **149 decisions, 149 traps**, indexes matching and every reference and path resolving — the same 149 traps as before the split, which is what proves nothing was dropped. `DECISIONS.md` **82 KB/117 KB**, `GOTCHAS.md` **14 KB/39 KB**, largest section `docs/gotchas/app.md` **56 KB/78 KB**. D-134 and D-137 (the two closed), D-146 (which named them and predicted this depth), D-133 (the rule), D-140 (the test it applies), D-130 (the byte guard that makes any of this measurable).
+
+## D-150 — The announce-and-scroll becomes one module and the worklist becomes one value, so two classes of defect stop being representable
+
+- Date: 2026-08-26
+- Status: **Done, uncommitted.** `app/result-banner.ts` and `lib/import-flow.ts` (both new), `tests/import-flow.test.ts` (new), `app/import-bench.tsx`, `app/statement-batch.tsx`, `app/notification-card-capture.tsx`, `tests/privacy.test.ts`. No SQL, no route, no contract change: migration 020, backup contract **v7**, still **twenty** `/api/v1/` routes.
+- Context: the owner read the architecture review (D-148) and asked for its second and third candidates to be built. They are one entry because they are one finding at two altitudes — the same three capture surfaces, the same drift, one in the markup and one in the state behind it.
+
+### Candidate 2 — the announce-and-scroll was on its third copy
+
+`requestAnimationFrame` → `scrollIntoView({ block: "start" })` → `focus({ preventScroll: true })`, with its six-line rationale about `prefers-reduced-motion` and `scroll-margin-top`, existed **three times**: in the card form, the batch worklist, and — as of D-147 — the import bench. **They had already drifted**: the newest queried `[data-bind-result]` where its two siblings queried `[data-capture-result]`, for the same role, under the same CSS class.
+
+`app/result-banner.ts` is now the only copy. **It offers two call shapes because the three sites genuinely have two**: pass a value and the banner is revealed when it becomes non-null (the batch worklist, the import bench), or call `reveal()` where the announcement has several origins (the card form announces from three handlers). Neither wraps the other — the first is an effect that calls the second.
+
+**The markup deliberately did not move.** The three banners differ in content and one carries action buttons, so a shared component would have taken arbitrary children and become the pass-through wrapper this review was written to remove. What is shared is the behaviour and the accessibility contract, which is what was actually duplicated.
+
+### Candidate 3 — the worklist was three `useState` slots
+
+`workingLabel`, `batchBinding` and `batchConfirmation` each said "a worklist entry is being worked", each set independently. **The seam between them is where both of the week's defects lived** — D-147 (a flag only ever set, so a confirmation was labelled with an earlier statement's name) and D-148 (the helper written to fix that, called at two of four exits). `GOTCHAS.md` already recorded that a helper is not the answer, because a helper is still a thing to remember.
+
+They are one `Worklist | null` now, with the phase a **discriminated union** rather than two nullable strings carrying a prose invariant that they are never both set. `null` is the only way to be out of the worklist, so it cannot be cleared by halves; the confirmation is **derived** rather than stored; and `bindTo` returns a `BindOutcome` instead of `string | null` with null meaning success.
+
+**The refusal suppression now asks where a message came from rather than what it says.** It was `bindingError !== batchBinding?.refusal` — string equality between two independently-set states, which held only while no two wordings converged and would have made the alert vanish silently on the day they did.
+
+### What this is not
+
+**It is not the whole stage machine as a reducer**, which is what the review proposed. `stage`, the parsed statement and the bound account stay in the component: moving them is a far larger change to the path that files money into an append-only ledger, the defects were never there, and the benefit the reducer was proposed *for* — testable decisions, an unrepresentable stale mode — is delivered by the part that moved. `app/import-bench.tsx` is 891 lines from 931 and holds 29 `useState` rather than 30; the win is not the count, it is that the three that mattered became one.
+
+### Coverage, and the gap this actually closes
+
+`tests/import-flow.test.ts` — **17 tests, committed.** Both defects are asserted as properties rather than fixed as incidents: confirming off the worklist cannot label anything (D-147), and every derived value goes at once when the one value goes (D-148). **This is the first committed coverage the batch worklist has ever had** — the gap `PLAN.md` calls the largest thing owed, closed for the decisions, still open for the markup.
+
+**`tests/privacy.test.ts` moved with the code and is stronger for it.** Its focus-and-scroll guard read `scrollToResult` out of the card form — the only copy when written, one of three by D-147, so it covered two thirds of the rule while appearing to cover all of it. It now asserts the shared module and then walks **all three surfaces**, requiring each to go through it, to carry no private `scrollIntoView` call, and to spell the focus target one way. **The guard failed when the code moved**, which is what `GOTCHAS.md` asks of a source grep and what the two traps about narrowing guards are about.
+
+Two of those traps were then hit while writing this, both in the same shape and both caught by the gate: a comment naming `scrollIntoView` failed a grep for the word (fixed by matching the **call**), and a comment naming the browser-logging API failed the no-observation-tooling walk. **A runtime warning was written and then removed** for that second reason — `app/` may not log, and a guard firing in the gate beats one firing in a browser nobody is watching.
+
+- Evidence: Vitest **730 passed / 7 skipped across 36 files**, up the 17 new tests with the skip count unchanged at **7**. Playwright owner **31/31** — the suite that drives the import flow end to end, which is what protects this refactor — and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` clean, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: no SQL moved, 266 across 8 from 2026-08-18. D-148 (the review that proposed both), D-147 and D-141 (the defects this makes unrepresentable), D-139 and D-124 (the banner pattern), D-125 (focus follows the eye).

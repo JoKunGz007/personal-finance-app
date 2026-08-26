@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useResultBanner } from "@/app/result-banner";
 import { StatementSync } from "@/app/statement-sync";
 import { sha256HexBytes } from "@/lib/canonical";
 import {
@@ -128,36 +129,20 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
   /** True while `StatementSync` is listing or downloading. Separate from `busy`, which is parsing. */
   const [syncing, setSyncing] = useState(false);
   /**
-   * **A wrapper that is always rendered, rather than a ref on the banner itself.** The banner only
-   * exists while there is a confirmation, so a ref on it would be null at the moment the effect
-   * wants to scroll — React has not committed the new element yet. The same reasoning as the card
-   * form's result banner (D-139), and the same anchor class.
-   */
-  const resultBanner = useRef<HTMLDivElement | null>(null);
-
-  /**
    * Brings the confirmation into view once a statement has reached the ledger.
    *
    * **The owner is looking at this list, not at the review table he just left** — which is D-139's
    * finding in a second place: a one-time answer belongs where the question was asked. Confirming
    * used to leave a sentence at the bottom of the single-import section, several screens above.
    *
-   * **No `behavior` is passed, and that is the accessible choice rather than an omission.** Left
-   * unspecified the browser follows the CSS `scroll-behavior`, which `app/globals.css` overrides to
-   * `auto` under `prefers-reduced-motion`; passing `"smooth"` would ignore that preference.
+   * **The anchor is a wrapper that is always rendered, rather than a ref on the banner itself.**
+   * The banner only exists while there is a confirmation, so a ref on it would be null at the
+   * moment the scroll wants to happen — React has not committed the new element yet.
+   *
+   * The scroll, the focus move and the reasoning behind both live in `app/result-banner.ts`, shared
+   * with the card form and the import bench (D-150).
    */
-  useEffect(() => {
-    if (!confirmation) return;
-    requestAnimationFrame(() => {
-      const anchor = resultBanner.current;
-      if (!anchor) return;
-      anchor.scrollIntoView({ block: "start" });
-      // Focus follows the eye: the scroll moves the viewport and nothing else, so a keyboard user
-      // would otherwise be left on a control now off-screen. `preventScroll` because the line above
-      // already chose the position, and letting focus scroll too overrides `scroll-margin-top`.
-      anchor.querySelector<HTMLElement>("[data-capture-result]")?.focus({ preventScroll: true });
-    });
-  }, [confirmation]);
+  const { anchor: resultBanner } = useResultBanner(confirmation);
 
   // Built only from files that have actually been through the worker: a queued file has no digest
   // and no frame, so there is nothing for the policy layer to decide about it yet.

@@ -60,7 +60,7 @@ import {
 import { LedgerSlipRow } from "@/app/ledger-slip-row";
 import { LedgerStatementRow } from "@/app/ledger-statement-row";
 import { LedgerSummary } from "@/app/ledger-summary";
-import { readError } from "@/lib/wire";
+import { ledgerRequest, readError } from "@/lib/wire";
 
 /**
  * Reads the confirmed ledger back (PLAN task 17). Front-end only: it calls the two
@@ -383,15 +383,19 @@ export function TransactionsView() {
     setBusy(true);
     setError(null);
     try {
-      const accountsResponse = await fetch("/api/v1/accounts", { cache: "no-store" });
-      const accountsBody: unknown = await accountsResponse.json();
-      if (!accountsResponse.ok) {
-        setError(readError(accountsBody, "Accounts could not be loaded."));
-        return;
-      }
-      const parsedAccounts = accountListSchema.safeParse(accountsBody);
-      if (!parsedAccounts.success) {
-        setError("The accounts response did not match its contract. Run the unit tests before trusting this view.");
+      // **The two blocking loads used to be the two least defended.** Both parsed their body with
+      // a bare `.json()` while the three optional loads below guarded theirs, so a platform error
+      // page — HTML, not JSON — threw here and was caught at the bottom as "the ledger could not be
+      // reached", sending the owner to check Docker when the route had in fact answered him.
+      // `ledgerRequest` tells the three cases apart; `unreachable` keeps the wording that was right
+      // for the case it really was.
+      const accountsResult = await ledgerRequest("/api/v1/accounts", accountListSchema, {
+        fallback: "Accounts could not be loaded.",
+        unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
+        offContract: "The accounts response did not match its contract. Run the unit tests before trusting this view."
+      });
+      if (!accountsResult.ok) {
+        setError(accountsResult.why);
         return;
       }
 
@@ -399,19 +403,17 @@ export function TransactionsView() {
       // no all-accounts RPC. Fine at this scale; revisit past tens of thousands of
       // rows, when this becomes pagination and a server-side filter (PLAN task 17).
       const loaded: AccountTransaction[] = [];
-      for (const account of parsedAccounts.data.accounts) {
-        const response = await fetch(`/api/v1/accounts/${account.id}/transactions`, { cache: "no-store" });
-        const body: unknown = await response.json();
-        if (!response.ok) {
-          setError(readError(body, `Transactions could not be loaded for ${account.label}.`));
+      for (const account of accountsResult.data.accounts) {
+        const result = await ledgerRequest(`/api/v1/accounts/${account.id}/transactions`, transactionListSchema, {
+          fallback: `Transactions could not be loaded for ${account.label}.`,
+          unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
+          offContract: `The transactions response for ${account.label} did not match its contract.`
+        });
+        if (!result.ok) {
+          setError(result.why);
           return;
         }
-        const parsed = transactionListSchema.safeParse(body);
-        if (!parsed.success) {
-          setError(`The transactions response for ${account.label} did not match its contract.`);
-          return;
-        }
-        for (const transaction of parsed.data.transactions) {
+        for (const transaction of result.data.transactions) {
           loaded.push({ ...transaction, account_id: account.id });
         }
       }
@@ -428,18 +430,15 @@ export function TransactionsView() {
       // rule's own. They are one response for exactly that reason (D-067).
       setMatches([]);
       setDecisionError(null);
-      const slipsResponse = await fetch("/api/v1/slips", { cache: "no-store" });
-      const slipsBody: unknown = await slipsResponse.json().catch(() => null);
-      if (!slipsResponse.ok) {
-        setSlipsError(readError(slipsBody, "Captured slips could not be loaded, so none are shown."));
-      } else {
-        const parsedSlips = slipListSchema.safeParse(slipsBody);
-        if (parsedSlips.success) {
-          setSlips(parsedSlips.data.slips);
-          setMatches(parsedSlips.data.matches);
-          setSlipCorrections(parsedSlips.data.corrections);
-        } else setSlipsError("The slips response did not match its contract, so none are shown.");
-      }
+      const slipsResult = await ledgerRequest("/api/v1/slips", slipListSchema, {
+        fallback: "Captured slips could not be loaded, so none are shown.",
+        offContract: "The slips response did not match its contract, so none are shown."
+      });
+      if (slipsResult.ok) {
+        setSlips(slipsResult.data.slips);
+        setMatches(slipsResult.data.matches);
+        setSlipCorrections(slipsResult.data.corrections);
+      } else setSlipsError(slipsResult.why);
 
       // Cash entries, on the same terms: the confirmed ledger is the authority, so a failure
       // here is reported beside the rows rather than replacing them. Corrections arrive on the
@@ -449,17 +448,14 @@ export function TransactionsView() {
       setCashError(null);
       setCash([]);
       setCashCorrections([]);
-      const cashResponse = await fetch("/api/v1/cash", { cache: "no-store" });
-      const cashBody: unknown = await cashResponse.json().catch(() => null);
-      if (!cashResponse.ok) {
-        setCashError(readError(cashBody, "Cash entries could not be loaded, so none are shown."));
-      } else {
-        const parsedCash = cashListSchema.safeParse(cashBody);
-        if (parsedCash.success) {
-          setCash(parsedCash.data.entries);
-          setCashCorrections(parsedCash.data.corrections);
-        } else setCashError("The cash response did not match its contract, so none are shown.");
-      }
+      const cashResult = await ledgerRequest("/api/v1/cash", cashListSchema, {
+        fallback: "Cash entries could not be loaded, so none are shown.",
+        offContract: "The cash response did not match its contract, so none are shown."
+      });
+      if (cashResult.ok) {
+        setCash(cashResult.data.entries);
+        setCashCorrections(cashResult.data.corrections);
+      } else setCashError(cashResult.why);
 
       // Notification cards, last and on the same terms. A card that fails to load is a payment
       // missing from the view, which is why it is said out loud below rather than left to a
@@ -472,20 +468,17 @@ export function TransactionsView() {
       // own and silently un-retire a card the owner had retired.
       setCardCorrections([]);
       setCardDecisions([]);
-      const cardsResponse = await fetch("/api/v1/notification-cards", { cache: "no-store" });
-      const cardsBody: unknown = await cardsResponse.json().catch(() => null);
-      if (!cardsResponse.ok) {
-        setCardsError(readError(cardsBody, "Captured notification cards could not be loaded, so none are shown."));
-      } else {
-        const parsedCards = notificationCardListSchema.safeParse(cardsBody);
-        if (parsedCards.success) {
-          setCards(parsedCards.data.cards);
-          setCardCorrections(parsedCards.data.corrections);
-          setCardDecisions(parsedCards.data.decisions);
-        } else setCardsError("The notification cards response did not match its contract, so none are shown.");
-      }
+      const cardsResult = await ledgerRequest("/api/v1/notification-cards", notificationCardListSchema, {
+        fallback: "Captured notification cards could not be loaded, so none are shown.",
+        offContract: "The notification cards response did not match its contract, so none are shown."
+      });
+      if (cardsResult.ok) {
+        setCards(cardsResult.data.cards);
+        setCardCorrections(cardsResult.data.corrections);
+        setCardDecisions(cardsResult.data.decisions);
+      } else setCardsError(cardsResult.why);
 
-      setAccounts(parsedAccounts.data.accounts);
+      setAccounts(accountsResult.data.accounts);
       setTransactions(loaded);
     } catch {
       setError("The ledger could not be reached. Check that the local Supabase stack is running.");

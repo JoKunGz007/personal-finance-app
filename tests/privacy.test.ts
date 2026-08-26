@@ -812,8 +812,37 @@ describe("privacy guardrails", () => {
 
   it("sends the page and the keyboard to a capture's result, without trapping either", () => {
     const form = readFileSync("app/notification-card-capture.tsx", "utf8");
-    const scroll = /function scrollToResult\(\)[\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(scroll, "scrollToResult must exist for this test to mean anything").toContain("scrollIntoView");
+
+    // **The behaviour moved, and this test moved with it** (D-150). It read `scrollToResult` out of
+    // the card form, which was the only copy when it was written and then became one of three —
+    // `app/statement-batch.tsx` and `app/import-bench.tsx` grew their own, and the newest spelled
+    // the focus target `data-bind-result` where its siblings spelled it `data-capture-result`, so
+    // this guard covered two thirds of the rule while appearing to cover it. They are one module
+    // now, and asserting *there* is what makes this cover every surface at once. The guard failed
+    // when the code moved, which is the behaviour `GOTCHAS.md` asks of a source grep.
+    const scroll = readFileSync("app/result-banner.ts", "utf8");
+    expect(scroll, "the shared result banner must exist for this test to mean anything").toContain("scrollIntoView");
+
+    // Every surface that reveals a banner goes through it, so none can grow a private copy that
+    // drifts. A fourth capture form is caught here rather than after it ships.
+    const surfaces = [
+      "app/notification-card-capture.tsx",
+      "app/statement-batch.tsx",
+      "app/import-bench.tsx"
+    ];
+    for (const file of surfaces) {
+      const source = readFileSync(file, "utf8");
+      expect(source, `${file} must reveal its banner through the shared module`).toContain("useResultBanner");
+      // **Matched on the call, not the word**, so a comment explaining the rule does not fail the
+      // rule — `app/import-bench.tsx` names `scrollIntoView` in prose while making no such call.
+      // That mistake has now been made three times in this file.
+      expect(source, `${file} must not carry a private copy of the scroll`).not.toMatch(/\.scrollIntoView\(/u);
+      // One spelling of the focus target. Two is what the drift above actually was, and a banner
+      // spelling it differently is silently never focused.
+      expect(source, `${file} must spell the focus target data-capture-result`)
+        .toMatch(/data-capture-result/u);
+      expect(source, `${file} must not reintroduce a second spelling`).not.toMatch(/data-bind-result/u);
+    }
 
     // **No `behavior`, deliberately** (D-124). Unspecified, the browser follows the CSS
     // `scroll-behavior`, which `app/globals.css` sets to smooth and overrides to auto under

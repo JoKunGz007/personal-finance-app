@@ -48,8 +48,20 @@ const STRICT = process.argv.includes("--strict");
 // stay readable in one pass is the **index**. When the index stops being scannable, the answer is
 // structural — splitting the file along its existing section headings, each with its own index —
 // and **not** a third raise. A budget raised twice is a budget that has been abandoned.
+//
+// **That condition fired and was honoured on 2026-08-25** (D-149). The owner chose the split rather
+// than a third raise, and the 149 trap bodies moved to `docs/gotchas/`, one file per section, with
+// `GOTCHAS.md` keeping the index alone. So the 260 KB figure is retired rather than raised: it
+// bounded a body nobody read front-to-back, and there is no longer a single body to bound. The two
+// budgets below replace it and each measures something a reader actually pays.
+//
+// **The index gets the tight one**, because it is the only part read in full and its scannability
+// was the whole condition. **Each section gets the loose one**, because a reader arrives through the
+// index and opens exactly one — 80 KB is ~26,000 tokens, which is a section still readable in one
+// pass. A section that breaches splits in two; there is still no archive for traps, by design.
 const DECISIONS_BYTE_BUDGET = 120_000;
-const GOTCHAS_BYTE_BUDGET = 260_000;
+const GOTCHAS_INDEX_BYTE_BUDGET = 40_000;
+const GOTCHAS_SECTION_BYTE_BUDGET = 80_000;
 
 // A path is checkable when its first segment is a directory the repo actually owns.
 // Anything else in backticks is a package-internal path, an external tool, or generated
@@ -86,6 +98,18 @@ const has = (rel) => existsSync(join(ROOT, rel));
 const DECISIONS = "DECISIONS.md";
 const GOTCHAS = "GOTCHAS.md";
 const CONTINUITY = [DECISIONS, GOTCHAS, "SPEC.md", "PLAN.md", "HANDOFF.md"];
+
+// **The traps live in `docs/gotchas/`, one file per section, since 2026-08-25** (D-149). `GOTCHAS.md`
+// keeps the index and nothing else, so every check below that used to read one file now reads these
+// and treats them as one document. Ordered by name so a run reports the same way twice.
+function gotchaFiles() {
+  const dir = join(ROOT, "docs", "gotchas");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .sort()
+    .map((f) => `docs/gotchas/${f}`);
+}
 
 function archiveFiles() {
   const dir = join(ROOT, "docs", "decisions");
@@ -162,8 +186,11 @@ checkIndex(
   { label: "decisions" },
 );
 
-const gotchaTitles = headings(read(GOTCHAS))
-  .map((h) => h.text)
+// Gathered across every section file rather than out of `GOTCHAS.md`, which now holds the index
+// alone. The index is still checked against the bodies one for one — that is the property the split
+// had to preserve, since an index is worth nothing if it can drift from what it claims to cover.
+const gotchaTitles = gotchaFiles()
+  .flatMap((f) => headings(read(f)).map((h) => h.text))
   .filter((t) => t !== "Index" && t !== "Traps");
 checkIndex(GOTCHAS, gotchaTitles, { label: "traps" });
 
@@ -215,12 +242,18 @@ for (const [p, note] of Object.entries(RETIRED_PATHS)) {
 // Different files, different remedies, and saying so is the point of not sharing one message.
 // There is no archive for traps: a trap whose subject is gone gets a dated "no longer live" line
 // and keeps whatever generalisation outlived it. Relocating them would only move the reading cost.
+// **`GOTCHAS.md` is an index now and is budgeted as one** (D-149). The split D-134 owed was
+// performed on 2026-08-25, so the old 260 KB figure no longer describes anything: what it was
+// protecting — a file nobody could read in one pass — is now eight files, and the cost that
+// matters is per section, since a reader arrives through the index and opens exactly one.
 const BUDGETS = [
   [DECISIONS, DECISIONS_BYTE_BUDGET,
     "archive the oldest contiguous range into docs/decisions/ (D-080), then move its index bullets to the Archived section"],
-  [GOTCHAS, GOTCHAS_BYTE_BUDGET,
+  [GOTCHAS, GOTCHAS_INDEX_BYTE_BUDGET,
+    "this file is the index alone — if it has grown past that, prose has crept back in and belongs in a section file"],
+  ...gotchaFiles().map((f) => [f, GOTCHAS_SECTION_BYTE_BUDGET,
     "retire traps whose subject no longer exists, keeping the generalisation that outlived them — " +
-    "and if that is not enough, split the file along its section headings rather than raising this again (D-134)"]
+    "and if that is not enough, split this section in two and give both halves an index entry (D-149)"])
 ];
 
 const kb = (bytes) => `${(bytes / 1024).toFixed(0)} KB`;
@@ -240,22 +273,29 @@ for (const [file, budget, remedy] of BUDGETS) {
 // A trap is stale when what it warns about changes, which no position in the file
 // predicts. The only queryable proxy is the date on its own Verify line.
 {
-  const lines = read(GOTCHAS);
-  const heads = headings(lines).filter((h) => h.text !== "Index" && h.text !== "Traps");
   let undated = 0;
-  for (let i = 0; i < heads.length; i++) {
-    const from = heads[i].n;
-    const to = i + 1 < heads.length ? heads[i + 1].n - 1 : lines.length;
-    const block = lines.slice(from, to).join("\n");
-    const verify = /^- (?:\*\*)?Verif/m.test(block);
-    if (!verify) {
-      fail(GOTCHAS, `"${heads[i].text.slice(0, 60)}" has no Verify line`);
-    } else if (!/\b20\d\d-\d\d-\d\d\b/.test(block)) {
-      undated++;
+  let total = 0;
+  // Per file, because a trap's block ends at the next heading **in its own file** — running the
+  // scan over a concatenation would let the last trap of one section swallow the next section's
+  // header and borrow its date.
+  for (const file of gotchaFiles()) {
+    const lines = read(file);
+    const heads = headings(lines).filter((h) => h.text !== "Index" && h.text !== "Traps");
+    total += heads.length;
+    for (let i = 0; i < heads.length; i++) {
+      const from = heads[i].n;
+      const to = i + 1 < heads.length ? heads[i + 1].n - 1 : lines.length;
+      const block = lines.slice(from, to).join("\n");
+      const verify = /^- (?:\*\*)?Verif/m.test(block);
+      if (!verify) {
+        fail(file, `"${heads[i].text.slice(0, 60)}" has no Verify line`);
+      } else if (!/\b20\d\d-\d\d-\d\d\b/.test(block)) {
+        undated++;
+      }
     }
   }
   if (undated) {
-    warn(GOTCHAS, `${undated} of ${heads.length} traps carry no date, so their staleness cannot be queried`);
+    warn(GOTCHAS, `${undated} of ${total} traps carry no date, so their staleness cannot be queried`);
   }
 }
 

@@ -6,7 +6,7 @@ import { NotificationCardCapture } from "@/app/notification-card-capture";
 import { SlipBatch } from "@/app/slip-batch";
 import { SlipCapture } from "@/app/slip-capture";
 import { slipListSchema, slipsInForce, type CapturedSlip } from "@/lib/slips";
-import { readError } from "@/lib/wire";
+import { ledgerRequest } from "@/lib/wire";
 
 /**
  * The slips route's two halves and the state they share (D-075).
@@ -30,22 +30,20 @@ export function SlipsBench() {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/v1/slips", { cache: "no-store" });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        setError(readError(body, "Captured slips could not be loaded."));
-        return;
-      }
-      const parsed = slipListSchema.safeParse(body);
-      if (!parsed.success) {
-        setError("The slips response did not match its contract, so none are shown.");
+      const result = await ledgerRequest("/api/v1/slips", slipListSchema, {
+        fallback: "Captured slips could not be loaded.",
+        unreachable: "The ledger could not be reached, so captured slips are not shown.",
+        offContract: "The slips response did not match its contract, so none are shown."
+      });
+      if (!result.ok) {
+        setError(result.why);
         return;
       }
       // Shown as they stand, corrections applied. A list that displayed the captured figure
       // beside a ledger showing the corrected one would make the two surfaces disagree about
       // the same slip, and the one to trust would not be the one that looks authoritative.
-      setSlips(slipsInForce(parsed.data.slips, parsed.data.corrections));
-      setDecided(new Set(parsed.data.matches.map((match) => match.slip_id)));
+      setSlips(slipsInForce(result.data.slips, result.data.corrections));
+      setDecided(new Set(result.data.matches.map((match) => match.slip_id)));
     } catch {
       setError("The ledger could not be reached, so captured slips are not shown.");
     } finally {

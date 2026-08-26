@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-25.
+Last updated: 2026-08-26.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -16,14 +16,16 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-134 onward** in full,
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141 onward** in full,
 with D-001…D-059 in [docs/decisions/ARCHIVE-D-001-D-059.md](docs/decisions/ARCHIVE-D-001-D-059.md),
 D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md),
 D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md),
-D-120…D-129 in [docs/decisions/ARCHIVE-D-120-D-129.md](docs/decisions/ARCHIVE-D-120-D-129.md) and
-D-130…D-133 in [docs/decisions/ARCHIVE-D-130-D-133.md](docs/decisions/ARCHIVE-D-130-D-133.md);
-the index at the top of `DECISIONS.md` covers all six) →
-[GOTCHAS.md](GOTCHAS.md) (traps worth reading before touching tests or the database).
+D-120…D-129 in [docs/decisions/ARCHIVE-D-120-D-129.md](docs/decisions/ARCHIVE-D-120-D-129.md),
+D-130…D-133 in [docs/decisions/ARCHIVE-D-130-D-133.md](docs/decisions/ARCHIVE-D-130-D-133.md) and
+D-134…D-140 in [docs/decisions/ARCHIVE-D-134-D-140.md](docs/decisions/ARCHIVE-D-134-D-140.md);
+the index at the top of `DECISIONS.md` covers all seven) →
+[GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
+per section, since D-149** — read the index, then open the one section that applies).
 
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture and
 recovery contracts are in `PRODUCT.md`, `DESIGN.md` and `docs/`, including the three per-bank layout
@@ -131,7 +133,8 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
 - **The statement mailbox is live and its credentials are the owner's alone.** A dedicated Gmail with 2FA, an IMAP app password in Bitwarden, and a Gmail filter forwarding three senders. `statement-mailbox.json` at the repo root names the mailbox and the senders — gitignored, no secret in it, but it names an address, so **do not quote it into any document or commit**. **The app password is read from stdin only** by `scripts/fetch-statements.mjs` and has never been in a file, an argument or an environment variable there. `private-statements/inbox/` is where the fetcher writes and is inside the never-read boundary.
 - **D-017 is superseded on binding.** A statement whose printed bank and last four resolve to exactly one account is now bound without asking, by default, with a switch in the batch section. **The review and the confirmation are untouched** — a browser test asserts `import_batches` stays at zero after an automatic bind.
 - **Five pushes across 2026-08-23 and 2026-08-24, all deployed and NONE verified in the dashboard by an agent**: `6a6f752` (bulk statement import, D-141), `7f7aa65` (the slip-form review fixes, D-142), `617c2c8` (the tertiary button rank, D-143), `63b5d24` (the mail fetcher and automatic binding, D-144) and `0a4bf9a` (the hosted Sync button and the fifth archive boundary, D-145 and D-146). **The owner verifies a deployment; nothing here can.**
-- **Uncommitted right now: the D-147 fix and four continuity docs, plus the two local-only config files.** `app/import-bench.tsx` and `app/globals.css` are real source implementing the binding banner; `HANDOFF.md`, `PLAN.md`, `DECISIONS.md` and `GOTCHAS.md` carry D-147 and the post-`0a4bf9a` corrections the previous session deliberately held back. **All six are meant to go in one commit.** `eslint.config.mjs` and `playwright.config.ts` are the never-committed pair and are the only entries in `git status --short` that must be left out.
+- **Uncommitted right now: D-148 (the client wire seam), D-149 (the traps split and the sixth archive boundary), D-150 (the shared result banner and the worklist value), and the continuity docs, plus the two local-only config files.** D-150 adds `app/result-banner.ts`, `lib/import-flow.ts` and `tests/import-flow.test.ts`, and touches the three capture surfaces and `tests/privacy.test.ts`. `lib/wire.ts`, `tests/wire.test.ts` (new), `app/transactions-view.tsx`, `app/import-bench.tsx` and `app/slips-bench.tsx` are real source; `scripts/check-docs.mjs` follows the split bodies; `docs/gotchas/` (eight new files) and `docs/decisions/ARCHIVE-D-134-D-140.md` (new) are relocations, byte-identical inside; `HANDOFF.md`, `PLAN.md`, `DECISIONS.md` and `GOTCHAS.md` carry both entries. **All of it is meant to go in one commit.** **`GOTCHAS.md` shrank 208 KB → 15 KB and that is a move, not a deletion** — `check:docs --strict` reports the same **149 traps** it did before, which is the proof. `eslint.config.mjs` and `playwright.config.ts` are the never-committed pair and are the only entries in `git status --short` that must be left out. **D-147 is already in** as `8fb6c26`, pushed and deployed 2026-08-25 — the line that used to sit here called it uncommitted and was stale from the moment that push landed.
+- **The commit-and-push grant is spent and D-148 has not been asked for.** The 2026-08-25 grant covered `8fb6c26` and nothing after it. The work above is reviewed, gated and sitting in the working tree waiting for a fresh ask; **a push to `main` is a production deployment**, so it is one ask for the commit and the deploy together.
 - **The hosted Sync button is COMMITTED, PUSHED, DEPLOYED and now CONFIGURED** (D-145, PLAN task 41). The owner set the three variables in Vercel at Production scope on **2026-08-25** and redeployed, and **the first real sync worked on the first attempt** — five statements out of the dedicated mailbox, decrypted on the device. That is the first time any of this code had spoken to a real mail server, so the standing warning that it never had is discharged. The 503-when-unset path is still what an unconfigured deployment gets. **D-145's own Status line still reads "uncommitted and not deployed"**: it was true when written, `DECISIONS.md` is append-only, and this line is the correction — which is the division of labour D-052 sets, not an oversight. **The archive boundary went in the same commit rather than its own**, deviating from `592a1b0`'s precedent, because both edits touch interleaved regions of `DECISIONS.md`.
 - **The Sync button's three variables are set and that grant is spent.** `STATEMENT_MAILBOX_USER`, `STATEMENT_MAILBOX_SENDERS` and `STATEMENT_MAILBOX_APP_PASSWORD`, Production scope, the password Sensitive, none prefixed `NEXT_PUBLIC_`. **The two non-secret values live in `statement-mailbox.json` at the repo root** — gitignored, no secret in it, but it names an address, so do not quote it anywhere. **A sender pasted with its JSON quotes still contains an `@`, so it passes validation and then matches nothing**, which looks exactly like a bank that stopped sending; strip the quotes. **Any further hosted-resource change needs its own ask.** **`/security-review` ran on 2026-08-24 and found nothing** — it verified the owner gate on both routes, that the validated uid/part cannot reach unauthorized bytes, TLS certificate validation, that the app password cannot leak into a body or a log, and that the mail-supplied filename is neither a header-injection nor an XSS vector. **Until the variables are set both routes answer 503 with a sentence naming what is unset**, which is proved in a browser against the real route.
 - **`statement-mailbox.json` is gitignored and therefore does not exist in a deployment.** That is why the hosted side reads the same two facts from the environment instead. The variable names are deliberately **not** in `.env.example`, which is inside the never-read boundary and is the owner's to edit.
@@ -156,9 +159,12 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
 - **`eslint.config.mjs` and `playwright.config.ts` are deliberately local-only and are never
   committed.** `git status --short` is what tells them apart from ordinary uncommitted work.
   `playwright.owner.config.ts` and `playwright.isolated.config.ts` **are** committed — only the bare
-  `playwright.config.ts` is local-only, and it will time out before running a single test because it
-  sets no `webServer.timeout` for a cold `pnpm build && pnpm start`. Fix it by hand or use the
-  isolated config, which `docs/LOCAL_DEV.md` recommends anyway.
+  `playwright.config.ts` is local-only. **It was repaired on 2026-08-25 on the owner's instruction
+  and now runs green, 18/18, which it had never done**: `testIgnore` for the two owner specs,
+  `webServer.timeout: 180_000` for a cold `pnpm build && pnpm start`, and
+  `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "0"`. The three hazards this bullet used to describe are
+  therefore closed **in the owner's working copy only** — a fresh clone still has none of it,
+  because the file is never committed. `docs/LOCAL_DEV.md` still recommends the isolated config.
 - **Every project is on migration 020, the hosted one included, verified against the remote**
   (D-126, 2026-08-18). All twenty match local and remote. `private-ledger-live` stays frozen on 012.
   **The backup contract is v7**, and `restore_backup` still accepts v2 onward.
@@ -255,8 +261,14 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
 
 ## Live hazards on this machine
 
-- **The local-only `playwright.config.ts` does not pin `GOOGLE_VISION_KEY`, and on this machine it
-  runs a real build.** Found by the 2026-08-19 security review. The **committed** copy runs
+- **CLOSED 2026-08-25 in the owner's working copy, and restated because the file is never
+  committed.** The local-only `playwright.config.ts` now pins `GOOGLE_VISION_KEY` empty and carries
+  a `testIgnore` for both owner specs, so the incident below is no longer reachable through it. It
+  is recorded rather than deleted because **a fresh clone has none of those lines**, and because
+  `/code-review` flagged this section as stale on 2026-08-25 while it still described all three as
+  open. What follows is the hazard as it stood. **The local-only `playwright.config.ts` does not pin
+  `GOOGLE_VISION_KEY`, and on this machine it runs a real build.** Found by the 2026-08-19 security
+  review. The **committed** copy runs
   `pnpm dev`, which never hydrates under the strict CSP, so its tests cannot really execute — but
   the **working copy** runs `pnpm build && pnpm start`, which they do (GOTCHAS records this reversal
   for a different trap). It has no `testIgnore`, so it collects `owner-session.spec.ts` including

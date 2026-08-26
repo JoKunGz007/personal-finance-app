@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useResultBanner } from "@/app/result-banner";
 import { accountListSchema, createAccountSchema, ledgerAccountSchema, type LedgerAccount } from "@/lib/accounts";
 import { encryptBackup } from "@/lib/backup";
 import { downloadFile } from "@/lib/download";
@@ -10,7 +11,12 @@ import type { StatementFrame } from "@/lib/statement-frame";
 import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
-import { StatementBatch, type BatchConfirmation, type BatchHandoff } from "@/app/statement-batch";
+import {
+  bannerCarriesRefusal, bannerFor, confirmationFor, confirmed, openedFromWorklist, rebound,
+  type BindOutcome, type Worklist
+} from "@/lib/import-flow";
+import { ledgerRequest } from "@/lib/wire";
+import { StatementBatch, type BatchHandoff } from "@/app/statement-batch";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
 const stages: Array<{ id: Stage; label: string }> = [
@@ -22,25 +28,6 @@ const stages: Array<{ id: Stage; label: string }> = [
 ];
 
 type Extracted = { frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number };
-
-/**
- * What pressing **Bind & review** on a worklist row resolved to.
- *
- * **A statement leaves the worklist through three different doors and only one of them used to say
- * so** — it binds automatically (D-144), it needs an account chosen, or it is refused by
- * `assembleImportPayload`. This carries which, so the answer can be *shown and announced* at the
- * section the page moves to rather than inferred from the fact that something scrolled.
- *
- * `boundTo` and `refusal` are never both set: a refusal is not a binding.
- */
-type BatchBinding = {
-  readonly label: string;
-  readonly rows: number;
-  /** The account it bound to, or null when the owner still has to choose one. */
-  readonly boundTo: string | null;
-  /** Why `assembleImportPayload` refused, or null. */
-  readonly refusal: string | null;
-};
 
 type WorkerReply =
   | { type: "parsed"; frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number; valueLabels?: string[] }
@@ -96,28 +83,43 @@ export function ImportBench() {
   // pass in the batch worklist. Session-scoped and nothing more: the authority on what is already
   // imported is `import_artifacts` in the database, which refuses a repeat on its own.
   const [confirmedDigests, setConfirmedDigests] = useState<readonly string[]>([]);
-  // Which batch entry is being worked, and the last one that reached the ledger. Both exist so the
-  // worklist can say what happened **where the owner is looking** — the same finding as D-139, in a
-  // second place: confirming used to leave its sentence at the bottom of the single-import section,
-  // several screens above the list the owner was working down.
-  const [workingLabel, setWorkingLabel] = useState<string | null>(null);
+  /**
+   * Which batch entry is being worked, and where it has got to — **one value, deliberately**.
+   *
+   * It was three (`workingLabel`, `batchBinding`, `batchConfirmation`), and the seam between them
+   * is where D-147 and D-148 both lived: state that marks a mode, set in one place and cleared in
+   * none, then cleared in a helper that half the exits forgot to call. `null` is now the only way
+   * to be out of the worklist, so it cannot be cleared by halves. The transitions and the banner
+   * are pure functions in `lib/import-flow.ts`, where they are covered by committed tests (D-150).
+   */
+  const [worklist, setWorklist] = useState<Worklist | null>(null);
   // **Binding a statement without asking, when exactly one account can possibly take it** (D-144,
   // relaxing D-017 on the owner's decision). Default on, and switchable in the batch section so it
   // is visible rather than a hidden behaviour. What it removes is the dropdown, never the review:
   // `assembleImportPayload` still refuses a mismatch, the review table still shows every balance,
   // and confirming is still an explicit act — which is what D-055's reordering warning needs.
   const [autoBind, setAutoBind] = useState(true);
-  const [batchConfirmation, setBatchConfirmation] = useState<BatchConfirmation | null>(null);
-  // The outcome of the last **Bind & review**, and the thing the scroll effect below keys on.
-  // A fresh object on every press, so re-opening the same statement scrolls and announces again.
-  const [batchBinding, setBatchBinding] = useState<BatchBinding | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  // Derived, not stored. It was a third `useState` that had to be set on confirming and cleared on
+  // everything else, which is the exact shape that produced D-147.
+  const batchConfirmation = confirmationFor(worklist);
+  const banner = worklist === null ? null : bannerFor(worklist);
   /**
-   * Always in the tree, so its position is knowable before the binding section it precedes exists.
-   * A ref on that section would be null at the moment `workBatchEntry` wants to scroll, because
-   * React has not committed it yet (the reasoning `app/notification-card-capture.tsx` records).
+   * Brings whatever a **Bind & review** press produced into view, and announces it.
+   *
+   * Keyed on the binding **outcome** rather than on a stage, which is D-147: the guard used to read
+   * `stage !== "bind"`, and an automatically bound statement (D-144) goes straight to `review` and
+   * never passes through `bind` — so the one path that is *on by default* got no scroll at all, and
+   * the owner was left looking at an unchanged worklist while the answer rendered off-screen.
+   *
+   * The anchor is always in the tree, so its position is knowable before the binding section it
+   * precedes exists. A ref on that section would be null at the moment `workBatchEntry` wants to
+   * scroll, because React has not committed it yet.
+   *
+   * The scroll, the focus move and the reasoning behind both now live in `app/result-banner.ts`,
+   * which is the same module its two sibling capture surfaces use (D-150).
    */
-  const bindAnchor = useRef<HTMLDivElement | null>(null);
+  const { anchor: bindAnchor } = useResultBanner(banner);
 
   /**
    * Loads the account list once, unprompted.
@@ -131,35 +133,6 @@ export function ImportBench() {
     void loadAccounts();
     // Once, on mount. Re-running it on every render would put a request behind every keystroke.
   }, []);
-
-  /**
-   * Brings whatever a **Bind & review** press produced into view, and announces it.
-   *
-   * Without it, pressing the button changed a section the owner could not see and appeared to do
-   * nothing. **That was fixed once for the chooser and the fix did not survive auto-binding.** The
-   * guard read `stage !== "bind"`, but an automatically bound statement (D-144) goes straight to
-   * `review` and never passes through `bind` — so the one path that is *on by default* got no
-   * scroll at all, and the owner was left looking at an unchanged worklist while the answer
-   * rendered off-screen. It is keyed on the binding outcome now rather than on a stage, because the
-   * stage is what auto-binding changed and the outcome is what this effect is actually about.
-   *
-   * **Focus follows the eye**, matching the confirmation banner in `app/statement-batch.tsx`: the
-   * scroll moves the viewport and nothing else, so a keyboard user would otherwise be left on a
-   * control that is now off-screen. `preventScroll` because the line above already chose the
-   * position, and letting focus scroll too overrides `scroll-margin-top`.
-   *
-   * **No `behavior` is passed**, so the browser follows the CSS `scroll-behavior`, which
-   * `app/globals.css` overrides to `auto` under `prefers-reduced-motion`.
-   */
-  useEffect(() => {
-    if (!batchBinding) return;
-    requestAnimationFrame(() => {
-      const anchor = bindAnchor.current;
-      if (!anchor) return;
-      anchor.scrollIntoView({ block: "start" });
-      anchor.querySelector<HTMLElement>("[data-bind-result]")?.focus({ preventScroll: true });
-    });
-  }, [batchBinding]);
 
   const reconciliation = useMemo(
     () => statement ? reconcileRows(statement.openingBalance.minor, statement.rows) : null,
@@ -197,38 +170,56 @@ export function ImportBench() {
   const shownWarnings = assemblyWarnings.length > 0 ? assemblyWarnings : reconciliation?.warnings ?? [];
 
   /**
-   * Forgets that a batch entry was being worked, for the single-PDF paths that are not one.
+   * Puts down whatever statement was loaded, because the owner has chosen a different document.
    *
-   * **Three pieces of state say "the owner is working the worklist" and none of them was ever put
-   * back.** `workingLabel` in particular is only ever *set*, which is a mislabelling waiting to
-   * happen: confirm a worklist entry, then unlock an unrelated PDF through the picker above and
-   * confirm that, and `confirmBoundImport` still sees the old label — so the worklist's banner
-   * announces that the *earlier* statement reached the ledger, carrying this one's row count,
-   * account and batch id. Found by `/code-review` on 2026-08-25, beside the banner that made the
-   * same class of mistake visible.
+   * **The review section and its Confirm button are gated on `statement`, not on `stage`**, and the
+   * file picker is always on screen — so choosing a new PDF used to leave the *previous* statement's
+   * review table live, with an enabled **Confirm import** beside it still carrying that statement's
+   * payload and artifact digest, under a status line naming the new file. Pressing it filed the old
+   * statement into an append-only ledger.
    *
-   * Called by the two single-import entry points rather than folded into them, so the next one
-   * added has one thing to call instead of three lines to remember.
+   * **That hazard predates the worklist**, but clearing only the worklist state made it quieter
+   * rather than safer: the binding banner naming the old statement was the one thing on screen
+   * saying it was still loaded, and removing that cue while leaving the confirm path intact is
+   * strictly worse. Found by `/code-review` on 2026-08-25, against the change that introduced it.
+   *
+   * Everything a review is built from goes at once. The parse that follows sets all of it again;
+   * what matters is that nothing survives *between* choosing a document and reading it.
    */
-  function leaveTheWorklist() {
-    setWorkingLabel(null);
-    setBatchBinding(null);
-    setBatchConfirmation(null);
+  function discardLoadedStatement() {
+    setWorklist(null);
+    setStatement(null);
+    setExtracted(null);
+    setBoundAccount(null);
+    setBindingError(null);
+    setAssemblyWarnings([]);
+    setArtifactDigest("");
+    setSelectedRow(null);
+    setRowCategories({});
+    setLabelCandidates([]);
+    setValueLabels([]);
+    setStructure([]);
   }
 
   async function loadSynthetic() {
     setStatus("Loading invented statement…");
-    const response = await fetch("/api/v1/demo", { cache: "no-store" });
-    const parsed = importPayloadSchema.safeParse(await response.json());
-    if (!parsed.success) {
-      setStatus("The synthetic fixture failed its own contract. Run the unit tests before continuing.");
+    // **This used to check nothing but the schema.** No `ok`, and a bare `.json()` — so a route
+    // that refused reported as "the fixture failed its own contract", pointing at the fixture
+    // rather than at the route, and an answer that was not JSON threw out of an `onClick` with
+    // nothing to catch it, leaving the status line reading "Loading invented statement…" for good.
+    const result = await ledgerRequest("/api/v1/demo", importPayloadSchema, {
+      fallback: "The synthetic statement could not be loaded.",
+      offContract: "The synthetic fixture failed its own contract. Run the unit tests before continuing."
+    });
+    if (!result.ok) {
+      setStatus(result.why);
       return;
     }
     setExtracted(null);
     setBoundAccount(null);
     setBindingError(null);
-    leaveTheWorklist();
-    setStatement(parsed.data);
+    setWorklist(null);
+    setStatement(result.data);
     setAssemblyWarnings([]);
     setStage("review");
     setStatus("Synthetic statement ready. Nothing in this review came from a real account.");
@@ -263,7 +254,7 @@ export function ImportBench() {
         setAssemblyWarnings([]);
         setBoundAccount(null);
         setBindingError(null);
-        leaveTheWorklist();
+        setWorklist(null);
         setStage("bind");
         // Three layouts read now, so the status line says which one ran — and whether the
         // rows were checked against the statement's own totals, which is the difference
@@ -309,10 +300,9 @@ export function ImportBench() {
    * exists, which is what keeps bulk import from becoming a second way to reach the ledger.
    */
   function workBatchEntry(handoff: BatchHandoff) {
-    setWorkingLabel(handoff.label);
-    // Cleared as the next statement is opened: a banner about the previous one, sitting above the
-    // chooser for this one, reads as though this one had already been confirmed.
-    setBatchConfirmation(null);
+    // The worklist value is replaced outright further down, once binding has resolved — which is
+    // also what clears any banner about the *previous* entry. One sitting above the chooser for
+    // this one reads as though this one had already been confirmed.
     setArtifactDigest(handoff.artifactDigest);
     setExtracted({ frame: handoff.frame, rows: handoff.rows, pageCount: handoff.pageCount });
     setStatement(null);
@@ -347,16 +337,10 @@ export function ImportBench() {
     // **Auto-bind takes the dropdown away, not the decision.** The review table below is unchanged
     // and confirming is still an explicit act, which is what D-055's reordering warning depends on.
     if (autoBind && match) {
-      const refusal = bindTo(match, source, true);
-      setBatchBinding({
-        label: handoff.label,
-        rows: handoff.rows.length,
-        boundTo: refusal === null ? `${match.label} •••• ${match.last_four}` : null,
-        refusal
-      });
+      setWorklist(openedFromWorklist(handoff.label, handoff.rows.length, bindTo(match, source, true)));
       return;
     }
-    setBatchBinding({ label: handoff.label, rows: handoff.rows.length, boundTo: null, refusal: null });
+    setWorklist(openedFromWorklist(handoff.label, handoff.rows.length, { kind: "needs-account" }));
     setStage("bind");
     setStatus(
       `${handoff.label}: read ${handoff.rows.length} rows across ${handoff.pageCount} page(s) as a `
@@ -371,24 +355,21 @@ export function ImportBench() {
 
   async function loadAccounts() {
     setStatus("Loading your ledger accounts…");
-    const response = await fetch("/api/v1/accounts", { cache: "no-store" });
-    const body: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      const message = typeof body === "object" && body !== null && "error" in body ? String((body as { error: unknown }).error) : "Accounts could not be loaded.";
+    // This had written out `readError`'s body by hand rather than importing it — the same four
+    // lines, a second time, where a bug fixed in one copy would not reach the other.
+    const result = await ledgerRequest("/api/v1/accounts", accountListSchema, {
+      fallback: "Accounts could not be loaded.",
+      offContract: "The accounts response did not match its contract, so nothing can be bound."
+    });
+    if (!result.ok) {
       setAccounts(null);
-      setStatus(message);
+      setStatus(result.why);
       return;
     }
-    const parsed = accountListSchema.safeParse(body);
-    if (!parsed.success) {
-      setAccounts(null);
-      setStatus("The accounts response did not match its contract, so nothing can be bound.");
-      return;
-    }
-    setAccounts(parsed.data.accounts);
-    setStatus(parsed.data.accounts.length === 0
+    setAccounts(result.data.accounts);
+    setStatus(result.data.accounts.length === 0
       ? "No ledger accounts exist yet. One must be created before a statement can be bound."
-      : `${parsed.data.accounts.length} ledger account(s) available. Binding is checked against the printed account and currency.`);
+      : `${result.data.accounts.length} ledger account(s) available. Binding is checked against the printed account and currency.`);
   }
 
   // Creating an account is the way out of a real dead end. A statement prints an account
@@ -464,7 +445,7 @@ export function ImportBench() {
    * back — a `useState` setter does not update the variable it was called with — and the worklist
    * banner has to say which of the two happened in the same tick.
    */
-  function bindTo(account: LedgerAccount, source: Extracted, automatic: boolean): string | null {
+  function bindTo(account: LedgerAccount, source: Extracted, automatic: boolean): BindOutcome {
     const result = assembleImportPayload(source.frame, source.rows, {
       accountId: account.id,
       bankCode: account.bank_code,
@@ -477,7 +458,7 @@ export function ImportBench() {
       // An automatic attempt that is refused leaves the chooser up rather than the review, so the
       // owner sees the refusal beside the control that can answer it.
       setStage("bind");
-      return result.message;
+      return { kind: "refused", message: result.message };
     }
     setBindingError(null);
     setBoundAccount(account);
@@ -493,7 +474,7 @@ export function ImportBench() {
       + ` on its printed ${source.frame.bankCode} code and last four digits.`
       + " Review every balance before confirming."
     );
-    return null;
+    return { kind: "bound", accountLabel: `${account.label} •••• ${account.last_four}` };
   }
 
   function bindStatement() {
@@ -503,14 +484,10 @@ export function ImportBench() {
       setBindingError("Choose the ledger account this statement belongs to.");
       return;
     }
-    const refusal = bindTo(account, extracted, false);
-    // Only while a batch entry is being worked. `null` here is the single-import path, which has
-    // its own status line and no worklist to answer to.
-    setBatchBinding((current) => current === null ? null : {
-      ...current,
-      boundTo: refusal === null ? `${account.label} •••• ${account.last_four}` : null,
-      refusal
-    });
+    const outcome = bindTo(account, extracted, false);
+    // `rebound` returns null unchanged when nothing is being worked, which is the single-import
+    // path: it has its own status line and no worklist to answer to.
+    setWorklist((current) => rebound(current, outcome));
   }
 
   async function confirmBoundImport() {
@@ -530,17 +507,15 @@ export function ImportBench() {
     }
     setStage("confirmed");
     setConfirmedDigests((current) => current.includes(artifactDigest) ? current : [...current, artifactDigest]);
-    // The worklist's own confirmation banner takes over from here and scrolls the owner back up to
-    // it. Leaving this one up would answer the same press twice, in two places, one of them stale.
-    setBatchBinding(null);
-    if (workingLabel !== null) {
-      setBatchConfirmation({
-        label: workingLabel,
-        rows: statement.rows.length,
-        accountLabel: `${boundAccount.label} •••• ${boundAccount.last_four}`,
-        batchId: String(record.batchId)
-      });
-    }
+    // **One transition, so the binding banner cannot outlive the confirmation.** `confirmed`
+    // returns null unchanged off the worklist, and `bannerFor` returns null on a confirmed phase —
+    // so the worklist's own banner takes over and this one goes, without either being cleared by
+    // hand. Leaving both up answered the same press twice, in two places, one of them stale.
+    setWorklist((current) => confirmed(
+      current,
+      `${boundAccount.label} •••• ${boundAccount.last_four}`,
+      String(record.batchId)
+    ));
     // The ledger has moved, so whatever backup exists no longer covers it. Said here rather
     // than shown on the recovery route: the two are separate routes now and share no state,
     // and the authoritative check is the sequence `confirm_backup_custody` compares anyway.
@@ -616,6 +591,14 @@ export function ImportBench() {
             <input type="file" name="statement-pdf" accept="application/pdf,.pdf" onChange={(event) => {
               const nextFile = event.target.files?.[0] ?? null;
               setFile(nextFile);
+              // **Choosing a PDF here is the moment the owner puts down the last one**, and it is
+              // the only moment that covers every way of doing so. `parsePdf` reads `file`, which
+              // nothing but this control sets, so a worklist entry can never reach it — which makes
+              // this the one place the previous statement can be discarded *before* anything of it
+              // is shown over the new one. Nothing was cleared here at all until 2026-08-25, so
+              // picking an unrelated PDF, or failing to unlock one, left the previous statement's
+              // banner, review table and **enabled Confirm button** in place (D-148, D-150).
+              discardLoadedStatement();
               setStage(nextFile ? "unlock" : "select");
               setStatus(nextFile ? `${nextFile.name} selected. Its bytes have not been read yet.` : "No PDF selected.");
             }} />
@@ -694,32 +677,9 @@ export function ImportBench() {
           anyway because "in the viewport" was too weak an assertion — is why the margin is on the
           class rather than left to the default. */}
       <div ref={bindAnchor} className="capture-result-anchor">
-        {batchBinding ? (
-          <div
-            className={`capture-result ${batchBinding.refusal !== null ? "failed" : batchBinding.boundTo !== null ? "captured" : "already"}`}
-            role="status"
-            tabIndex={-1}
-            data-bind-result
-          >
-            {batchBinding.refusal !== null ? (
-              <p>
-                <b>{batchBinding.label} could not be bound.</b>{" "}
-                {batchBinding.refusal} Nothing has been sent. Choose the account below, or leave this
-                statement and work the next one.
-              </p>
-            ) : batchBinding.boundTo !== null ? (
-              <p>
-                <b>{batchBinding.label} is bound to {batchBinding.boundTo}.</b>{" "}
-                {batchBinding.rows} row(s) read on this device and nothing has left it yet. Review
-                every balance below, then confirm — the import is not in the ledger until you do.
-              </p>
-            ) : (
-              <p>
-                <b>{batchBinding.label} is read and needs an account.</b>{" "}
-                {batchBinding.rows} row(s) read on this device. Choose the ledger account it belongs
-                to below.
-              </p>
-            )}
+        {banner ? (
+          <div className={`capture-result ${banner.tone}`} role="status" tabIndex={-1} data-capture-result>
+            <p><b>{banner.heading}</b> {banner.body}</p>
           </div>
         ) : null}
       </div>
@@ -768,7 +728,7 @@ export function ImportBench() {
               in place read the refusal to a screen reader twice and printed it on screen twice, a
               few hundred pixels apart. It stays for every other way `bindingError` is set — the
               manual "choose an account" case among them, which the banner never carries. */}
-          {bindingError && bindingError !== batchBinding?.refusal
+          {bindingError && !bannerCarriesRefusal(worklist)
             ? <div className="warning error" role="alert"><strong>Binding refused</strong><span>{bindingError}</span></div>
             : null}
 
