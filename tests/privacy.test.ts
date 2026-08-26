@@ -128,7 +128,10 @@ describe("privacy guardrails", () => {
   it("routes financial boundaries through owner-bound RPCs", () => {
     expect(readFileSync("app/api/v1/backups/export/route.ts", "utf8")).toContain('rpc("export_backup_snapshot")');
     expect(readFileSync("app/api/v1/categories/route.ts", "utf8")).toContain('rpc("mutate_category"');
-    expect(readFileSync("app/api/v1/accounts/[id]/transactions/route.ts", "utf8")).toContain('rpc("list_account_transactions"');
+    // The paged function, and the closing quote matters: `list_account_transactions_page` contains
+    // the old name as a prefix, so an assertion without it would go on passing against either.
+    expect(readFileSync("app/api/v1/accounts/[id]/transactions/route.ts", "utf8")).toContain('rpc("list_account_transactions_page"');
+    expect(readFileSync("app/api/v1/transactions/match-candidates/route.ts", "utf8")).toContain('rpc("list_match_candidates")');
   });
 
   it("does not regress backup export to capped table selects", () => {

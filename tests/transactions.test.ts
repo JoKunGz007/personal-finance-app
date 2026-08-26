@@ -7,14 +7,18 @@ import {
   matchesSlipQuery,
   movementMinor,
   summarize,
-  transactionListSchema,
+  ledgerPageSchema,
   type AccountTransaction,
   type LedgerTransaction
 } from "@/lib/transactions";
 import { slipListSchema, type CapturedSlip } from "@/lib/slips";
 import { cashListSchema, type CashEntry } from "@/lib/cash";
 
-const FINGERPRINT = "a".repeat(64);
+// The wire shape is a page object since migration 021, so the contract assertions parse one.
+// `hasMore` and `totals` are constant here — what these tests are about is the row.
+function page(rows: unknown[]) {
+  return { rows, hasMore: false, totals: { rows: rows.length, deposits: "0", withdrawals: "0", net: "0" } };
+}
 
 function transaction(overrides: Partial<LedgerTransaction> = {}): LedgerTransaction {
   return {
@@ -28,7 +32,6 @@ function transaction(overrides: Partial<LedgerTransaction> = {}): LedgerTransact
     branch: null,
     post_balance_minor: "100000",
     currency: "THB",
-    fingerprint: FINGERPRINT,
     source_components: [{ id: "22222222-2222-4222-8222-222222222222", kind: "deposit", amount_minor: "100000", currency: "THB" }],
     transaction_overlays: [],
     ...overrides
@@ -37,41 +40,35 @@ function transaction(overrides: Partial<LedgerTransaction> = {}): LedgerTransact
 
 describe("transaction wire contract", () => {
   it("accepts the shape list_account_transactions returns", () => {
-    const parsed = transactionListSchema.safeParse({ transactions: [transaction()] });
+    const parsed = ledgerPageSchema.safeParse(page([transaction()]));
     expect(parsed.success).toBe(true);
   });
 
   // The RPC casts every bigint with ::text precisely so money never becomes a JSON
   // number. A schema that accepted a decimal or a float would silently undo that.
   it.each(["1000.50", "1e5", "+1000", "-0", "01"])("rejects non-canonical money %s", (value) => {
-    const parsed = transactionListSchema.safeParse({
-      transactions: [transaction({ post_balance_minor: value })]
-    });
+    const parsed = ledgerPageSchema.safeParse(page([transaction({ post_balance_minor: value })]));
     expect(parsed.success).toBe(false);
   });
 
   it("rejects an unknown column rather than ignoring it", () => {
-    const parsed = transactionListSchema.safeParse({
-      transactions: [{ ...transaction(), settled_at: "2026-06-01" }]
-    });
+    const parsed = ledgerPageSchema.safeParse(page([{ ...transaction(), settled_at: "2026-06-01" }]));
     expect(parsed.success).toBe(false);
   });
 
   /**
    * The trim, asserted from the side that would notice it coming back.
    *
-   * `list_account_transactions` still builds `import_batch_rows` — dropping it in SQL needs a
-   * migration — so `app/api/v1/accounts/[id]/transactions/route.ts` deletes the key on the way
-   * out. Nothing read it: it was 241 of 848 bytes on a row carrying the field shape the parsers
-   * write, 28.4% of a payload the ledger now fetches on arrival rather than on a press.
+   * Nothing read `import_batch_rows`: it was 241 of 848 bytes on a row carrying the field shape
+   * the parsers write, 28.4% of a payload the ledger fetches on arrival rather than on a press.
+   * The route deleted the key by hand while changing the RPC still needed a migration; **migration
+   * 021 is that migration**, so the database has stopped assembling it and the route trims nothing.
    *
-   * This is what makes that route's `withoutBatchProvenance` load-bearing rather than decorative.
-   * If it is ever removed or bypassed, the ledger view stops parsing and says so by name, instead
-   * of quietly paying for provenance it does not display.
+   * This is what keeps it gone. If a later migration puts it back, the ledger view stops parsing
+   * and says so by name rather than quietly paying for provenance it does not display.
    */
-  it("rejects the batch provenance the route is responsible for dropping", () => {
-    const parsed = transactionListSchema.safeParse({
-      transactions: [{
+  it("rejects the batch provenance migration 021 dropped", () => {
+    const parsed = ledgerPageSchema.safeParse(page([{
         ...transaction(),
         import_batch_rows: [{
           batch_id: "55555555-5555-4555-8555-555555555555",
@@ -81,8 +78,26 @@ describe("transaction wire contract", () => {
           parser_fields: { contractVersion: "krungthai-layout-v1" },
           linked_existing: false
         }]
-      }]
-    });
+      }]));
+    expect(parsed.success).toBe(false);
+  });
+
+  /**
+   * The same trim, for the fingerprint, asserted from the same side.
+   *
+   * 64 hex characters on every row and the ledger view has never read one — no component, no
+   * total, and not reconciliation, which matches on bank, exact amount and date window. That is
+   * about 80 of the ~584 bytes a row costs once the batch provenance is gone, a further ~14%.
+   *
+   * As with the batch provenance above, the RPC stopped building it in migration 021 and this is
+   * what keeps it gone. **It asserts nothing about the column**, which keeps every job it had:
+   * `unique (owner_id, account_id, fingerprint)` is what makes a re-imported statement
+   * idempotent, `confirm_import` still rejects a row whose claimed fingerprint does not
+   * recompute, and `export_backup_snapshot` still emits it. What this pins is only that the
+   * value stops travelling to a screen that never displays it.
+   */
+  it("rejects the fingerprint migration 021 dropped", () => {
+    const parsed = ledgerPageSchema.safeParse(page([{ ...transaction(), fingerprint: "a".repeat(64) }]));
     expect(parsed.success).toBe(false);
   });
 });
@@ -235,10 +250,9 @@ describe("client-side filtering", () => {
     expect(matchesQuery(row, "landlord")).toBe(true);
   });
 
-  // A fingerprint is a server-verified identity, not something a person searches by,
-  // and matching it would let a filter surface rows by an internal value.
-  it("does not match on the fingerprint or the id", () => {
-    expect(matchesQuery(transaction(), FINGERPRINT)).toBe(false);
+  // An id is a server-side identity, not something a person searches by, and matching it
+  // would let a filter surface rows by an internal value.
+  it("does not match on the id", () => {
     expect(matchesQuery(transaction(), "11111111-1111-4111-8111-111111111111")).toBe(false);
   });
 });

@@ -363,3 +363,24 @@ the top of `GOTCHAS.md`.
 - Cause: a new wrapper is a new box in the parent's formatting context. The children stop participating in the layout that was tuned around them.
 - Avoid: `display: contents` on the wrapper at the sizes where it should not exist, and a real `display` only inside the media query where it should. The desktop layout then stays byte-identical rather than being re-derived and re-tested. Check the wrapper carries no semantics of its own first — `display: contents` on a landmark or a list removes it from the accessibility tree.
 - Verify: `.header-panel` in `app/globals.css`, `display: contents` above 700px and a flex row below it. Dated 2026-08-26.
+
+## Under paging, a count scoped to the filter cannot decide whether the ledger is empty
+
+- Symptom: choosing an account the owner has never imported into says *"This ledger holds no confirmed transactions yet. Import a statement to fill it"* while rows sit in another account.
+- Cause: the empty state answers two different questions with one number — *nothing has been imported* versus *this filter matched nothing* — and choosing an account **is** a filter. Before paging, the count it read was the whole loaded ledger, so it was unscoped by accident; replacing it with a window count scoped it, and the message quietly started answering the wrong question.
+- Avoid: when a total becomes scoped, re-read every condition that relied on it being unscoped. The fix here is one deliberate call for the unscoped reach beside the scoped one, each with the question it answers written next to it.
+- Verify: 2026-08-27. `tests/e2e/owner-session.spec.ts` failed by name on `No transaction matches this filter` not being visible — the assertion that already existed for exactly this distinction, which is why the regression was caught in the session that wrote it.
+
+## A dedup downstream of paging hides a page that repeats a row, but not one that skips
+
+- Symptom: the keyset predicate is broken so the second page re-returns the row the cursor named, and the end-to-end paging spec goes on passing.
+- Cause: everything the ledger table renders passes through `reconciliationRows`, which keys the window-plus-candidates union by transaction id precisely so a candidate that is also on the page is not counted twice. That same dedup silently absorbs a duplicate arriving from a boundary bug.
+- Avoid: **do not rely on an end-to-end row count to catch a repeat.** Assert the dedup where it lives, in `tests/ledger-window.test.ts`, and aim the browser spec at the failure the dedup cannot absorb — a page that *loses* rows, which shows in the reach line and the final count.
+- Verify: 2026-08-27, by breaking it both ways. `or t.source_date <= p_before_date` in migration 021 left the spec green; `limit v_limit` in place of `limit v_limit + 1` failed it by name on `Showing 100 of 105 confirmed rows`.
+
+## A per-account balance walk is exact under paging; the merged one across accounts is not
+
+- Symptom: with two accounts loaded to different depths, the all-accounts balance column prints a figure that is too high on older rows — and pressing *Load older rows* silently rewrites a number already on screen.
+- Cause: `combinedBalanceByTransaction` seeds each account from `post_balance − movement` of the oldest row it was handed. **Per account that is exact at any depth**, because the expression is the balance immediately before whatever row it is applied to. The merged figure is the sum of *every* account's balance at that moment, and the walk supplies an account's seed for every row older than that account's oldest **held** row — so a shallow account's mid-history balance is added to rows that predate it. Unpaged the seed is the account's real opening and none of this arises.
+- Avoid: do not try to fix it with a balance from the server — the value it would send is the *same quantity* as the seed the client already derives. What is needed is a **floor**: each account with more to fetch contributes its oldest held row's date, a complete window contributes none, and the figure is exact at and after the newest floor. Below it, render nothing. **Never fall back to the row's own account balance**, which is a different number under a heading that says "All accounts".
+- Verify: 2026-08-27, found by `/code-review` on the paging change (D-158). A loaded to its opening and B windowed to its newest row printed 1100 against A's January row where the truth was 100 — exactly B's unfetched February movement. Pinned in `tests/ledger-window.test.ts`, which records the wrong number as well as the right one.

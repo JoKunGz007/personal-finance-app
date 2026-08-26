@@ -203,3 +203,25 @@ the top of `GOTCHAS.md`.
 - Cause: the Next.js route announcer is an always-present element with `role="alert"`, empty until a navigation gives it text. Nothing in `app/` renders it and nothing can remove it.
 - Avoid: scope the assertion to the region under test rather than to the page — `page.locator("section.ledger-band").getByRole("alert")`. The same applies to any page-wide count of a role the framework also uses.
 - Verify: `tests/e2e/ledger.spec.ts`, the signed-out ledger test, which asserts a 401 on the automatic load raises no alert. Unscoped it fails against a correct page. Dated 2026-08-26.
+
+## A fixture that renders a QR reaches the internet for its WebAssembly, so the slip specs need the network
+
+- Symptom: five to seven adjacent slip specs fail together with `wasm streaming compile failed: TypeError: fetch failed` and `Aborted(both async and sync fetching of the wasm failed)`, thrown from inside `zxing-wasm/dist/cjs/writer`. Re-running usually clears it, which is what earned it the name *the QR intermittent* — and why it was blamed on the build's own `copy-zxing-wasm.mjs` step racing.
+- Cause: **it is not a race and it is not intermittent.** `zxing-wasm`'s *writer* resolves its binary from a jsDelivr URL when nothing overrides it, so `tests/fixtures/synthetic-slip.ts` was fetching it from the internet every time it drew a QR. It fails whenever the network is unavailable or slow and passes on a retry because the second attempt found the network. `scripts/copy-zxing-wasm.mjs` deliberately does not cover this: it copies the **reader** into `public/` because the reader has to be served from the app's own origin under the CSP, while the writer never runs in the app at all.
+- Avoid: hand the module the bytes. `prepareZXingModule({ overrides: { wasmBinary: readFileSync(writerWasm) } })` at the top of the fixture, resolving `writerWasm` out of the installed package. **`locateFile` does not work here** — it was tried first and this build reaches for its URL regardless; emscripten checks for an already-loaded binary *before* it resolves a path, so `wasmBinary` skips the fetch instead of redirecting it.
+- Also: anchor that `createRequire` at `process.cwd()`, not `import.meta.url`. Playwright loads spec-adjacent modules through a CJS transform where `import.meta` does not exist, and the result is a *warning* plus a module that silently fails to load rather than an error naming the line.
+- Verify: 2026-08-27. Confirmed with outbound network genuinely unreachable — a `HEAD` to the CDN times out and the same run's PostHog calls report `context deadline exceeded`. Before the override `captures a slip from its QR` failed on every attempt; after it the whole owner suite passes 32/32 with the network still down.
+
+## `pnpm supabase:test` exits non-zero on a passing run, so the exit code is not the result
+
+- Symptom: every file reports `ok`, the summary reads `Result: PASS`, and the command still exits 1 with `[ELIFECYCLE] Command failed with exit code 1`.
+- Cause: the Supabase CLI's own container teardown and telemetry flush, not the tests. It shows as `error running container: exit 1` or a PostHog `Timeout while shutting down` line after the summary.
+- Avoid: **read the `Result:` line and the `Files=… Tests=…` line, never `$LASTEXITCODE`.** Confirm any suspicion by moving the file under suspicion aside and re-running: an identical exit code with it absent is what separates this from a real failure.
+- Verify: 2026-08-27, while adding `009_ledger_paging.sql`. `Result: PASS` with `Files=9, Tests=301` and exit 1; `Files=8, Tests=266` and exit 1 with the new file moved aside.
+
+## A pgTAP plan that undercounts reports every subtest passing, and fails anyway
+
+- Symptom: `All 30 subtests passed` printed immediately above `Failed 30/30 subtests`, with `Parse errors: Bad plan. You planned 30 tests but ran 35`.
+- Cause: `select plan(N)` is a promise about how many assertions will run, and TAP treats a mismatch as a harness failure rather than an assertion failure — so the reassuring line and the failing line are both true and sit next to each other.
+- Avoid: derive the number instead of counting by hand. `grep -c '^select \(ok\|is\|throws_ok\)(' supabase/tests/<file>.sql` is what the plan should say, and it is worth re-running after any edit that adds an assertion.
+- Verify: 2026-08-27. `plan(30)` against 35 assertions produced exactly that output; `plan(35)` turned the same file green with nothing else changed.

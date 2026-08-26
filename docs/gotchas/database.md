@@ -119,3 +119,10 @@ the top of `GOTCHAS.md`.
 - Cause: `check:docs --strict` reads **structure** — that files exist, that links resolve, that sections are present. It does not read meaning, and no automated check compares a number written in prose against the source that owns it. So a version, a count or a threshold in `SPEC.md` decays silently and the failure is invisible to the gate by construction.
 - Avoid: when a migration moves a number that `SPEC.md` states, edit `SPEC.md` in the same commit as the migration. When reading `SPEC.md` later, treat every number in it as a claim to check rather than a fact to use — the owning source is `lib/backup-contract.ts` for backup versions, `lib/owner-access.ts` and `private.has_strong_owner_access` for the factor count. This is the same failure as a test title naming a destination that moves (`955253c`), and the same remedy: name the thing that does not move, or assert against the constant.
 - Verify: 2026-08-15. Both instances were found by a human-style read — the first by a continuity sync, the second by a security review — and neither by any command. That is the point of the entry: there is no command to add.
+
+## A correction overlay's `kind` and `amount_minor` are one fact, and writing either alone violates a check
+
+- Symptom: a fixture insert into `public.slip_correction_overlays` fails with `new row … violates check constraint "slip_correction_overlays_check"`, naming a row that reads as entirely reasonable.
+- Cause: the table carries `check ((kind is null) = (amount_minor is null))` and a second check that the sign agrees with the word. A corrected amount without its kind is not a partial correction, it is an invalid one — the same shape `public.notification_card_correction_overlays` uses.
+- Avoid: always write the pair — `(slip_id, owner_id, kind, amount_minor, revision)`. This only bites fixtures that set a corrected figure directly; `set_slip_correction` fills both, which is why no application path meets it.
+- Verify: 2026-08-27, building `supabase/tests/009_ledger_paging.sql`. The amount-only form raised the constraint by name; adding `kind` made the file green.

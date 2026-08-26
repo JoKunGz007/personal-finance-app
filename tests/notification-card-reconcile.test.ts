@@ -46,7 +46,6 @@ function row(overrides: Partial<LedgerTransaction> & { account_id?: string } = {
     branch: null,
     post_balance_minor: "500000",
     currency: "THB",
-    fingerprint: "f".repeat(64),
     source_components: [{ id: "cccccccc-0000-4000-8000-000000000001", kind: "withdrawal", amount_minor: "-9000", currency: "THB" }],
     transaction_overlays: [],
     account_id,

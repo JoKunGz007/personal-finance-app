@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-26.
+Last updated: 2026-08-27.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -86,19 +86,20 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Commit and push: granted per session, and the grant is SPENT.** Granted on **2026-08-26** and
   used four times that day — `f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60` — all pushed and so deployed.
   **The next commit needs a new ask.**
-- **Task 45 is AUTHORIZED to be built, 2026-08-26.** The owner read the scope in plain terms — the
-  18x saving, and why a careless page makes totals quietly wrong — and said *"do the big one"*.
-  **That authorizes writing migration 021, the RPCs, the route and the client, and running it all
-  locally. It does NOT authorize `supabase db push`**, which keeps its own ask at the time, nor the
-  deploy. **The backup he exported has not been verified from the database by anyone** — he said he
-  took it, which is his word and not a reading; verify the sequence from the database before the
-  push is asked for, and note the last agent reading was 33 on 2026-08-18.
-- **The first thing to settle is the open question in task 45, not the SQL.** The status filter is
-  derived from reconciliation rather than stored, so whether it can be computed for a page decides
-  the shape of both RPCs. D-155's payload question was answered before its code was written and that
-  is what made it a small change instead of a wrong one; this is the same move.
-- **Take the free step first**: `fingerprint` is ~14% of every row and the ledger view never reads it
-  — a route-side deletion and a schema line, no migration, independent of everything else in task 45. **Previously:** Every push to `main` **is a production
+- **Task 45's build grant is DISCHARGED, 2026-08-27.** The owner authorized migration 021, the RPCs,
+  the route, the client and the tests, run locally, and all of that is built and green (D-158). **The
+  grant covered building and running locally and nothing else.** It did not cover `supabase db push`,
+  a commit, or a deploy, and none of those has happened. **Migration 021 exists on
+  `private-ledger-local` only**; every other project including hosted is on 020.
+- **The backup the owner exported on 2026-08-26 is still unverified from the database.** He said he
+  took it, which is his word rather than a reading. **Verify the sequence from the database before
+  asking for any push of 021** — the last agent reading was 33 on 2026-08-18. D-152's rule stands.
+- **Both reviews have run and their findings are fixed.** `/security-review` found nothing, checked
+  against live `pg_proc` rather than the migration text. `/code-review` at high effort found nine and
+  **six were fixed**, the serious one being that the *merged* combined balance was wrong under uneven
+  window depths — see D-158, and note it is the second time a scoping assumption about that column
+  has bitten. Three findings were recorded rather than built; the unbounded candidate scan is
+  documented in the migration instead of being claimed away. **Previously:** Every push to `main` **is a production
   deployment** — see below. Read `git status -sb` and `git log` rather than trusting any sentence
   here. Committed straight to `main`, matching this repo's history; nobody has asked for a
   branch-and-PR flow, so raise it rather than assume it.
@@ -114,7 +115,20 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **`main` is at `fda6c60` and `origin/main` matches it**, pushed 2026-08-26. Four pushes went out
+- **PLAN task 45 is built and is UNCOMMITTED.** `main` is at `48a2259`, `origin/main` matches it, and
+  the working tree carries the whole of D-158 — migration `202608260021_ledger_paging.sql`, two routes,
+  `lib/ledger-window.ts`, `lib/transactions.ts`, `app/transactions-view.tsx`,
+  `supabase/tests/009_ledger_paging.sql`, `tests/ledger-window.test.ts`, and edits to
+  `tests/e2e/owner-session.spec.ts`, `tests/fixtures/synthetic-slip.ts` and `tests/privacy.test.ts`.
+  **Nothing is committed and nothing is pushed** — both need their own ask. `/code-review` and
+  `/security-review` are owed first (D-125; it touches a money path, a migration and route grants).
+  **`eslint.config.mjs` and `playwright.config.ts` are still the two deliberately local-only files**
+  and must stay out of any commit; `git status --short` is what distinguishes them from the above.
+- **Migration 021 is applied to `private-ledger-local` only.** Every other project — including hosted —
+  is still on **020**. Backup contract **unchanged at v7**, since no table gains a column. Applying 021
+  anywhere beyond the local synthetic project is its own ask, and D-152's rule stands: **verify the
+  backup sequence from the database before asking.**
+- **`main` was at `fda6c60` and `origin/main` matched it**, pushed 2026-08-26. Four pushes went out
   that day: `f46ee64` (the ledger restructure, which also carried the long-local `1d2ca59`),
   `b4bc6be` and `fda6c60` (docs), and `d7411b3` (the typeface sizing, the route titles and the
   phone header).
@@ -127,22 +141,29 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   reading taken by an agent was sequence 33 on 2026-08-18.
 - **He also reported the deployed ledger at 1,604 rows**, up from the 1,552 read from the hosted
   database on 2026-08-15. A count, not a value. It is what task 45's sizing rests on.
-- **The full gate is green at `d7411b3`, 2026-08-26.** The numbers live in `PLAN.md`'s gate table,
-  which is the file that owns them; what belongs here is the one thing that table cannot say — **an
-  owner-suite run that day failed two adjacent slip specs on `wasm streaming compile failed` and
-  passed on the immediate re-run with nothing changed.** That is the documented QR intermittent and
-  the build's own `copy-zxing-wasm.mjs` step is the suspect. **Re-run before believing any single
-  failure there.** **pgTAP deliberately not re-run** — 266 across 8 from 2026-08-18, no SQL has moved.
-- **`docs/gotchas/app.md` is the file to watch: ~87%**, up from 75% at the start of 2026-08-26, because
-  nine of that day's twelve new traps are app traps. **D-134's condition is that a breach splits the
+- **The full gate is green on the uncommitted tree, 2026-08-27**, re-run in full after the review's
+  fixes. The numbers live in `PLAN.md`'s gate table, which is the file that owns them. **pgTAP was
+  re-run and is owed no longer** — 299 across 9 with migrations 001–021, after a clean
+  `pnpm supabase:reset`. **Read `Result: PASS`, never the exit
+  code**: `pnpm supabase:test` exits 1 on a passing run, which was confirmed by moving the new file
+  aside and getting the identical code.
+- **The "QR intermittent" is solved, and it was never intermittent.** `zxing-wasm`'s *writer* resolved
+  its WebAssembly from a CDN, so every slip fixture reached the internet and failed whenever the
+  network did — which is exactly what happened on 2026-08-27, when seven slip specs failed twice in a
+  row with the network genuinely down. `tests/fixtures/synthetic-slip.ts` now hands the module the
+  installed bytes, and the owner suite passes **32/32 with no network at all**. `copy-zxing-wasm.mjs`
+  was the long-standing suspect and is innocent: it copies the *reader*, which the app needs served
+  from its own origin, and the writer never runs in the app.
+- **`docs/gotchas/app.md` is the file to watch: 90%** (70 KB/78 KB), up from 87% — D-158 added two app
+  traps. It was 75% at the start of 2026-08-26. **D-134's condition is that a breach splits the
   section in two rather than raising the budget**, and D-149 has already honoured it once. The next
   substantial app change is likely to be the one that pays it. **It is the section to watch**, and D-134's condition says a breach splits it in two
-  rather than raising the budget. `DECISIONS.md` is at **48% (57 KB/117 KB)** after two entries.
-- **`list_account_transactions` bounds nothing and is still unpaged, deliberately** (D-155). It is now
-  **scoped as PLAN task 45** — read it there rather than re-deriving it; the short version is that three
-  things on that page are derived over the whole ledger and a page silently changes all three. **A
-  cheaper step is identified and not taken**: `fingerprint` is ~14% of every row and the ledger view
-  never reads it, which is a route-side deletion needing no migration.
+  rather than raising the budget. `DECISIONS.md` is at **65% (77 KB/117 KB)** after D-158.
+- **The ledger pages as of D-158, and `fingerprint` is off the wire.** `list_account_transactions` is
+  superseded but **still in place and still granted**, because `supabase/tests/001_security.sql` pins
+  its grants; nothing in the app calls it. **Two of task 45's three predicted hazards turned out not to
+  exist** — read D-158 rather than the scoping text, which is kept in `PLAN.md` only as a record of what
+  was believed. **Nobody has seen any of this in the deployed app**, because none of it is deployed.
 - **The phone header is fixed as of `d7411b3`** (D-157) and no longer eats the first screen: the brand
   and the route row stay, everything else is behind a Settings disclosure below 700px. **Nobody has
   opened it on a real phone yet** — it is measured at iPhone 13 width in the suite, which is what

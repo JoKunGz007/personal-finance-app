@@ -2,15 +2,32 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
+import type { MinorUnitString } from "@/lib/money";
 import {
   combinedBalanceByTransaction,
+  cursorAfter,
+  ledgerPageSchema,
+  matchCandidateListSchema,
   matchesCardQuery,
   matchesCashQuery,
   matchesQuery,
   matchesSlipQuery,
-  transactionListSchema,
   type AccountTransaction
 } from "@/lib/transactions";
+import {
+  deeperPages,
+  emptyWindow,
+  combinedBalanceFloor,
+  hasDeeperPage,
+  reconciliationRows,
+  scopeTotals,
+  statusIsComplete,
+  windowIds,
+  windowReach,
+  windowRows,
+  withPage,
+  type LedgerWindow
+} from "@/lib/ledger-window";
 import {
   cardsInForce,
   notificationCardCorrectionResponseSchema,
@@ -89,7 +106,25 @@ import { ledgerRequest, readError } from "@/lib/wire";
  */
 export function TransactionsView() {
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
-  const [transactions, setTransactions] = useState<AccountTransaction[] | null>(null);
+  /**
+   * The confirmed ledger **as far as it is loaded** — null until the first load finishes.
+   *
+   * Not an array of rows any more, and the rename is the point: before PLAN task 45 "the rows the
+   * client holds" and "the ledger" were the same set, so no name had to distinguish them. They are
+   * different sets now, and every question that used to be answered by reading `.length` has to
+   * say which one it means. `lib/ledger-window.ts` owns that distinction.
+   */
+  const [ledgerWindow, setLedgerWindow] = useState<LedgerWindow | null>(null);
+  /**
+   * Rows outside the window that reconciliation still has to see, from `list_match_candidates`.
+   *
+   * **Evidence, not rows to show.** They are unioned into what the matching rule runs over and
+   * then filtered back out of the table, because a candidate is a row the owner did not ask to
+   * see — it is there so that a slip whose partner is off-page is not reported as awaiting a
+   * statement it already has.
+   */
+  const [candidates, setCandidates] = useState<AccountTransaction[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [slips, setSlips] = useState<CapturedSlip[]>([]);
   const [matches, setMatches] = useState<SlipMatchDecision[]>([]);
   const [slipCorrections, setSlipCorrections] = useState<SlipCorrection[]>([]);
@@ -270,15 +305,85 @@ export function TransactionsView() {
     return onOwnerReady(retry);
   }, [signInNote]);
 
+  /** Null for the all-accounts view, which is what every window helper reads as "every account". */
+  const scopedAccount = selected === ALL_ACCOUNTS ? null : selected;
+
   // The account scope, before any text filter. Balances are derived from this rather
   // than from `visible`, because a running total of whatever a search matched would
   // not be a balance.
   const scope = useMemo(
-    () => (transactions ?? []).filter((transaction) => selected === ALL_ACCOUNTS || transaction.account_id === selected),
-    [transactions, selected]
+    () => (ledgerWindow === null ? [] : windowRows(ledgerWindow, scopedAccount)),
+    [ledgerWindow, scopedAccount]
   );
 
-  const combined = useMemo(() => combinedBalanceByTransaction(scope), [scope]);
+  /**
+   * What the matching rule runs over: the window **plus** every candidate, deduplicated.
+   *
+   * Never the window alone. A slip that is genuinely ambiguous ledger-wide but has only one of
+   * its candidates on the page would pair with that one and read `verified`, when the truth is
+   * that nobody has ever been asked which row it is. See `reconciliationRows`.
+   */
+  const reconcileInput = useMemo(
+    () => (ledgerWindow === null ? [] : reconciliationRows(ledgerWindow, candidates)),
+    [ledgerWindow, candidates]
+  );
+
+  /** The ids actually loaded, so a candidate pulled in as evidence is not shown as a row. */
+  const heldIds = useMemo(
+    () => (ledgerWindow === null ? new Set<string>() : windowIds(ledgerWindow)),
+    [ledgerWindow]
+  );
+
+  /**
+   * Unchanged by paging, which was the surprise of this task rather than its plan.
+   *
+   * Task 45 expected this walk to break on a page — seeded, it says, from the wrong row. It does
+   * not: `post_balance − movement` is the balance immediately before whatever row it is applied
+   * to, so handed a window it yields the balance carried into that window. The server's own figure
+   * is used to *check* that (`openingDisagreements`) rather than to replace it.
+   */
+  /**
+   * The combined balance, **kept only where it is exactly knowable**.
+   *
+   * Per account the walk is exact at any window depth, which is why task 45's predicted breakage
+   * did not happen. The merged view is different: the walk supplies an account's seed for every
+   * row older than that account's oldest held row, so with one account windowed shallower than
+   * another, an early row is summed against a balance from the shallow account's *future* — and
+   * pressing "Load older rows" silently rewrites a figure already on screen.
+   *
+   * `combinedBalanceFloor` is the date below which that is the case. Entries below it are dropped
+   * rather than approximated, and the row renders an em dash, because the one thing this column
+   * must never do is print a plausible number that is not the ledger's.
+   */
+  const combined = useMemo(() => {
+    const balances = combinedBalanceByTransaction(scope);
+    const floor = ledgerWindow === null ? null : combinedBalanceFloor(ledgerWindow, scopedAccount);
+    if (floor === null) return balances;
+    const exact = new Map<string, MinorUnitString>();
+    for (const row of scope) {
+      if (row.source_date < floor) continue;
+      const balance = balances.get(row.id);
+      if (balance !== undefined) exact.set(row.id, balance);
+    }
+    return exact;
+  }, [scope, ledgerWindow, scopedAccount]);
+
+  /** How much of the confirmed ledger is on screen, and whether more can be fetched. */
+  const reach = useMemo(
+    () => (ledgerWindow === null ? { loaded: 0, total: 0 } : windowReach(ledgerWindow, scopedAccount)),
+    [ledgerWindow, scopedAccount]
+  );
+
+  /**
+   * Whether the ledger holds no confirmed rows **at all** — deliberately unscoped.
+   *
+   * This decides between "nothing has been imported yet" and "this filter matched nothing", and
+   * choosing an account is a filter. Reading the scoped count here would tell an owner who
+   * selected an account he has not imported into that his whole ledger was empty, which is both
+   * wrong and discouraging; the owner suite fails by name on exactly that.
+   */
+  const ledgerIsEmpty = ledgerWindow !== null && windowReach(ledgerWindow, null).total === 0;
+  const moreToLoad = ledgerWindow !== null && hasDeeperPage(ledgerWindow, scopedAccount);
 
   // The account column, not the reference one, whenever a slip is being matched: candidates are
   // filtered by **bank**, so with two accounts at one bank the offered rows can belong to
@@ -307,8 +412,8 @@ export function TransactionsView() {
   // filtered subset would let choosing an account or typing in the search box silently
   // unmatch a pair and change the totals (D-063).
   const reconciled = useMemo(
-    () => reconcileLedger(transactions ?? [], currentSlips, accounts ?? [], matches, currentCash, currentCards, cardDecisions),
-    [transactions, currentSlips, accounts, matches, currentCash, currentCards, cardDecisions]
+    () => reconcileLedger(reconcileInput, currentSlips, accounts ?? [], matches, currentCash, currentCards, cardDecisions),
+    [reconcileInput, currentSlips, accounts, matches, currentCash, currentCards, cardDecisions]
   );
 
   const cardDecisionByCard = useMemo(
@@ -335,10 +440,13 @@ export function TransactionsView() {
     const byCard = new Map<string, AccountTransaction[]>();
     for (const row of reconciled.rows) {
       if (row.kind !== "card") continue;
-      byCard.set(row.card.id, cardMatchCandidates(row.card, transactions ?? [], cardDecisions));
+      // The union, not the window. A chooser that offered only loaded rows would hide the very
+      // row the owner is looking for and read as "it is not there" — and an override exists
+      // precisely to reach past what the automatic rule would propose (D-067).
+      byCard.set(row.card.id, cardMatchCandidates(row.card, reconcileInput, cardDecisions));
     }
     return byCard;
-  }, [reconciled, transactions, cardDecisions]);
+  }, [reconciled, reconcileInput, cardDecisions]);
 
   const offeredToCard = useMemo(
     () => new Set((matchingCard === null ? [] : candidatesByCard.get(matchingCard) ?? []).map((candidate) => candidate.id)),
@@ -357,10 +465,10 @@ export function TransactionsView() {
     const byslip = new Map<string, AccountTransaction[]>();
     for (const row of reconciled.rows) {
       if (row.kind !== "provisional") continue;
-      byslip.set(row.slip.id, matchCandidates(row.slip, transactions ?? [], accounts ?? [], matches));
+      byslip.set(row.slip.id, matchCandidates(row.slip, reconcileInput, accounts ?? [], matches));
     }
     return byslip;
-  }, [reconciled, transactions, accounts, matches]);
+  }, [reconciled, reconcileInput, accounts, matches]);
 
   // The rows on offer while matching, as a set, so a confirmed row can ask whether it is one
   // of them without re-deriving the list per row.
@@ -421,6 +529,14 @@ export function TransactionsView() {
     }
 
     const filtered = reconciled.rows.filter((row) => {
+      // **A candidate is evidence, not a row of the table.** Reconciliation runs over the window
+      // plus every row some record could be paired with, which is what makes a paged status
+      // correct; those extra rows must then be filtered back out, because the owner asked to see
+      // a page of his ledger and not the scattered rows the matching rule happened to consult.
+      //
+      // Filtering them out *here* rather than earlier is the whole point: removing them before
+      // `reconcileLedger` is precisely the mistake this task exists to avoid.
+      if (row.kind === "confirmed" && !heldIds.has(row.transaction.id)) return false;
       if (!inAccount(row)) return false;
       // Status filters the reconciled result; it never feeds back into reconciliation, which
       // has already run over the whole ledger above. That ordering is the point — a filter
@@ -440,9 +556,41 @@ export function TransactionsView() {
     filtered.sort(compareRows);
     if (order === "oldest") filtered.reverse();
     return filtered;
-  }, [reconciled, inAccount, query, order, status, matching, picking, offered, pickingCard, matchingCard, offeredToCard]);
+  }, [reconciled, inAccount, query, order, status, matching, picking, offered, pickingCard,
+      matchingCard, offeredToCard, heldIds]);
 
-  const totals = useMemo(() => summarizeRows(visibleRows), [visibleRows]);
+  /**
+   * The strip above the table, and the one place paging could have quietly changed what a number
+   * means.
+   *
+   * **Slips, cards and cash entries are complete on the client at any window depth** — they are
+   * few and are fetched whole — so their contribution is exact whatever page the ledger is on.
+   * Confirmed rows are not, so theirs comes from `list_account_transactions_page`, which computes
+   * it over the whole account in SQL as sums of `bigint` minor units with no division anywhere.
+   *
+   * That substitution is only valid while nothing narrows the confirmed population beyond the
+   * account, because the account is all the server was asked about. A text query and either of
+   * the two confirmed statuses each select a subset SQL knows nothing of, so in those cases the
+   * figure falls back to meaning what it has always meant — *over the rows on screen* — and the
+   * reach line beneath the controls is what stops that from being a silent difference.
+   */
+  const totals = useMemo(() => {
+    const onScreen = summarizeRows(visibleRows);
+    const exact = ledgerWindow !== null && status === ALL_STATUSES && query.trim() === "";
+    if (!exact) return onScreen;
+
+    const records = summarizeRows(visibleRows.filter((row) => row.kind !== "confirmed"));
+    const whole = scopeTotals(ledgerWindow, scopedAccount);
+    const deposits = BigInt(records.deposits) + BigInt(whole.deposits);
+    const withdrawals = BigInt(records.withdrawals) + BigInt(whole.withdrawals);
+    return {
+      ...onScreen,
+      rows: records.rows + whole.rows,
+      deposits: deposits.toString(),
+      withdrawals: withdrawals.toString(),
+      net: (deposits + withdrawals).toString()
+    };
+  }, [visibleRows, ledgerWindow, scopedAccount, status, query]);
 
   const unattributedSlips = useMemo(
     () => reconciled.rows.filter((row) => row.kind === "provisional" && row.account === null).length,
@@ -517,12 +665,13 @@ export function TransactionsView() {
         return;
       }
 
-      // One call per account: list_account_transactions is per-account and there is
-      // no all-accounts RPC. Fine at this scale; revisit past tens of thousands of
-      // rows, when this becomes pagination and a server-side filter (PLAN task 17).
-      const loaded: AccountTransaction[] = [];
+      // One call per account, and now **one page** per call. The RPC is per-account and there is
+      // no all-accounts one; taking each account's newest page and merging is still exactly right
+      // for the merged view, because any row among the newest N of the union is necessarily among
+      // the newest N of its own account.
+      let next = emptyWindow();
       for (const account of accountsResult.data.accounts) {
-        const result = await ledgerRequest(`/api/v1/accounts/${account.id}/transactions`, transactionListSchema, {
+        const result = await ledgerRequest(`/api/v1/accounts/${account.id}/transactions`, ledgerPageSchema, {
           fallback: `Transactions could not be loaded for ${account.label}.`,
           unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
           offContract: `The transactions response for ${account.label} did not match its contract.`
@@ -531,9 +680,25 @@ export function TransactionsView() {
           setError(result.why);
           return;
         }
-        for (const transaction of result.data.transactions) {
-          loaded.push({ ...transaction, account_id: account.id });
-        }
+        next = withPage(next, account.id, result.data, cursorAfter(result.data.rows));
+      }
+
+      // **The candidate set, and it is not optional the way slips and cash are.** Those three
+      // fail soft because the confirmed ledger is the authority and an outage in a captured
+      // record must not hide it. This is different: without it the matching rule runs over a page
+      // and can pair a slip that is genuinely ambiguous, which shows `verified` on a row nobody
+      // ever confirmed. A missing answer is recoverable; a confidently wrong one about money is
+      // not, so a failure here stops the load with the rest of the ledger.
+      const candidateResult = await ledgerRequest(
+        "/api/v1/transactions/match-candidates", matchCandidateListSchema, {
+          fallback: "The reconciliation set could not be loaded, so the ledger is not shown.",
+          unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
+          offContract: "The reconciliation set did not match its contract, so the ledger is not shown."
+        });
+      if (superseded()) return;
+      if (!candidateResult.ok) {
+        setError(candidateResult.why);
+        return;
       }
 
       // Provisional entries, loaded after the confirmed ones and deliberately unable to
@@ -601,7 +766,11 @@ export function TransactionsView() {
 
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
-      setTransactions(loaded);
+      setCandidates(candidateResult.data.candidates);
+      // Last, and it is what `loaded` is read from. A reload replaces the window rather than
+      // extending it: the pages it just fetched are the newest ones again, and appending them to
+      // a window that already held them would show every row twice.
+      setLedgerWindow(next);
     } catch {
       if (superseded()) return;
       setError("The ledger could not be reached. Check that the local Supabase stack is running.");
@@ -610,6 +779,62 @@ export function TransactionsView() {
       // back to "Reload" while a load is still in flight — and the owner suite waits on exactly
       // that label to know rows have arrived, so it would be waiting on a lie.
       if (!superseded()) setBusy(false);
+    }
+  }
+
+  /**
+   * Fetches the next page of every account that still has one, and extends the window.
+   *
+   * **Not a reload, and it deliberately touches nothing else.** Slips, cards, cash and the
+   * candidate set are already complete; re-fetching them here would make a "load more" press cost
+   * five requests to answer one question, and would also let a record that changed underneath
+   * arrive without the owner having asked for a refresh.
+   *
+   * It carries its own busy flag rather than sharing `busy`, because `busy` is what the Reload
+   * control and the owner suite read as "the ledger is being replaced". Paging deeper is an
+   * addition to what is on screen, so the rows stay readable and interactive while it runs.
+   *
+   * Superseded the same way a load is: pressing twice quickly, or pressing while a reload is in
+   * flight, must not splice a page into a window that has since been replaced.
+   */
+  async function loadMore() {
+    if (ledgerWindow === null || loadingMore) return;
+    const mine = loadSequence.current;
+    setLoadingMore(true);
+    try {
+      let next = ledgerWindow;
+      // Scoped to the selected account, matching the reach line above the control. An unscoped
+      // loop would deepen windows that line is not counting — and window depth is what decides
+      // where the combined balance is knowable, so it would move figures on the merged view too.
+      for (const page of deeperPages(ledgerWindow, scopedAccount)) {
+        const cursor = page.cursor;
+        // A page marked `hasMore` with no cursor cannot happen — the cursor is read off the last
+        // row of a non-empty page — but reading one would silently re-fetch the first page and
+        // duplicate every row, so it is skipped rather than trusted.
+        if (cursor === null) continue;
+        const query = new URLSearchParams({ beforeDate: cursor.beforeDate, beforeId: cursor.beforeId });
+        if (cursor.beforeTime !== null) query.set("beforeTime", cursor.beforeTime);
+        const result = await ledgerRequest(
+          `/api/v1/accounts/${page.accountId}/transactions?${query.toString()}`, ledgerPageSchema, {
+            fallback: "The next page of the ledger could not be loaded.",
+            unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
+            offContract: "The next page did not match its contract."
+          });
+        if (!result.ok) {
+          // Guarded like every other commit here: a reload that started meanwhile owns the error
+          // line, and a superseded page must not clear its message or replace it with a paging one.
+          if (loadSequence.current === mine) setError(result.why);
+          return;
+        }
+        next = withPage(next, page.accountId, result.data, cursorAfter(result.data.rows) ?? cursor);
+      }
+      if (loadSequence.current !== mine) return;
+      setLedgerWindow(next);
+    } catch {
+      if (loadSequence.current !== mine) return;
+      setError("The ledger could not be reached. Check that the local Supabase stack is running.");
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -807,7 +1032,7 @@ export function TransactionsView() {
           manual Reload into one that swallows an authentication refusal. */}
       <LedgerControls
         busy={busy}
-        loaded={transactions !== null}
+        loaded={ledgerWindow !== null}
         accounts={accounts}
         selected={selected}
         order={order}
@@ -835,7 +1060,7 @@ export function TransactionsView() {
         <p className="ledger-status" role="status">{signInNote}</p>
       ) : null}
 
-      {transactions ? (
+      {ledgerWindow ? (
         <>
           <LedgerSummary
             modes={modes}
@@ -908,7 +1133,7 @@ export function TransactionsView() {
 
           {visibleRows.length === 0 ? (
             <p className="ledger-empty" role="status">
-              {transactions.length === 0 && slips.length === 0
+              {ledgerIsEmpty && slips.length === 0
                 ? "This ledger holds no confirmed transactions yet. Import a statement to fill it, or capture a slip."
                 : "No transaction matches this filter."}
             </p>
@@ -990,7 +1215,7 @@ export function TransactionsView() {
                         layout={layout}
                         modes={modes}
                         account={accountsById.get(row.transaction.account_id)}
-                        combinedBalance={combined.get(row.transaction.id) ?? row.transaction.post_balance_minor}
+                        combinedBalance={combined.get(row.transaction.id) ?? null}
                         matchingCardRecord={matchingCardRecord}
                         slipCorrected={row.slip !== null && slipCorrectionBySlip.has(row.slip.id)}
                         openPair={openPair}
@@ -1006,6 +1231,28 @@ export function TransactionsView() {
               </table>
             </div>
           )}
+
+          {/* **How much of the ledger is on screen, said plainly, and the way to see more.**
+              Paging's characteristic bug is a filter that silently means "…within this page", so
+              the remedy is that the page never pretends to be the ledger. The line states both
+              numbers rather than a percentage: a count is what the owner can act on, and this app
+              does not divide.
+
+              It is suppressed while a match is being chosen, because that mode is its own view of
+              the ledger and the row count beneath it would describe a different question than the
+              one on screen. */}
+          {moreToLoad && !picking && !pickingCard ? (
+            <p className="ledger-status" role="status">
+              Showing {reach.loaded} of {reach.total} confirmed rows.
+              {status !== ALL_STATUSES && statusIsComplete(status)
+                ? " This filter reads every record, so it is complete whatever is loaded."
+                : null}
+              {" "}
+              <button type="button" onClick={() => void loadMore()} disabled={loadingMore || busy}>
+                {loadingMore ? "Loading…" : "Load older rows"}
+              </button>
+            </p>
+          ) : null}
 
           {/* Retired cards, out of the rows and the totals but never out of reach. Without this
               the database's reversibility would be theoretical: the row vanishes from the ledger,

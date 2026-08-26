@@ -467,6 +467,74 @@ test("reads a confirmed import back, and switches between merged and per-account
   await expect(ledger.getByText("No transaction matches this filter")).toBeVisible();
 });
 
+/**
+ * Paging, end to end — migration 021 and PLAN task 45.
+ *
+ * **Seeded through `psql` rather than through the import form on purpose.** A page is 100 rows and
+ * the synthetic statement carries four, so proving anything here needs more rows than any fixture
+ * PDF holds; importing 105 of them through the UI would spend minutes to reach the same state this
+ * reaches in one statement. The rows are invented (docs/FIXTURE_POLICY.md) and their balances form
+ * a coherent walk, because the running-balance column is one of the things being asserted.
+ *
+ * What this holds that no unit test can: that the cursor the client reads off a page is the cursor
+ * the route parses and the database walks. Those three agree in three different languages, and the
+ * characteristic failure — a page that repeats or skips a row at the boundary — is invisible to
+ * each of them alone.
+ */
+test("pages the ledger, and the totals keep speaking for the whole of it", async ({ page }) => {
+  const owner = ownerId();
+  const seeded = psql(`
+    insert into public.source_transactions(id, owner_id, account_id, fingerprint_version, fingerprint,
+      source_date, source_time, effective_date, transaction_label, description, post_balance_minor, currency)
+    select gen_random_uuid(), '${owner}', '${MATCHING_ACCOUNT}', 'fingerprint-v1',
+           repeat(md5('invented-paging-' || i::text), 2),
+           date '2026-01-01' + i, '09:00', date '2026-01-01' + i,
+           'Invented paging row', 'Invented paging description ' || i, i * 1000, 'THB'
+      from generate_series(1, 105) i;
+    insert into public.source_components(id, owner_id, transaction_id, position, kind, amount_minor, currency)
+    select gen_random_uuid(), t.owner_id, t.id, 1, 'deposit', 1000, 'THB'
+      from public.source_transactions t
+     where t.owner_id = '${owner}' and t.account_id = '${MATCHING_ACCOUNT}';
+  `);
+  expect(seeded.ok, `paging fixture failed: ${seeded.output}`).toBe(true);
+
+  await signIn(page);
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledgerLoaded(ledger);
+
+  // One page, not the ledger. Before this task the same arrival fetched all 105.
+  const rows = ledger.locator("tbody tr");
+  await expect(rows).toHaveCount(100, { timeout: 30_000 });
+  await expect(ledger.getByText("Showing 100 of 105 confirmed rows")).toBeVisible();
+
+  // **The totals still describe the whole ledger**, which is the number paging would have
+  // silently turned into "this screenful". 105 rows and 105,000 satang of deposits are facts
+  // about the account that the server computed over rows nobody has fetched.
+  const totals = ledger.locator("dl.ledger-strip");
+  await expect(totals.getByText("105", { exact: true })).toBeVisible();
+  await expect(totals.getByText("+฿1,050.00")).toBeVisible();
+
+  // Newest first, which is what the cursor has to mean for it to be walking the order the sort
+  // promised. The oldest row is on the second page and must not be here yet.
+  await expect(rows.first()).toContainText("Invented paging description 105");
+  await expect(rows.last()).toContainText("Invented paging description 6");
+
+  await ledger.getByRole("button", { name: "Load older rows" }).click();
+
+  // The second page completes the ledger: 105 rows, no repeat — a duplicate at the boundary
+  // would show as 106 — and the control retires itself rather than offering a page that is not
+  // there.
+  await expect(rows).toHaveCount(105, { timeout: 30_000 });
+  await expect(ledger.getByRole("button", { name: "Load older rows" })).toHaveCount(0);
+  await expect(ledger.getByText("Showing 100 of 105 confirmed rows")).toHaveCount(0);
+
+  // And the balances never claimed to be anything else: the oldest row printed 1,000 satang and
+  // the newest 105,000, walked from an opening this window now reaches.
+  await expect(rows.last()).toContainText("Invented paging description 1");
+  await expect(rows.last()).toContainText("฿10.00");
+});
+
 test("orders both ways and derives the all-accounts balance from every account", async ({ page }) => {
   await signIn(page);
   await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);

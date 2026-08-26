@@ -6,8 +6,9 @@ import type { CashEntry } from "@/lib/cash";
 import type { NotificationCard } from "@/lib/notification-cards";
 
 // Wire contract for GET /api/v1/accounts/[id]/transactions, which returns
-// `public.list_account_transactions` verbatim. Column names stay as the database
-// returns them, matching the other read endpoints (lib/accounts.ts).
+// `public.list_account_transactions_page` verbatim — a page object rather than a bare
+// array, since migration 021 (D-158). Column names stay as the database returns them,
+// matching the other read endpoints (lib/accounts.ts).
 //
 // Money arrives as text because the RPC casts every bigint with `::text`. Parsing it
 // into a number here would be the one place a float could enter the read path, so
@@ -41,16 +42,25 @@ export const transactionOverlaySchema = z.object({
 /**
  * One confirmed row as the ledger view reads it.
  *
- * **`import_batch_rows` is deliberately absent, and `.strict()` is what keeps it absent.**
- * `list_account_transactions` still builds it — changing the RPC needs a migration — so
- * `app/api/v1/accounts/[id]/transactions/route.ts` drops it from the response instead. It was
- * parsed here and read by nothing: no component, no reconciliation, no total. Measured on a row
- * with the field shape the parsers actually write, it was **241 of 848 bytes, 28.4%** of the
- * object, and the ledger now loads on arrival (PLAN task 43) — so it was a third of a payload
- * fetched on every visit to carry provenance nothing displays.
+ * **`import_batch_rows` and `fingerprint` are both deliberately absent, and `.strict()` is what
+ * keeps them absent.** `list_account_transactions` still builds both — changing the RPC needs a
+ * migration — so `app/api/v1/accounts/[id]/transactions/route.ts` drops them from the response
+ * instead. Each was parsed here and read by nothing: no component, no reconciliation, no total.
  *
- * If the route ever regresses and sends it again, this parse fails by name rather than quietly
- * paying for it, which is the same reason the overlay object is strict.
+ * `import_batch_rows` measured **241 of 848 bytes, 28.4%** of the object (PLAN task 43, D-155).
+ * `fingerprint` is 64 hex characters plus its key, about **80 of the ~584 bytes** a row costs
+ * after that trim — roughly **14%** more, on a field the ledger has never displayed.
+ *
+ * **Dropping it from the wire is not dropping the column**, which stays exactly as it was:
+ * `source_transactions.fingerprint` is `not null`, format-checked, and carries
+ * `unique (owner_id, account_id, fingerprint)` — the constraint that makes re-importing a
+ * statement idempotent. `private.row_fingerprint` still recomputes it on every confirm and
+ * `confirm_import` still refuses a row whose claim disagrees, and `export_backup_snapshot`
+ * still emits it, so the backup contract is unchanged. What ends here is only the habit of
+ * shipping a server-side identity to a screen that never reads it.
+ *
+ * If the route ever regresses and sends either again, this parse fails by name rather than
+ * quietly paying for it, which is the same reason the overlay object is strict.
  */
 export const ledgerTransactionSchema = z.object({
   id: z.string().uuid(),
@@ -63,19 +73,81 @@ export const ledgerTransactionSchema = z.object({
   branch: z.string().nullable(),
   post_balance_minor: minorUnitStringSchema,
   currency: z.literal("THB"),
-  fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   source_components: z.array(ledgerComponentSchema),
   transaction_overlays: z.array(transactionOverlaySchema)
-}).strict();
-
-export const transactionListSchema = z.object({
-  transactions: z.array(ledgerTransactionSchema)
 }).strict();
 
 export type LedgerTransaction = z.infer<typeof ledgerTransactionSchema>;
 
 /** A transaction carrying the account it was read from, for the merged view. */
 export type AccountTransaction = LedgerTransaction & { account_id: string };
+
+/**
+ * How many rows one page of an account's ledger holds.
+ *
+ * **The route decides this, not the caller.** A page size that arrived on the query string would
+ * hand back the unbounded read migration 021 exists to end; the database clamps it as well, which
+ * is the invariant, and this is the number the app actually asks for.
+ *
+ * 100 rather than a round guess: at roughly 584 bytes a row it puts a page near 50 KB, against the
+ * ~785 KB a whole visit cost before paging. Deeper pages are one press and cost the same again.
+ */
+export const LEDGER_PAGE_SIZE = 100;
+
+/**
+ * One page of an account's ledger, as `list_account_transactions_page` returns it.
+ *
+ * **It deliberately carries no balance.** A draft returned the balance walked into the page,
+ * because task 45 predicted `combinedBalanceByTransaction` would otherwise seed from the wrong
+ * row; it does not, and the field was removed rather than kept as a cross-check that could raise a
+ * false alarm about money. What the merged view needs is a different fact and is derived from
+ * window depth — `combinedBalanceFloor` in `lib/ledger-window.ts`.
+ *
+ * `totals` are **whole-account and unpaged**. A total over a page would answer a question nobody
+ * asked, and the strip above the ledger has always meant "this ledger", not "this screenful".
+ */
+export const ledgerPageSchema = z.object({
+  rows: z.array(ledgerTransactionSchema),
+  hasMore: z.boolean(),
+  totals: z.object({
+    rows: z.number().int().nonnegative(),
+    deposits: minorUnitStringSchema,
+    withdrawals: minorUnitStringSchema,
+    net: minorUnitStringSchema
+  }).strict()
+}).strict();
+
+export type LedgerPage = z.infer<typeof ledgerPageSchema>;
+
+/**
+ * A candidate carries its own account, because nobody named one on its behalf.
+ *
+ * A page is fetched per account, so its rows inherit the account the caller asked for. The
+ * candidate set spans every account at once — that is what makes it able to answer a question
+ * about the whole ledger — so the account has to travel on the row.
+ */
+export const matchCandidateSchema = ledgerTransactionSchema.extend({
+  account_id: z.string().uuid()
+}).strict();
+
+export const matchCandidateListSchema = z.object({
+  candidates: z.array(matchCandidateSchema)
+}).strict();
+
+/**
+ * The cursor identifying the last row a caller already holds.
+ *
+ * All three parts travel together — `source_time` may legitimately be null, so it is the one part
+ * whose absence means a position rather than a missing value. Null when there is no page yet.
+ */
+export type LedgerCursor = { beforeDate: string; beforeTime: string | null; beforeId: string };
+
+/** The cursor that continues after a page, or null when the page was the end of the ledger. */
+export function cursorAfter(page: readonly LedgerTransaction[]): LedgerCursor | null {
+  const last = page[page.length - 1];
+  if (last === undefined) return null;
+  return { beforeDate: last.source_date, beforeTime: last.source_time, beforeId: last.id };
+}
 
 /**
  * Net movement of a row: components already carry their sign (deposits positive,
@@ -150,6 +222,20 @@ export function compareTransactions(a: LedgerTransaction, b: LedgerTransaction):
  * An account holding no transactions at all contributes nothing and cannot: there is
  * no row to derive an opening from. The caller is expected to say how many accounts
  * are in that state rather than let the total quietly stand for all of them.
+ *
+ * ## Paging did not change this rule, and the reason is worth writing down
+ *
+ * PLAN task 45 predicted that paging would break this: seeded from the newest N rows it would
+ * "seed from the wrong row and every figure on screen would be wrong". **That prediction was
+ * wrong, and `tests/ledger-window.test.ts` is what showed it.** `post_balance − movement` is a
+ * fact about the row itself — the balance immediately *before* it — and it is that whichever row
+ * it happens to be. Handed a window, the seed is the balance carried into the window, exactly,
+ * with no help from anyone.
+ *
+ * So this function is unchanged by paging and takes no new argument. What the server's
+ * `carriedBalance` is used for instead is checking that claim rather than replacing it: see
+ * `openingDisagreements` in `lib/ledger-window.ts`. A figure this can derive and the database can
+ * also state is worth comparing, because a disagreement means the window skipped a row.
  */
 export function combinedBalanceByTransaction(
   transactions: readonly AccountTransaction[]
@@ -183,9 +269,12 @@ export function combinedBalanceByTransaction(
 // which is the one that should own the type.
 
 /**
- * Client-side text filter. Per-account server-side filtering does not exist and is
- * not worth adding at this scale (PLAN task 17); this searches the fields a person
- * would recognise a row by, and deliberately not the fingerprint or any id.
+ * Client-side text filter. This searches the fields a person would recognise a row by,
+ * and deliberately not any id — a server-verified identity is not something anyone types
+ * into a search box, and matching one would surface rows by an internal value.
+ *
+ * The fingerprint used to be excluded here by the same reasoning; it is now excluded by not
+ * being on the wire at all, which is the stronger form of the same rule.
  */
 export function matchesQuery(transaction: LedgerTransaction, query: string): boolean {
   const needle = query.trim().toLocaleLowerCase();

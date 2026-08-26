@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-**One hundred and fifty-nine traps, and this file is now the index to them rather than the file that holds them** (D-149, 2026-08-25). They were grouped on 2026-08-09 into the eight sections below, added to since, and their bodies moved into `docs/gotchas/` — one file per section — when this file breached its budget a second time. **The split was owed rather than chosen**: D-134 raised the budget once and said the next breach was owed a split along these exact section headings, not a third raise. Neither move changed anything inside a trap; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. **The index below still lists every trap in every section**, which is what makes finding one cost a scan of this file and then exactly one open. `pnpm check:docs --strict` fails if the index and the bodies disagree.
+**One hundred and sixty-six traps, and this file is now the index to them rather than the file that holds them** (D-149, 2026-08-25). They were grouped on 2026-08-09 into the eight sections below, added to since, and their bodies moved into `docs/gotchas/` — one file per section — when this file breached its budget a second time. **The split was owed rather than chosen**: D-134 raised the budget once and said the next breach was owed a split along these exact section headings, not a third raise. Neither move changed anything inside a trap; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. **The index below still lists every trap in every section**, which is what makes finding one cost a scan of this file and then exactly one open. `pnpm check:docs --strict` fails if the index and the bodies disagree.
 
 ## Index
 
@@ -69,6 +69,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A new table is NOT born with zero privileges, and grepping the migrations cannot tell you what it holds
 - A version or count written into `SPEC.md` is a claim no gate re-reads
 - Every push to `main` is a production deployment, including a docs-only one
+- A correction overlay's `kind` and `amount_minor` are one fact, and writing either alone violates a check
 
 ### Backup, restore and recovery
 
@@ -149,6 +150,9 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - An assertion that a scrolled element sits near the viewport top measures the document's length, not the scroll
 - A fixture whose identifiers match nothing sends the test down the fallback branch, and it passes there
 - Next.js mounts an empty `role="alert"` of its own, so a page-wide alert count never reaches zero
+- A fixture that renders a QR reaches the internet for its WebAssembly, so the slip specs need the network
+- `pnpm supabase:test` exits non-zero on a passing run, so the exit code is not the result
+- A pgTAP plan that undercounts reports every subtest passing, and fails anyway
 
 ### App, auth, routing and accessibility
 
@@ -192,6 +196,9 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A typeface's cap height, not its `font-size`, decides how big it looks
 - A disclosure component that renders a `<p>` breaks the moment it is used inside one
 - Wrapping existing children in a element to make them collapsible re-lays-out every viewport
+- Under paging, a count scoped to the filter cannot decide whether the ledger is empty
+- A dedup downstream of paging hides a page that repeats a row, but not one that skips
+- A per-account balance walk is exact under paging; the merged one across accounts is not
 
 ## Traps
 
@@ -205,10 +212,10 @@ these section headings rather than a third raise. The owner chose the split.
 | --- | --- | --- |
 | Environment, shell and toolchain | 19 | [`docs/gotchas/environment.md`](docs/gotchas/environment.md) |
 | Docker and the local Supabase projects | 15 | [`docs/gotchas/docker-supabase.md`](docs/gotchas/docker-supabase.md) |
-| Database, migrations and pgTAP | 15 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
+| Database, migrations and pgTAP | 16 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
 | Backup, restore and recovery | 10 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |
 | Statement and slip parsing | 17 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
-| Tests, Playwright and the gate | 26 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
-| App, auth, routing and accessibility | 49 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
+| Tests, Playwright and the gate | 29 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
+| App, auth, routing and accessibility | 52 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
 

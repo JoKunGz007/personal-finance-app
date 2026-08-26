@@ -42,7 +42,7 @@ export function LedgerStatementRow({
   /** The account this row belongs to, for the all-accounts column. */
   account: LedgerAccount | undefined;
   /** The all-accounts running balance at this row, already defaulted to the row's own. */
-  combinedBalance: string;
+  combinedBalance: string | null;
   /**
    * The card currently being matched, when one is. Read for its printed balance, which this row
    * compares against its own so the owner is told whether the two agree **before** choosing.
@@ -288,7 +288,13 @@ export function LedgerStatementRow({
         </td>
         {showCombined ? (
           <td data-label="All accounts" className="numeric combined-balance">
-            {formatThb(combinedBalance)}
+            {/* Null where the merged figure is not knowable: an account in scope has rows older
+                than its window reaches, so summing here would add that account's *later* balance
+                to an earlier row. Shown as an em dash rather than as this row's own balance,
+                which is a different number wearing the same heading. */}
+            {combinedBalance === null
+              ? <span title="Load older rows to see the combined balance here." aria-label="Combined balance not loaded">&mdash;</span>
+              : formatThb(combinedBalance)}
           </td>
         ) : null}
       </tr>

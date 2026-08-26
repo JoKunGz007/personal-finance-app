@@ -1,5 +1,34 @@
-import { writeBarcode } from "zxing-wasm/writer";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { prepareZXingModule, writeBarcode } from "zxing-wasm/writer";
 import { buildSlipQrPayload } from "@/lib/slip-qr";
+
+/**
+ * Point the QR **writer** at the binary pnpm already installed, instead of a CDN.
+ *
+ * **This is the root of the "QR intermittent".** `zxing-wasm`'s writer resolves its `.wasm`
+ * relative to a jsDelivr URL when nothing overrides it, so every spec that renders a slip fixture
+ * was quietly reaching the network — and failing with `wasm streaming compile failed: TypeError:
+ * fetch failed` whenever it could not. That is not intermittent so much as *dependent on the
+ * network*, which looks the same from inside a test run and is why re-running usually "fixed" it.
+ *
+ * `scripts/copy-zxing-wasm.mjs` is the app's answer to the same problem for the **reader**, and it
+ * deliberately does not cover this one: the reader's binary has to be served from the app's own
+ * origin under the CSP, while the writer never runs in the app at all. Fixtures are the only thing
+ * that writes a QR, so the override belongs here rather than in the build.
+ */
+// Anchored at the project root rather than at `import.meta.url`: Playwright loads this file
+// through a CJS transform, where `import.meta` does not exist and the warning it raises is
+// swallowed into a module that simply fails to load. Both runners start at the repo root.
+const require = createRequire(join(process.cwd(), "package.json"));
+// `<pkg>/dist/<es|cjs>/writer/index.js` sits two levels below `dist`, and the binary that entry
+// point loads lives at `<pkg>/dist/writer/zxing_writer.wasm` — the same shape the reader has.
+const writerWasm = join(dirname(require.resolve("zxing-wasm/writer")), "..", "..", "writer", "zxing_writer.wasm");
+// `wasmBinary` rather than `locateFile`: emscripten checks for an already-loaded binary before it
+// resolves a path at all, so handing it the bytes skips the fetch instead of redirecting it. The
+// path override was tried first and did not take — this build reaches for its URL regardless.
+prepareZXingModule({ overrides: { wasmBinary: readFileSync(writerWasm) } });
 
 // Renders a slip QR to a real PNG, the same way `synthetic-pdf.ts` renders a statement to
 // a real PDF. It exists so the browser specs can put an **actual image** through the
