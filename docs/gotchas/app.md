@@ -1,6 +1,6 @@
 # Private Ledger gotchas — App, auth, routing and accessibility
 
-Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **46 traps.**
+Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **49 traps.**
 
 `GOTCHAS.md` keeps the index across every section and is still the way in — it lists every
 trap in this file, so a reader finds the one that applies without loading any body. Add a trap
@@ -342,3 +342,24 @@ the top of `GOTCHAS.md`.
 - Cause: the refresh was guarded `if (transactions !== null)`, which meant "only if the owner has already pressed Load". Once the page loads itself that condition is no longer about intent, it is about **timing**: sign in on `/ledger`, and a payment recorded while the first load is still in flight finds `transactions` still null. The guard had no case left to cover — the callback fires only after a successful write, so the session is good and the load will be too.
 - Avoid: when reversing a load-on-demand decision, grep for every condition that was standing in for "has the owner asked yet". They read as null-safety and they are not. The same reversal also makes two loads able to overlap, so the newest must own the state — `app/transactions-view.tsx` stamps each load with a sequence number and drops the results, and the `busy` flag, of any load a newer one has superseded.
 - Verify: `tests/e2e/owner-session.spec.ts`, "records a cash payment into the ledger", which fails by name on the stale guard. Dated 2026-08-26.
+
+## A typeface's cap height, not its `font-size`, decides how big it looks
+
+- Symptom: one face in a switcher renders far larger than the others at identical CSS sizes — measured here as Press Start 2P at **1.43x** IBM Plex — and stepping down individual selectors fixes only the elements somebody thought to name, leaving headings and buttons wrong.
+- Cause: `font-size` sets the em, and faces place their capitals differently within it. Cap heights per 100px: IBM Plex **70**, Press Start 2P **100** (a full em, which is unusual), Pixelify Sans and Silkscreen **63**.
+- Avoid: give each face a measured `size-adjust` on its own `@font-face`, so one CSS size means one visual size everywhere. That requires declaring the face locally — a descriptor cannot be added to someone else's `@font-face` — and under a **distinct family name**, because two rules with matching descriptors resolve by declaration order and CSS bundling does not promise one. **Widths do not normalise with heights**, so column-width step-downs still have to be measured separately.
+- Verify: measure with canvas `TextMetrics.actualBoundingBoxAscent` on a capital, per face, at a fixed size — do not judge by eye. `tests/e2e/font-picker.spec.ts` re-checks viewport overflow per face at phone width. Dated 2026-08-26.
+
+## A disclosure component that renders a `<p>` breaks the moment it is used inside one
+
+- Symptom: a line of text escapes its paragraph and the layout below it shifts, with no error anywhere. Only in the places where the component was nested in a `<p>`.
+- Cause: `<p>` cannot contain `<p>`. The parser closes the outer one where the inner begins, so the remaining siblings land outside it. A component that was written for one container gets reused in another and nothing warns.
+- Avoid: render a shared inline-ish component as a `<span>` and give it `display: block` in CSS. When it must also work as a flex item, carry **both** `display: block` and `flex-basis: 100%` — a flex container blockifies the first and a paragraph ignores the second, so each container uses the mechanism the other drops.
+- Verify: `app/ledger-note.tsx` and `.note-panel` in `app/globals.css`; the component is used beside a heading in a flex row and inside `<p class="ledger-status">`. Dated 2026-08-26.
+
+## Wrapping existing children in a element to make them collapsible re-lays-out every viewport
+
+- Symptom: adding a phone-only disclosure around header controls silently changes the desktop layout, because what were several flex items of the header became one.
+- Cause: a new wrapper is a new box in the parent's formatting context. The children stop participating in the layout that was tuned around them.
+- Avoid: `display: contents` on the wrapper at the sizes where it should not exist, and a real `display` only inside the media query where it should. The desktop layout then stays byte-identical rather than being re-derived and re-tested. Check the wrapper carries no semantics of its own first — `display: contents` on a landmark or a list removes it from the accessibility tree.
+- Verify: `.header-panel` in `app/globals.css`, `display: contents` above 700px and a flex row below it. Dated 2026-08-26.

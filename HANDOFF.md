@@ -83,10 +83,13 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
-- **Commit and push: granted per session, and the grant is SPENT.** It was granted on **2026-08-26**
-  for the ledger restructure and used on `f46ee64`, whose push also carried `1d2ca59` (D-153) — the
-  typeface switch, which had been sitting local since the previous session. **Both are on
-  `origin/main` and therefore deployed.** The next commit needs a new ask. **Previously:** Every push to `main` **is a production
+- **Commit and push: granted per session, and the grant is SPENT.** Granted on **2026-08-26** and
+  used three times that day — `f46ee64`, `b4bc6be`, `d7411b3` — all pushed and therefore deployed.
+  **The next commit needs a new ask.**
+- **A migration is unblocked but NOT authorized.** The owner exported a backup on 2026-08-26 and said
+  so, which removes the artifact that was blocking one. `supabase db push` still needs its own ask at
+  the time, and the backup should be verified from the database first rather than taken on trust.
+  **Task 45 is scoped and waiting on his go-ahead**, not on anything technical. **Previously:** Every push to `main` **is a production
   deployment** — see below. Read `git status -sb` and `git log` rather than trusting any sentence
   here. Committed straight to `main`, matching this repo's history; nobody has asked for a
   branch-and-PR flow, so raise it rather than assume it.
@@ -102,30 +105,38 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **`main` is at `f46ee64` and `origin/main` matches it, pushed 2026-08-26** — the ledger restructure
-  (D-155, D-156), 25 files with three new: `app/ledger-note.tsx`, `lib/owner-ready.ts`,
-  `tests/owner-ready.test.ts`. **That push also carried `1d2ca59`**, the typeface switch, which had
-  been local since the previous session — so **two deployments' worth of change went out at once**.
-  **Nobody has confirmed either as Ready in the dashboard, and nobody has opened the deployed page.**
-  The owner is the only one who can. **`eslint.config.mjs` and `playwright.config.ts` stayed out of
-  the commit**, which is what `git status --short` is for.
-- **The full gate is green with all of it in the tree, 2026-08-26**: Vitest **823 passed / 7 skipped
-  across 39 files**, Playwright owner **31/31**, isolated **34 passed / 4 skipped**, production build
-  clean at **twenty-one** `/api/v1/` routes, `check:docs --strict` at **156 decisions, 156 traps**, `tsc`
-  and `pnpm exec eslint .` clean with zero warnings. **pgTAP deliberately not re-run** — 266 across 8 from
-  2026-08-18, and no SQL has moved since.
-- **`docs/gotchas/app.md` is now at 83% (65 KB/78 KB)**, up from 75%, because six of the seven new traps
-  are app traps — three of them from `/code-review`. **It is the section to watch**, and D-134's condition says a breach splits it in two
+- **`main` is at `d7411b3` and `origin/main` matches it**, pushed 2026-08-26. Three pushes went out
+  that day: `f46ee64` (the ledger restructure, which also carried the long-local `1d2ca59`),
+  `b4bc6be` (docs) and `d7411b3` (the typeface sizing, the route titles and the phone header).
+  **The owner opened `f46ee64` in a browser and reported on it, so that one is confirmed by use
+  rather than only Ready.** `d7411b3` has not been looked at by anyone. **`eslint.config.mjs` and
+  `playwright.config.ts` stayed out of every commit**, which is what `git status --short` is for.
+- **The owner exported a fresh backup on 2026-08-26**, which is what unblocks a migration. He said so;
+  nothing here has verified it from the database, and D-152's rule still stands — **re-read the
+  sequence from the database before anything destructive** rather than trusting this line. The last
+  reading taken by an agent was sequence 33 on 2026-08-18.
+- **He also reported the deployed ledger at 1,604 rows**, up from the 1,552 read from the hosted
+  database on 2026-08-15. A count, not a value. It is what task 45's sizing rests on.
+- **The full gate is green at `d7411b3`, 2026-08-26.** The numbers live in `PLAN.md`'s gate table,
+  which is the file that owns them; what belongs here is the one thing that table cannot say — **an
+  owner-suite run that day failed two adjacent slip specs on `wasm streaming compile failed` and
+  passed on the immediate re-run with nothing changed.** That is the documented QR intermittent and
+  the build's own `copy-zxing-wasm.mjs` step is the suspect. **Re-run before believing any single
+  failure there.** **pgTAP deliberately not re-run** — 266 across 8 from 2026-08-18, no SQL has moved.
+- **`docs/gotchas/app.md` is the file to watch: ~87%**, up from 75% at the start of 2026-08-26, because
+  nine of that day's twelve new traps are app traps. **D-134's condition is that a breach splits the
+  section in two rather than raising the budget**, and D-149 has already honoured it once. The next
+  substantial app change is likely to be the one that pays it. **It is the section to watch**, and D-134's condition says a breach splits it in two
   rather than raising the budget. `DECISIONS.md` is at **48% (57 KB/117 KB)** after two entries.
-- **`list_account_transactions` bounds nothing and is still unpaged, deliberately** (D-155). Paging it
-  properly means deriving balances in SQL, so it means a migration — **that is an ask, not a task**, and
-  it is the largest thing the ledger page still owes. What was done instead is a width bound: the route
-  drops `import_batch_rows`, 28.4% of every row, which nothing read.
-- **On a phone the shell header still eats most of the first screen** before the ledger's own heading
-  begins — brand, privacy chip, typeface picker and its note, two sign-in buttons, the route row, the
-  session line. The table cannot be the most visible thing on that device while that holds, and no
-  trimming below it changes that. **Measured at iPhone 13 width, left alone, and owed to the owner as a
-  question** — it is the shell every route shares and his critiques were about the ledger page.
+- **`list_account_transactions` bounds nothing and is still unpaged, deliberately** (D-155). It is now
+  **scoped as PLAN task 45** — read it there rather than re-deriving it; the short version is that three
+  things on that page are derived over the whole ledger and a page silently changes all three. **A
+  cheaper step is identified and not taken**: `fingerprint` is ~14% of every row and the ledger view
+  never reads it, which is a route-side deletion needing no migration.
+- **The phone header is fixed as of `d7411b3`** (D-157) and no longer eats the first screen: the brand
+  and the route row stay, everything else is behind a Settings disclosure below 700px. **Nobody has
+  opened it on a real phone yet** — it is measured at iPhone 13 width in the suite, which is what
+  D-138 proved is not the same thing.
 - **2026-08-21 pushed three times, and each push is a production deployment**: bulk slip upload
   (`7be667e`, D-135), the warm palette with the phone measurement (`76dc46b`, D-136), and cornsilk
   as the ground with the dark scheme dropped (`8319d5d`, D-137). A fourth is the phone-overflow fix
