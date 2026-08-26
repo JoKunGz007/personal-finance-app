@@ -54,6 +54,20 @@ function section(source: string, header: string): string {
   return end === -1 ? source.slice(start) : source.slice(start, end);
 }
 
+/**
+ * The same slice for a function at the top level of a module, whose closing brace is in column 1.
+ *
+ * Added when the card form's decisions moved to `lib/notification-card-form.ts` (D-152). The guards
+ * below had to follow them there, and a `\n  }` scan finds the end of the first *nested* block
+ * instead — which returns a slice that is too short and passes for the wrong reason.
+ */
+function topLevel(source: string, header: string): string {
+  const start = source.indexOf(header);
+  if (start === -1) return "";
+  const end = source.indexOf("\n}", start);
+  return end === -1 ? source.slice(start) : source.slice(start, end);
+}
+
 describe("privacy guardrails", () => {
   it("does not expose statement password environment variables", () => {
     const example = readFileSync(".env.example", "utf8");
@@ -747,7 +761,7 @@ describe("privacy guardrails", () => {
     expect(existsSync("lib/slip-ocr-engine.ts"), "the local engine is deleted, not disabled").toBe(false);
     expect(readFileSync("package.json", "utf8"), "no OCR engine is a dependency of this app")
       .not.toMatch(/"tesseract\.js"|"@tesseract\.js-data\//u);
-    for (const file of ["app/slip-capture.tsx", "app/slip-batch.tsx", "app/notification-card-capture.tsx", "lib/slip-ocr.ts", "lib/slip-scan.ts", "lib/slip-batch.ts", "lib/browser/ocr-reader.ts", "lib/browser/qr-detector.ts"]) {
+    for (const file of ["app/slip-capture.tsx", "app/slip-batch.tsx", "app/notification-card-capture.tsx", "lib/notification-card-form.ts", "lib/slip-ocr.ts", "lib/slip-scan.ts", "lib/slip-batch.ts", "lib/browser/ocr-reader.ts", "lib/browser/qr-detector.ts"]) {
       expect(readFileSync(file, "utf8"), `${file} must not reach a local engine`)
         .not.toMatch(/readSlipWords|releaseSlipOcr|slip-ocr-engine|import\("tesseract/u);
     }
@@ -759,21 +773,20 @@ describe("privacy guardrails", () => {
   // — and what has to be asserted instead is that the offer goes through the one module that
   // cannot manufacture a figure, and that nothing but a field name leaves the form.
   it("offers a card's figures only through the strict pre-fill, never through a parser of its own", () => {
+    // **The offer moved to `lib/notification-card-form.ts` and this guard moved with it** (D-152).
+    // It read `offerPrefill` out of the component, which no longer has one: the decision is
+    // `typedFromPrefill` now, driven directly by `tests/notification-card-form.test.ts`. The grep
+    // failed when the code moved, which is the behaviour `GOTCHAS.md` asks of a source grep — and
+    // what a grep still adds over that suite is that no *second* door can be opened here later.
     const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+    const decisions = readFileSync("lib/notification-card-form.ts", "utf8");
 
     // The single door. A second path — a regex over the OCR text, a lenient parse, a "clean this
     // up" helper written for the occasion — is exactly the silent error D-112 named as the residual
     // risk, and it would not look wrong at the call site.
-    const offer = /function offerPrefill\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(offer, "offerPrefill must exist for this test to mean anything").toContain("prefillCardFields(");
+    const offer = topLevel(decisions, "export function typedFromPrefill(");
+    expect(offer, "typedFromPrefill must exist for this test to mean anything").toContain("prefill.amount.ok");
     expect(offer, "a figure may only be offered when the strict module said ok").not.toMatch(/parseThb|replace\(|RegExp|\/\^/u);
-
-    // `readImage` still fills nothing: it has not chosen a card yet, and a pre-fill belongs to one.
-    const reader = /async function readImage\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(reader, "readImage must exist for this test to mean anything").toContain("findCards(");
-    for (const setter of ["setAmount", "setBalance", "setPrintedDigits", "setOccurredAtTime"]) {
-      expect(reader, `${setter} must not be reachable before a card is chosen`).not.toMatch(new RegExp(`${setter}\\(`, "u"));
-    }
 
     // The direction **is** filled from the image as of D-123, and the rule that replaced "never"
     // is asserted in `keeps a card's two direction signals from collapsing into one`: it comes
@@ -782,32 +795,78 @@ describe("privacy guardrails", () => {
     // second reading of the sign, no regex over the card's text.
     expect(offer, "the direction must come from the strict pre-fill's amount, not a reading of its own")
       .toMatch(/prefill\.amount\.value\.sign/u);
+
+    // The component's half: it runs the strict module and hands the whole offer over, and does no
+    // parsing of its own on the way.
+    const show = section(form, "async function showCard(");
+    expect(show, "showCard must exist for this test to mean anything").toContain("prefillCardFields(");
+    expect(show, "the offer must go to the tested module rather than into the boxes one by one")
+      .toContain("setTyped(typedFromPrefill(");
+    expect(show, "the form may not read a figure out of the card itself").not.toMatch(/parseThb|RegExp/u);
+
+    // **Every write to the boxes, matched on the call rather than on the word**, so a fourth route
+    // in — a "just this once" setter beside a new field — fails here rather than shipping. This is
+    // the machine-checked list D-151 established for `discardLoadedStatement`, applied to the one
+    // value that replaced this form's nine boxes.
+    //
+    // The leading `\b` is the whole difference between a call and a word: without it this matched
+    // the tail of `resetTyped()` in a comment describing the helper this value replaced, and failed
+    // on prose rather than on code. **That mistake has now been made four times in this file**, and
+    // the answer each time is the same — narrow the pattern to the call, never reword the code to
+    // suit a pattern that is looking for the wrong thing.
+    const writes = [...form.matchAll(/\bsetTyped\(([^\n]*)/gu)].map((match) => match[1] ?? "");
+    expect(writes.length, "no setTyped calls found — this guard is looking at the wrong file").toBeGreaterThan(2);
+    for (const argument of writes) {
+      expect(argument, `a figure may reach a box only by emptying or by the strict pre-fill: setTyped(${argument}`)
+        .toMatch(/^(?:emptyTyped\(\)|typedFromPrefill\(|\(current\) => \(\{ \.\.\.current, \.\.\.change \}\))/u);
+    }
+
+    // `readImage` still fills nothing: it has not chosen a card yet, and a pre-fill belongs to one.
+    // Emptying is not filling, so it is the *offer* that must be unreachable here, not `setTyped`.
+    const reader = section(form, "async function readImage(");
+    expect(reader, "readImage must exist for this test to mean anything").toContain("findCards(");
+    expect(reader, "no box may be filled before a card is chosen").not.toMatch(/typedFromPrefill\(/u);
+    expect(reader, "and it may only empty them").toContain("setTyped(emptyTyped())");
   });
 
   it("lets a pre-fill's audit trail carry field names and never a figure", () => {
+    // **The body is built in `lib/notification-card-form.ts` now, and this guard follows it there**
+    // (D-152). What it used to assert about `submit` — that the remembered values do not reach the
+    // wire — is asserted against `captureRequest`, which is the one place a body is built, and
+    // `tests/notification-card-form.test.ts` additionally drives the resulting JSON.
     const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+    const decisions = readFileSync("lib/notification-card-form.ts", "utf8");
 
     // D-114 records **structure, never values**: which fields were offered, and which of those the
     // owner changed. Both lists are built by filtering the field-name constant, so a figure cannot
     // travel in one by construction rather than by review.
-    expect(form).toMatch(/offeredFieldNames\s*=\s*useMemo\(\s*\(\)\s*=>\s*PREFILL_FIELDS\.filter/u);
-    expect(form).toMatch(/changedFieldNames\s*=\s*useMemo\(\s*\(\)\s*=>\s*PREFILL_FIELDS\.filter/u);
+    expect(decisions).toMatch(/function offeredFieldNames\([\s\S]*?PREFILL_FIELDS\.filter/u);
+    expect(decisions).toMatch(/function changedFieldNames\([\s\S]*?PREFILL_FIELDS\.filter/u);
 
-    // The remembered values exist to be compared and must not reach the request body. Asserted
-    // against the submit call rather than the whole file, since comparing is legitimate elsewhere.
-    const submit = /async function submit\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(submit, "submit must exist for this test to mean anything").toContain("/api/v1/notification-cards");
-    expect(submit, "the remembered offer is a map of values and is for comparison, not for sending")
-      .not.toMatch(/\boffered\b/u);
+    const request = topLevel(decisions, "export function captureRequest(");
+    expect(request, "captureRequest must exist for this test to mean anything").toContain("accountId:");
+    // The remembered values exist to be compared and must not reach the request body. Matched on
+    // the **read** of the map rather than on the word `offered`, so the field names derived from it
+    // do not fail the rule the way this file's own comments have three times before.
+    expect(request, "the remembered offer is a map of values and is for comparison, not for sending")
+      .not.toMatch(/typed\.offered\b/u);
     // And the derived name lists are what does travel, so this test fails if the wiring is dropped
     // rather than passing vacuously once nothing is sent at all (migration 019).
-    expect(submit).toMatch(/prefillOffered:\s*namesOrAbsent\(offeredFieldNames\)/u);
-    expect(submit).toMatch(/prefillChanged:\s*namesOrAbsent\(changedFieldNames\)/u);
+    expect(request).toMatch(/prefillOffered:\s*namesOrAbsent\(offeredFieldNames\(typed\)\)/u);
+    expect(request).toMatch(/prefillChanged:\s*namesOrAbsent\(changedFieldNames\(typed\)\)/u);
     // **An empty list must travel as an absent key, not as `[]`** (D-122). Migration 019 refuses
     // an explicitly empty array — `array_length` of an empty array is NULL, so its duplicate check
     // fires — and a card whose pre-fill the owner changed nothing on sends exactly that. Asserted
     // here because the failure is invisible until a real card is captured with a perfect pre-fill.
-    expect(form).toMatch(/function namesOrAbsent\([\s\S]*?names\.length > 0 \? \[\.\.\.names\] : undefined/u);
+    expect(decisions).toMatch(/function namesOrAbsent\([\s\S]*?names\.length > 0 \? \[\.\.\.names\] : undefined/u);
+
+    // The component sends that body and builds none of its own. A second literal here would be a
+    // second contract with migration 019, and only one of them would be under test.
+    const submit = section(form, "async function submit(");
+    expect(submit, "submit must exist for this test to mean anything").toContain("/api/v1/notification-cards");
+    expect(submit, "the body is the tested value, sent as it stands").toContain("body: JSON.stringify(request)");
+    expect(submit, "no request body may be assembled outside the module that is tested")
+      .not.toMatch(/prefillOffered|prefillChanged|amountMinor|accountId/u);
   });
 
   it("sends the page and the keyboard to a capture's result, without trapping either", () => {
@@ -867,38 +926,50 @@ describe("privacy guardrails", () => {
   });
 
   it("keeps a card's two direction signals from collapsing into one", () => {
+    // **Both halves of this rule are now driven rather than grepped** — see
+    // `tests/notification-card-form.test.ts`, which feeds a card printing `+`, one printing `-` and
+    // one printing no sign at all through `typedFromPrefill` and gets three different answers. That
+    // is the thing a source grep never could do, and it is why the assertions here were allowed to
+    // move with the code (D-152) rather than being kept where the behaviour no longer is.
     const form = readFileSync("app/notification-card-capture.tsx", "utf8");
+    const decisions = readFileSync("lib/notification-card-form.ts", "utf8");
 
     // D-099 stores a card only when the words the card printed and the sign the owner chose
     // agree. Two ways of writing the gate look identical and are not: `!== "contradicted"` also
     // passes when there is no reading at all, so the cross-check retires itself the moment no
     // card region is in hand and the form stays submittable on one signal.
-    expect(form, "the readiness gate must require agreement, not merely the absence of a contradiction")
-      .toMatch(/directionAgrees/u);
-    expect(form).toMatch(/directionCheck\?\.outcome === "read"/u);
-    expect(form, 'a bare `!== "contradicted"` gate is the shape this test exists to prevent')
-      .not.toMatch(/directionCheck\?\.outcome !== "contradicted"/u);
+    const agrees = topLevel(decisions, "export function directionAgrees(");
+    expect(agrees, "directionAgrees must exist for this test to mean anything").toContain("return");
+    expect(agrees, "the gate must require agreement, not merely the absence of a contradiction")
+      .toMatch(/card === null \|\| check\?\.outcome === "read"/u);
+    expect(agrees, 'a bare `!== "contradicted"` gate is the shape this test exists to prevent')
+      .not.toMatch(/!== "contradicted"/u);
+    // And the one gate on the append-only row consults it, rather than reaching a body without it.
+    expect(topLevel(decisions, "export function captureRequest("), "the capture gate must run the cross-check")
+      .toMatch(/if \(!directionAgrees\(card, directionCheck\(layout, card, amount\)\)\) return null;/u);
 
     // **The direction is filled from the printed sign and never from the direction word** (D-123),
     // and this is the assertion that keeps the cross-check from becoming a formality. The word is
     // what `readDirection` already holds; handing it back through the control would make the check
     // agree with itself on every card forever, and it would still *look* like a check. Filling
     // from the sign keeps two different printed features in play.
-    const offer = /function offerPrefill\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(offer, "offerPrefill must exist for this test to mean anything").toContain("prefillCardFields");
+    const offer = topLevel(decisions, "export function typedFromPrefill(");
+    expect(offer, "typedFromPrefill must exist for this test to mean anything").toContain("prefill.amount.ok");
     expect(offer, "the direction must come from the printed sign")
       .toMatch(/prefill\.amount\.value\.sign/u);
     expect(offer, "and it must be withheld unless the sign agrees with the direction word")
-      .toMatch(/setDirection\(bySign !== "" && bySign === picked\.direction \? bySign : ""\)/u);
-    // `picked.direction` is the word-derived signal. Assigning it to the control is the exact
-    // collapse this test exists to prevent, however it is spelled.
+      .toMatch(/direction: bySign !== "" && bySign === wordDirection \? bySign : "",/u);
+    // `wordDirection` is the word-derived signal. Assigning it to the control is the exact collapse
+    // this test exists to prevent, however it is spelled.
     expect(offer, "the word-derived direction must never be assigned to the control")
-      .not.toMatch(/setDirection\(picked\.direction\)/u);
+      .not.toMatch(/direction: wordDirection\b/u);
 
-    // `readImage` still fills nothing: it has not chosen a card yet, so any direction it set would
-    // belong to no card in particular.
-    const reader = /async function readImage\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(reader).not.toMatch(/setDirection\(/u);
+    // The component's only other route into the control is the owner's own select, and nothing in
+    // it may assign a direction read off the card. Matched on the assignment, not on the word.
+    expect(form, "the control is filled by the owner, or by the tested pre-fill, and by nothing else")
+      .toMatch(/edit\(\{ direction: event\.target\.value as CardDirection \| "" \}\)/u);
+    expect(form, "no card-derived direction may be written into the form here")
+      .not.toMatch(/direction:\s*\w+\.direction\b/u);
   });
 
   it("sends every capture image to this app's own origin and nowhere else", () => {

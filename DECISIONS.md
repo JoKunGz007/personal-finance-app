@@ -193,6 +193,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-149** — The owner closed the two questions the fifth boundary was stuck behind, so the traps split and the sixth boundary went seven entries deep
 - **D-150** — The announce-and-scroll becomes one module and the worklist becomes one value, so two classes of defect stop being representable
 - **D-151** — The list of state a discarded statement clears is no longer trusted, because a list is exactly what went stale twice
+- **D-152** — The card form's decisions become a tested module, and this time the tests were written before the component moved
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -646,3 +647,65 @@ The list is now checkable rather than trusted. A guard in `tests/import-flow.tes
 **Proved by making it fail.** A 27th `useState` was injected, the guard named it and said what to do, and the injection was reverted — a guard that has only ever passed has not been shown to guard anything.
 
 - Evidence: Vitest **734 passed / 7 skipped across 36 files**, up the 4 tests this adds, skip count unchanged at **7**. Playwright owner **31/31**, production build clean, tsc and ESLint clean. D-148 (the helper this makes checkable), D-147 and D-150 (the defect class), D-130 (measuring before deciding).
+
+## D-152 — The card form's decisions become a tested module, and this time the tests were written before the component moved
+
+- Date: 2026-08-26
+- Status: **Done, uncommitted.** New `lib/notification-card-form.ts` and `tests/notification-card-form.test.ts`; `app/notification-card-capture.tsx`, `tests/privacy.test.ts`, `docs/gotchas/app.md`. No SQL, no route, no contract change, no CSP change.
+- Context: D-151 named this file as the next structural target and D-150 established the pattern. The owner asked for it explicitly.
+
+### The measurement, re-run rather than quoted
+
+D-151 chose *not* to finish the import reducer on churn, so the same measurement had to justify doing this. Re-taken 2026-08-26 over the last 60 commits (2026-08-13 → 2026-08-26): `app/notification-card-capture.tsx` **14**, `lib/notification-card-ocr.ts` **6**, `app/import-bench.tsx` **5**, `app/transactions-view.tsx` **4**, `app/slip-capture.tsx` **3**. It is the top hot spot by a wider margin than the 13-to-11 recorded yesterday, and `app/transactions-view.tsx` — the runner-up in that reading — has dropped to fourth as the ledger-view arc finished. `app/globals.css` moves more often than either and is a stylesheet, not a structural target. **The conclusion strengthened when re-measured, which is the only reason it was acted on.**
+
+### The ordering, which is the point of the entry
+
+**The pure module and its tests were written and proved first; the component was not touched until they were green.** D-150 did it the other way round and got away with it because the owner Playwright suite covers the import path end to end. **Card capture has no such cover** — 31 owner specs and not one drives this form — so there was nothing to catch a mistake made while moving it.
+
+That ordering paid immediately: `tests/notification-card-form.test.ts` was **55 tests passing against a component that still contained the old copy of every rule**, which is what made the component change a mechanical substitution rather than a rewrite under no observation.
+
+### What became one value
+
+Twenty-three `useState` slots became eight. Three groups were each one concept spread across several — the shape D-147 and D-148 were both defects of:
+
+- **`CardReading`** replaces `regions`, `chosen`, `crops`, `notes`, `reading` and `readerNote`. Those six made an illegal state ordinary: cutting up to six crops takes long enough for the owner to switch cards while it runs, so `crops` belonging to a card other than `chosen` was a routine intermediate — one card's picture beside another card's figures, above an append-only Capture button. Choosing a card and dropping its predecessor's crops is now one transition. The separate `reading` boolean is gone with it: every exit leaves a phase, so the flag cannot desync from what it describes.
+- **`CardTyped`** replaces the nine boxes and the remembered offer. `resetTyped()` named nine setters by hand and `offerPrefill` named six by hand — two lists of the same fields with nothing checking they agreed. `GOTCHAS` records the general answer (*a helper is not the fix, because a helper is still a list*); this is it. **`typedFromPrefill` returns a whole form built from the empty one**, so "a refused field is blank rather than inherited" (D-114) is a property of the type instead of a thing to remember.
+- **`CardResult`** replaces `status` and `error`, which were mutually exclusive in fact and independent in the type — both could stand at once and show two banners with contradictory news.
+
+### The gate returns the request, so the button and the body are one decision
+
+The rule guarding the append-only row was written **twice**: as `ready`, which disabled the button, and restated condition by condition at the top of `submit`, because a submit can arrive by routes that never touched the button. That restatement was defence-in-depth against a drift it could equally well cause — it is only as current as the last person to remember it, which is exactly what D-148 was.
+
+`captureRequest` now answers with the **body** rather than with a boolean. `ready` is `captureRequest(...) !== null` and `submit` sends what it returned. What enables the button is literally what is sent. The test parses its output through `notificationCardCaptureSchema`, so the client and the route agree about the body or the suite fails — rather than the disagreement surfacing as a rejected capture of a real card.
+
+### What deliberately did not move
+
+- **The banner markup stayed in the component.** D-150 refused to extract it because the banners differ in content and one carries action buttons, so a shared component would take arbitrary children and be a pass-through wrapper. Nothing here changes that.
+- **`useResultBanner` was reused, not rewritten.** It already existed and this file was already a caller.
+- **`lib/notification-card-prefill.ts` is untouched**, as are `lib/notification-card.ts`, `lib/notification-cards.ts` and the strict CSP. The pre-fill guarantees are load-bearing and this change routes around them rather than through them.
+
+### Behaviour that did change, stated rather than buried
+
+- **A new screenshot now clears the free-text boxes too.** Choosing a different card on the same screenshot already cleared counterparty, category and note; loading a *different screenshot* did not, so those three could ride from one image to the next while every other box was replaced. Counterparty has a crop of its own, so that was the same inheritance hazard by a slower route. Both paths now clear everything.
+- **A success and a failure can no longer be shown at once.**
+- **The reference-data failures now use the same one banner** rather than a second independent slot.
+
+### The guards followed the code, and were red-proved doing it
+
+`tests/privacy.test.ts` guards this file with source greps, and three of them failed the moment the code moved — the direction gate, the pre-fill's single door, and the audit trail's field-names-never-values. **That is them working.** Each was moved to where the behaviour now is rather than loosened, and the banner/scroll guard added by D-150 passed untouched, which is the evidence that the markup really did stay put.
+
+Two were also strengthened. The pre-fill guard now enumerates **every `setTyped(` call in the component** and requires each to be an emptying or the tested pre-fill — the machine-checked list D-151 established for `discardLoadedStatement`, applied to the value that replaced nine boxes. The audit guard now asserts the component assembles **no request body of its own**, so a second contract with migration 019 cannot appear beside the tested one.
+
+**Everything was proved by breaking it.** Filling the direction control from the word failed 3 tests by name including the KBank-incoming case a grep cannot see; the loose `!== "contradicted"` gate failed the test that separates *no second signal* from *a second signal that failed*; letting a crop outlive its card failed the illegal-state test; and a rogue second write into the boxes failed the new enumeration guard, which named the offending call. All four were reverted.
+
+### What `/code-review` caught, which is the reason it runs before the ask (D-125)
+
+**It found a real regression, introduced by this change, in the gate on an append-only row.** `readImage` establishes the `read` phase and then cuts crops inside the same `try`; the `catch` called `readerRefused`, which **replaced the whole reading**. The old code could not do this — its `catch` only set `readerNote`, so `regions` stayed committed and the cross-check stayed armed.
+
+What that costs is not a missing picture. With no card in hand `directionAgrees` returns `true`, because there is genuinely no second signal — so **`captureRequest` stops requiring D-099's printed-word cross-check**, while the boxes still hold the amount, balance, digits and date `typedFromPrefill` put there from that very card, now with no crops to check them against. A pre-filled form, freshly submittable on one signal, under a banner reading *This image could not be read. Type the values from the card yourself.* A crop failure is reachable — `selectCard` guards its own call for exactly that reason, which is what makes the omission fifteen lines below it the ordinary kind of mistake.
+
+**The remedy is a value, not a `.catch()`.** `readerFailed(current, why)` refuses to downgrade a reading that found cards, so the invariant holds wherever a failure arrives rather than where someone remembered to guard. The `.catch()` was added too, because the owner should still be told the crops failed. Red-proved by restoring the one-line bug and watching the test fail by name.
+
+Three smaller findings, all taken: a **false claim about the build config** — a comment said the React Compiler was enabled and it is not (`next.config.ts` sets no `experimental.reactCompiler`; the rule that had rejected the `useMemo` ships with `eslint-config-next`'s `react-hooks` set and runs lint-only), so nothing was memoising the derivations at all; both `useMemo`s are restored in the form the rule accepts, keyed on `channel` rather than the derived `layout`. A **self-contradicting docstring** — *nothing here fills a value in from the image* has been false since D-114 and this change rewrote the block around it without removing it. And `readyToCapture` was **dead code whose only test was its own body restated**; both are deleted, with a comment where each stood saying why, because the property now holds by construction.
+
+- Evidence: Vitest **790 passed / 7 skipped across 37 files** (up 56 from 734/36; skip count unchanged at **7**). Playwright owner **31/31**, isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` at 151 decisions and 149 traps, tsc and ESLint clean. pgTAP not re-run and deliberately so — no SQL has moved since 2026-08-18. `app/notification-card-capture.tsx` 1,081 → 895 lines, against 591 in the new module and 652 in its tests — **this is not a line-count win and is not claimed as one**. What changed is that ~500 lines of decisions moved behind an interface and acquired 55 committed tests, which is the lens D-151 already established for `lib/statement-layout.ts`. D-150 (the pattern), D-151 (the target and the ordering), D-114/D-115 (the pre-fill guarantees), D-123 (sign not word), D-099 (two signals), D-122 (the absent key), D-148/D-147 (the defect class).

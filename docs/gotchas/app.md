@@ -219,6 +219,7 @@ the top of `GOTCHAS.md`.
 - Cause: these tests read a source file as text, and a comment is text. Any rule expressed as a bare word — `tesseract`, `aria-modal` — matches its own documentation, so writing the reason down breaks the check. It reads as a real violation, and the instinct is to delete the comment.
 - Avoid: match the **construct**, not the word. `aria-modal=` rather than `aria-modal`; `readSlipWords|slip-ocr-engine` rather than `tesseract`; an import or a call shape rather than a name that could appear in prose. Then say so beside the assertion, or the next person tightens it back.
 - Verify: 2026-08-17 (D-125). It happened twice in one day in `tests/privacy.test.ts`, on `tesseract` and then on `aria-modal`.
+- **It has now happened four times in that one file, and the fourth was a different mechanism.** The first three were bare words matching prose. The fourth (2026-08-26, D-152) was a pattern matching **the tail of a longer identifier**: a guard listing every `setTyped(` call in the card form matched `resetTyped()` inside a comment naming the helper that value replaced, and reported the comment's own text as an illegal write. A word boundary fixed it — `\bsetTyped\(` does not match inside `resetTyped` — which is the same remedy one level down: the **call**, not a string that a call contains.
 
 ## A `Proxy` over a `Request` throws on `headers` unless the target is the receiver
 
