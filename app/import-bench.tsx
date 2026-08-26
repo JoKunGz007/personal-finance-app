@@ -199,6 +199,15 @@ export function ImportBench() {
     setLabelCandidates([]);
     setValueLabels([]);
     setStructure([]);
+    // **The chooser belongs to the document too, and only the batch path knew it.**
+    // `workBatchEntry` resets it for exactly this reason — a refusal used to leave the *previous*
+    // statement's account selected under a banner asking for one, with Bind enabled on an account
+    // nothing had matched. The picker path never did, so choosing a PDF by hand kept the last
+    // statement's account in the dropdown. It could not produce a wrong import —
+    // `assembleImportPayload` still checks the printed bank code and last four — but it is the same
+    // misdirection one path had already fixed. Found by the guard in `tests/import-flow.test.ts`.
+    setChosenAccountId("");
+    setCreateAccountError(null);
   }
 
   async function loadSynthetic() {

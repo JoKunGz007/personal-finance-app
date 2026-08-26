@@ -192,6 +192,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-148** — The client tier gets its first seam, because every route call had been open-coding the same five steps and had already diverged
 - **D-149** — The owner closed the two questions the fifth boundary was stuck behind, so the traps split and the sixth boundary went seven entries deep
 - **D-150** — The announce-and-scroll becomes one module and the worklist becomes one value, so two classes of defect stop being representable
+- **D-151** — The list of state a discarded statement clears is no longer trusted, because a list is exactly what went stale twice
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -621,3 +622,27 @@ They are one `Worklist | null` now, with the phase a **discriminated union** rat
 Two of those traps were then hit while writing this, both in the same shape and both caught by the gate: a comment naming `scrollIntoView` failed a grep for the word (fixed by matching the **call**), and a comment naming the browser-logging API failed the no-observation-tooling walk. **A runtime warning was written and then removed** for that second reason — `app/` may not log, and a guard firing in the gate beats one firing in a browser nobody is watching.
 
 - Evidence: Vitest **730 passed / 7 skipped across 36 files**, up the 17 new tests with the skip count unchanged at **7**. Playwright owner **31/31** — the suite that drives the import flow end to end, which is what protects this refactor — and isolated **18/18**, production build clean at **twenty** `/api/v1/` routes, `check:docs --strict` clean, tsc and ESLint clean. **pgTAP not re-run and deliberately so**: no SQL moved, 266 across 8 from 2026-08-18. D-148 (the review that proposed both), D-147 and D-141 (the defects this makes unrepresentable), D-139 and D-124 (the banner pattern), D-125 (focus follows the eye).
+
+## D-151 — The list of state a discarded statement clears is no longer trusted, because a list is exactly what went stale twice
+
+- Date: 2026-08-26
+- Status: **Done, uncommitted.** `app/import-bench.tsx`, `tests/import-flow.test.ts`, `docs/gotchas/app.md`. No SQL, no route, no contract change.
+- Context: the owner asked whether finishing the stage-machine reducer was worth it for future development. **The answer measured out as no**, and this is the cheaper thing that was worth doing instead.
+
+### Why not the reducer
+
+Refactoring is paid for by future change, so the question is where change actually lands. Over the last 60 commits: `app/notification-card-capture.tsx` **13** times, `app/transactions-view.tsx` **11**, `app/slip-capture.tsx` **10**, and `app/import-bench.tsx` **4**. The churn that produced this week's defects was the bulk-import and mailbox arc, and that arc is finished (task 41). **Completing the reducer would pay full price for a benefit that mostly will not arrive**, on the path that writes money into an append-only ledger. Recorded so a later review does not re-suggest it without first re-measuring where changes land.
+
+### What was worth doing
+
+`discardLoadedStatement()` — written the same day under D-148 — clears eleven pieces of state by hand. **That is the same shape as the two defects it was fixing, one level up**: a helper is a list, lists go stale, and a twelfth `useState` added without a line here fails silently and looks exactly like a slot meant to survive.
+
+The list is now checkable rather than trusted. A guard in `tests/import-flow.test.ts` reads the component and requires **every** `useState` to be either cleared by the helper or named in an allowlist **with a stated reason**. It matches the setter *call*, not the word, because the helper's own comment names a setter in prose. It also keeps the allowlist honest: an entry the helper actually clears, or one naming state that no longer exists, fails — a stale entry would otherwise hide a real omission.
+
+**It found two omissions the moment it was written.** `chosenAccountId` was reset by `workBatchEntry` and never by the file picker, so choosing a PDF by hand kept the previous statement's account selected in the chooser — never a wrong import, since `assembleImportPayload` still checks the printed bank code and last four, but the same misdirection the batch path had already been fixed for. `createAccountError` likewise outlived the document that produced it. Both now clear.
+
+**It also rejected its author's own entry**: `newAccountType` was given the reason `"as above"`, and the minimum-length check refused it. A guard that its writer cannot satisfy carelessly is the kind worth having.
+
+**Proved by making it fail.** A 27th `useState` was injected, the guard named it and said what to do, and the injection was reverted — a guard that has only ever passed has not been shown to guard anything.
+
+- Evidence: Vitest **734 passed / 7 skipped across 36 files**, up the 4 tests this adds, skip count unchanged at **7**. Playwright owner **31/31**, production build clean, tsc and ESLint clean. D-148 (the helper this makes checkable), D-147 and D-150 (the defect class), D-130 (measuring before deciding).

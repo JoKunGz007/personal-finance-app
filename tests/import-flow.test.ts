@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   bannerCarriesRefusal, bannerFor, confirmationFor, confirmed, openedFromWorklist, rebound,
@@ -154,5 +155,94 @@ describe("leaving the worklist", () => {
     expect(bannerCarriesRefusal(nothing)).toBe(false);
     expect(rebound(nothing, BOUND)).toBeNull();
     expect(confirmed(nothing, "Everyday •••• 4242", "batch-77")).toBeNull();
+  });
+});
+
+/**
+ * **The helper that discards a loaded statement must account for every piece of state, and this is
+ * what makes "account for" checkable.**
+ *
+ * `discardLoadedStatement()` clears what belongs to the document the owner is putting down. It is
+ * the third attempt at this problem in four days: D-147 was state that was only ever set, D-148 was
+ * the helper written to fix that being called at two of four exits, and this is the remaining hole
+ * — a helper is a list, lists go stale, and adding a 27th `useState` without adding a line here
+ * fails silently and looks exactly like a slot that was meant to survive.
+ *
+ * So the list is no longer trusted: every `useState` in the component must be **either** cleared by
+ * the helper **or** named below with a reason it outlives a document. A new one that is neither
+ * fails the gate, and the author has to decide which it is. That is the whole point — the failure
+ * is not "you forgot", it is "say which of these two this is".
+ *
+ * Asserted by reading the source, which is this repo's established idiom for a structural promise
+ * (`tests/privacy.test.ts`). It is matched on the setter call rather than on a word, because a
+ * comment naming a setter is not a call to it — a mistake this repo's guards have now made three
+ * times.
+ */
+describe("everything a discarded statement leaves behind", () => {
+  /**
+   * State that deliberately outlives the document, and why. **A reason is required**: an entry
+   * added here without one is how this guard would become a rubber stamp.
+   */
+  const SURVIVES: Record<string, string> = {
+    stage: "the caller sets it in the same handler, to unlock or select",
+    file: "the caller sets it — it *is* the newly chosen document",
+    password: "the field the owner is about to type into; `parsePdf` clears it after each attempt",
+    status: "the caller replaces it with a sentence about the new document",
+    accounts: "the ledger's account list, which belongs to the owner and not to any statement",
+    idempotencyKey: "minted fresh on every successful bind, and unreachable without `boundAccount`",
+    newAccountLabel: "the create-account sub-form, which is about the ledger rather than this PDF",
+    newAccountType: "the create-account sub-form's savings/current toggle, likewise about the ledger",
+    backupPassword: "the synthetic preview's own field, on a path that never loads a real statement",
+    previewStale: "records that the synthetic preview was confirmed in this browser, not what is loaded",
+    confirmedDigests: "session-scoped memory of what reached the ledger — forgetting it would re-invite a second pass",
+    autoBind: "a preference the owner set, not a property of any document"
+  };
+
+  const source = readFileSync("app/import-bench.tsx", "utf8");
+
+  const declared = [...source.matchAll(/const \[(\w+), set\w+\] = useState/gu)].map((m) => m[1]!);
+
+  const helper = /function discardLoadedStatement\(\)[\s\S]*?\n  \}/u.exec(source)?.[0] ?? "";
+
+  it("the helper must exist for this guard to mean anything", () => {
+    expect(helper).toContain("setWorklist(null)");
+    expect(declared.length).toBeGreaterThan(20);
+  });
+
+  it("accounts for every piece of state, as either cleared or deliberately kept", () => {
+    // A setter *call*, not the word: `discardLoadedStatement`'s own comment names `setChosenAccountId`
+    // in prose, and prose is not a clear.
+    const cleared = new Set(
+      [...helper.matchAll(/\bset([A-Z]\w*)\(/gu)].map((m) => m[1]![0]!.toLowerCase() + m[1]!.slice(1))
+    );
+
+    const unaccounted = declared.filter((name) => !cleared.has(name) && !(name in SURVIVES));
+    expect(
+      unaccounted,
+      "new state must be cleared by discardLoadedStatement() or listed in SURVIVES with a reason — "
+      + "a slot that is neither is the D-147 defect waiting to happen"
+    ).toEqual([]);
+  });
+
+  it("keeps the kept-list honest, so it cannot quietly become an excuse", () => {
+    // Two ways this guard rots: a name listed as surviving that the helper also clears (the list is
+    // now lying about the code), and a name listed that no longer exists (the list outlived its
+    // state and would hide a real omission behind a stale entry).
+    const cleared = new Set(
+      [...helper.matchAll(/\bset([A-Z]\w*)\(/gu)].map((m) => m[1]![0]!.toLowerCase() + m[1]!.slice(1))
+    );
+    for (const name of Object.keys(SURVIVES)) {
+      expect(declared, `SURVIVES names ${name}, which is no longer state in the component`).toContain(name);
+      expect(cleared.has(name), `SURVIVES claims ${name} outlives a document, but the helper clears it`).toBe(false);
+      expect(SURVIVES[name]!.length, `${name} needs a reason, not an empty string`).toBeGreaterThan(10);
+    }
+  });
+
+  it("clears the chooser, because only the batch path used to", () => {
+    // The concrete omission this guard found on the day it was written. `workBatchEntry` reset the
+    // dropdown and the file picker did not, so choosing a PDF by hand kept the previous statement's
+    // account selected. Never a wrong import — binding still checks the printed bank code and last
+    // four — but the same misdirection one path had already been fixed for.
+    expect(helper).toContain('setChosenAccountId("")');
   });
 });
