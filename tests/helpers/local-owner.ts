@@ -209,6 +209,18 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     delete from public.notification_card_correction_overlays where owner_id = '${owner}';
     delete from public.notification_cards where owner_id = '${owner}';
     delete from public.import_batch_rows where owner_id = '${owner}';
+    -- Before the transactions they reference, and this is the fourth table in this function that
+    -- needs saying so — the slip overlays, the slip corrections and the card decisions above all
+    -- carry the same comment. It was missing here until PLAN task 48, and the reason it never bit
+    -- is that until then nothing in the app could write a transaction overlay except the
+    -- categories confirm_import stores, which arrive with ids that are fresh every run.
+    --
+    -- The moment a test seeds one directly the leak is immediate, and it does not look like a
+    -- leak: replica session_replication_role disables the FK triggers, so an overlay outliving its
+    -- transaction does not fail — it sits there, and the next run's insert of the same fixture id
+    -- fails on the primary key of a table that test never mentioned.
+    delete from public.overlay_revisions where owner_id = '${owner}';
+    delete from public.transaction_overlays where owner_id = '${owner}';
     delete from public.source_components where owner_id = '${owner}';
     delete from public.source_transactions where owner_id = '${owner}';
     delete from public.import_batches where owner_id = '${owner}';

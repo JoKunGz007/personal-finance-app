@@ -539,6 +539,25 @@ export type LedgerTotals = {
  * source, so the total can finally mean "money that moved" rather than "money the bank has
  * confirmed" (D-063). The provisional count travels with it so the number can disclose how
  * much of itself is still unconfirmed.
+ *
+ * **A confirmed row the owner has taken out of reporting contributes no money** (PLAN task 48),
+ * which is what makes this agree with the two places that already do it in SQL:
+ * `list_account_transactions_page`'s whole-account totals and `private.reportable_movements`, both
+ * of which apply `coalesce(o.include_in_reporting, true)` since migration 023.
+ *
+ * **It has to be here rather than at the call site**, and one keystroke is why. The strip prefers
+ * the server's whole-account figure, but falls back to this function the moment a text query or a
+ * confirmed-status filter narrows the population beyond what SQL was asked about. Excluding a row,
+ * watching Money in fall, then typing one character in the search box would have counted it again
+ * — while the row on screen still wore its "Excluded" chip. That is the inverse of the disclosure
+ * the chip exists to make, and it was reachable without leaving the page.
+ *
+ * **Only confirmed rows are filtered.** The flag lives on `transaction_overlays`, keyed by
+ * transaction; a slip, a card and a cash entry are not transactions and have no such column, so
+ * there is nothing to honour on them and pretending otherwise would invent a rule.
+ *
+ * The counts are deliberately untouched, matching migration 023's own line: an excluded row is
+ * still a row the ledger holds, and it is still on screen.
  */
 export function summarizeRows(rows: readonly ReconciledRow[]): LedgerTotals {
   let deposits = 0n;
@@ -548,6 +567,7 @@ export function summarizeRows(rows: readonly ReconciledRow[]): LedgerTotals {
   let cards = 0;
   for (const row of rows) {
     if (row.kind === "confirmed") {
+      if (!(row.transaction.transaction_overlays[0]?.include_in_reporting ?? true)) continue;
       for (const component of row.transaction.source_components) {
         const amount = BigInt(component.amount_minor);
         if (component.kind === "deposit") deposits += amount;

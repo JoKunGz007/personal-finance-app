@@ -1,18 +1,22 @@
 import { z } from "zod";
-import { isoDateSchema } from "@/lib/dates";
+import { overlayWriteBodySchema } from "@/lib/transactions";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
 
-const overlaySchema = z.object({
-  expectedRevision: z.number().int().nonnegative(),
-  description: z.string().trim().max(500).nullable(),
-  counterparty: z.string().trim().max(240).nullable(),
-  effectiveDate: isoDateSchema.nullable(),
-  categoryId: z.string().uuid().nullable(),
-  note: z.string().trim().max(2000).nullable(),
-  includeInReporting: z.boolean()
-}).strict();
+/**
+ * **The whole overlay, every time, and `.strict()` is what makes that safe to require.**
+ *
+ * `update_transaction_overlay` writes with `on conflict do update set` over every column, so a
+ * partial body is not a partial write — it is a full write with the omitted fields blank. Refusing
+ * the partial body by name is the only version of this that fails loudly: the alternative, where a
+ * control sends the rest as null, is *accepted* and erases what the owner typed.
+ *
+ * **The schema lives in `lib/transactions.ts` beside the builder that produces bodies for it**
+ * (`overlayWriteBody`), so the two cannot drift and a Vitest case can assert the builder's output
+ * against the contract this route actually enforces rather than against a copy of it.
+ */
+const overlaySchema = overlayWriteBodySchema;
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await strongOwnerClient();
@@ -34,5 +38,16 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     }
   });
   if (error) return routeError(/revision/iu.test(error.message) ? "The transaction changed in another session. Reload and try again." : "The overlay could not be saved.", /revision/iu.test(error.message) ? 409 : 400);
-  return Response.json({ overlay: data }, { headers: noStoreHeaders });
+  // **`owner_id` and `transaction_id` are dropped, and the shape that remains is the one the
+  // ledger already parses.** The RPC returns `to_jsonb(o)`, which is the whole row; the ledger
+  // reads overlays as `to_jsonb(o) - 'owner_id' - 'transaction_id'` (`list_account_transactions`),
+  // and `transactionOverlaySchema` is strict about that difference. Stripping here means a stored
+  // overlay can be folded straight back into the window instead of needing a second contract for
+  // the same object — and it stops shipping the owner's uuid to a screen that never reads it,
+  // which is D-155's rule about `fingerprint` arriving on a different field.
+  const overlay = data === null || typeof data !== "object"
+    ? data
+    : Object.fromEntries(Object.entries(data as Record<string, unknown>)
+        .filter(([key]) => key !== "owner_id" && key !== "transaction_id"));
+  return Response.json({ overlay }, { headers: noStoreHeaders });
 }

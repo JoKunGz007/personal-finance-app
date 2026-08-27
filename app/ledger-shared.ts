@@ -74,4 +74,12 @@ export type LedgerModes = {
   readonly decidingCard: string | null;
   /** The record whose correction form is open, by its own id. One at a time. */
   readonly correcting: string | null;
+  /**
+   * The transaction whose `include_in_reporting` is being written, by id, or null.
+   *
+   * One at a time like every other write here, and for the same reason: two in flight let the
+   * first to resolve re-enable a control whose own write is still pending, and the second press
+   * then sends a revision the database has already moved past.
+   */
+  readonly settingReporting: string | null;
 };

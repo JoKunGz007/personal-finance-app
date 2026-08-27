@@ -39,6 +39,17 @@ export const transactionOverlaySchema = z.object({
   updated_at: z.string()
 }).strict();
 
+export type TransactionOverlay = z.infer<typeof transactionOverlaySchema>;
+
+/**
+ * What `PUT /api/v1/transactions/[id]/overlay` answers with.
+ *
+ * The same shape the ledger already reads on a row, and that is not a coincidence: the route
+ * strips `owner_id` and `transaction_id` from the RPC's `to_jsonb(o)` for exactly this reason,
+ * so a stored overlay can be folded back into the window without a second contract.
+ */
+export const overlayWriteResponseSchema = z.object({ overlay: transactionOverlaySchema }).strict();
+
 /**
  * One confirmed row as the ledger view reads it.
  *
@@ -178,6 +189,90 @@ export function cursorAfter(page: readonly LedgerTransaction[]): LedgerCursor | 
 export function movementMinor(transaction: LedgerTransaction): MinorUnitString {
   const total = transaction.source_components.reduce((sum, component) => sum + BigInt(component.amount_minor), 0n);
   return total.toString() as MinorUnitString;
+}
+
+/**
+ * The overlay fields a caller may change, in the wire's own spelling.
+ *
+ * Deliberately **not** `revision` or `updated_at`: both are the database's to set, and a shape
+ * that let a caller name them would invite a client that thinks it knows the next revision.
+ */
+export type OverlayFields = {
+  readonly description: string | null;
+  readonly counterparty: string | null;
+  readonly effectiveDate: string | null;
+  readonly categoryId: string | null;
+  readonly note: string | null;
+  readonly includeInReporting: boolean;
+};
+
+/**
+ * Exactly the body `PUT /api/v1/transactions/[id]/overlay` accepts — **defined here rather than in
+ * the route** so that the builder below and the thing that validates it cannot drift apart.
+ *
+ * The route imports this. A test can therefore assert that `overlayWriteBody`'s output satisfies
+ * the real contract, which is the only assertion that is worth anything: `.strict()` means a
+ * missing key and an extra key are both refusals, so "the builder produces something reasonable"
+ * and "the route accepts it" are different claims and only the second one matters.
+ */
+export const overlayWriteBodySchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  description: z.string().trim().max(500).nullable(),
+  counterparty: z.string().trim().max(240).nullable(),
+  effectiveDate: isoDateSchema.nullable(),
+  categoryId: z.string().uuid().nullable(),
+  note: z.string().trim().max(2000).nullable(),
+  includeInReporting: z.boolean()
+}).strict();
+
+/** Exactly the body `PUT /api/v1/transactions/[id]/overlay` accepts. Its schema is `.strict()`. */
+export type OverlayWriteBody = OverlayFields & { readonly expectedRevision: number };
+
+/**
+ * The overlay in force on a row, as the wire spells it — and the default one where a row has none.
+ *
+ * A row with no overlay is not a row with an empty overlay from the database's point of view: the
+ * table has no entry for it, so `revision` is **0**, which is what `update_transaction_overlay`'s
+ * optimistic concurrency compares against to mean *"I believe none exists"*. Every other field is
+ * null, and `include_in_reporting` is `true`, matching the column default and the
+ * `coalesce(o.include_in_reporting, true)` every reader in migration 023 applies.
+ */
+export function overlayInForce(transaction: LedgerTransaction): OverlayFields & { readonly revision: number } {
+  const overlay = transaction.transaction_overlays[0];
+  return {
+    description: overlay?.description ?? null,
+    counterparty: overlay?.counterparty ?? null,
+    effectiveDate: overlay?.effective_date ?? null,
+    categoryId: overlay?.category_id ?? null,
+    note: overlay?.note ?? null,
+    includeInReporting: overlay?.include_in_reporting ?? true,
+    revision: overlay?.revision ?? 0
+  };
+}
+
+/**
+ * The body for changing **part** of a row's overlay, built from the whole overlay it already has.
+ *
+ * **This exists because the endpoint takes the whole overlay and `update_transaction_overlay`
+ * writes it with `on conflict do update set` over every column.** A control that sent only the
+ * field it changes is refused — the route's schema is `.strict()` and every key is required — and
+ * a control that sent the rest as `null` would be *accepted*, silently erasing the description,
+ * counterparty, effective date, category and note the owner had typed on a row he was only trying
+ * to mark. The second failure is the dangerous one because it looks like a success.
+ *
+ * So the body is never assembled by a caller. It is derived from the row, and `change` may only
+ * narrow that derivation — which makes the hazard structural rather than something each new
+ * control has to remember. The next field editor gets the guarantee for free.
+ *
+ * `expectedRevision` comes from the same place for the same reason: the revision that belongs to
+ * the overlay being replaced is the only one the database will accept.
+ */
+export function overlayWriteBody(
+  transaction: LedgerTransaction,
+  change: Partial<OverlayFields>
+): OverlayWriteBody {
+  const { revision, ...fields } = overlayInForce(transaction);
+  return { ...fields, ...change, expectedRevision: revision };
 }
 
 export type TransactionTotals = {

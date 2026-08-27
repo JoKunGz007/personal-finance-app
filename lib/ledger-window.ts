@@ -5,6 +5,7 @@ import {
   type AccountTransaction,
   type LedgerCursor,
   type LedgerPage,
+  type TransactionOverlay,
   type TransactionTotals
 } from "@/lib/transactions";
 
@@ -71,6 +72,71 @@ export function withPage(
     hasMore: page.hasMore
   });
   return { byAccount };
+}
+
+/**
+ * Folds a stored overlay back onto its row, and **corrects the account's totals when the flag
+ * moved** — because those totals came from SQL that honours it.
+ *
+ * The naive version of this replaces the overlay and stops, which leaves the strip above the
+ * ledger stating a figure the rows on screen now contradict. `list_account_transactions_page`
+ * sums `source_components` under `coalesce(o.include_in_reporting, true)` (migration 023), so a
+ * row leaving reporting takes its own components out of `deposits` and `withdrawals` and a row
+ * rejoining puts them back. **The client can do that exactly** rather than approximately: it holds
+ * the row's whole component array, which is the same set the server summed, and every term is a
+ * `bigint` of minor units. Nothing here divides.
+ *
+ * **`totals.rows` is deliberately untouched.** The migration says in its own words that the row
+ * count is not filtered — it states how many rows the account holds, which is a fact about the
+ * ledger rather than about reporting, and the paging cursor walks all of them.
+ *
+ * A refetch would have been the other answer and a worse one: it re-reads a page of rows to
+ * correct two numbers the client can derive, and it would move the window under a reader who
+ * pressed a toggle.
+ */
+export function withOverlay(
+  window: LedgerWindow,
+  transactionId: string,
+  overlay: TransactionOverlay
+): LedgerWindow {
+  const byAccount = new Map(window.byAccount);
+  for (const [accountId, held] of window.byAccount) {
+    const index = held.rows.findIndex((row) => row.id === transactionId);
+    if (index === -1) continue;
+    const row = held.rows[index]!;
+    // `true` where the row has no overlay at all, matching the column default and every reader's
+    // `coalesce(..., true)`. Read before the replacement, because it is the *change* that decides
+    // whether the totals move — writing the same flag twice must not double-count.
+    const was = row.transaction_overlays[0]?.include_in_reporting ?? true;
+    const rows = [...held.rows];
+    rows[index] = { ...row, transaction_overlays: [overlay] };
+
+    let totals = held.totals;
+    if (was !== overlay.include_in_reporting) {
+      // Positive when the row is rejoining reporting, negative when it is leaving. Components
+      // already carry their sign, so a deposit and a withdrawal each move their own bucket.
+      const sign = overlay.include_in_reporting ? 1n : -1n;
+      let deposits = BigInt(totals.deposits);
+      let withdrawals = BigInt(totals.withdrawals);
+      for (const component of row.source_components) {
+        const amount = BigInt(component.amount_minor) * sign;
+        if (component.kind === "deposit") deposits += amount;
+        else withdrawals += amount;
+      }
+      totals = {
+        rows: totals.rows,
+        deposits: deposits.toString() as MinorUnitString,
+        withdrawals: withdrawals.toString() as MinorUnitString,
+        net: (deposits + withdrawals).toString() as MinorUnitString
+      };
+    }
+
+    byAccount.set(accountId, { ...held, rows, totals });
+    return { byAccount };
+  }
+  // A row the window does not hold. Not an error: the toggle can only be pressed on a rendered
+  // row, so this is the shape that says "nothing to fold" rather than a case to report.
+  return window;
 }
 
 /** The account ids in scope: one, or every account the window holds. */

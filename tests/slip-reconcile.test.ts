@@ -369,6 +369,59 @@ describe("totals over a reconciled ledger", () => {
     expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "0", withdrawals: "-9000", net: "-9000", provisional: 0, cash: 0, cards: 0 });
   });
 
+  /**
+   * PLAN task 48 — a row the owner took out of reporting contributes no money here either.
+   *
+   * **This is the branch a filter reaches, and it was the one that disagreed.** The strip prefers
+   * the server's whole-account figure, which has applied the flag in SQL since migration 023, but
+   * falls back to `summarizeRows` the moment a text query or a confirmed-status filter narrows the
+   * population beyond what SQL was asked about. Until this filter existed, excluding a row and then
+   * typing one character in the search box counted it again — with the row still wearing its
+   * "Excluded" chip on screen.
+   */
+  function excluded(overrides: Partial<LedgerTransaction> = {}) {
+    return row({
+      ...overrides,
+      transaction_overlays: [{
+        category_id: null,
+        description: null,
+        counterparty: null,
+        effective_date: null,
+        note: null,
+        include_in_reporting: false,
+        revision: 1,
+        updated_at: "2026-06-11T03:00:00Z"
+      }]
+    });
+  }
+
+  it("leaves an excluded confirmed row out of the money, and still counts it as a row", () => {
+    const { rows } = reconcileLedger([excluded()], [], ACCOUNTS);
+    expect(summarizeRows(rows)).toEqual({ rows: 1, deposits: "0", withdrawals: "0", net: "0", provisional: 0, cash: 0, cards: 0 });
+  });
+
+  it("keeps an overlay that says nothing about reporting counted, and one that says true", () => {
+    // The default. A row with no overlay at all is in reporting, matching the column default and
+    // every `coalesce(o.include_in_reporting, true)` in migration 023.
+    expect(summarizeRows(reconcileLedger([row()], [], ACCOUNTS).rows).net).toBe("-9000");
+    expect(summarizeRows(reconcileLedger([excluded({})], [], ACCOUNTS).rows).net).toBe("0");
+    const included = excluded();
+    included.transaction_overlays = [{ ...included.transaction_overlays[0]!, include_in_reporting: true }];
+    expect(summarizeRows(reconcileLedger([included], [], ACCOUNTS).rows).net).toBe("-9000");
+  });
+
+  // The flag is a column on `transaction_overlays`, keyed by transaction. A slip is not a
+  // transaction and has no such column, so an excluded statement row cannot silence a slip that
+  // failed to match it — those are two different records and only one of them is excluded.
+  it("does not let an excluded row suppress an unmatched slip's own money", () => {
+    const { rows } = reconcileLedger(
+      [excluded()],
+      [slip({ occurred_on: "2026-06-20", amount_minor: "-2500", slip_reference: "A00000000000000003" })],
+      ACCOUNTS
+    );
+    expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-2500", net: "-2500", provisional: 1, cash: 0, cards: 0 });
+  });
+
   it("counts an unmatched slip as money that moved, and says it is provisional", () => {
     const { rows } = reconcileLedger([row()], [slip({ occurred_on: "2026-06-20", amount_minor: "-2500", slip_reference: "A00000000000000003" })], ACCOUNTS);
     expect(summarizeRows(rows)).toEqual({ rows: 2, deposits: "0", withdrawals: "-11500", net: "-11500", provisional: 1, cash: 0, cards: 0 });

@@ -10,6 +10,8 @@ import {
   matchesCashQuery,
   matchesQuery,
   matchesSlipQuery,
+  overlayWriteBody,
+  overlayWriteResponseSchema,
   type AccountTransaction
 } from "@/lib/transactions";
 import {
@@ -22,6 +24,7 @@ import {
   windowIds,
   windowReach,
   windowRows,
+  withOverlay,
   withPage,
   type LedgerWindow
 } from "@/lib/ledger-window";
@@ -152,6 +155,10 @@ export function TransactionsView() {
   // Which slip is being decided, so one row's control can be busy without disabling the rest.
   const [deciding, setDeciding] = useState<string | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
+  // Which row's `include_in_reporting` is being written (PLAN task 48). Its own error line rather
+  // than a third writer of `decisionError`, which already cannot say which decision it is about.
+  const [settingReporting, setSettingReporting] = useState<string | null>(null);
+  const [reportingError, setReportingError] = useState<string | null>(null);
   // The slip currently being matched by hand, if any. While this is set the table shows that
   // slip and the rows it could be, and nothing else (D-069).
   const [matching, setMatching] = useState<string | null>(null);
@@ -381,8 +388,8 @@ export function TransactionsView() {
   // whether its own controls are usable, and the conditions that read it live beside the buttons
   // they disable (`app/ledger-shared.ts`).
   const modes = useMemo<LedgerModes>(
-    () => ({ picking, pickingCard, matching, matchingCard, deciding, decidingCard, correcting }),
-    [picking, pickingCard, matching, matchingCard, deciding, decidingCard, correcting]
+    () => ({ picking, pickingCard, matching, matchingCard, deciding, decidingCard, correcting, settingReporting }),
+    [picking, pickingCard, matching, matchingCard, deciding, decidingCard, correcting, settingReporting]
   );
 
   // Reconciliation runs over the **whole** ledger, before any account or text filter. A
@@ -908,6 +915,44 @@ export function TransactionsView() {
   }
 
   /**
+   * Takes one confirmed row in or out of reporting (PLAN task 48).
+   *
+   * **The body is derived from the row, never assembled here**, because the endpoint takes the
+   * whole overlay and the RPC writes every column: a body naming only the flag is refused, and one
+   * sending the rest as null is accepted and erases whatever the owner typed on the row. That is
+   * `overlayWriteBody`'s whole reason for existing, and it is why this function is three lines of
+   * request around one call rather than an object literal.
+   *
+   * The stored overlay is folded back rather than reloaded, on the same rule as every other write
+   * here — and `withOverlay` corrects the account totals with it, because those came from SQL that
+   * honours the flag and would otherwise contradict the row on screen.
+   */
+  async function setReporting(transaction: AccountTransaction, includeInReporting: boolean) {
+    setSettingReporting(transaction.id);
+    setReportingError(null);
+    const result = await ledgerRequest(
+      `/api/v1/transactions/${transaction.id}/overlay`,
+      overlayWriteResponseSchema,
+      {
+        fallback: "The reporting flag could not be saved.",
+        unreachable: "The ledger could not be reached, so the reporting flag was not saved.",
+        offContract: "The overlay was saved but did not come back in its published shape. Reload before trusting the totals."
+      },
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(overlayWriteBody(transaction, { includeInReporting }))
+      }
+    );
+    setSettingReporting(null);
+    if (!result.ok) {
+      setReportingError(result.why);
+      return;
+    }
+    setLedgerWindow((current) => current === null ? current : withOverlay(current, transaction.id, result.data.overlay));
+  }
+
+  /**
    * A stored correction, folded back into state rather than triggering a reload.
    *
    * The whole reconciled view is derived from these lists, so replacing one overlay re-runs
@@ -1086,6 +1131,16 @@ export function TransactionsView() {
             </div>
           ) : null}
 
+          {/* Its own line rather than the decision one. A refused reporting write and a refused
+              match are acted on differently — this one is usually a stale revision from a second
+              tab, and the remedy is a reload — and a shared line cannot say which it is about. */}
+          {reportingError ? (
+            <div className="warning error" role="alert">
+              <strong>Reporting</strong>
+              <span>{reportingError}</span>
+            </div>
+          ) : null}
+
           {!picking &&!showCombined && unattributedSlips > 0 ? (
             <p className="ledger-status">
               {unattributedSlips} slip{unattributedSlips === 1 ? " is" : "s are"} hidden while one account is selected: you hold more than one account at that bank, and a slip&rsquo;s QR names the bank without saying which account the money moved through.
@@ -1202,6 +1257,7 @@ export function TransactionsView() {
                         onToggleCard={toggleCard}
                         onDecideSlip={decide}
                         onDecideCard={decideCard}
+                        onSetReporting={setReporting}
                       />
                     );
                   })}

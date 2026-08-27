@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { LedgerNote } from "@/app/ledger-note";
 import { ledgerRequest } from "@/lib/wire";
 import {
   FONT_CHOICES,
@@ -79,11 +80,23 @@ export function FontPicker({ value }: { value: FontChoice }) {
     }
   }
 
-  const note = failure
-    // Stored, but this view did not pick it up. Say which of the two happened, because "nothing
-    // visible changed" reads identically to a refusal and the remedies are opposite.
-    ?? (stale ? `${FONT_LABELS[chosen]} is saved. Reload to see it — this page could not refresh itself.` : null)
-    ?? FONT_NOTES[value];
+  /**
+   * **Only what just happened.** Standing copy is not in here any more — it is behind the `(i)`,
+   * which is D-156's split applied to the one place it had not been: copy explaining a *principle*
+   * folds, a message about the write the owner has just made does not.
+   *
+   * The reason it had to move is PLAN task 49 and it is a measurement rather than a preference.
+   * `FONT_NOTES` is a sentence in a box capped by **width**, so the number of lines it occupies
+   * depends on how wide the chosen face draws it — and that made the header the **only** thing on
+   * either route whose height changed with the typeface. Measured on `/ledger`: `.header-side`
+   * 71px in IBM Plex against **88px** in Press Start 2P, which pushed every landmark below it down
+   * 16-17px and grew the document by the same. Nothing else moved anywhere.
+   *
+   * "Stored, but this view did not pick it up" is kept in full, because *nothing visible changed*
+   * reads identically to a refusal and the two have opposite remedies (D-147).
+   */
+  const message = failure
+    ?? (stale ? `${FONT_LABELS[chosen]} is saved. Reload to see it — this page could not refresh itself.` : null);
 
   return (
     <div className="font-picker">
@@ -100,10 +113,27 @@ export function FontPicker({ value }: { value: FontChoice }) {
           ))}
         </select>
       </label>
+      {/* **A sibling of the `<label>`, never inside it**, and the first version of this was inside —
+          the exact defect `app/ledger-note.tsx` documents and D-156 records having shipped once.
+          A `<label>`'s accessible name is computed from its subtree, so the button's `sr-only` text
+          joins it and the select announces as "Typeface About this typeface" — plus the whole note
+          once the panel is open. **axe reports no violation for this**, because the name is
+          non-empty and contains the visible text, so "the suites run axe on every route" is not
+          evidence about it; only reading the computed name is. A `<button>` is also a *labelable*
+          element, so a label containing both it and the select breaks the HTML content model.
+          `.font-picker` is a grid, so the fragment's two children take their own rows here. */}
+      <LedgerNote label="About this typeface">{FONT_NOTES[value]}</LedgerNote>
       {/* `aria-live` rather than `role="status"`: this shell already carries status regions, and a
           second computes to the same role and makes every unscoped `getByRole("status")` in the
-          browser suite ambiguous (GOTCHAS). */}
-      <p id="font-picker-note" className="field-help" aria-live="polite">{note}</p>
+          browser suite ambiguous (GOTCHAS).
+          **Always rendered, empty when there is nothing to say**, so `aria-describedby` never
+          points at an absent id and the live region is present before it has news — an
+          `aria-live` element that appears at the same moment as its text is a region the screen
+          reader was not watching. When empty it is **clipped, not `display: none`**: hiding it
+          would remove it from the accessibility tree, which is the same failure in a different
+          costume and would have made "always rendered" mean nothing. Clipping costs no height, so
+          the header's standing box is still independent of whether there is a message. */}
+      <p id="font-picker-note" className="field-help" aria-live="polite">{message}</p>
     </div>
   );
 }

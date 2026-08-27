@@ -5,6 +5,10 @@ import {
   matchesQuery,
   matchesSlipQuery,
   movementMinor,
+  overlayInForce,
+  overlayWriteBody,
+  overlayWriteBodySchema,
+  overlayWriteResponseSchema,
   summarize,
   ledgerPageSchema,
   type LedgerTransaction
@@ -355,5 +359,147 @@ describe("captured slips in the ledger view", () => {
     expect(matchesCashQuery(cash({ counterparty: null, note: null }), "anything")).toBe(false);
     // Not the id, and not the currency: neither is something a person recognises a row by.
     expect(matchesCashQuery(cash(), cash().id)).toBe(false);
+  });
+});
+
+/**
+ * PLAN task 48 — the overlay write body.
+ *
+ * **The hazard these are about is not a refusal, it is a silent success.** `PUT
+ * /api/v1/transactions/[id]/overlay` takes the whole overlay and `update_transaction_overlay`
+ * writes it with `on conflict do update set` over every column. A control sending only the flag is
+ * refused by a `.strict()` schema and is therefore safe. A control sending the rest as `null` is
+ * **accepted**, and erases the description, counterparty, effective date, category and note the
+ * owner typed on a row he was only trying to mark.
+ *
+ * So the case that matters is a *populated* overlay surviving a toggle. A case proving the flag
+ * changed would pass against the erasing implementation.
+ */
+describe("overlay write body", () => {
+  // Every field populated with something distinguishable, which is the whole point: a body that
+  // dropped one of them has to fail by naming that field rather than by failing to flip a boolean.
+  const populated = transaction({
+    transaction_overlays: [{
+      category_id: "33333333-3333-4333-8333-333333333333",
+      description: "Invented description the owner typed",
+      counterparty: "Invented counterparty",
+      effective_date: "2026-06-02",
+      note: "Invented note",
+      include_in_reporting: true,
+      revision: 4,
+      updated_at: "2026-06-02T03:00:00Z"
+    }]
+  });
+
+  it("preserves a populated overlay when only the reporting flag is toggled", () => {
+    const body = overlayWriteBody(populated, { includeInReporting: false });
+    expect(body).toEqual({
+      expectedRevision: 4,
+      description: "Invented description the owner typed",
+      counterparty: "Invented counterparty",
+      effectiveDate: "2026-06-02",
+      categoryId: "33333333-3333-4333-8333-333333333333",
+      note: "Invented note",
+      includeInReporting: false
+    });
+  });
+
+  // The assertion above compares against a literal, which proves the values. This proves the
+  // *shape* against the contract the route actually enforces — `.strict()`, so a missing key and
+  // an extra key are both refusals and neither is visible in a value comparison.
+  it("produces exactly what the route accepts", () => {
+    const parsed = overlayWriteBodySchema.safeParse(overlayWriteBody(populated, { includeInReporting: false }));
+    expect(parsed.success).toBe(true);
+  });
+
+  // The erasing implementation, written out so the test above is known to reject it rather than
+  // assumed to. This is the body a control would send if it built the object from the flag alone.
+  it("rejects the erasing body the route would otherwise accept", () => {
+    const erasing = {
+      expectedRevision: 4,
+      description: null,
+      counterparty: null,
+      effectiveDate: null,
+      categoryId: null,
+      note: null,
+      includeInReporting: false
+    };
+    // The route cannot tell this apart from a legitimate clear-everything write — it parses.
+    expect(overlayWriteBodySchema.safeParse(erasing).success).toBe(true);
+    // Which is exactly why the builder is the guard, and why it does not produce this.
+    expect(overlayWriteBody(populated, { includeInReporting: false })).not.toEqual(erasing);
+  });
+
+  // A row with no overlay row at all. `revision` 0 is what the RPC's optimistic concurrency reads
+  // as "I believe none exists"; every other field is null and the flag defaults true, matching the
+  // column default and every `coalesce(o.include_in_reporting, true)` in migration 023.
+  it("sends revision 0 and the column defaults for a row that has no overlay", () => {
+    expect(overlayInForce(transaction())).toEqual({
+      description: null,
+      counterparty: null,
+      effectiveDate: null,
+      categoryId: null,
+      note: null,
+      includeInReporting: true,
+      revision: 0
+    });
+    expect(overlayWriteBody(transaction(), { includeInReporting: false })).toEqual({
+      expectedRevision: 0,
+      description: null,
+      counterparty: null,
+      effectiveDate: null,
+      categoryId: null,
+      note: null,
+      includeInReporting: false
+    });
+  });
+
+  // `revision` is the database's and must never be a field a caller can name: a client that
+  // thought it knew the next revision would defeat the concurrency check it exists to feed.
+  it("never carries revision or updated_at as writable fields", () => {
+    const body: Record<string, unknown> = overlayWriteBody(populated, { includeInReporting: false });
+    expect("revision" in body).toBe(false);
+    expect("updated_at" in body).toBe(false);
+  });
+
+  // The generalisation, and the reason the builder takes a `Partial` rather than a boolean: the
+  // next control to change one field gets the same guarantee without re-deriving it.
+  it("preserves the rest for a change to any other single field", () => {
+    const body = overlayWriteBody(populated, { counterparty: "Invented replacement" });
+    expect(body.counterparty).toBe("Invented replacement");
+    expect(body.description).toBe("Invented description the owner typed");
+    expect(body.note).toBe("Invented note");
+    expect(body.includeInReporting).toBe(true);
+  });
+});
+
+/**
+ * The response contract. The RPC returns `to_jsonb(o)`, which carries `owner_id` and
+ * `transaction_id`; the route strips both so the object is the one the ledger already parses on a
+ * row and can be folded straight back into the window. `.strict()` is what holds that.
+ */
+describe("overlay write response", () => {
+  const stored = {
+    category_id: null,
+    description: null,
+    counterparty: null,
+    effective_date: null,
+    note: null,
+    include_in_reporting: false,
+    revision: 1,
+    updated_at: "2026-06-02T03:00:00Z"
+  };
+
+  it("accepts the stripped overlay the route returns", () => {
+    expect(overlayWriteResponseSchema.safeParse({ overlay: stored }).success).toBe(true);
+  });
+
+  it("rejects the unstripped row, so a route that stopped stripping fails by name", () => {
+    expect(overlayWriteResponseSchema.safeParse({
+      overlay: { ...stored, owner_id: "44444444-4444-4444-8444-444444444444" }
+    }).success).toBe(false);
+    expect(overlayWriteResponseSchema.safeParse({
+      overlay: { ...stored, transaction_id: "11111111-1111-4111-8111-111111111111" }
+    }).success).toBe(false);
   });
 });

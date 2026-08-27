@@ -9,6 +9,7 @@ import {
   windowIds,
   windowReach,
   windowRows,
+  withOverlay,
   withPage,
   STATUS_POPULATION
 } from "@/lib/ledger-window";
@@ -17,7 +18,8 @@ import {
   type AccountTransaction,
   type LedgerPage,
   type LedgerPageRow,
-  type LedgerTransaction
+  type LedgerTransaction,
+  type TransactionOverlay
 } from "@/lib/transactions";
 
 // The window a paged ledger is read through (PLAN task 45, migration 021).
@@ -246,5 +248,131 @@ describe("the status partition, which is why the filter never needed SQL", () =>
     expect(statusIsComplete("cash")).toBe(true);
     expect(statusIsComplete("verified")).toBe(false);
     expect(statusIsComplete("statement-only")).toBe(false);
+  });
+});
+
+/**
+ * PLAN task 48 — folding a stored overlay back onto its row.
+ *
+ * **The totals are the reason this is not a one-line state update.** `list_account_transactions_page`
+ * sums components under `coalesce(o.include_in_reporting, true)` since migration 023, so the strip
+ * above the ledger is a figure the server computed with the flag applied. Replace the overlay and
+ * stop, and the strip states a number the rows on screen now contradict — with no reload to blame
+ * it on, because the whole point of folding is that there is no reload.
+ */
+describe("an overlay folded back onto its row", () => {
+  function overlay(includeInReporting: boolean, fields: Partial<TransactionOverlay> = {}): TransactionOverlay {
+    return {
+      category_id: null,
+      description: null,
+      counterparty: null,
+      effective_date: null,
+      note: null,
+      include_in_reporting: includeInReporting,
+      revision: 1,
+      updated_at: "2026-07-04T03:00:00Z",
+      ...fields
+    };
+  }
+
+  it("puts the stored overlay on the row it belongs to and on no other", () => {
+    const held = withOverlay(windowOfA(A_PAGE_1), TX5.id, overlay(false, { note: "Invented note" }));
+    const rows = windowRows(held, ACCOUNT_A);
+    expect(rows.find((r) => r.id === TX5.id)?.transaction_overlays).toEqual([overlay(false, { note: "Invented note" })]);
+    expect(rows.find((r) => r.id === TX4.id)?.transaction_overlays).toEqual([]);
+  });
+
+  // TX5 is a withdrawal of -5000. Excluding it takes exactly that out of `withdrawals` and nothing
+  // out of `deposits` — the same arithmetic the server does, over the same component set.
+  it("takes an excluded withdrawal out of the account's withdrawals and out of nothing else", () => {
+    const held = withOverlay(windowOfA(A_PAGE_1), TX5.id, overlay(false));
+    expect(scopeTotals(held, ACCOUNT_A)).toEqual({
+      rows: 5,
+      deposits: "60000",
+      withdrawals: "-50000",
+      net: "10000"
+    });
+  });
+
+  // TX4 is a deposit of +10000, and it moves the other bucket. Both directions are asserted
+  // because a sign error is invisible in one of them.
+  it("takes an excluded deposit out of the account's deposits", () => {
+    const held = withOverlay(windowOfA(A_PAGE_1), TX4.id, overlay(false));
+    expect(scopeTotals(held, ACCOUNT_A)).toEqual({
+      rows: 5,
+      deposits: "50000",
+      withdrawals: "-55000",
+      net: "-5000"
+    });
+  });
+
+  // The round trip is exact, which is what "no division anywhere" buys: every term is a bigint of
+  // minor units, so out-and-back is the identity rather than nearly the identity.
+  it("puts an excluded row back exactly when it is included again", () => {
+    const excluded = withOverlay(windowOfA(A_PAGE_1), TX5.id, overlay(false));
+    const restored = withOverlay(excluded, TX5.id, overlay(true, { revision: 2 }));
+    expect(scopeTotals(restored, ACCOUNT_A)).toEqual(A_TOTALS);
+  });
+
+  // **The guard against double-counting.** A second write that does not move the flag — the shape
+  // every future field editor has, since they all replace the whole overlay — must not touch the
+  // totals. Written as two consecutive exclusions because that is the failure it catches: an
+  // implementation subtracting unconditionally passes the single-toggle case above.
+  it("does not move the totals when the flag did not change", () => {
+    const once = withOverlay(windowOfA(A_PAGE_1), TX5.id, overlay(false));
+    const twice = withOverlay(once, TX5.id, overlay(false, { revision: 2, note: "Invented note" }));
+    expect(scopeTotals(twice, ACCOUNT_A)).toEqual(scopeTotals(once, ACCOUNT_A));
+    expect(scopeTotals(twice, ACCOUNT_A).withdrawals).toBe("-50000");
+  });
+
+  // The row count is the one figure that does not move, and the migration says so in its own
+  // words: it states how many rows the account holds, not how many are reported on, and the paging
+  // cursor walks all of them.
+  it("leaves the row count alone, because the server does not filter it either", () => {
+    const held = withOverlay(windowOfA(A_PAGE_1), TX5.id, overlay(false));
+    expect(scopeTotals(held, ACCOUNT_A).rows).toBe(5);
+    expect(windowReach(held, ACCOUNT_A)).toEqual({ loaded: 2, total: 5 });
+  });
+
+  // Both buckets move for a compound row, because the server sums components rather than rows.
+  it("moves both buckets for a row with a deposit and a withdrawal component", () => {
+    const compound: LedgerPageRow = {
+      ...row("dddddddd-0000-4000-8000-000000000009", "2026-07-04", "09:00", "40000", "145000"),
+      source_components: [
+        { id: "cccccccc-0000-4000-8000-000000000091", kind: "deposit", amount_minor: "70000", currency: "THB" },
+        { id: "cccccccc-0000-4000-8000-000000000092", kind: "withdrawal", amount_minor: "-30000", currency: "THB" }
+      ]
+    };
+    const totals: LedgerPage["totals"] = { rows: 1, deposits: "70000", withdrawals: "-30000", net: "40000" };
+    const held = withOverlay(
+      withPage(emptyWindow(), ACCOUNT_A, page([compound], false, totals), null),
+      compound.id,
+      overlay(false)
+    );
+    expect(scopeTotals(held, ACCOUNT_A)).toEqual({ rows: 1, deposits: "0", withdrawals: "0", net: "0" });
+  });
+
+  // Scoping. Another account's figures are its own, and a merged view sums them — so an overlay
+  // reaching across accounts would move a number nobody touched.
+  it("touches only the account holding the row, with a merged view watching", () => {
+    const bTotals: LedgerPage["totals"] = { rows: 1, deposits: "0", withdrawals: "-5000", net: "-5000" };
+    const bRow = row("eeeeeeee-0000-4000-8000-000000000001", "2026-07-05", "09:00", "-5000", "20000");
+    let held = windowOfA(A_PAGE_1);
+    held = withPage(held, ACCOUNT_B, page([bRow], false, bTotals), null);
+    const after = withOverlay(held, TX5.id, overlay(false));
+    expect(scopeTotals(after, ACCOUNT_B)).toEqual(bTotals);
+    expect(scopeTotals(after, null)).toEqual({
+      rows: 6,
+      deposits: "60000",
+      withdrawals: "-55000",
+      net: "5000"
+    });
+  });
+
+  // Unreachable from the UI — a toggle can only be pressed on a rendered row — so it is the shape
+  // that says "nothing to fold" rather than a case worth reporting.
+  it("returns the window unchanged for a row it does not hold", () => {
+    const held = windowOfA(A_PAGE_1);
+    expect(withOverlay(held, TX1.id, overlay(false))).toBe(held);
   });
 });

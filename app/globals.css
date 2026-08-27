@@ -256,7 +256,22 @@ button:disabled { cursor: wait; opacity: .65; }
 /* **`px`, not `ch`.** `ch` is a unit of the font being switched, so a `34ch` cap grew from 208px to
    353px the moment a pixel face was chosen — the note got wider exactly when the header had least
    room. A fixed cap is the one thing here that must not scale with the choice. */
+/* The transient message only — the standing note is behind the `(i)` since PLAN task 49, because a
+   width-capped sentence occupies a face-dependent number of lines and that was the **only** thing
+   on either route whose height changed with the typeface. `:empty` keeps it out of the header's
+   standing box entirely, so the header's height no longer depends on there being a message. */
 .font-picker .field-help { max-width: 240px; margin: 0; font-size: 11px; }
+/* **Clipped rather than `display: none`, and the difference is the whole reason it is unconditional.**
+   This is an `aria-live` region: it has to be in the accessibility tree *before* it has news, or
+   the screen reader is not watching it when the text arrives and the announcement is commonly
+   dropped. `display: none` removes it from the tree, which would have made "always rendered" mean
+   nothing. Clipping keeps it observed while costing no height, so the header's standing box is
+   still independent of whether there is a message. */
+.font-picker .field-help:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* The picker's own disclosure. Narrower than the page-level panels: it hangs off a header control
+   rather than a heading. `.font-picker` is a grid, so the panel already takes its own row — it is
+   a **sibling** of the `<label>`, never a child, for the accessible-name reason in the component. */
+.font-picker .note-panel { max-width: 34ch; }
 .privacy-chip i { width: 8px; height: 8px; border-radius: 50%; background: #7d8c47; box-shadow: 0 0 0 4px color-mix(in srgb, var(--celadon) 55%, transparent); }
 
 /* One row of routes, since routing replaced the single page (PLAN task 19). Deliberately
@@ -729,6 +744,12 @@ footer p { margin: 0; }
 .status-chip.awaiting { color: #7a4a12; }
 .status-chip.needs-review { color: var(--red); }
 .status-chip.cash { color: var(--muted); }
+/* A row the owner has taken out of reporting (PLAN task 48). `--muted` rather than a fifth hue:
+   this is the same *quiet* the cash chip means and the word is what tells them apart, so adding a
+   colour would be adding a value nobody has to measure anything against. Measured at 5.9:1 on
+   `--mist`, which is the floor — every surface above it is lighter. It is not a warning colour
+   because it is not a warning: the owner asked for this row to be set aside. */
+.status-chip.excluded { color: var(--muted); }
 .status-none { color: var(--muted); }
 
 /* The owner's say over a match, on the row it is about (D-067). Deliberately quiet: a match is
@@ -823,7 +844,14 @@ footer p { margin: 0; }
 
 @media (max-width: 700px) {
   .site-header { height: auto; min-height: 68px; padding-block: 12px; }
-  .privacy-chip { max-width: 130px; font-size: 11px; }
+  /* **The 130px cap is gone and the chip takes its own row instead** (PLAN task 49). The cap made
+     the chip's line count a function of the typeface — measured 83px against 100px for
+     `.header-side` at 390px, IBM Plex against Silkscreen, which is one extra line of an 11px chip
+     — and that was the last thing in the shell whose height moved when the face changed. Capping
+     text by width inside a header is the same defect the picker's note had, one control along.
+     Given the panel's full 350px the sentence fits on one line in every face: it measures about
+     160px in IBM Plex and about 220px in the widest of the three. */
+  .privacy-chip { flex-basis: 100%; font-size: 11px; }
   .site-nav { order: 3; flex-basis: 100%; }
   /* The toggle takes the brand's row; the panel takes a row of its own under the nav. */
   .header-toggle {
@@ -835,8 +863,8 @@ footer p { margin: 0; }
   .header-panel { order: 4; flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 12px; }
   .header-panel[data-open="false"] { display: none; }
   .header-panel .header-side { flex-basis: 100%; }
-  /* The face note is the tallest thing in here and the least needed twice: it says the pixel faces
-     are Latin-only, which is true of all three and read once. */
+  /* The standing face note is behind the `(i)` since PLAN task 49, so what is left here is only a
+     refusal or a "stored but not shown" line — rare, and worth the width when it does appear. */
   .font-picker .field-help { max-width: none; font-size: 10px; }
   .stage-nav { overflow-x: auto; }
   .stage-nav ol { min-width: 810px; }

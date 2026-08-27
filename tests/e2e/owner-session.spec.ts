@@ -535,6 +535,106 @@ test("pages the ledger, and the totals keep speaking for the whole of it", async
   await expect(rows.last()).toContainText("฿10.00");
 });
 
+/**
+ * PLAN task 48 — `include_in_reporting` gets a control, and the proof it needs is a *populated*
+ * overlay surviving a toggle.
+ *
+ * **This is the one assertion no unit test can make.** `PUT /api/v1/transactions/[id]/overlay`
+ * takes the whole overlay and `update_transaction_overlay` writes it with `on conflict do update
+ * set` over every column — so a control that sent the rest as null would be **accepted**, and the
+ * description, counterparty, effective date and note the owner typed would be gone with no error
+ * anywhere. `tests/transactions.test.ts` proves the *body* is built from the row; only a run
+ * against the real function proves what the database then holds.
+ *
+ * Seeded through `psql` rather than through a form because **nothing in the app can write those
+ * fields yet** — the overlay endpoint had no caller at all before this task, so the populated
+ * overlay this test needs cannot be produced by driving the UI. Every value is invented
+ * (docs/FIXTURE_POLICY.md).
+ */
+test("takes a row out of reporting and back, without touching what the owner typed on it", async ({ page }) => {
+  const owner = ownerId();
+  const TARGET = "dddddddd-0000-4000-8000-000000000481";
+  const seeded = psql(`
+    insert into public.source_transactions(id, owner_id, account_id, fingerprint_version, fingerprint,
+      source_date, source_time, effective_date, transaction_label, description, post_balance_minor, currency)
+    values ('dddddddd-0000-4000-8000-000000000480', '${owner}', '${MATCHING_ACCOUNT}', 'fingerprint-v1',
+            repeat(md5('invented-reporting-a'), 2), date '2026-03-01', '09:00', date '2026-03-01',
+            'Invented label', 'Invented ordinary row', 30000, 'THB'),
+           ('${TARGET}', '${owner}', '${MATCHING_ACCOUNT}', 'fingerprint-v1',
+            repeat(md5('invented-reporting-b'), 2), date '2026-03-02', '09:00', date '2026-03-02',
+            'Invented label', 'Invented transfer row', 80000, 'THB');
+    insert into public.source_components(id, owner_id, transaction_id, position, kind, amount_minor, currency)
+    values (gen_random_uuid(), '${owner}', 'dddddddd-0000-4000-8000-000000000480', 1, 'deposit', 30000, 'THB'),
+           (gen_random_uuid(), '${owner}', '${TARGET}', 1, 'deposit', 50000, 'THB');
+    -- The overlay the toggle must not disturb. Every text field carries something distinguishable,
+    -- so a write that erased one fails by naming it rather than by failing a boolean.
+    insert into public.transaction_overlays(transaction_id, owner_id, description, counterparty,
+      effective_date, note, include_in_reporting, revision)
+    values ('${TARGET}', '${owner}', 'Invented description the owner typed', 'Invented counterparty',
+            date '2026-03-05', 'Invented note', true, 1);
+  `);
+  expect(seeded.ok, `reporting fixture failed: ${seeded.output}`).toBe(true);
+
+  // One query naming every field, so a failure says which one moved rather than that "something"
+  // did. Read before the toggle as well as after — a fixture that did not land the way this test
+  // assumes would otherwise look like the toggle preserving nothing.
+  const storedOverlay = () => psql(`
+    select description || '|' || counterparty || '|' || effective_date || '|' || note
+           || '|' || include_in_reporting || '|' || revision
+      from public.transaction_overlays where transaction_id = '${TARGET}';
+  `).output.trim();
+  expect(storedOverlay()).toBe("Invented description the owner typed|Invented counterparty|2026-03-05|Invented note|true|1");
+
+  await signIn(page);
+  await page.goto("/ledger");
+  const ledger = page.locator("section.ledger-band");
+  await ledgerLoaded(ledger);
+  await expect(ledger.locator("tbody tr")).toHaveCount(2, { timeout: 30_000 });
+
+  // Found by its **movement**, which comes off the transaction rather than off the overlay — so
+  // the locator still finds the row when the overlay has been wiped, and the erasure then fails on
+  // an assertion that names the field instead of on a locator that quietly matches nothing.
+  const target = ledger.locator("tbody tr").filter({ hasText: "+฿500.00" });
+  await expect(target).toHaveCount(1);
+  // The overlay's description is what the cell shows, so this is both a proof that the seeded
+  // overlay reached the screen and the *before* half of the erasure assertion below.
+  await expect(target.getByText("Invented description the owner typed")).toBeVisible();
+
+  // **Before**: both rows count, so the strip states the whole 800 satang of deposits, and no row
+  // wears a chip because being in reporting is the ordinary state (D-064).
+  const totals = ledger.locator("dl.ledger-strip");
+  await expect(totals.getByText("+฿800.00")).toBeVisible();
+  await expect(ledger.getByText("Excluded")).toHaveCount(0);
+
+  await target.getByRole("button", { name: "Exclude" }).click();
+
+  // **After**: the row says so on its face, and the strip has moved by exactly this row's own
+  // components — 500 satang, not a rounded or refetched approximation of them.
+  await expect(target.getByText("Excluded")).toBeVisible({ timeout: 30_000 });
+  await expect(totals.getByText("+฿300.00")).toBeVisible();
+  await expect(totals.getByText("+฿800.00")).toHaveCount(0);
+  // The row count is not filtered, matching the server: it says what the account holds.
+  await expect(ledger.locator("tbody tr")).toHaveCount(2);
+
+  // **The erasure, on screen.** A write that sent the rest as null would have cleared the
+  // description, and this cell would fall back to the statement's own words. Asserted before the
+  // database read because it is the half a person would actually notice.
+  await expect(target.getByText("Invented description the owner typed"),
+    "the description the owner typed must survive a toggle").toBeVisible();
+
+  // **The assertion this test exists for.** Only the flag and the revision moved.
+  expect(storedOverlay(), "the toggle must not disturb what the owner typed")
+    .toBe("Invented description the owner typed|Invented counterparty|2026-03-05|Invented note|false|2");
+
+  // And back, which proves the second write sends the revision the database now holds rather than
+  // the one the page loaded with — the failure a fold-back that did not carry the revision gives.
+  await target.getByRole("button", { name: "Include" }).click();
+  await expect(totals.getByText("+฿800.00")).toBeVisible({ timeout: 30_000 });
+  await expect(ledger.getByText("Excluded")).toHaveCount(0);
+  expect(storedOverlay(), "the round trip must not disturb it either")
+    .toBe("Invented description the owner typed|Invented counterparty|2026-03-05|Invented note|true|3");
+});
+
 test("orders both ways and derives the all-accounts balance from every account", async ({ page }) => {
   await signIn(page);
   await importStatement(page, buildStatementPdf(validStatement), MATCHING_ACCOUNT, "Browser synthetic", 4);

@@ -2,7 +2,7 @@
 
 import { Fragment } from "react";
 import { formatThb } from "@/lib/money";
-import { movementMinor, type AccountTransaction } from "@/lib/transactions";
+import { movementMinor, overlayInForce, type AccountTransaction } from "@/lib/transactions";
 import { type LedgerAccount } from "@/lib/accounts";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
@@ -34,7 +34,8 @@ export function LedgerStatementRow({
   onTogglePair,
   onToggleCard,
   onDecideSlip,
-  onDecideCard
+  onDecideCard,
+  onSetReporting
 }: {
   row: Extract<ReconciledRow, { kind: "confirmed" }>;
   layout: LedgerLayout;
@@ -63,6 +64,15 @@ export function LedgerStatementRow({
     transactionId: string | null,
     acceptBalanceMismatch?: boolean
   ) => void;
+  /**
+   * Takes this row in or out of income and spending totals (PLAN task 48).
+   *
+   * It is handed the **whole transaction** rather than an id, because the write replaces the whole
+   * overlay and the row is where the rest of that overlay lives. An id would leave the caller to
+   * find the row again, which is the shape that invites sending nulls for the fields it did not
+   * find — the erasure `overlayWriteBody` exists to make unrepresentable.
+   */
+  onSetReporting: (transaction: AccountTransaction, includeInReporting: boolean) => void;
 }) {
   const transaction: AccountTransaction = row.transaction;
   const movement = movementMinor(transaction);
@@ -76,6 +86,11 @@ export function LedgerStatementRow({
   const counterparty = overlay?.counterparty ?? row.slip?.counterparty ?? row.card?.counterparty ?? null;
   const pair = row.slip;
   const cardPair = row.card;
+  // Through `overlayInForce` rather than `overlay?.include_in_reporting ?? true` so the default
+  // that stands in for "this row has no overlay row at all" is written once. It is `true`, and it
+  // is the same `true` the column default and every `coalesce(o.include_in_reporting, true)` in
+  // migration 023 mean.
+  const { includeInReporting } = overlayInForce(transaction);
 
   return (
     <Fragment>
@@ -273,6 +288,55 @@ export function LedgerStatementRow({
             </>
           ) : (
             <span className="status-none" aria-label="Statement only: no slip and no notification card is matched to this row">—</span>
+          )}
+          {/*
+            **In the Status cell rather than in a column of its own or a detail panel**, and both
+            alternatives were live options (PLAN task 48).
+
+            A column was refused because the table already sets a 1160px minimum and the merged
+            view 1280px, and D-138 is what a widened ledger costs on a phone. **This cell is the
+            one that is already empty on exactly the rows that need the control** — a statement-only
+            row renders a single em dash here — so the control costs no width at all.
+
+            A detail panel was refused because on these rows there is none: `pair-detail` exists
+            only where a slip or a card matched, and the internal transfers the owner wants set
+            aside are statement-only. Putting the control there meant building a second panel and
+            charging two presses for a scanning task.
+
+            **Hidden while a pick is on**, because that mode is deliberately one question at a
+            time — the table is showing the rows a slip could be, and a second control on each of
+            them competes with the answer being asked for.
+          */}
+          {modes.picking || modes.pickingCard ? null : (
+            <div className="match-control">
+              {/* No chip in the ordinary case, which is D-064's rule: a badge on every row carries
+                  no information. A chip when the row is *out* of reporting is the opposite — the
+                  totals above the table are computed without it, and a figure that quietly excludes
+                  a visible row is the silent difference this ledger keeps having to name. */}
+              {includeInReporting ? null : <em className="status-chip excluded">Excluded</em>}
+              <button
+                type="button"
+                className="secondary-button"
+                /* No `aria-pressed`. The visible label names the *action* and changes with the
+                   state, so a pressed-ness on top of it announces "Include, pressed" — two
+                   readings of the same fact that contradict each other. What states the state is
+                   the chip, which is in this cell and is read with it. */
+                aria-label={`${includeInReporting ? "Exclude" : "Include"} — ${includeInReporting ? "stop counting" : "count"} the row dated ${formatDate(row.date)} for ${formatThb(movement)} as income or spending`}
+                /* Every reporting control, not just this row's, for the reason the decision
+                   buttons carry: two writes in flight let the first to resolve re-enable a control
+                   whose own write is still pending, and the second press then sends a revision the
+                   database has already moved past. */
+                disabled={modes.settingReporting !== null}
+                onClick={() => onSetReporting(transaction, !includeInReporting)}
+              >
+                {modes.settingReporting === transaction.id ? "Saving…" : includeInReporting ? "Exclude" : "Include"}
+              </button>
+              {includeInReporting ? null : (
+                <small className="decision-mark">
+                  Not counted as income or spending. The money still moved, so the balance is unchanged.
+                </small>
+              )}
+            </div>
           )}
         </td>
         <td data-label={showCombined ? "Account" : "Reference"}>
