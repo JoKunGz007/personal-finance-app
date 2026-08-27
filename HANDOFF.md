@@ -129,14 +129,26 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **PLAN task 44 is BUILT, 2026-08-27** (D-160 scoped it, D-161 built it). **Migration 023 exists on
-  `private-ledger-local` ONLY** — every other project including hosted is on 022, so **the database
-  must go first if this is ever deployed**, exactly as 021 and 022 did. The code reads
-  `ledger_statistics`, which does not exist anywhere else yet. Backup contract **unchanged at v7**
-  (no table, no column). **Not committed at the time this line was written; not pushed; not
-  deployed; and never rendered against the real ledger** — only against five months of invented
-  rows in `.runtime/statistics-audit.spec.ts`. **Nothing in the app can set `include_in_reporting`**,
-  so its new filter is inert on both surfaces until a control ships.
+- **PLAN task 44 is BUILT, COMMITTED, PUSHED AND DEPLOYED, 2026-08-27** (D-160 scoped it, D-161
+  built it). `9ce1f06`, out as `6a8399b..9ce1f06`, **database first**: the owner ran
+  `supabase db push --linked` himself and the result was read back from hosted **before** the code
+  went out — head **`202608270023`**, **23** applied, `public.ledger_statistics` present and
+  executable by `authenticated` but **not** by `anon`, `private.reportable_movements` executable by
+  nobody. **Sequence 37 and 1,604 rows unchanged**, so it moved schema and no owner data. Backup
+  contract **unchanged at v7**. **Every project is on 023 except `private-ledger-live`, frozen on
+  012.** `/code-review high` ran before the commit and found six defects, all fixed (D-161).
+  **Nothing in the app can set `include_in_reporting`**, and the real ledger holds **0** rows with
+  it off, so the new filter moves no figure today on either surface.
+- **NOBODY HAS LOOKED AT `/statistics` ON THE REAL LEDGER.** Every figure has been seen only against
+  five months of invented rows in `.runtime/statistics-audit.spec.ts`. **This is the step D-159 says
+  finds the defects** — both of task 45's and five of task 44's six came from rendering or review,
+  never from a gate that was green throughout. The real ledger spans many more months than the
+  fixture, which is exactly what the axis-thinning fix addressed and what has never been seen.
+  **Ask the owner to open it and report.**
+- **The hosted backup was VERIFIED FROM THE DATABASE before the migration, 2026-08-27**, not taken
+  on the owner's word: `inet_server_addr()` returned a public address, sequence **37 /
+  last_exported_sequence 37**, backup record at 37 from **2026-08-27 01:36 UTC**, 1,604 rows. That
+  supersedes the 2026-08-26 13:02 reading. **The migration changed no data, so it did not stale it.**
 - **PLAN task 45 is COMPLETE, DEPLOYED AND CONFIRMED BY THE OWNER, 2026-08-27.** `main` is at
   `758efe6` and `origin/main` matches it. Two deploys went out — `48a2259..cbf1c58` (the paging work)
   and `cbf1c58..758efe6` (the combined balance in SQL) — and **the database went first both times**,
