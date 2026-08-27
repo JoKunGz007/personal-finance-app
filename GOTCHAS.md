@@ -207,6 +207,8 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A dedup downstream of paging hides a page that repeats a row, but not one that skips
 - A per-account balance walk is exact under paging; the merged one across accounts is not
 - A control with no class inherits the prose around it, and a suite that asks whether it exists cannot see that
+- A period-over-period comparison is nonsense unless both periods are whole
+- Reading a figure off a screenshot in a pixel typeface is not evidence
 
 ## Traps
 
@@ -225,6 +227,6 @@ these section headings rather than a third raise. The owner chose the split.
 | Statement and slip parsing | 17 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 29 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
-| App, auth, routing and accessibility | 39 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
+| App, auth, routing and accessibility | 41 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
 | Layout, typography and accessibility | 15 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 

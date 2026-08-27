@@ -212,6 +212,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-159** — The combined balance is computed once in SQL, because a per-account window cannot see another account's history
 - **D-160** — Statistics compute in SQL, and division never produces money: a ratio is not a figure the ledger keeps
 - **D-161** — The statistics surface is built, and every real defect in it was found by rendering it or by review, never by the gate
+- **D-162** — A partial period is not comparable to a whole one, and the first look at the real ledger is what said so
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -889,3 +890,54 @@ disagreeing with the code they sat above, which is how the next reader gets it w
   viewport**. Related: D-160 (the scoping this implements), D-159 (compute where the facts are, and
   look at the deployed thing), D-158, D-138 (an audit of an absent element reports a clean route),
   D-137 (one declared colour scheme), D-120, D-002.
+
+## D-162 — A partial period is not comparable to a whole one, and the first look at the real ledger is what said so
+
+- Date: 2026-08-27
+- Status: **Done.** `app/statistics-view.tsx`, `app/statistics-charts.tsx`, `tests/statistics.test.ts`.
+  Deployed surface only; **no migration and no schema change**, so nothing hosted moved.
+- Context: the owner opened the deployed `/statistics` for the first time and sent screenshots.
+  Follows D-161 within the hour, on the pattern D-158 → D-159 already set.
+
+### What the real ledger showed that no fixture could
+
+**The opening month rendered a comparison of `+1002%`.** July 2025 is a **partial** month — the
+ledger starts on the 3rd — and it was being compared against a full August. The arithmetic was
+correct and the figure was meaningless: twenty-nine days of spending against thirty-one is not a
+rate, and nothing on the row said so.
+
+**The invented fixture could not have found it.** Five months, and its first month was partial too —
+but the *second* month's comparison looked unremarkable because the seeded amounts were flat. A real
+ledger's opening month is short **and** unrepresentative, and only the second of those shows up as an
+absurd number.
+
+**The rule: a comparison is printed only when both periods are whole.** Suppressed rather than
+corrected — rescaling either side to a common length would invent spending no statement records, and
+the exact figure for each month is already in its own row. The cell carries a `title` saying which of
+the two reasons applies, so an em dash is never unexplained.
+
+**The axis printed `Jul` and `Aug` twice.** Fourteen months from July 2025 to August 2026, and two
+pairs of labels were indistinguishable. The year is appended only when the window actually spans more
+than one, so the ordinary case stays uncluttered; the label-thinning threshold widens to match.
+
+### What was checked rather than assumed
+
+**The screenshots are in a pixel face, and reading figures off one is not evidence.** Two apparent
+discrepancies in the totals were digits misread, not defects. The identities were therefore
+**cross-checked against the real distribution in the database**, not against the picture: the
+day-of-week split and the monthly series each sum to the same **1,604** transactions and to the same
+money as the whole-window total, across **14** months and **7** buckets. That is D-159's move — an
+independent derivation over the real data rather than over invented rows — and it is the only thing
+that turned "these numbers look odd" into "these numbers are right".
+
+**Every one of the 1,604 rows is reportable**, so `include_in_reporting` still moves no figure.
+**But the real ledger now shows exactly why it will**: a `Transfer Withdrawal` and a
+`Transfer in` of the same amount on the same date appear in the two largest-movement lists — one
+internal transfer, inflating both money-in and money-out while net stays correct. **That is the
+argument for building the control**, and it is no longer hypothetical.
+
+- Evidence: Vitest **853 passed / 7 skipped across 41 files** (from 849; four assert the comparison
+  predicate directly, so a refactor that drops the guard fails rather than printing the figure
+  again). pgTAP **347 across 11**, Playwright owner **32/32**, isolated **34 / 4 skipped**, build
+  clean, `tsc`, `eslint` and `check:docs --strict` clean. Related: D-161, D-159 (look at the deployed
+  thing; cross-check against the real distribution), D-138.

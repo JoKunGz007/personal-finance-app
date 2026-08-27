@@ -139,12 +139,21 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   012.** `/code-review high` ran before the commit and found six defects, all fixed (D-161).
   **Nothing in the app can set `include_in_reporting`**, and the real ledger holds **0** rows with
   it off, so the new filter moves no figure today on either surface.
-- **NOBODY HAS LOOKED AT `/statistics` ON THE REAL LEDGER.** Every figure has been seen only against
-  five months of invented rows in `.runtime/statistics-audit.spec.ts`. **This is the step D-159 says
-  finds the defects** — both of task 45's and five of task 44's six came from rendering or review,
-  never from a gate that was green throughout. The real ledger spans many more months than the
-  fixture, which is exactly what the axis-thinning fix addressed and what has never been seen.
-  **Ask the owner to open it and report.**
+- **`/statistics` HAS NOW BEEN SEEN ON THE REAL LEDGER, 2026-08-27, and it found one more defect**
+  (D-162). The owner opened the deployed page and sent screenshots. **The opening month is partial**
+  — the history starts on the 3rd — and comparing it to a full month printed **+1002%**, correct and
+  meaningless. A comparison now prints only when both periods are whole. The axis also showed `Jul`
+  and `Aug` twice over fourteen months and now carries the year when the window spans more than one.
+  **The identities were cross-checked in the database rather than read off the picture**: the
+  day-of-week split and the monthly series each sum to the same **1,604** transactions and the same
+  money as the whole-window total, over **14** months and **7** buckets. **Two apparent
+  discrepancies were digits misread off a pixel face** — a screenshot proves something rendered, not
+  what the number is.
+- **The real ledger now shows why `include_in_reporting` will matter, and it is no longer
+  hypothetical.** All 1,604 rows are still reportable, so no figure moves yet — but a
+  `Transfer Withdrawal` and a `Transfer in` of the same amount on the same date sit in the two
+  largest-movement lists. One internal transfer, inflating money-in and money-out alike while net
+  stays correct. **Nothing in the app can set the flag**; that control is the next piece of work.
 - **The hosted backup was VERIFIED FROM THE DATABASE before the migration, 2026-08-27**, not taken
   on the owner's word: `inet_server_addr()` returned a public address, sequence **37 /
   last_exported_sequence 37**, backup record at 37 from **2026-08-27 01:36 UTC**, 1,604 rows. That

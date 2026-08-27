@@ -1,6 +1,6 @@
 # Private Ledger gotchas — App, auth, routing and accessibility
 
-Split out of `GOTCHAS.md` on 2026-08-25 (D-149). **38 traps.**
+Split out of `GOTCHAS.md` on 2026-08-25 (D-149). **40 traps.**
 
 **Fourteen left on 2026-08-27** for `docs/gotchas/appearance.md`, when this file reached 92% of
 its budget: layout, typography, colour and accessibility are a subject of their own, which is what
@@ -298,3 +298,17 @@ the top of `GOTCHAS.md`.
 - Cause: a bare `<button>` inside a text paragraph, given no class. `.link-button` has existed for this since long before, and every other inline control in the app uses it. The spec asserted `getByRole("button", { name: … })` and then clicked it, which is true of an unstyled button and of a styled one alike.
 - Avoid: give an inline control `.link-button` rather than relying on a browser default that a reset has already removed. And when a new control is the *only* way to reach something, look at it in the running app — an assertion that a control exists is not an assertion that anyone can find it.
 - Verify: 2026-08-27. Found by the owner on the deployed ledger, not by the gate (D-159); the owner suite's paging spec was green through the whole of it.
+
+## A period-over-period comparison is nonsense unless both periods are whole
+
+- Symptom: the first month of a ledger reports a change of several hundred or a thousand per cent against the month after it. The arithmetic checks out, every test passes, and the figure means nothing.
+- Cause: the opening period is **partial** — the history starts wherever the first import starts — and so is the current one, which is still running. Comparing twenty-nine days of spending against thirty-one is not a rate. An invented fixture rarely catches it: its opening month is short too, but its seeded amounts are flat, and only a real ledger's short *and* unrepresentative first month produces an absurd number.
+- Avoid: print a comparison only when **both** periods are whole, and say on the cell which of the two reasons suppressed it. Do not rescale either side to a common length — that invents activity no statement records, and each period's own exact figure is already on its own row.
+- Verify: the `comparable` predicate in `app/statistics-view.tsx` and its four cases in `tests/statistics.test.ts`. Dated 2026-08-27 (D-162), found by the owner opening the deployed page.
+
+## Reading a figure off a screenshot in a pixel typeface is not evidence
+
+- Symptom: a total appears not to reconcile with the figures beside it, and a defect gets reported that does not exist.
+- Cause: the pixel faces this app offers render `0`, `2`, `5` and `8` at small sizes closely enough that a reader — human or model — transposes them. Two apparent discrepancies in the statistics totals were digits misread, not arithmetic.
+- Avoid: cross-check the identity in the database against the real distribution rather than against the picture. A screenshot is evidence that something *rendered*; it is not evidence of what the number *is*.
+- Verify: the day-of-week split and the monthly series each sum to the same transaction count and the same money as the whole-window total, checked directly on the hosted ledger. Dated 2026-08-27 (D-162), on D-159's precedent.

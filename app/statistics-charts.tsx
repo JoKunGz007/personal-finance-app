@@ -214,8 +214,12 @@ export function MonthlyChart({ months }: { months: readonly MonthlyStatistic[] }
 
   const active = hover === null ? null : months.at(hover) ?? null;
   const slot = plotWidth / months.length;
-  // One label needs roughly 34px to stay legible at 11px type.
-  const labelEvery = Math.max(1, Math.ceil(34 / slot));
+  // **A fourteen-month window prints `Jul` twice**, which the real ledger did on the first look —
+  // the axis ran Jul 2025 to Aug 2026 and two pairs of labels were indistinguishable. The year is
+  // added only when the window actually spans more than one, so the ordinary case stays uncluttered.
+  const spansYears = new Set(months.map((m) => m.month.slice(0, 4))).size > 1;
+  // One label needs roughly 34px to stay legible at 11px type, and about 52px once it carries a year.
+  const labelEvery = Math.max(1, Math.ceil((spansYears ? 52 : 34) / slot));
   // A 2px surface gap between the two bars of a pair, and a wider one between pairs, so the grouping
   // is visible without a box around it.
   const barWidth = Math.max(3, (slot - 10) / 2 - 1);
@@ -259,7 +263,8 @@ export function MonthlyChart({ months }: { months: readonly MonthlyStatistic[] }
               {index % labelEvery === 0 && (
                 <text x={pad.left + index * slot + slot / 2} y={height - 26}
                       textAnchor="middle" fontSize={11} fill={MUTED}>
-                  {SHORT_MONTHS[Number(month.month.slice(5)) - 1] ?? month.month.slice(5)}
+                  {(SHORT_MONTHS[Number(month.month.slice(5)) - 1] ?? month.month.slice(5))
+                    + (spansYears ? ` ${month.month.slice(2, 4)}` : "")}
                 </text>
               )}
               {month.isPartial && index % labelEvery === 0 && (

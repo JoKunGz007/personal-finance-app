@@ -158,8 +158,16 @@ export function StatisticsView() {
               </tr>
             </thead>
             <tbody>
-              {months.map((month) => {
-                const change = magnitudeChange(month.withdrawals, month.previousWithdrawals);
+              {months.map((month, index) => {
+                // **A partial month cannot be compared to a full one**, and the real ledger proved it
+                // on the first look: a 29-day opening month against a full August rendered
+                // "+1002%" — a number that is arithmetically right and means nothing, because the
+                // two periods are not the same length. Suppressed rather than corrected, since
+                // rescaling either side to a common length would invent spending that no statement
+                // records. The exact figures for both months are in their own rows above.
+                const previous = index > 0 ? months[index - 1] : undefined;
+                const comparable = previous !== undefined && !previous.isPartial && !month.isPartial;
+                const change = comparable ? magnitudeChange(month.withdrawals, month.previousWithdrawals) : null;
                 return (
                   <tr key={month.month}>
                     <th scope="row">
@@ -174,7 +182,11 @@ export function StatisticsView() {
                         **magnitudes**, so more spending reads as a rise in both — a signed delta
                         would print a fall. A month with no predecessor, or one whose predecessor was
                         zero, drops the percentage: a zero denominator is undefined (D-160). */}
-                    <td className="numeric" data-label="Out vs previous">
+                    <td className="numeric" data-label="Out vs previous"
+                        title={comparable ? undefined
+                          : previous === undefined
+                            ? "No earlier month to compare with."
+                            : "Not compared: one of the two months is partial, so the periods are different lengths."}>
                       {change === null
                         ? "—"
                         : <>{BigInt(change.delta) > 0n ? "+" : ""}{formatThb(change.delta)}

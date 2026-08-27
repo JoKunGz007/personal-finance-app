@@ -130,6 +130,31 @@ describe("shareOf", () => {
   });
 });
 
+describe("the partial-month comparison rule", () => {
+  // **The defect the real ledger showed on the first look.** A 29-day opening month against a full
+  // August rendered "+1002%" — arithmetically right, and meaningless, because the two periods are
+  // not the same length. The rule is stated here as the predicate the table applies, so a later
+  // refactor that drops the guard fails rather than printing the figure again.
+  const comparable = (previous: { isPartial: boolean } | undefined, month: { isPartial: boolean }) =>
+    previous !== undefined && !previous.isPartial && !month.isPartial;
+
+  it("refuses to compare a full month against a partial one", () => {
+    expect(comparable({ isPartial: true }, { isPartial: false })).toBe(false);
+  });
+
+  it("refuses when the current month is the partial one, which is every current month", () => {
+    expect(comparable({ isPartial: false }, { isPartial: true })).toBe(false);
+  });
+
+  it("refuses when there is no earlier month", () => {
+    expect(comparable(undefined, { isPartial: false })).toBe(false);
+  });
+
+  it("compares two whole months", () => {
+    expect(comparable({ isPartial: false }, { isPartial: false })).toBe(true);
+  });
+});
+
 describe("labels", () => {
   it("counts whole weeks and does not round a partial one up", () => {
     expect(wholeWeeks(61)).toBe(8);
