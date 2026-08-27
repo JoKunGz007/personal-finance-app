@@ -83,11 +83,16 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
-- **Commit and push: granted per session, and the grant is SPENT.** Granted again on **2026-08-27**
-  and used for three commits — `5418ba2` (task 45), `a462a81` (the trap split), `cbf1c58` (the hosted
-  migration record) — pushed as `48a2259..cbf1c58` and **therefore deployed**. **The next commit needs
-  a new ask.** Earlier: granted 2026-08-26 and used four times that day (`f46ee64`, `b4bc6be`,
-  `d7411b3`, `fda6c60`), all pushed.
+- **Commit and push: GRANTED and LIVE for the 2026-08-27 session.** The owner's words were that this
+  session is free to commit and push **as much as it wants**, which is broader than every earlier
+  grant — those were counted and spent. **It is still a production deployment every time** and the
+  remedy is Instant Rollback in the dashboard, not a revert push, so the breadth of the grant is not
+  a reason to push more often; review before committing still holds (D-125). **It does not extend to
+  `supabase db push`**, which is its own ask with a backup verified from the database first, and it
+  **does not survive this session**. Earlier the same day: granted twice and used for four commits
+  across two pushes — `5418ba2`, `a462a81`, `cbf1c58` (as `48a2259..cbf1c58`), then `758efe6` (as
+  `cbf1c58..758efe6`), both deployed and both confirmed by the owner on screen. Before that: granted
+  2026-08-26 and used four times (`f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60`), all pushed.
 - **Task 45's build grant is DISCHARGED, 2026-08-27.** The owner authorized migration 021, the RPCs,
   the route, the client and the tests, run locally, and all of that is built and green (D-158). **The
   grant covered building and running locally and nothing else.** It did not cover `supabase db push`,
@@ -124,19 +129,38 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **PLAN task 45 is deployed at `cbf1c58`, and D-159 is committed on top of it and NOT deployed.**
-  `cbf1c58` was pushed 2026-08-27 as `48a2259..cbf1c58`. **The database went first and the code followed**, which is the
-  only safe order here: 021 is additive and `list_account_transactions` was still present, so the
-  running deployment was unaffected in the window between them. **Nobody has looked at the deployed
-  result yet**, and the paging bullet below says what to look at. **`eslint.config.mjs` and `playwright.config.ts` are the two deliberately
-  local-only files** and stayed out of all three commits; `git status --short` distinguishes them.
-- **The local project and the recovery destination are on 022; HOSTED IS ON 021.** Migration
-  `202608270022_combined_balance.sql` (D-159) is built, validated and committed but **not pushed to
-  hosted** — that is its own ask, and the backup reading below is what it needs. **The deployed app
-  does not need it**: what is deployed is the D-158 code, which does not read
-  `combined_balance_minor`. Pushing the *code* without the migration would break the ledger, so if
-  both go out, **the migration goes first**.
-- **EVERY project was on migration 021, hosted included, as of 2026-08-27.** The owner ran
+- **PLAN task 44 is SCOPED AND SETTLED, 2026-08-27** (D-160). Scoping only — no code, no migration,
+  no measurement. **The owner answered all three open questions the same day**, so nothing about this
+  task now blocks a build: the figures are chosen (monthly incoming/spending/net, averages per day and
+  per week, daily closing balance, largest transactions, per-month count), **cash is out of v1**, and
+  **`include_in_reporting` is honoured with the ledger's totals strip retrofitted in the same change**.
+  The page is chart-led — balance as a line, incoming against spending as paired bars — and drawn as
+  **inline SVG rather than a charting library**, because the strict CSP forbids a CDN. **Task 44 goes
+  before task 25.** Two things this creates and does not close: **nothing in the app can set
+  `include_in_reporting`**, so the filter is inert until a control ships; and automatic
+  transfer detection belongs beside task 25, not here.
+- **PLAN task 45 is COMPLETE, DEPLOYED AND CONFIRMED BY THE OWNER, 2026-08-27.** `main` is at
+  `758efe6` and `origin/main` matches it. Two deploys went out — `48a2259..cbf1c58` (the paging work)
+  and `cbf1c58..758efe6` (the combined balance in SQL) — and **the database went first both times**,
+  which is the only safe order: 021 is additive so the old code kept working, and 022 had to exist
+  before code that reads `combined_balance_minor` could run at all. **The owner opened `/ledger` after
+  each and reported on it**, which is what discharges *deployed*. **`eslint.config.mjs` and
+  `playwright.config.ts` stayed out of all four commits**; `git status --short` distinguishes them
+  from the continuity edits now sitting beside them.
+- **EVERY project is on migration 022, hosted included, as of 2026-08-27.** The owner ran
+  `supabase db push --linked` himself for both 021 and 022, each after the backup was verified from
+  the database. Read back from hosted afterwards: **22 applied, head `202608270022`**,
+  `private.combined_balances` present and **executable by nobody**, and the page function confirmed
+  to emit `combined_balance_minor` — that last check is the precondition the deployed code depends
+  on, and it was taken *before* the code was pushed rather than after. `private-ledger-live` stays
+  frozen on 012 and is untouched. Backup contract **unchanged at v7**.
+- **The combined balance was cross-checked against the real ledger and agrees on every row.**
+  **1,604 rows checked, 0 mismatches**, against an independent derivation — the shipped version is
+  one window function, the check re-derived each row by looking up every account's latest balance
+  with a lateral join. Two methods, one answer. That is stronger evidence than the pgTAP suite,
+  which runs on invented fixtures, and it is the only check that has ever run against the real
+  distribution.
+- **Earlier that day: every project was on migration 021.** The owner ran
   `supabase db push --linked` himself after the backup was verified from the database; the local
   synthetic project, the recovery destination and hosted all carry it. Read from the hosted database
   afterwards: **21 applied, head `202608260021`**, and the two new functions carry the same grants they
@@ -223,7 +247,14 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   rows and asserts a table is present before measuring. **Two surfaces are still unmeasured with
   records in them** — the captured-slips list and the batch worklist — because the audit only clicks
   what a button offers and those need records created first.
-- **`cbf1c58` IS DEPLOYED AND UNVERIFIED, 2026-08-27** — task 45, the largest user-visible change to
+- **`cbf1c58` and `758efe6` ARE DEPLOYED AND THE OWNER HAS LOOKED AT BOTH, 2026-08-27.** He opened
+  `/ledger` after each and sent a screenshot. **The paging works**: 297 rows on the first load, the
+  reach line, the totals still reading 1,604, and after `758efe6` the all-accounts column populated
+  on every row with `Load older rows` rendering as a link. **What is still unlooked-at is a phone** —
+  both readings were desktop. **Both defects in this task were found this way and neither by the
+  gate**, which is the thing to carry forward: a suite asserts a control exists, not that anyone can
+  find it. The paragraph below is kept as the reading it was made from.
+- **`cbf1c58` was DEPLOYED AND UNVERIFIED when written, 2026-08-27** — task 45, the largest user-visible change to
   the ledger since it started loading on arrival. **What to look at, on `/ledger`, signed in:**
   the table should show **100 rows** and a line reading *Showing 100 of 1,604 confirmed rows* with a
   **Load older rows** button; pressing it should add rows without the ones above changing. **The

@@ -210,6 +210,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-157** — The pixel faces get a measured `size-adjust`, every route opens with a title, and the standing copy folds the rest of the way
 - **D-158** — The ledger pages, and reconciliation keeps its rule: a candidate set narrows the input instead of a second engine deciding the answer
 - **D-159** — The combined balance is computed once in SQL, because a per-account window cannot see another account's history
+- **D-160** — Statistics compute in SQL, and division never produces money: a ratio is not a figure the ledger keeps
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -618,3 +619,143 @@ balance leaked backwards.
   `/api/v1/` routes, unchanged. `tsc`, `pnpm exec eslint .` and `check:docs --strict` clean. Backup
   contract **unchanged at v7** — no table, no column. D-120 (the two-engines refusal, and why this is
   not it), D-158 (superseded on the floor), and PLAN task 44, which is the reason this is reusable.
+
+## D-160 — Statistics compute in SQL, and division never produces money: a ratio is not a figure the ledger keeps
+
+- Date: 2026-08-27
+- Status: **Scoped and settled. Nothing is built and nothing is measured.** The owner answered all
+  three open questions on 2026-08-27, before this entry was ever committed, so the answers are
+  recorded here rather than in a superseding entry. `PLAN.md` task 44 carries the full scoping;
+  this entry records the rules it settled, because both outlive the task's text — a PLAN entry
+  gets rewritten and this file does not.
+- Context: the owner asked for task 44 to be scoped rather than built, on the reasoning that D-158
+  and D-159 both went better because their questions were answered before their SQL was written.
+  Three questions were open. Two are answered by precedent this repository already set; the third is
+  a policy this app has never needed, because until now nothing in it divided.
+
+### The category breakdown is not this task's, and saying so early is the point
+
+The page everyone pictures is spend by category, and **the ledger has no categories**: the columns
+and both routes have existed since migration 001, and live holds **1 category against 1,465
+transactions**. A chart drawn over that is *a figure that is right and empty* — D-158's all-accounts
+column again, caught this time in a scoping document instead of in a screenshot of production. The
+breakdown belongs to task 25, and task 44 is shaped so it arrives later as one more grouping key.
+
+What is populated on every confirmed row today is time, account, direction, and the bank's own
+`transaction_label`. `cash_entries` is the only population in this ledger that is categorised at all,
+because it takes `category_id` and `counterparty` at capture.
+
+### Statistics compute in PostgreSQL, and this is D-159's line rather than D-120's
+
+A statistic is whole-ledger by definition and **the client no longer holds the whole ledger** — it
+holds a page (D-158). Computing on the device means fetching everything again, which is precisely
+the payload task 45 removed. D-159 already decided this shape for the same reason and built
+`private.combined_balances(uuid)` as a reusable helper *for this task*.
+
+**It is not the two-engines mistake D-120 refused**, and the distinction is the one D-159 drew:
+D-120 protects a *rule that judges a specific row*, carrying ~85 tested cases, from being written a
+second time in a language with no tests for it. An aggregate judges nothing — it sums. The shape
+follows `list_account_transactions_page`: `security definer`, pinned `search_path`, gated on
+`private.has_strong_owner_access`, returning an empty shape rather than raising, revoked from
+`public` and `anon`, granted to `authenticated`, with the private helper still granted to nobody.
+**SQL computes and the client formats**; money crosses the wire as canonical minor-unit strings.
+
+### Division never produces money
+
+This is the new rule. Every average, share and trend is a division, and money in this app is a
+signed 64-bit integer of minor units (D-002) that has never been divided by anything.
+
+**A ratio is not money.** Three tiers follow from that:
+
+1. **Totals, nets and subtotals do not divide at all.** Sums of `bigint`, exactly as the shipped
+   totals strip does. They are money and stay money.
+2. **A share travels as its numerator and its denominator**, two exact minor-unit strings, and
+   becomes a percentage in the presentation layer for display only. **A percentage is a label**:
+   nothing is derived from one and none is stored. Two consequences are accepted rather than papered
+   over — shares printed to one decimal **will not sum to exactly 100.0**, and the remedy is to show
+   the exact parts beside them rather than fudge the last slice; and **a zero denominator is
+   undefined, not zero**, so a period with no spending prints an absence.
+3. **An average of money is money**, which is why it is the trap. Two forms are permitted and no
+   third: **integer division that keeps its remainder** — `sum / n` with `sum % n`, so
+   `quotient * n + remainder = sum` holds exactly — or **no average at all**. Twelve exact monthly
+   totals answer the question better than one average of them, and a chart reads them better than a
+   number does. **Prefer the series to the average.**
+
+**The specific way this will be got wrong: `avg()` over `bigint` returns `numeric`, and so does
+`sum() over ()`.** D-159 already had to cast one back explicitly. The first person who writes the
+obvious `avg(amount_minor)` puts a `numeric` into a money path with nothing complaining, so **the
+return types become a contract asserted in pgTAP** — every money column declared `bigint` or `text`,
+with a test that fails by name the moment a `numeric` or a `double precision` appears there. A rule
+that is only written down is a rule that is only remembered.
+
+### Two findings that are decisions, not details
+
+**`include_in_reporting` exists and nothing has ever read it.** The column is on
+`transaction_overlays` from migration 001, `mutate_overlay` writes it,
+`PUT /api/v1/transactions/[id]/overlay` accepts it, and both `lib/backup-contract.ts` and
+`lib/transactions.ts` carry it — and **no query in this repository filters on it**. Task 44 would be
+its first consumer. If the statistics page honours the flag and the ledger's totals strip does not,
+two totals over one ledger disagree on one screen and both are right. Either both honour it or the
+flag is retired.
+
+**Slips and cards must never be summed.** A paired slip *is* the statement row (D-063), so summing
+`source_components` counts each payment exactly once; adding slips would double it. An unmatched slip
+is money that moved with no statement row yet, and the honest treatment is to report how many there
+are beside the totals rather than fold their amounts in. **`cash_entries` is out of v1 by the owner's
+decision** — cash is real money that no statement carries, and **the balance series could not include
+it in any case**, a cash entry having no `post_balance_minor` and never having entered a printed
+balance chain.
+
+### What the owner settled, the same day and before this entry was committed
+
+All three questions were answered on 2026-08-27, so this entry records answers rather than leaving
+them open. **Cash is out of v1**: `cash_entries` is not read, and the page says on its face that its
+figures are about statement rows alone rather than letting a total quietly stand for all spending.
+**`include_in_reporting` is honoured, and the ledger's totals strip is retrofitted in the same
+change** — the alternative was retiring the flag, and the reason to keep it arrived with the figures
+the owner asked for, below. **The figures are monthly incoming, spending and net as a series; average
+incoming and spending per day and per week; daily closing balance; the largest transactions in the
+window; and a per-month transaction count.** The owner also asked for charts, so the page is
+chart-led: a **line of balance over time** and **paired bars of incoming against spending per month**,
+with the averages as stat tiles and the largest transactions as a table.
+
+**Internal transfers are why the flag survives.** Money moved between the owner's own accounts leaves
+one as a withdrawal and arrives at the other as a deposit, and both are real statement rows. Summed
+naively, **incoming and spending are each inflated while net stays correct** — so the two figures the
+owner actually asked for are precisely the two the flag protects. Honouring it is one predicate.
+**What is missing is a way to set it**: nothing in the app toggles it, so it defaults `true`
+everywhere and the filter is inert until a control exists, which is the smallest piece of follow-on
+work this task creates. Detecting transfers automatically is a matching rule and belongs beside
+task 25.
+
+**The denominator is the decision inside an average**, and getting it wrong is undetectable from the
+figure alone. *Average daily spending* over **calendar days elapsed** is a burn rate; over **days that
+had a transaction** it answers how big a busy day is. **Calendar days elapsed is the answer.** Two
+boundaries follow: **the current period is partial**, so dividing this month by 31 on the 10th
+understates it threefold and the current period must divide by days elapsed so far; and **the first
+period is partial too**, because the history starts where the first import starts. And **an average of
+an average is not an average** — `avg_week` is the total over its weeks, never `avg_day × 7`, because
+the partial weeks at either end make those different numbers.
+
+**The chart wants daily closing balance, not the per-transaction series.** `private.combined_balances`
+returns one row per transaction — 1,604 of them — where a chart draws at most one point per day.
+A `distinct on` over the existing helper narrows it: no new derivation, no division, and a payload
+sized by the history's length rather than its row count.
+
+**The strict CSP rules out a charting library from a CDN**, and `lib/security-headers.ts` states that
+widening the policy is never the remedy. Either an installed dependency bundled by Next, or **inline
+SVG drawn by the app** — the recommendation, on a dozen monthly pairs and a few hundred daily points,
+because it adds no dependency, inherits the palette and both themes, and raises no CSP question.
+
+**Task 44 goes before task 25.** Nothing on this page needs a category: it is one function, one route,
+one page, where task 25 is a migration, a provenance table, a backup-contract version and a
+measurement of a model against a rules baseline. Building 44 first also gives 25 somewhere to land,
+where the reverse order categorises 1,465 rows with nothing able to show what it bought.
+
+- Evidence: scoping only — no code, no migration, no measurement. Read from source:
+  `supabase/migrations/202607240001_foundation.sql` (the overlay columns and `include_in_reporting`),
+  `202608090013_cash_entries_and_corrections.sql` (`cash_entries` carries `category_id`),
+  `202608270022_combined_balance.sql` (`private.combined_balances`, and the explicit `::bigint` cast),
+  `lib/money.ts`, `lib/transactions.ts`. Related: D-002 (canonical integer money), D-063 (a paired
+  slip is the statement row), D-120 (the two-engines refusal, and why this is not it), D-155, D-158,
+  D-159, and PLAN tasks 25, 44 and 45.
