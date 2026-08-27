@@ -1,6 +1,6 @@
 # Private Ledger gotchas — Database, migrations and pgTAP
 
-Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **15 traps.**
+Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **17 traps.**
 
 `GOTCHAS.md` keeps the index across every section and is still the way in — it lists every
 trap in this file, so a reader finds the one that applies without loading any body. Add a trap
@@ -134,3 +134,17 @@ the top of `GOTCHAS.md`.
 - Avoid: when a derived figure needs facts from outside the unit being paged, compute it where all the facts are rather than suppressing it where they are missing. `private.combined_balances` (migration 022) does it in one window function over the whole ledger: `sum(openings) + running total of delta`, where **delta is the difference between printed balances, not the row's movement** — those agree only while a statement chain is intact, and across a gap between separately imported statements the printed balance is the truth.
 - Also: the chronological ordering must be `compareTransactions` reversed **exactly** — `source_date asc, source_time asc nulls first, id DESC`. The id direction does not flip in the display sort, so negating the first two clauses and keeping the third gives a different sequence at every tie, and untimed rows sharing a date are ordinary here.
 - Verify: 2026-08-27 (D-159). The blank column was seen on the real deployment; `supabase/tests/010_combined_balance.sql` pins the two-account case the client could never satisfy, recording the wrong figure as well as the right one.
+
+## `jsonb_agg` of a `sum` is a nested aggregate and PostgreSQL refuses it outright
+
+- Symptom: a function that builds a JSON array of grouped totals fails at run time with `aggregate function calls cannot be nested`, naming a line that reads perfectly well. The migration applies cleanly — the body is only parsed when it is called — so a green `db reset` proves nothing about it.
+- Cause: `jsonb_agg(jsonb_build_object('total', sum(x)))` asks one aggregate to consume another in the same query level. A `left join` against a `generate_series` makes it tempting, because the grouping and the shaping feel like one step.
+- Avoid: group in a CTE and shape in the outer select. The two-level form also keeps the `left join` that produces the empty buckets, which a lateral would lose.
+- Verify: `private.reportable_movements` and the `per_dow` CTE in `supabase/migrations/202608270023_ledger_statistics.sql`; the day-of-week assertions in `supabase/tests/011_ledger_statistics.sql` are what exercise it. Dated 2026-08-27 (D-161).
+
+## A signed month-over-month delta inverts wherever the quantity is stored negative
+
+- Symptom: a spending comparison prints a fall in a month the owner spent more. The arithmetic is right, every test of the subtraction passes, and the label is the opposite of the truth.
+- Cause: withdrawals are stored negative, so spending 15,000 after 10,000 gives `-15000 - (-10000) = -5000`. As money that is "5,000 more went out"; as a label beside a percentage it reads as a decrease.
+- Avoid: compare **magnitudes** for any change label — `abs(current) - abs(previous)` — so growth reads as growth in both directions, and let the column the reader is looking at carry the direction. Emit the previous figure and compute the comparison in one tested place rather than emitting a delta whose sign means different things per column.
+- Verify: `magnitudeChange` in `lib/statistics.ts` and its "reads a rise in spending as a rise" case in `tests/statistics.test.ts`. Dated 2026-08-27 (D-161).

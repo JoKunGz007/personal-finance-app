@@ -211,6 +211,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-158** — The ledger pages, and reconciliation keeps its rule: a candidate set narrows the input instead of a second engine deciding the answer
 - **D-159** — The combined balance is computed once in SQL, because a per-account window cannot see another account's history
 - **D-160** — Statistics compute in SQL, and division never produces money: a ratio is not a figure the ledger keeps
+- **D-161** — The statistics surface is built, and every real defect in it was found by rendering it or by review, never by the gate
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -759,3 +760,132 @@ where the reverse order categorises 1,465 rows with nothing able to show what it
   `lib/money.ts`, `lib/transactions.ts`. Related: D-002 (canonical integer money), D-063 (a paired
   slip is the statement row), D-120 (the two-engines refusal, and why this is not it), D-155, D-158,
   D-159, and PLAN tasks 25, 44 and 45.
+
+## D-161 — The statistics surface is built, and every real defect in it was found by rendering it or by review, never by the gate
+
+- Date: 2026-08-27
+- Status: **Built and validated against the local synthetic project only.** Migration
+  `202608270023_ledger_statistics.sql`, `lib/statistics.ts` (new), `app/api/v1/statistics/route.ts`
+  (new), `app/statistics/page.tsx` (new), `app/statistics-view.tsx` (new),
+  `app/statistics-charts.tsx` (new), `app/globals.css`, `app/site-header.tsx`,
+  `supabase/tests/011_ledger_statistics.sql` (new), `tests/statistics.test.ts` (new).
+  **Not pushed to any hosted or live project**; every project but the local one is on 022.
+- Context: implements D-160's scoping. The owner chose the figures, ruled cash out of v1, left
+  `include_in_reporting` to this session's judgement, and asked for charts.
+
+### What shipped
+
+One RPC returns the whole page, because every figure on it is a fact about the same window and
+assembling them from several round trips would let them disagree while the owner watches. Monthly
+incoming, spending, net and row count as a series; averages per day and per week; daily closing
+balance; the largest movements in each direction; a day-of-week split; and the count of rows the
+reporting flag removed. Two charts as **inline SVG** — a balance line and paired monthly bars — with
+the averages as stat tiles and every charted figure repeated as an exact-money table.
+
+**`include_in_reporting` has its first reader in this migration**, and
+`list_account_transactions_page`'s money totals were retrofitted in the same change so two surfaces
+cannot disagree about one ledger. **Nothing in the app can set the flag yet**, so both are unchanged
+in behaviour today; the control is this task's follow-on work. The **balance series deliberately
+does not honour it** — the flag says do not count this as income or spending, not that the money
+failed to move.
+
+### The money rule, and the guard that proves it
+
+Every average is integer division that keeps its remainder, so
+`quotient * divisor + remainder = total` holds exactly — asserted for a positive total and for a
+negative one, because withdrawals are stored negative and PostgreSQL truncates toward zero on both
+operators. **The weekly average is `total * 7 / days`, one division on a scaled numerator**, and the
+pgTAP fixture is chosen so that formula and `avg_day * 7` give **different** answers: 17219 against
+17213. A suite that only checked the identity would have passed against either.
+
+**Both new guards were broken deliberately and watched to fail by name.** Compounding the daily
+truncation failed *"the weekly average divides once on a scaled numerator and is NOT the daily
+quotient times seven"*; dropping the reporting predicate failed four assertions across the totals and
+the monthly series. Reverted, and green again.
+
+### The four defects, and where each was caught
+
+1. **`jsonb_agg(sum(...))` is a nested aggregate** and PostgreSQL refuses it at run time, not at
+   apply time — the migration applied cleanly and the function failed on first call. Caught by the
+   pgTAP suite.
+2. **`sum()` over `bigint` returns `numeric`** — the exact trap this migration's own header warns
+   about, and it surfaced **in the test written to check the surface**, not in the surface.
+3. **A signed month-over-month delta inverts for spending.** Caught by reading a passing test back
+   and disbelieving it: `-15000 − (-10000) = -5000` is "5,000 more went out" and prints as a fall.
+   The comparison now works on magnitudes, so growth reads as growth in both directions, and the
+   sign-ambiguous delta was removed from the wire entirely.
+4. **Two failures visible only in a screenshot.** At 390px every statistics table became screens of
+   unlabelled figures, because the phone stacked-table mode renders `attr(data-label)` and these
+   tables carried none — right, and unreadable. And a single largest-movements list ranked by
+   absolute size was **ten deposits**, since income moves in bigger lumps than spending does; the
+   list meant to explain a surprising month explained nothing. Both are now fixed, and both are
+   exactly what D-159 said would keep happening: *look at the real thing after every deploy*, and
+   before asking for one.
+
+### The charts
+
+**Inline SVG rather than a library.** The strict CSP admits no CDN, so the choice was a bundled
+dependency or this; at two charts and a few hundred points a library would be a large dependency
+earning very little and would arrive with its own colours to override.
+
+**The series colours were validated rather than chosen.** `#5c8a1a` against `#9b2c2c` clears all
+five checks of the dataviz validator on this app's paper surface — CVD separation ΔE 11.1 worst case
+(deutan), normal-vision 25.9. The app's own celadon and copper inks were tried first and **failed**
+the chroma floor and the normal-vision floor, which is the argument for running the check rather
+than trusting the palette. `#9b2c2c` is already `--red`; only the green is new. Colour is never the
+only encoding: legend, hover read-out, and the same figures again as tables.
+
+### What this task created and did not close
+
+**Nothing sets `include_in_reporting`**, so the filter is inert until a control ships — the smallest
+piece of follow-on work here. **Automatic transfer detection** (equal amount, opposite direction,
+adjacent date, two of the owner's own accounts) is a matching rule and belongs beside task 25.
+**A run-rate projection was declined by the owner** as a prediction rather than a fact; recorded in
+`PLAN.md` as a far-future maybe. **Cash is out of v1**, and the page says so on its face rather than
+letting a total quietly stand for all spending. **There is no account filter and no window picker**:
+the surface is whole-ledger, all accounts, all time.
+
+### What `/code-review` found afterwards, including one the audit was structurally unable to see
+
+Run at `high` before the commit, per D-125 — **five for five** on finding a real defect.
+
+**The one that mattered: `.stats-section table { min-width: 560px }` escaped the viewport at 390px,
+and this is D-138 reintroduced on a new surface.** It sits after the phone block, so at specificity
+0,1,1 it outranks that block's `table, tbody, … { min-width: 0 }` reset at 0,0,1 — media queries add
+none — and with `.table-scroll` set to `overflow: visible` there the width had nothing to scroll
+inside. A 390px viewport rendered a 576px document.
+
+**The audit had screenshotted that exact page and reported no overflow, because the check measured
+against `document.documentElement.clientWidth`.** Once content overflows, the document element grows
+to contain it, so every element is compared against the width the bug itself produced and nothing can
+ever be wider than it. **A check that expands to fit the defect is not a check.** Corrected to
+`window.innerWidth`, it reproduced the fault immediately — *viewport 390px, document 576px, 8
+elements over* — and reports 390/390 after the fix. The screenshot had carried the evidence all
+along: it came back 576px wide for a 390px viewport, and that was not read as the symptom it was.
+
+**Four more, all real.** The balance line interpolated between points, drawing a smooth slope across
+gaps where the balance was in fact **constant** — it is a step function and is now drawn as one. The
+balance chart was reachable only by hover, with no keyboard path and no table twin (three hundred
+daily rows would be a worse answer than none), so the series now carries a `<desc>` with its opening,
+closing and extremes; and its `aria-live` figcaption, which announced once per point crossed while
+dragging, is no longer live. The largest-movement lists emitted a **leg** amount under the field name
+`net`, so the interest/tax pairing appears in both lists under figures that are neither row's net —
+renamed to `amount`. And the monthly axis drew every label, which on a multi-year window is a smear
+rather than an axis; it thins on slot width now.
+
+**Two in the tests themselves, which is the uncomfortable half.** The share test named *"does not
+force three shares to sum to exactly one hundred"* used 3333/3333/3334 of 10000 — which **does**
+reconcile to 100.00 — so it asserted the opposite of its name and proved nothing. Three exact thirds
+were the case that shows the gap, and it now uses those. And `shareOf`'s docblock promised one
+decimal place where the scale yields two. Neither would have changed a figure; both were documents
+disagreeing with the code they sat above, which is how the next reader gets it wrong.
+- Evidence: pgTAP **347 across 11 files** (from 346 across 10; 35 of them the new suite) with
+  migrations 001–**023**. Vitest **849 passed / 7 skipped across 41 files** (from 830/7/40, 19 of
+  them new). Playwright owner **32/32**. Production build clean at **twenty-three** `/api/v1/`
+  routes (from twenty-two). `tsc`, `pnpm exec eslint .` and `check:docs --strict` clean
+  (**160 decisions, 171 traps**). Backup contract **unchanged at v7** — no table, no column.
+  `.runtime/statistics-audit.spec.ts` seeds five months, reads back all nine stat tiles, counts the
+  marks and screenshots desktop and 390px; **zero blank tiles, zero elements wider than the
+  viewport**. Related: D-160 (the scoping this implements), D-159 (compute where the facts are, and
+  look at the deployed thing), D-158, D-138 (an audit of an absent element reports a clean route),
+  D-137 (one declared colour scheme), D-120, D-002.

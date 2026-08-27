@@ -30,6 +30,7 @@ test("reaches every route from the header, without a signed-in owner", async ({ 
   // loose match on "Ledger" resolves to two elements.
   const nav = page.getByRole("navigation", { name: "Sections" });
   for (const [label, path, heading] of [
+    ["Statistics", "/statistics", "Statistics"],
     ["Import", "/import", "Open a statement locally"],
     ["Slips", "/slips", "Capture a transfer slip"],
     ["Recovery", "/recovery", "Back up and restore the ledger"],

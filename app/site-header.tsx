@@ -16,6 +16,7 @@ import { announceOwnerReady } from "@/lib/owner-ready";
 // rather than with hosting because it needs nothing hosted.
 const ROUTES = [
   { href: "/ledger", label: "Ledger" },
+  { href: "/statistics", label: "Statistics" },
   { href: "/import", label: "Import" },
   { href: "/slips", label: "Slips" },
   { href: "/recovery", label: "Recovery" }

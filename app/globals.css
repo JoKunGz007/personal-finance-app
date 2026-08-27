@@ -936,3 +936,56 @@ footer p { margin: 0; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ------------------------------------------------------------------ statistics (PLAN task 44)
+
+   The charts are inline SVG (`app/statistics-charts.tsx`), so there is no library stylesheet to
+   override and nothing here fights one. The palette lives in the component beside the marks it
+   paints, because the two series colours were chosen by running the dataviz validator against this
+   app's paper surface rather than by picking tokens that looked right — moving them into a CSS
+   variable would separate the value from the check that justifies it.
+
+   `.statement-strip` is reused rather than reinvented: a stat tile is what that rule already draws,
+   and this page's tiles differ from the ledger's only in what they hold. It is a six-column grid,
+   which is why the averages sit in a second `<dl>` rather than overflowing the first. */
+.chart { margin: 12px 0 0; padding: 0; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart figcaption { margin-top: 8px; color: var(--muted); font-size: 13px; }
+.chart figcaption strong { color: var(--navy); font-weight: 600; }
+.chart-empty { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.chart-legend i { width: 10px; height: 10px; border-radius: 3px; }
+
+/* The global table rule is sized for the ledger's six fixed columns. These tables carry three to
+   six of their own, so they opt out of that geometry rather than inheriting widths meant for
+   another surface. */
+.stats-section { margin-top: 34px; }
+.stats-section h2 { margin: 0 0 4px; font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.stats-section table { min-width: 560px; table-layout: auto; }
+.stats-section th:nth-child(n) { width: auto; }
+.stats-section .field-help { display: inline; margin-left: 6px; }
+
+/* The phone rules above turn every table into stacked cards sized for the ledger's six columns:
+   a 145px minimum row height and full-width spans on the 2nd, 3rd and last cells. Applied to a
+   five-column monthly table that produced a page of unlabelled figures several screens long —
+   **right, and unreadable**, which is the same failure D-159 named. These tables keep the stacking
+   and drop the geometry, and every `<td>` carries a `data-label` for the `::before` the stacked
+   mode renders. Found by screenshotting the page at 390px rather than by any assertion. */
+@media (max-width: 700px) {
+  /* **`min-width: 0` is the load-bearing line and it was missing.** `.stats-section table` sets
+     560px above at specificity 0,1,1, which outranks the `table, tbody, ... { min-width: 0 }`
+     reset in the earlier phone block (0,0,1) — media queries add no specificity. With
+     `.table-scroll` set to `overflow: visible` there, that width had nothing to scroll inside and
+     escaped to the document: a 390px viewport rendered a 576px page. **This is D-138 exactly,
+     reintroduced on a new surface**, and the audit missed it because it measured against
+     `documentElement.clientWidth`, which had already grown to contain the overflow. */
+  .stats-section table { min-width: 0; }
+  .stats-section tbody tr { min-height: 0; padding: 12px 14px; grid-template-columns: 1fr 1fr; }
+  .stats-section td { padding: 4px 6px; }
+  .stats-section td:nth-child(n) { grid-column: auto; text-align: left !important; }
+  .stats-section td.numeric { font-size: 13px; }
+  .stats-section th[scope="row"] { display: block; grid-column: 1 / -1; padding: 0 6px 4px; height: auto; border: 0; font-size: 11px; }
+  .stats-section table thead { display: none; }
+  .chart-legend { font-size: 11px; }
+}

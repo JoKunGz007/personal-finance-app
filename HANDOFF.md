@@ -129,16 +129,14 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 
 Every line here is a **reading**, not a fact. Re-take it rather than trusting it.
 
-- **PLAN task 44 is SCOPED AND SETTLED, 2026-08-27** (D-160). Scoping only — no code, no migration,
-  no measurement. **The owner answered all three open questions the same day**, so nothing about this
-  task now blocks a build: the figures are chosen (monthly incoming/spending/net, averages per day and
-  per week, daily closing balance, largest transactions, per-month count), **cash is out of v1**, and
-  **`include_in_reporting` is honoured with the ledger's totals strip retrofitted in the same change**.
-  The page is chart-led — balance as a line, incoming against spending as paired bars — and drawn as
-  **inline SVG rather than a charting library**, because the strict CSP forbids a CDN. **Task 44 goes
-  before task 25.** Two things this creates and does not close: **nothing in the app can set
-  `include_in_reporting`**, so the filter is inert until a control ships; and automatic
-  transfer detection belongs beside task 25, not here.
+- **PLAN task 44 is BUILT, 2026-08-27** (D-160 scoped it, D-161 built it). **Migration 023 exists on
+  `private-ledger-local` ONLY** — every other project including hosted is on 022, so **the database
+  must go first if this is ever deployed**, exactly as 021 and 022 did. The code reads
+  `ledger_statistics`, which does not exist anywhere else yet. Backup contract **unchanged at v7**
+  (no table, no column). **Not committed at the time this line was written; not pushed; not
+  deployed; and never rendered against the real ledger** — only against five months of invented
+  rows in `.runtime/statistics-audit.spec.ts`. **Nothing in the app can set `include_in_reporting`**,
+  so its new filter is inert on both surfaces until a control ships.
 - **PLAN task 45 is COMPLETE, DEPLOYED AND CONFIRMED BY THE OWNER, 2026-08-27.** `main` is at
   `758efe6` and `origin/main` matches it. Two deploys went out — `48a2259..cbf1c58` (the paging work)
   and `cbf1c58..758efe6` (the combined balance in SQL) — and **the database went first both times**,

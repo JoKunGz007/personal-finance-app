@@ -1,6 +1,6 @@
 # Private Ledger gotchas — Layout, typography and accessibility
 
-Split out of `docs/gotchas/app.md` on 2026-08-27 (D-158), unchanged. **14 traps.**
+Split out of `docs/gotchas/app.md` on 2026-08-27 (D-158), unchanged. **15 traps.**
 
 **The split was owed rather than chosen.** D-134's rule is that a breach of the byte budget splits
 a section along its own seam rather than raising the budget, and D-149 honoured that once already
@@ -116,3 +116,10 @@ means, and what a backfilled `Dated <date> from <sha>` clause does not, is expla
 - Cause: a new wrapper is a new box in the parent's formatting context. The children stop participating in the layout that was tuned around them.
 - Avoid: `display: contents` on the wrapper at the sizes where it should not exist, and a real `display` only inside the media query where it should. The desktop layout then stays byte-identical rather than being re-derived and re-tested. Check the wrapper carries no semantics of its own first — `display: contents` on a landmark or a list removes it from the accessibility tree.
 - Verify: `.header-panel` in `app/globals.css`, `display: contents` above 700px and a flex row below it. Dated 2026-08-26.
+
+## The phone stacked-table mode renders `attr(data-label)`, so a table without those attributes becomes unlabelled figures
+
+- Symptom: a new table is correct on desktop and, at phone width, becomes several screens of bare numbers with no idea which column each belongs to. Nothing fails: every figure is present and every one is right.
+- Cause: below 700px `globals.css` turns `table` into stacked cards, hides `thead`, and puts the column name back with `td::before { content: attr(data-label) }`. A table whose cells carry no `data-label` renders the content and no name. The same block also imposes the ledger's card geometry — a 145px minimum row height and full-width spans on the 2nd, 3rd and last cells — which is wrong for any table with a different column count.
+- Avoid: give **every** `<td>` a `data-label`, and scope a new table out of the ledger's geometry with its own rules inside the same media query. A `<th scope="row">` needs its own treatment too; it is not a `<td>` and the `::before` rule does not reach it.
+- Verify: `.stats-section` in `app/globals.css` and the `data-label` attributes in `app/statistics-view.tsx`; `.runtime/statistics-audit.spec.ts` screenshots the page at 390px, which is how this was found. Dated 2026-08-27 (D-161).

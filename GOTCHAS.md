@@ -71,6 +71,8 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Every push to `main` is a production deployment, including a docs-only one
 - A correction overlay's `kind` and `amount_minor` are one fact, and writing either alone violates a check
 - A figure that is right and empty is not the same as a figure that works
+- `jsonb_agg` of a `sum` is a nested aggregate and PostgreSQL refuses it outright
+- A signed month-over-month delta inverts wherever the quantity is stored negative
 
 ### Backup, restore and recovery
 
@@ -171,6 +173,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A typeface's cap height, not its `font-size`, decides how big it looks
 - A disclosure component that renders a `<p>` breaks the moment it is used inside one
 - Wrapping existing children in a element to make them collapsible re-lays-out every viewport
+- The phone stacked-table mode renders `attr(data-label)`, so a table without those attributes becomes unlabelled figures
 
 ### App, auth, routing and accessibility
 
@@ -223,5 +226,5 @@ these section headings rather than a third raise. The owner chose the split.
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 29 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
 | App, auth, routing and accessibility | 39 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
-| Layout, typography and accessibility | 14 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
+| Layout, typography and accessibility | 15 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 
