@@ -1,6 +1,6 @@
 # Private Ledger gotchas — Layout, typography and accessibility
 
-Split out of `docs/gotchas/app.md` on 2026-08-27 (D-158), unchanged. **15 traps.**
+Split out of `docs/gotchas/app.md` on 2026-08-27 (D-158), unchanged. **18 traps.**
 
 **The split was owed rather than chosen.** D-134's rule is that a breach of the byte budget splits
 a section along its own seam rather than raising the budget, and D-149 honoured that once already
@@ -123,3 +123,24 @@ means, and what a backfilled `Dated <date> from <sha>` clause does not, is expla
 - Cause: below 700px `globals.css` turns `table` into stacked cards, hides `thead`, and puts the column name back with `td::before { content: attr(data-label) }`. A table whose cells carry no `data-label` renders the content and no name. The same block also imposes the ledger's card geometry — a 145px minimum row height and full-width spans on the 2nd, 3rd and last cells — which is wrong for any table with a different column count.
 - Avoid: give **every** `<td>` a `data-label`, and scope a new table out of the ledger's geometry with its own rules inside the same media query. A `<th scope="row">` needs its own treatment too; it is not a `<td>` and the `::before` rule does not reach it.
 - Verify: `.stats-section` in `app/globals.css` and the `data-label` attributes in `app/statistics-view.tsx`; `.runtime/statistics-audit.spec.ts` screenshots the page at 390px, which is how this was found. Dated 2026-08-27 (D-161).
+
+## A colour that passes as a chart mark can still fail as text
+
+- Symptom: a palette is validated, ships, and the same value reused for coloured figures is unreadable for some readers — with nothing failing, because the check that passed was the wrong check.
+- Cause: a chart mark needs **3:1** against its surface; body text needs **4.5:1**. A validator run for categorical marks answers the first question and says nothing about the second. This app's chart green measures 4.03 on its paper — a pass as a bar, a fail as a figure.
+- Avoid: keep two steps of the hue, one for marks and one for text, and measure the text step against the real surface rather than assuming a validated palette transfers. Reusing one value for both is the failure.
+- Verify: `--money-in` (#4a6f14, 5.75) against the chart's `#5c8a1a` (4.03) in `app/globals.css`. Dated 2026-08-27 (D-163).
+
+## A pixel typeface applied to figures makes digits transposable
+
+- Symptom: numbers are misread — by the owner at a glance, and by an agent reading a screenshot. Two figures on the deployed statistics page were reported as not reconciling when they did.
+- Cause: `--font-data` is redefined per typeface, so choosing a pixel face silently applies it to every `.numeric` cell as well as to prose. At table sizes those faces render `0`, `2`, `5` and `8` close enough to transpose.
+- Avoid: give figures their own token — `--font-money`, a mono stack that no typeface choice overrides — and let the pixel character stay on prose, headings and labels. Remove the per-face `font-size` step-downs at the same time; they existed to shrink pixel glyphs and will otherwise shrink a mono face that never needed it.
+- Verify: `.numeric` uses `var(--font-money)` in `app/globals.css` under all four `data-font` values. Dated 2026-08-27 (D-163, after D-162).
+
+## A row hover cannot separate rows on a phone
+
+- Symptom: a table reads as distinct rows on a desktop and as one continuous field of figures on a phone, and the hover treatment that fixes it on desktop appears to do nothing.
+- Cause: the stacked card mode gives each row the page background and a single hairline, which is not separation. The desktop remedy is `tbody tr:hover` — and **there is no hover on a touch screen**, so the device with the problem is the one the remedy never reaches.
+- Avoid: make the stacked rows real cards — a margin between them, a border, and the app's existing panel shadow — rather than relying on an interaction the device does not have. Check a phone-width screenshot, not a desktop one with a narrow window.
+- Verify: `tbody tr` inside the ≤700px block in `app/globals.css`; `.runtime/statistics-audit.spec.ts` screenshots at 390px. Dated 2026-08-27 (D-163).

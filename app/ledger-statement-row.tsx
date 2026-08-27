@@ -280,7 +280,10 @@ export function LedgerStatementRow({
             ? <span>{account ? `${account.label} ···· ${account.last_four}` : "Unknown account"}</span>
             : <span>{transaction.reference ?? "Not printed"}</span>}
         </td>
-        <td data-label="Movement" className={`numeric ${BigInt(movement) > 0n ? "positive" : ""}`}>
+        {/* Colour reinforces a direction the sign already states, and a zero movement stays neutral
+            rather than being called an arrival. */}
+        <td data-label="Movement"
+            className={`numeric ${BigInt(movement) > 0n ? "positive" : BigInt(movement) < 0n ? "negative" : ""}`}>
           {BigInt(movement) > 0n ? "+" : ""}{formatThb(movement)}
         </td>
         <td data-label={showCombined ? "Account balance" : "Balance"} className="numeric">

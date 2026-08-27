@@ -55,6 +55,19 @@
      costs no layout and reverts by deleting one declaration. */
   --frame-outer: #8a4a15;
   --frame-inner: #f0e2bd;
+  /* **Money colours, and they are a different bar from the chart's.** A chart mark needs 3:1
+     against the surface; coloured *text* needs 4.5:1. The chart green `#5c8a1a` measures 4.03 on
+     this paper and therefore fails as text, which is why money-in is a darker step (5.75) rather
+     than the same value reused. `--money-out` is `--red`, which passes both at 7.37. */
+  --money-in: #4a6f14;
+  --money-out: #9b2c2c;
+  /* **Amounts never render in a pixel face.** `--font-data` is redefined per typeface below, so
+     before this every figure on every table was drawn in the chosen pixel font — where `0`, `2`,
+     `5` and `8` are close enough at small sizes to be misread. That happened for real: two figures
+     were read wrong off a screenshot of the deployed statistics page and nearly reported as
+     defects (D-162). The pixel character stays on prose, headings and labels; the numbers do not
+     take part. */
+  --font-money: "IBM Plex Mono", "Cascadia Mono", monospace;
   --font-body: "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
   --font-data: "IBM Plex Mono", "Cascadia Mono", monospace;
 }
@@ -182,9 +195,7 @@
    on specificity — (0,2,1) against (0,3,0) — so `Movement`, `Balance` and `All accounts` silently
    kept the cell size while every other header shrank. The same shape as the `table` versus
    `.ledger-table` trap already in GOTCHAS: an element selector cannot out-rank a class. */
-:root[data-font="press-start-2p"] th,
-:root[data-font="press-start-2p"] th.numeric { font-size: 9px; letter-spacing: .02em; }
-:root[data-font="press-start-2p"] td.numeric,
+:root[data-font="press-start-2p"] th { font-size: 9px; letter-spacing: .02em; }
 :root[data-font="press-start-2p"] td time,
 :root[data-font="press-start-2p"] td .mono { font-size: 12px; }
 /* It has no lowercase at all, so uppercasing buys nothing and costs the width of wider glyphs. */
@@ -194,9 +205,7 @@
 
 /* Silkscreen is the widest of the three once heights are equal, which is the opposite of what it
    looks like unadjusted. Same `th`-and-`th.numeric` pairing for the same specificity reason. */
-:root[data-font="silkscreen"] th,
-:root[data-font="silkscreen"] th.numeric { font-size: 10px; }
-:root[data-font="silkscreen"] td.numeric { font-size: 12px; }
+:root[data-font="silkscreen"] th { font-size: 10px; }
 
 
 /* **Panel chrome** (PLAN task 42, the Stardew direction). Applied to the surfaces that are
@@ -623,7 +632,10 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .statement-strip div + div { padding-left: 20px; border-left: 1px solid var(--line); }
 .statement-strip dt { color: var(--muted); font-size: 12px; }
 .statement-strip dd { margin: 5px 0 0; font: 500 clamp(14px, 1.5vw, 20px)/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
-.positive { color: var(--celadon-ink) !important; }
+/* Direction, as colour reinforcing a sign that is already printed — never as the only encoding.
+   `.positive` was `--celadon-ink`, a dark olive that read as grey rather than as green. */
+.positive { color: var(--money-in) !important; }
+.negative { color: var(--money-out) !important; }
 .warning { margin-top: 22px; padding: 14px 16px; display: flex; gap: 18px; color: #7a4a12; border: 1px solid var(--saffron); background: var(--saffron-wash); font-size: 13px; }
 .warning strong { white-space: nowrap; }
 .warning.error { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--paper)); }
@@ -653,7 +665,7 @@ td small, td span { margin-top: 3px; color: var(--muted); font-size: 12px; }
 td strong { font-weight: 500; }
 td em { display: inline-block; margin-top: 5px; padding: 2px 6px; color: #7a4a12; background: var(--saffron-wash); font: normal 500 9px/1.3 var(--font-data); text-transform: uppercase; }
 td select { width: 100%; padding: 8px 26px 8px 9px; color: var(--navy); border: 1px solid var(--line); border-radius: 4px; background-color: var(--paper-strong); }
-.numeric { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.numeric { text-align: right; font-family: var(--font-money); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .resync-row { box-shadow: inset 3px 0 var(--saffron); }
 .resync-label { color: #8a5518; font: 500 9px/1 var(--font-data); text-transform: uppercase; }
 .detail-button { padding: 7px 0; color: var(--blue); border: 0; border-bottom: 1px solid currentColor; background: transparent; font-size: 12px; }
@@ -920,7 +932,19 @@ footer p { margin: 0; }
   */
   table, tbody, .ledger-table, .ledger-table.merged { display: block; min-width: 0; }
   thead { display: none; }
-  tbody tr { display: grid; grid-template-columns: 1fr 1fr; min-height: 145px; padding: 16px; border-bottom: 1px solid var(--line); background: var(--paper); }
+  /* **Rows read as cards on a phone, and before this they did not.** The stacked mode already
+     turned each row into a block, but every one shared the page's background and was parted from
+     the next by a single hairline — so a list of them ran together into one field of figures, which
+     is what the owner reported. Desktop was fine, because the columns themselves do the separating
+     there and `tbody tr:hover` picks out the row under the pointer.
+
+     **A hover cannot be the fix here.** There is no hover on a touch screen, so the device with the
+     problem is exactly the device the existing remedy never reaches. These are real cards instead:
+     a gap between them, a border, and the `--frame-outer` / `--frame-inner` pair the panels already
+     use, so the treatment is the app's existing vocabulary rather than a new one invented for
+     tables. `border-bottom` goes, having been the thing standing in for separation. */
+  tbody tr { display: grid; grid-template-columns: 1fr 1fr; min-height: 145px; margin-bottom: 10px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); box-shadow: 0 0 0 1px var(--frame-inner), 0 1px 0 1px color-mix(in srgb, var(--frame-outer) 22%, transparent); }
+  tbody tr:last-child { margin-bottom: 0; }
   td { display: block; height: auto; min-width: 0; padding: 5px 8px; border: 0; text-align: left !important; white-space: normal !important; }
   td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--muted); font: 500 9px/1 var(--font-data); text-transform: uppercase; letter-spacing: .06em; }
   td:nth-child(2), td:nth-child(3), td:last-child { grid-column: 1 / -1; }
@@ -956,6 +980,9 @@ footer p { margin: 0; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .chart-legend i { width: 10px; height: 10px; border-radius: 3px; }
+/* The ledger has had a row hover since routing landed; these tables never did, and they are
+   wide enough that the eye loses the line between a month and its figures. */
+.stats-section tbody tr:hover { background: color-mix(in srgb, var(--mist) 72%, transparent); }
 
 /* The global table rule is sized for the ledger's six fixed columns. These tables carry three to
    six of their own, so they opt out of that geometry rather than inheriting widths meant for
@@ -981,7 +1008,7 @@ footer p { margin: 0; }
      reintroduced on a new surface**, and the audit missed it because it measured against
      `documentElement.clientWidth`, which had already grown to contain the overflow. */
   .stats-section table { min-width: 0; }
-  .stats-section tbody tr { min-height: 0; padding: 12px 14px; grid-template-columns: 1fr 1fr; }
+  .stats-section tbody tr { min-height: 0; margin-bottom: 8px; padding: 12px 14px; grid-template-columns: 1fr 1fr; }
   .stats-section td { padding: 4px 6px; }
   .stats-section td:nth-child(n) { grid-column: auto; text-align: left !important; }
   .stats-section td.numeric { font-size: 13px; }

@@ -117,9 +117,13 @@ export function LedgerSummary({
             while a cash payment has no bank behind it and never will, so folding the
             two together would say the total is waiting on something never coming. */}
         <div><dt>Rows</dt><dd>{totals.rows}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}{totals.cash > 0 ? <small> · {totals.cash} cash</small> : null}{totals.cards > 0 ? <small> · {totals.cards} card{totals.cards === 1 ? "" : "s"}</small> : null}</dd></div>
+        {/* **Deposits and withdrawals carry a fixed colour; net carries its sign.** The first two
+            are roles — money in is always money in — while net is the one figure here that can fall
+            either side of zero, so colouring it by role rather than by value would tell the owner
+            he gained in a month he lost. Zero is neutral in both cases. */}
         <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}</dd></div>
-        <div><dt>Withdrawals</dt><dd>{formatThb(totals.withdrawals)}</dd></div>
-        <div><dt>Net movement</dt><dd>{formatThb(totals.net)}</dd></div>
+        <div><dt>Withdrawals</dt><dd className={BigInt(totals.withdrawals) < 0n ? "negative" : ""}>{formatThb(totals.withdrawals)}</dd></div>
+        <div><dt>Net movement</dt><dd className={BigInt(totals.net) > 0n ? "positive" : BigInt(totals.net) < 0n ? "negative" : ""}>{formatThb(totals.net)}</dd></div>
       </dl>
 
       {/* **The counts stay; the rule behind them folds** (PLAN task 42). Each of these lines was a

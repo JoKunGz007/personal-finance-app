@@ -213,6 +213,7 @@ What this file now holds is the current work and the two open questions the fift
 - **D-160** — Statistics compute in SQL, and division never produces money: a ratio is not a figure the ledger keeps
 - **D-161** — The statistics surface is built, and every real defect in it was found by rendering it or by review, never by the gate
 - **D-162** — A partial period is not comparable to a whole one, and the first look at the real ledger is what said so
+- **D-163** — Money carries its direction as colour and never renders in a pixel face, and phone rows become real cards
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -941,3 +942,63 @@ argument for building the control**, and it is no longer hypothetical.
   again). pgTAP **347 across 11**, Playwright owner **32/32**, isolated **34 / 4 skipped**, build
   clean, `tsc`, `eslint` and `check:docs --strict` clean. Related: D-161, D-159 (look at the deployed
   thing; cross-check against the real distribution), D-138.
+
+## D-163 — Money carries its direction as colour and never renders in a pixel face, and phone rows become real cards
+
+- Date: 2026-08-27
+- Status: **Done.** `app/globals.css`, `app/ledger-summary.tsx`, `app/ledger-statement-row.tsx`,
+  `app/statistics-view.tsx`. **No migration, no schema, no route.** Three of the owner's four
+  requests from 2026-08-27; the fourth (font metrics) is measurement-first and is PLAN task 48.
+- Context: the owner asked for red/green on money, for rows that separate on a phone, and for
+  amounts that do not shift when the typeface changes.
+
+### The chart's green fails as text, and that is not a detail
+
+`#5c8a1a` clears the dataviz checks as a **mark** — those need 3:1 against the surface. As **text**
+it measures **4.03** on this paper against the 4.5 that body text requires. Reusing the chart value
+for coloured figures would have shipped an accessibility regression on the strength of a check that
+had already passed for a different purpose. Money-in is therefore `--money-in: #4a6f14` (**5.75**),
+a darker step of the same hue; money-out is `--money-out: #9b2c2c`, which is `--red` and passes both
+bars at **7.37**. **Two tokens, two contrast bars, one hue family.**
+
+**`.positive` already existed and was the reason green read as grey** — it pointed at
+`--celadon-ink`, a dark olive. There was no `.negative` at all, so money out had never been coloured.
+
+**Colour is applied by value, not by role, wherever the figure can cross zero.** Deposits are always
+money in; a *net* is not, and colouring it by its heading would tell the owner he gained in a month
+he lost. Zero stays neutral in every case — calling it an arrival is a judgement the ledger never
+made. Every coloured figure still prints its own sign, so colour reinforces and never carries the
+meaning alone.
+
+### Amounts leave the pixel stack, and the reason is a mistake that already happened
+
+`--font-data` is redefined per typeface, so **every figure in every table was being drawn in the
+chosen pixel face**. That is not cosmetic: at small sizes those faces render `0`, `2`, `5` and `8`
+closely enough to be transposed, and it happened for real — two figures were misread off a
+screenshot of the deployed statistics page and were nearly reported as arithmetic defects (D-162).
+A face that a careful reader misreads on a screenshot is a face the owner misreads at a glance.
+
+`.numeric` now takes `--font-money`, which is the mono stack under every typeface. **The pixel
+character stays on prose, headings and labels; the numbers do not take part.** The per-face
+`font-size` step-downs that existed to shrink pixel glyphs inside numeric cells are removed with
+them — they would otherwise shrink a mono face that never needed the correction.
+
+### A hover cannot fix a phone
+
+The stacked mode already turned each row into a block, but every one shared the page background and
+was parted from the next by a single hairline, so a list ran together into one field of figures.
+Desktop never showed it: the columns do the separating there, and `tbody tr:hover` picks out the row
+under the pointer.
+
+**That hover is exactly why the fix could not be one.** There is no hover on a touch screen, so the
+device with the problem is the device the existing remedy never reaches. Rows are real cards now — a
+gap, a border, and the `--frame-outer` / `--frame-inner` pair the panels already use, so the
+treatment is this app's existing vocabulary rather than one invented for tables. The statistics
+tables gained the desktop hover they never had.
+
+- Evidence: Vitest **853 passed / 7 skipped across 41 files**, Playwright owner **32/32**, isolated
+  **34 / 4 skipped**, build clean, `tsc`, `eslint` and `check:docs --strict` clean. Re-screenshotted
+  at 390px through `.runtime/statistics-audit.spec.ts`: **document 390px against a 390px viewport**,
+  zero elements over, zero blank tiles. Contrast measured rather than judged. Related: D-162 (the
+  misread figures), D-157 (`size-adjust`, and its standing note that it does not fix width), D-137,
+  D-138.

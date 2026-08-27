@@ -14,6 +14,19 @@ import {
 import { BalanceChart, MonthlyChart } from "@/app/statistics-charts";
 
 /**
+ * Direction as colour, **reinforcing a sign that is already printed** rather than replacing it.
+ *
+ * Applied by value and not by role, because every figure it touches can fall either side of zero:
+ * a month's net, and a withdrawal total in a period that saw none. Zero is neutral — calling it an
+ * arrival would be a judgement the ledger never made. The two colours are `--money-in` and
+ * `--money-out`, which are the **text**-contrast steps and deliberately not the chart's marks.
+ */
+function signClass(minor: string): string {
+  const amount = BigInt(minor);
+  return amount > 0n ? "positive" : amount < 0n ? "negative" : "";
+}
+
+/**
  * The statistics surface (PLAN task 44, D-160).
  *
  * **One request, because every figure here is a fact about the same window.** Assembling the page
@@ -48,7 +61,7 @@ function MovementTable(
                   <tr key={movement.id}>
                     <td data-label="Date"><time dateTime={movement.date}>{movement.date}</time></td>
                     <td data-label="Transaction">{movement.label}</td>
-                    <td className="numeric" data-label="Amount">{formatThb(movement.amount)}</td>
+                    <td className={`numeric ${signClass(movement.amount)}`} data-label="Amount">{formatThb(movement.amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -112,17 +125,17 @@ export function StatisticsView() {
       </p>
 
       <dl className="statement-strip">
-        <div><dt>Money in</dt><dd>{formatThb(totals.deposits)}</dd></div>
-        <div><dt>Money out</dt><dd>{formatThb(totals.withdrawals)}</dd></div>
-        <div><dt>Net</dt><dd>{formatThb(totals.net)}</dd></div>
+        <div><dt>Money in</dt><dd className="positive">{formatThb(totals.deposits)}</dd></div>
+        <div><dt>Money out</dt><dd className={BigInt(totals.withdrawals) < 0n ? "negative" : ""}>{formatThb(totals.withdrawals)}</dd></div>
+        <div><dt>Net</dt><dd className={signClass(totals.net)}>{formatThb(totals.net)}</dd></div>
         <div><dt>Transactions</dt><dd>{totals.transactions}</dd></div>
-        {perDay && <div><dt>In · per day</dt><dd>{formatThb(perDay.deposits.quotient)}</dd></div>}
-        {perDay && <div><dt>Out · per day</dt><dd>{formatThb(perDay.withdrawals.quotient)}</dd></div>}
+        {perDay && <div><dt>In · per day</dt><dd className="positive">{formatThb(perDay.deposits.quotient)}</dd></div>}
+        {perDay && <div><dt>Out · per day</dt><dd className={signClass(perDay.withdrawals.quotient)}>{formatThb(perDay.withdrawals.quotient)}</dd></div>}
       </dl>
       {perWeek && (
         <dl className="statement-strip">
-          <div><dt>In · per week</dt><dd>{formatThb(perWeek.deposits.quotient)}</dd></div>
-          <div><dt>Out · per week</dt><dd>{formatThb(perWeek.withdrawals.quotient)}</dd></div>
+          <div><dt>In · per week</dt><dd className="positive">{formatThb(perWeek.deposits.quotient)}</dd></div>
+          <div><dt>Out · per week</dt><dd className={signClass(perWeek.withdrawals.quotient)}>{formatThb(perWeek.withdrawals.quotient)}</dd></div>
           <div>
             <dt>Busiest day</dt>
             <dd>{busiest && busiest.transactions > 0 ? ISO_DAY_NAMES[busiest.isoDayOfWeek - 1] : "—"}</dd>
@@ -174,9 +187,9 @@ export function StatisticsView() {
                       {monthLabel(month.month)}
                       {month.isPartial && <span className="field-help"> {month.days} days</span>}
                     </th>
-                    <td className="numeric" data-label="In">{formatThb(month.deposits)}</td>
-                    <td className="numeric" data-label="Out">{formatThb(month.withdrawals)}</td>
-                    <td className="numeric" data-label="Net">{formatThb(month.net)}</td>
+                    <td className="numeric positive" data-label="In">{formatThb(month.deposits)}</td>
+                    <td className={`numeric ${signClass(month.withdrawals)}`} data-label="Out">{formatThb(month.withdrawals)}</td>
+                    <td className={`numeric ${signClass(month.net)}`} data-label="Net">{formatThb(month.net)}</td>
                     <td className="numeric" data-label="Rows">{month.transactions}</td>
                     {/* The exact delta leads and the percentage follows it as a label. Both compare
                         **magnitudes**, so more spending reads as a rise in both — a signed delta
@@ -224,8 +237,8 @@ export function StatisticsView() {
               {dayOfWeek.map((day) => (
                 <tr key={day.isoDayOfWeek}>
                   <th scope="row">{ISO_DAY_NAMES[day.isoDayOfWeek - 1]}</th>
-                  <td className="numeric" data-label="In">{formatThb(day.deposits)}</td>
-                  <td className="numeric" data-label="Out">{formatThb(day.withdrawals)}</td>
+                  <td className="numeric positive" data-label="In">{formatThb(day.deposits)}</td>
+                  <td className={`numeric ${signClass(day.withdrawals)}`} data-label="Out">{formatThb(day.withdrawals)}</td>
                   <td className="numeric" data-label="Rows">{day.transactions}</td>
                 </tr>
               ))}

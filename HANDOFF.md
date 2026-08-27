@@ -139,6 +139,13 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   012.** `/code-review high` ran before the commit and found six defects, all fixed (D-161).
   **Nothing in the app can set `include_in_reporting`**, and the real ledger holds **0** rows with
   it off, so the new filter moves no figure today on either surface.
+- **The owner's four appearance requests from 2026-08-27: THREE ARE DONE (D-163), TWO REMAIN AS
+  PLAN TASKS 48 and 49.** Done: money carries its direction as colour, figures no longer render in
+  a pixel face, and phone rows are real cards. **Open and approved but unbuilt**: a control for
+  `include_in_reporting` (task 48) and the typeface-metrics work (task 49, measurement first).
+  **Task 48 carries a data-loss hazard worth reading before starting it**: the overlay route takes
+  the whole overlay and is `.strict()`, so a toggle that sends the rest as null erases whatever the
+  owner typed on that row.
 - **`/statistics` HAS NOW BEEN SEEN ON THE REAL LEDGER, 2026-08-27, and it found one more defect**
   (D-162). The owner opened the deployed page and sent screenshots. **The opening month is partial**
   — the history starts on the 3rd — and comparing it to a full month printed **+1002%**, correct and
