@@ -331,11 +331,13 @@ export function LedgerStatementRow({
               >
                 {modes.settingReporting === transaction.id ? "Saving…" : includeInReporting ? "Exclude" : "Include"}
               </button>
-              {includeInReporting ? null : (
-                <small className="decision-mark">
-                  Not counted as income or spending. The money still moved, so the balance is unchanged.
-                </small>
-              )}
+              {/* **No sentence here, and its absence is the point.** The first version explained
+                  what "Excluded" means on *every* excluded row, which is standing copy repeated
+                  per row — the thing D-156's own rule says to fold, written by someone who had
+                  just applied that rule elsewhere. Seen on the real ledger it roughly doubled a
+                  row's height, and the owner's excludable set is around eighteen rows. The chip
+                  is the state; what the state *means* is said once behind the Transactions `(i)`,
+                  and the Include button's accessible name carries it for a screen reader. */}
             </div>
           )}
         </td>

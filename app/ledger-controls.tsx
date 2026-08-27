@@ -67,6 +67,13 @@ export function LedgerControls({
               Everything committed to the ledger, and every slip still waiting for the statement
               that will confirm it. Source facts are immutable here — the one thing this view
               writes is your say over a match, which is stored beside them and never in them.
+              {" "}
+              {/* Folded here rather than repeated on each excluded row (PLAN task 48, D-156's
+                  rule). It explains a principle and never changes, so a row wears the chip and
+                  this says once what the chip means. */}
+              A row marked <strong>Excluded</strong> is not counted as income or spending. The
+              money still moved, so it stays in every balance — what changes is only the totals
+              above and the statistics page.
             </LedgerNote>
           </div>
         </div>

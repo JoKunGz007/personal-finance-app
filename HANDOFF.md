@@ -87,13 +87,15 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
-- **Committing: GRANTED for this session's work, 2026-08-27. PUSHING: NOT GRANTED — ask.** The owner
-  authorized the commit explicitly and **separately from the push**, which is the distinction that
-  matters here: a commit is local and reversible, **a push to `main` is a production deployment**
-  whose only remedy is Instant Rollback in the dashboard rather than a revert push. `/code-review
-  high` ran first and found four defects, all fixed (D-125, six for six). The grant does not survive
-  this session and does not reach `supabase db push`.
-  Spent history, for the record: 2026-08-27 granted twice and used for ten commits
+- **Commit and push: GRANTED and SPENT, 2026-08-27.** The owner authorized the commit first and the
+  push **separately, one turn later** — which is the distinction worth preserving, because a commit
+  is local and reversible while **a push to `main` is a production deployment** whose only remedy is
+  Instant Rollback in the dashboard rather than a revert push. `/code-review high` ran before the
+  ask and found four defects, all fixed (D-125, six for six). **Spent on `777e61a..dd64051`**: two
+  commits, `17a93ca` (tasks 48 and 49) and `dd64051` (the eighth and ninth archive boundaries and
+  the continuity sync). **The grant does not survive this session, and it never reached
+  `supabase db push`** — no migration was written, so nothing needed one.
+  Spent history, for the record: 2026-08-27 granted three times and used for twelve commits
   across several pushes — `5418ba2`, `a462a81`, `cbf1c58`, then `758efe6`, `6a8399b`, `9ce1f06`,
   `d61485c`, `451b6ae`, `571d628`, `777e61a`; 2026-08-26 granted once and used four times
   (`f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60`).
@@ -310,6 +312,8 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   **The remedy for a bad deploy is Instant Rollback in the dashboard, not a revert push.**
 - **The statement mailbox is live and its credentials are the owner's alone.** A dedicated Gmail with 2FA, an IMAP app password in Bitwarden, and a Gmail filter forwarding three senders. `statement-mailbox.json` at the repo root names the mailbox and the senders — gitignored, no secret in it, but it names an address, so **do not quote it into any document or commit**. **The app password is read from stdin only** by `scripts/fetch-statements.mjs` and has never been in a file, an argument or an environment variable there. `private-statements/inbox/` is where the fetcher writes and is inside the never-read boundary.
 - **D-017 is superseded on binding.** A statement whose printed bank and last four resolve to exactly one account is now bound without asking, by default, with a switch in the batch section. **The review and the confirmation are untouched** — a browser test asserts `import_batches` stays at zero after an automatic bind.
+- **MOST RECENT PUSH: `777e61a..dd64051`, 2026-08-27 — DEPLOYED AND VERIFIED IN THE RUNNING APP**, which is a stronger reading than a Ready badge and the first time an agent has taken it. Driven through the owner's **own signed-in browser session** (Claude in Chrome, which connected to Edge): the exclude control was exercised on a real internal transfer, `/statistics` was read back, the round trip returned every figure to its starting value, and the database showed revision 2 with two audit events. **No credential was handled and that boundary did not move** — the owner signs in, the agent clicks. Still unseen on a **real phone**. Two commits: `17a93ca` (PLAN tasks 48 and 49) and `dd64051` (the eighth and ninth archive boundaries plus the continuity sync). **No SQL, no migration, no new route and no contract change** — the build emits the same twenty-three `/api/v1/` routes, so the database-first rule had nothing to order. **The page to look at is `/ledger`**, and what to look for is new: every confirmed row's **Status** cell now carries an **Exclude** button, an excluded row shows an **Excluded** chip and drops out of the totals strip, and the typeface picker's note has moved behind an `(i)`. The header should be the same height in all four faces. **The owner verifies a deployment; nothing here can.**
+- **This section is itself a drift and the next `/sync-continuity` should collapse it.** It has grown to a dozen prepended deployment bullets spanning five days, which is D-130 and D-131's defect returning to the file whose own preamble says *rewrite this file in place, do not prepend to it*. What is current is the bullet above; what is below is history that `git log` already holds.
 - **Five pushes across 2026-08-23 and 2026-08-24, all deployed and NONE verified in the dashboard by an agent**: `6a6f752` (bulk statement import, D-141), `7f7aa65` (the slip-form review fixes, D-142), `617c2c8` (the tertiary button rank, D-143), `63b5d24` (the mail fetcher and automatic binding, D-144) and `0a4bf9a` (the hosted Sync button and the fifth archive boundary, D-145 and D-146). **The owner verifies a deployment; nothing here can.**
 - **Nothing of this session's work is uncommitted. D-148, D-149 and D-150 went in as `2da46fe`, pushed 2026-08-26**, 25 files, and the working tree holds **only** the two deliberately local-only config files again. **`GOTCHAS.md` shrank 208 KB to 15 KB in that commit and it is a move, not a deletion** — `check:docs --strict` reports the same **149 traps** it did before, which is the proof.
 - **That push is a production deployment and NOBODY HAS VERIFIED IT IN THE DASHBOARD.** Seven now stand unverified across 2026-08-23…26. This one carries no SQL, no route and no contract change, but it did move the ledger view's five loads onto `ledgerRequest` — so **the page to look at is `/ledger`**, and what to look for is that accounts and transactions still load rather than reporting an error.
