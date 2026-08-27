@@ -4,13 +4,13 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141 and D-153 onward** — a gap, and the seventh boundary is the reason: it began at D-142 rather than at D-141, because **D-141 is still an open question** (the mailbox archive) and a boundary excludes those. `scripts/check-docs.mjs` pools this file with every archive, so the ids stay whole across the set. Six settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24, and **D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md) on 2026-08-25. The index below covers all seven files, so a reader can find any entry without opening any body.
+This file carries **D-141, D-153, D-158, D-161, and D-164 onward** — four gaps, and every one of them is the rule holding rather than an accident. A boundary excludes every open question (D-133), and where such a question sits inside an otherwise settled range the boundary **steps over it rather than stopping short of it** (D-154). What is left here is therefore the four questions nobody has closed, plus the current work. **D-141**: whether the mailbox source is deleted after import, deferred by the owner. **D-153**: whether Press Start 2P becomes the default face, one constant in `lib/ui-font.ts`. **D-158**: `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. **D-161**: the statistics surface has no window picker and no account filter, and the RPC takes `p_from` and `p_to` that nothing sends. `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions across the whole set, so the ids stay whole and the maintained file has never been required to be contiguous. Nine settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24, **D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md) on 2026-08-25, **D-142 … D-152** to [`docs/decisions/ARCHIVE-D-142-D-152.md`](docs/decisions/ARCHIVE-D-142-D-152.md) on 2026-08-26, **D-154 … D-156** to [`docs/decisions/ARCHIVE-D-154-D-156.md`](docs/decisions/ARCHIVE-D-154-D-156.md) on 2026-08-27, and **D-157 … D-163 without D-158 and D-161** to [`docs/decisions/ARCHIVE-D-157-D-163.md`](docs/decisions/ARCHIVE-D-157-D-163.md) the same day. The index below covers all ten files, so a reader can find any entry without opening any body.
 
 **Every boundary sits where an argument ends rather than where a number is round**, and the fourth one is the clearest case of that rule so far. It was taken at **93%** of this file's byte budget and moved the whole arc in which both readers went to Cloud Vision and the local OCR engine was deleted. **The third boundary had explicitly refused to move D-120**, on the grounds that whether pre-fill stays was undecided and that question attached to D-120 and D-129 — which was true when written. **What closed it was not an argument but a shipped feature**: D-135 files a machine-read amount into the ledger without the owner looking at it at all, which is a stronger commitment than the trial ever asked for. *A question is closed when the code has stopped asking it*, and that is the test to apply at the next boundary rather than re-reading the prose.
 
-What this file now holds is the current work and the two open questions the fifth boundary could not move past: bulk slip upload and the palette with its phone measurements, then the statement auto-import arc — bulk import, the local mail fetcher, and the hosted Sync button.
+What this file now holds is four open questions and the live frontier — the mailbox archive, the default typeface, an unbounded candidate scan and the statistics surface's missing filters — then the eighth and ninth archive boundaries, the `include_in_reporting` control, and the typeface reflow work.
 
-**The fifth boundary is shallower than the fourth and the reason is worth knowing before taking the sixth** (D-146). It landed at 82% where the fourth landed at 56%, because D-134 and D-137 sit immediately behind it holding questions that have not closed: whether `GOTCHAS.md` splits at its next breach, and whether this app really has no dark scheme. **Closing those is what buys the next boundary its depth** — a deeper cut here would have had to break D-133's own rule to get it.
+**Two boundaries were taken on 2026-08-27 and the second is the one worth reading before the tenth.** The eighth moved three entries and left this file at 85%; two decisions and a review's findings put it back to **96% the same afternoon**, and the ninth then moved five and took it to 70%. **The rate is the thing to watch rather than the percentage** — D-146's line, now demonstrated twice in one day — and the honest conclusion is that a boundary is part of finishing a feature rather than a periodic chore. **What bought the ninth its depth was a question closing, exactly as D-164 predicted**: PLAN task 49 settled D-157's metrics, so D-157 moved. D-153's default face has not been settled and did not.
 
 **The size guard measures bytes, not lines, and that correction is the reason this archive exists** (`scripts/check-docs.mjs`). The budget was 1,200 lines and this file passed it at 1,132 while being 332 KB — roughly 80,000 tokens, most of a context window — because the entries grew sideways rather than downward. A guard that exists to stop a log outgrowing a single read has to measure what a read actually costs.
 
@@ -204,16 +204,49 @@ What this file now holds is the current work and the two open questions the fift
  this file
 
 - **D-153** — The typeface is a per-device preference in a cookie, because a font is a fact about the screen and not about the ledger
+### Archived 
+—
+ `docs/decisions/ARCHIVE-D-154-D-156.md`
+
 - **D-154** — The seventh archive boundary steps over an open question instead of stopping short of it, and the maintained file now has a gap
 - **D-155** — The ledger loads on arrival, and what bounds the payload is the width of a row rather than a page of them
 - **D-156** — Standing copy folds behind an `(i)`; a warning about an irreversible write does not, and moves closer to the control
+
+### Archived 
+—
+ `docs/decisions/ARCHIVE-D-157-D-163.md`
+
 - **D-157** — The pixel faces get a measured `size-adjust`, every route opens with a title, and the standing copy folds the rest of the way
+### Current 
+—
+ this file
+
 - **D-158** — The ledger pages, and reconciliation keeps its rule: a candidate set narrows the input instead of a second engine deciding the answer
+### Archived 
+—
+ `docs/decisions/ARCHIVE-D-157-D-163.md`
+
 - **D-159** — The combined balance is computed once in SQL, because a per-account window cannot see another account's history
 - **D-160** — Statistics compute in SQL, and division never produces money: a ratio is not a figure the ledger keeps
+### Current 
+—
+ this file
+
 - **D-161** — The statistics surface is built, and every real defect in it was found by rendering it or by review, never by the gate
+### Archived 
+—
+ `docs/decisions/ARCHIVE-D-157-D-163.md`
+
 - **D-162** — A partial period is not comparable to a whole one, and the first look at the real ledger is what said so
 - **D-163** — Money carries its direction as colour and never renders in a pixel face, and phone rows become real cards
+### Current 
+—
+ this file
+
+- **D-164** — The eighth archive boundary is fenced on both sides, so the shallowest cut is the only honest one
+- **D-165** — `include_in_reporting` gets a control, and the erasure it could have caused is made unrepresentable rather than remembered
+- **D-166** — The typeface work pinned nothing vertical, because the measurement said every reflow in this app is a width one
+- **D-167** — The ninth boundary steps over two open questions at once, and the rate is now the finding
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -315,166 +348,6 @@ All three are **Fontsource packages at OFL-1.1**, matching the two IBM Plex pack
 
 - Evidence: Vitest **807 passed / 7 skipped across 38 files** (up 17). Playwright owner **31/31**, isolated **28/28** (up ten — the promoted spec, four of them the per-face viewport measurement) including the axe pass on every route, production build clean at **twenty-one** `/api/v1/` routes, `check:docs --strict`, tsc and ESLint clean. pgTAP not re-run and deliberately so — no SQL has moved since 2026-08-18. D-148 (the wire seam the picker calls through), D-147 (why the control holds no optimistic value), D-137 (the one declared colour scheme this sits beside), D-152 (the guard-follows-the-code discipline).
 
-## D-154 — The seventh archive boundary steps over an open question instead of stopping short of it, and the maintained file now has a gap
-
-- Date: 2026-08-26
-- Status: **Done, uncommitted.** `docs/decisions/ARCHIVE-D-142-D-152.md` (new), `DECISIONS.md`, `HANDOFF.md`. No code, no SQL.
-- Context: `DECISIONS.md` hit **95% (112 KB/117 KB)** with 5 KB of headroom, against recent entries running 3–10 KB. The next one would have failed `check:docs --strict` mid-task, which is the interruption `HANDOFF.md` warns about.
-
-### The rule did not change; its shape did
-
-D-133 set it — **a boundary excludes every open question** — and D-140 sharpened it into a test: *a question is closed when the code has stopped asking it*. Every boundary since has begun where the last one ended, and the sixth stopped at **D-140** precisely because **D-141 was still asking**: whether the mailbox source is deleted after import, and so whether it becomes a permanent archive under a password derived from a citizen ID and therefore non-rotatable. That question is **still deferred by the owner and was not re-raised**.
-
-Six boundaries in a row were contiguous, and that had quietly hardened into an assumption. It was never the rule. **Eleven entries had accumulated behind one deferred question**, so obeying contiguity meant either waiting for an answer nobody was going to give this session, or raising the budget. The boundary begins at **D-142** instead and leaves D-141 in place, which keeps the rule exactly — nothing unresolved has been filed away — at the price of a gap.
-
-**The alternative was the raise, and it was declined for the reason D-134 records.** That entry raised the traps budget once, attached the condition that the next breach be paid with a split rather than a third raise, and D-149 then paid it. Repeating the move here would have been a knowing repeat of a precedent this repo has already decided against.
-
-### Why the gap is safe, which is a fact about the checker and not a hope
-
-`scripts/check-docs.mjs` pools the maintained file with **every** archive and then checks ids for duplicates and omissions across the whole set. It has never required the maintained file to be contiguous; six boundaries simply happened to leave it that way. Verified rather than assumed: the check passes at **153 decisions, 149 traps, indexes match** with D-141 sitting alone above D-153.
-
-**One thing did have to change and it is worth knowing before the eighth.** "Relocated unchanged" means the prose is unchanged, **not** that every byte is. A markdown link target written relative to the repo root resolves two directories wrong once the entry lives in `docs/decisions/`, and `check:docs --strict` caught exactly that — D-146's link to `ARCHIVE-D-130-D-133.md`. The sixth boundary had already met this and solved it the same way: the **label** keeps the full path, the **target** becomes the bare sibling filename. The eleven entries are otherwise byte-identical, proved by diffing them against the pre-split file rather than by reading them.
-
-- Evidence: `DECISIONS.md` **112 KB → 37 KB, 95% → 31%** — the deepest boundary yet at **eleven entries**, where the sixth managed seven and the fifth four. Counts unchanged at **153 decisions, 149 traps**, which is what proves nothing was dropped. D-133 (the rule), D-140 (the test that sharpened it), D-146 (the fifth boundary, and the entry whose link had to be re-pointed), D-149 (the sixth, and the split that paid D-134's condition), D-130 (the byte budget).
-
-## D-155 — The ledger loads on arrival, and what bounds the payload is the width of a row rather than a page of them
-
-- Date: 2026-08-26
-- Status: **Shipped 2026-08-26 as `f46ee64`, deployed, unconfirmed in the dashboard.** `app/transactions-view.tsx`, `app/ledger-controls.tsx`, `app/api/v1/accounts/[id]/transactions/route.ts`, `lib/transactions.ts`, `lib/wire.ts`, `lib/owner-ready.ts` (new), `app/owner-access.tsx`, `app/site-header.tsx`, `tests/owner-ready.test.ts` (new), `tests/wire.test.ts`, `tests/transactions.test.ts`, `tests/e2e/owner-session.spec.ts`, `tests/e2e/ledger.spec.ts`. **No SQL, no new route, no contract version change.** Supersedes the task 17 decision quoted below.
-- Context: PLAN task 43, decided by the owner on 2026-08-26. Task 17 recorded *"Nothing loads until asked"*, and `app/transactions-view.tsx` said the same in its own words.
-
-### The rule that was reversed was a consistency argument, and it never was an invariant
-
-Task 17's reason was that every other read surface here is driven by an explicit action, so a section fetching the ledger on page load would be the one place that stopped being deliberate about it. **No money, privacy or append-only property rested on it** — which is exactly what makes it reversible where D-114's pre-fill guarantees are not, and the distinction is the reason this entry exists rather than a stylesheet diff.
-
-**The owner's reason for reversing it is the stronger half and is recorded because a later review will re-derive it badly.** The page reads like an advertisement partly *because it is empty*, and the standing copy was filling the hole the table should occupy (D-156). A press the owner performs every single time is not a decision, it is a toll.
-
-### The payload was measured before the code was written, because auto-loading an unbounded fetch is a different act from auto-loading a bounded one
-
-PLAN task 43 named this as the open question and required it answered first. The answer: **`list_account_transactions` bounds nothing.** No `limit`, no `offset` — one `jsonb_agg` of every row for the account, each row carrying its components, its batch provenance and its overlays.
-
-**It is deliberately still unpaged, and that is a finding rather than an omission.** The balances on this view are derived over *whole accounts*, and reconciliation runs over the *whole* ledger before any account or text filter — which is D-063, a defect already fixed once here. A first page would silently change both: the all-accounts figure would become a running total of whatever happened to be fetched, which is the precise thing the disclosed copy promises it never is. **Paging this properly means computing balances in SQL, which means a migration**, and that was not authorized.
-
-**So the bound taken is on the width of a row, not on the number of them.** `import_batch_rows` was parsed by `lib/transactions.ts` and read by *nothing* — no component, no reconciliation, no total; provenance reaches the backup through `export_backup_snapshot`, a different path, untouched. Measured on a row carrying the field shape the parsers actually write, it is **241 of 848 bytes — 28.4%** of the object, so at the ledger's present size roughly **290 KB of a 1,020 KB** response, now paid on every visit rather than on a press. The route drops the key; the RPC still builds it, because removing it there needs the migration this task did not have.
-
-**The trim is guarded from the side that would notice it returning.** `ledgerTransactionSchema` is `.strict()` and no longer lists the field, so a route that regresses and sends it again fails the parse by name instead of quietly paying for it. That is asserted directly (`tests/transactions.test.ts`), and the 31-test owner suite is the end-to-end proof the route really drops it — every one of those tests reads real rows back through this schema.
-
-### Signing in does not navigate, and that turned an empty table into a dead end
-
-The load on arrival means a visitor who is not signed in issues a request before touching anything, and `strongOwnerClient` answers it **401** — correctly. Two consequences had to be handled and the second was found by the suite rather than by reasoning.
-
-**A refusal for want of a session is not a failure to report.** Rendering "Not loaded" in red on the first surface anyone sees, describing a route working exactly as designed, is worse than saying nothing. `lib/wire.ts` now carries the HTTP `status` on a failure — `refused` only, `null` for the two kinds where nothing usable answered — and only the *automatic* load treats 401/403 as a quiet line. A press still reports it in full: the owner asked, so the owner is answered.
-
-**The dead end: sign-in does not reload the page.** Land on `/ledger` signed out, sign in from the header, and nothing below reacts — an empty table and a "sign in" line in front of someone who just did. The fix is an announcement (`lib/owner-ready.ts`) rather than a second reader of the session, because `app/owner-access.tsx` owns that sequence deliberately and says why: two places reading the same Supabase state disagree whenever one refreshes and the other does not.
-
-**Two details of that announcement were learned from failures and neither is visible in the shape of the code.**
-
-1. **It has two producers.** `OwnerAccess` announces when it reaches `ready`, which is the real login's TOTP challenge completing in place. But the browser suites sign in through the header's development route, which does not go through `OwnerAccess` at all — that component stays `signed-out` behind it. Announcing from only one left the other silent, and the owner suite failed by name on it.
-2. **It is a counter, not a flag, because the two halves race and the listener loses.** The refusal that makes a page want this news travels over the network; the sign-in producing it is local. On the path this was written for, the announcement fires *before* the 401 lands, so a listener subscribing on the refusal subscribes to something that has already happened. A subscriber therefore reads the generation as well as listening. The same comparison is what stops a retry loop: a page acts once per announcement, so being refused again ends the sequence instead of restarting it.
-
-**Red-proved rather than reasoned about.** The owner suite failed by name twice — `waiting for … 'Reload'` against a page reading "Sign in to read the ledger." — once for each of the two details above, and passed once each was fixed.
-
-### What the tests had to become, which is itself the evidence
-
-Twelve `Load transactions` presses in the owner suite are gone, replaced by `ledgerLoaded()`, which waits for the control's own label to reach `Reload`. That is a real assertion and not a sleep: the label reads `Loading…` in flight and `Reload` only once rows have arrived, so it waits for exactly the state the press used to produce **and** proves the automatic load happened at all. The one spec that asserted the opposite — that the table could not exist before a press — now asserts the reversal directly.
-
-### What `/code-review` changed after the fact, and both were about the reversal rather than the code that did it
-
-**A 403 means two different things and the first version discarded the difference.** `strongOwnerClient` answers 403 both for an identity that is not the ledger owner *and* for the owner without aal2. One fixed line for both told someone signed in on the wrong Google account to "sign in", which he had just done — and the `owner-ready` retry could never repair it, because signing in again produces the same 403. **401 keeps this view's own wording; 403 now shows the route's sentence**, because only the route knows which case it is.
-
-**A guard written for "nothing loads until asked" became a defect the moment something did.** Recording a cash payment refreshed the rows `if (transactions !== null)` — which meant "only if the owner has already pressed Load", and after this change means *"only if the first load has already finished"*. Sign in on `/ledger` and record a payment while that load is in flight, and the row just written is missing from the table. The guard had no case left to cover: the callback fires only after a successful write. **This is the general shape to look for when reversing a load-on-demand decision** — conditions that read as null-safety and are really standing in for "has the owner asked yet".
-
-The same reversal lets two loads overlap for the first time, so each is now stamped with a sequence number and a superseded load drops its results **and** its claim on `busy`. Without the second half the control returns to "Reload" while a load is still running, and the owner suite waits on that label to know rows have arrived.
-
-- Evidence: Vitest **823 passed / 7 skipped across 39 files** (from 807/7/38), skip count unchanged at 7. Playwright owner **31/31**, isolated **32 passed / 4 skipped** (from 28), axe clean on every route. `tsc` and `pnpm exec eslint .` clean. Production build clean at **twenty-one** `/api/v1/` routes — unchanged, because this adds none. `check:docs --strict` at 154 decisions, 149 traps. **pgTAP deliberately not re-run**: no SQL moved. D-063 (reconciliation over the whole ledger), D-114 (what is *not* reversible), D-148 (`ledgerRequest`, extended here), D-156 (the copy half of the same restructure).
-
-## D-156 — Standing copy folds behind an `(i)`; a warning about an irreversible write does not, and moves closer to the control
-
-- Date: 2026-08-26
-- Status: **Shipped 2026-08-26 as `f46ee64`, deployed, unconfirmed in the dashboard.** `app/ledger-note.tsx` (new), `app/ledger/page.tsx`, `app/ledger-controls.tsx`, `app/cash-entry.tsx`, `app/globals.css`, `tests/e2e/ledger.spec.ts`, `tests/e2e/owner-session.spec.ts`. No SQL, no route, no contract change.
-- Context: PLAN task 42's restructure. The owner's three critiques of the ledger page, in his words: *"there is too much text, it's almost like its an ad for a product, not product itself"*; *"the transactions/ledger table should be what's most visible/dominant in the page"*; *"record a cash payment might better be contracted into smaller button and section"*.
-
-### The distinction that decided every sentence, and it is not word count
-
-**Copy explaining a principle goes behind the `(i)`. A warning about the irreversible thing the owner is about to do stays on the screen and moves closer to its control.** Applied rather than eyeballed, that split three paragraphs cleanly:
-
-- *"Balances are exact and computed over whole accounts, never over the rows a filter happened to match"* — a principle, worth stating once, not worth re-reading on every visit. Folded, onto the `h1`.
-- *"Everything committed to the ledger … source facts are immutable here"* — describes what the table already shows and what the rows already say. Folded, onto the ledger `h2`.
-- *"Cash leaves no statement row and no slip, so what you type here is the only record the amount has"* — why the form exists at all. Folded.
-- *"It is written once and never edited — a mistake is corrected, and both figures stay on the record"* — **not folded.** It is guarding an append-only write, not describing a philosophy, and it has **moved down** from the section heading to sit beside the submit button that performs the write. D-114's *"once you submit, a figure you did not type is as much yours as one you did"* is the same category on a different surface.
-
-**One sentence was deleted rather than folded**, and only because it had stopped being true: *"Nothing loads until asked"* is what D-155 reversed.
-
-### A disclosure button, not a hover tooltip, and the reason is the device
-
-Hover does not exist on the phone this ledger is read on, and `title` reaches neither the keyboard nor a screen reader reliably. `app/ledger-note.tsx` is a real `<button aria-expanded>` toggling a panel, and the panel is **rendered only when open rather than hidden with CSS**, so collapsed copy is out of the accessibility tree and cannot be announced as though it were on the page. Each button names what it explains — *About this ledger*, *About these transactions*, *About cash entries* — because three controls called "More" are three identical rows in a screen reader's list.
-
-**Two sizing traps were avoided by construction, both of them ones this repo has already paid for.** Every dimension in `.note-toggle` is absolute, because one of these sits inside an `h1` at `clamp(40px, 6.2vw, 86px)` and any `em` would make the badge track the heading — D-153's `ch` cap grew with the face it was capping, which is the same mistake. And the target is **26px rather than the 18px the glyph needs**, because it is the smallest control on the page and axe checks target size on every route rather than leaving it to the eye.
-
-### The table was made dominant by subtraction, and the cash bench was contracted rather than moved
-
-The intro on this route alone (`intro tight`) drops from up to 112px of padding plus a paragraph to a compressed heading and its `(i)`; its second grid column went with the paragraph. The cash bench is now one line — index, heading, `(i)`, button — where it was a titled section with a paragraph above the table.
-
-**It stays above the table, and the alternative was tried and rejected.** Moving it below would have let the table start marginally higher and cost more than it bought: recording a payment reloads the rows, so the row just written would appear in a table the owner had scrolled past. **Heading levels did not change** — `h1`, `h2`, `h2` is still the outline, and axe's `heading-order` rule runs on this route — the headings are only smaller and inline with their controls.
-
-### What is not fixed, and is not this entry's to fix
-
-On a phone the **shell header** occupies most of the first screen before the ledger's own heading begins: brand, privacy chip, typeface picker with its note, two sign-in buttons, the route row and the session line. The table cannot be the most visible thing on that device while that is true, and no amount of trimming below it changes that. Measured at iPhone 13 width and **not acted on**, because the owner's critiques were about the ledger page and this is the shell every route shares.
-
-### The disclosure had to come out of the heading, and `/code-review` is what measured it
-
-**A descendant's accessible name joins its ancestor's.** Every heading here is an `aria-labelledby` target for its `<section>`, so a button inside one put its own label — and the disclosed paragraph once open — into the name of both the heading and the landmark: measured as `"Transactions About these transactions Everything committed to the ledger…"`. **axe reports no violation for this**, because the name is non-empty and contains the visible text, so every accessibility pass in both suites went on passing. Only the computed name finds it. `LedgerNote` now returns a **fragment** and the caller places it beside the heading, never inside; `tests/e2e/ledger.spec.ts` pins it with `exact: true`, which is the only form that catches it, and it was red-proved by putting the button back.
-
-**And `display: block` on a flex item is blockified away.** The panel was written as a block inside an `inline-flex` span, with a comment claiming that made it drop onto its own line. It cannot: a flex container blockifies every child, so the panel sat beside a 26px button, shrink-to-fit — at 390px a narrow column wedged into a heading. `flex-wrap: wrap` with `flex-basis: 100%` is what actually gives it a line, and it is the pattern `.session-state` in the same stylesheet already used. **The comment was the worse half of that defect**, and it is the trap this repo has already recorded once: a comment asserting a behaviour is a claim that has to be true.
-
-A third comment claimed the contracted cash bench still sat at the shared 167px indent while the numbers produced 145px. The numbers were corrected to match the claim rather than the claim softened, because the alignment was the intent.
-
-- Evidence: Playwright isolated **34 passed / 4 skipped** (from 28) — three new specs across both desktop and phone projects: the disclosure driven by keyboard-reachable role with the collapsed copy asserted absent from the DOM, the accessible names of heading and landmark pinned with `exact`, and a 401 on the load-on-arrival raising no alert. Axe clean on every route with the panels closed and after the review's own pass. Owner suite **31/31**. Screenshots at both widths under `.runtime/shots/` (throwaway, synthetic project, gitignored). D-114 (the other warning of this class), D-137 (Cornsilk as the ground, which the panel treatment uses), D-153 (the `ch`-cap trap), D-155 (the loading half of the same restructure).
-
-## D-157 — The pixel faces get a measured `size-adjust`, every route opens with a title, and the standing copy folds the rest of the way
-
-- Date: 2026-08-26
-- Status: **Done.** `app/globals.css`, `app/layout.tsx`, `app/site-header.tsx`, `app/ledger-note.tsx`, `app/ledger-summary.tsx`, `app/transactions-view.tsx`, the four route intros, `tests/e2e/font-picker.spec.ts`, `DESIGN.md`. No SQL, no route, no contract change.
-- Context: the owner ran the deployed app in Press Start 2P and asked why that face was so much bigger than the others; he also judged the ledger headline advertising rather than naming, asked for the same pattern on every route, and found the totals block still too verbose. Supersedes **D-136** and **D-137** on the palette's documentation, and completes PLAN task 42.
-
-### Why one face was bigger, which is a measurement and not a preference
-
-Cap heights per 100px of font-size, measured in the real browser through `TextMetrics`: IBM Plex **70**, Press Start 2P **100**, Pixelify Sans **63**, Silkscreen **63**. **Press Start 2P draws its capitals on a full em** — most faces sit near 0.7 — so at the same CSS size every heading, button and label came out **1.43x** what the layout was designed for, while the other two came out slightly small.
-
-**The previous answer was a symptom fix and could only ever be partial.** It stepped down individual selectors — table headers, figure cells, the eyebrow, the brand line — and reached only what somebody remembered to name. Everything else stayed 43% too big, which is exactly what the owner was looking at.
-
-`size-adjust` fixes it at the cause: the descriptor scales glyphs against the em, so one CSS `font-size` means one visual size in every face. 70% / 111% / 111% put all three on IBM Plex's cap height. The faces are therefore declared **locally** rather than imported from Fontsource's CSS, since a descriptor can only be set on the `@font-face` rule — and under a **different family name**, because two rules with matching descriptors resolve by declaration order and CSS bundling does not promise one.
-
-**Heights normalise; widths do not**, and pretending otherwise would have re-opened D-138. After adjustment the widest real shape measures 910 units in Press Start 2P and 958 in Silkscreen against IBM Plex Mono's 780, so the numeric columns keep a step-down — 12px where it used to be 8px, which is the size the measurement allows rather than the one that looked right. `tests/e2e/font-picker.spec.ts` re-measures every face at phone width.
-
-### A title is not a headline
-
-*"Every confirmed row, and nothing else."* was the owner's own example of the problem he had named a day earlier: a line written to sell the thing rather than to name it. Every route now opens with a plain noun — **Ledger, Import, Slips, Recovery** — with what stood there behind the `(i)` where it was worth keeping. Two of the four sentences were worth keeping and are: where a slip's image goes, and where a backup's password does not.
-
-The two-column intro band went with them. It existed to hold a paragraph in its right-hand column.
-
-**The totals block folded on the same rule** (D-156's rule, applied where it had not been): each line was a bold count followed by three or four sentences of matching rule. The count is what changes and what the owner is looking for; the rule is true, worth writing down once, and was being re-read on every visit.
-
-### The header was the real obstacle on a phone, and the page could not fix it
-
-D-156 recorded this and declined to act on it, because the owner's critiques were about the ledger page and the header is every route's. He then asked for it directly. At iPhone 13 width the shell ran past 600px before any page's own heading began — brand, privacy chip, typeface picker and its two-line note, two sign-in controls, the route row, the session line.
-
-**The route row and the brand stay; everything touched about once a week folds behind one Settings control.** The wrapper is `display: contents` above 700px, so the desktop header is laid out exactly as before rather than re-derived — its children go on being flex items of the header itself. The strapline is hidden on phones because it is decoration costing a line of the first screen.
-
-**A disclosure that hides a control the suite drives has to be opened by the suite**, and `tests/e2e/font-picker.spec.ts` now does — by checking whether the toggle is visible rather than by checking the project name, so the breakpoint stays the stylesheet's business.
-
-### One defect written and caught in the same change
-
-Folding the totals prose put a `LedgerNote` inside `<p className="ledger-status">`, and the note rendered a `<p>`. **A `<p>` cannot contain a `<p>`**: the browser closes the outer one where the inner begins and the rest of the line escapes the paragraph. The panel is a `<span>` now, carrying both `display: block` and `flex-basis: 100%` because it lands in two kinds of container and each ignores the other's mechanism.
-
-### What supersedes D-136 and D-137, and what does not
-
-**The palette itself is unchanged** — Cornsilk still the ground, Copper still the action colour, no dark scheme. What is superseded is their *documentation*: `DESIGN.md` described the cool-mist/navy palette for five days after the app stopped using it, and `check:docs --strict` could not see it because it reads structure rather than meaning. It is rewritten from `app/globals.css` rather than from memory, and it now carries the panel chrome, the type measurements and the standing-copy rule as well as the tokens.
-
-**Panel chrome is the last of task 42's visual direction**: a doubled edge — `--frame-outer` outside the hairline, `--frame-inner` inside — on the surfaces that are genuinely panels, as `box-shadow` so nothing moves. Page furniture deliberately does not get it, because framing everything is the same mistake as explaining everything.
-
-- Evidence: Vitest **823 passed / 7 skipped across 39 files**, unchanged — this touches no `lib/` decision. Playwright isolated **34 passed / 4 skipped** including the per-face viewport measurement at phone width and axe on every route; owner **31/31** on a re-run, after one run hit the documented `captures a slip from its QR` wasm intermittent on two adjacent slip specs. `tsc` and `pnpm exec eslint .` clean. D-136 and D-137 (the palette, superseded as documentation only), D-138 (the phone overflow this had to avoid re-opening), D-153 (the switch itself), D-156 (the rule this applies).
-
 ## D-158 — The ledger pages, and reconciliation keeps its rule: a candidate set narrows the input instead of a second engine deciding the answer
 
 - Date: 2026-08-27
@@ -536,232 +409,6 @@ Records are complete on the client at any window depth, so their contribution is
 Nothing in the app calls it after this. It is left in place and still granted because `supabase/tests/001_security.sql` pins its grants, and dropping a published, granted function is a contract change of its own rather than a side effect of this one.
 
 - Evidence, after the review's fixes: Vitest **845 passed / 7 skipped across 40 files** (from 823/7/39) — 21 in the new `tests/ledger-window.test.ts` and 1 in `tests/transactions.test.ts`, skip count unchanged at 7. pgTAP **299 across 9 files** (from 266 across 8) with migrations 001–**021**: 33 assertions covering the keyset order including `nulls last`, three pages covering the ledger with no repeat and no gap, whole-account totals from any page, the limit clamp, the refused partial cursor, all four clauses of the candidate predicate, a weak session reading nothing, and the page's key set pinned at three so `carriedBalance` cannot quietly return. Playwright owner **32/32** including a new end-to-end paging spec over 105 seeded rows; isolated **34 passed / 4 skipped**. Production build clean at **twenty-two** `/api/v1/` routes, up one. `tsc` and `pnpm exec eslint .` clean with zero warnings. `check:docs --strict` clean. Backup contract **unchanged at v7** — no table gains a column. **`/security-review` found nothing**, verified against live `pg_proc` rather than read off the migration: both new functions are `SECURITY DEFINER` with a pinned `search_path`, granted to `authenticated` only, and `private.ledger_transaction_json` — which takes an owner id — is granted to nobody and is not `SECURITY DEFINER`. No dynamic SQL anywhere. D-063 (reconciliation over the whole ledger, preserved), D-067 (the manual override reaching past the automatic window), D-120 (the two-engines refusal this obeys), D-125 (review before asking to commit, four for four now), D-155 (superseded), D-157 (the change before this one).
-
-
-## D-159 — The combined balance is computed once in SQL, because a per-account window cannot see another account's history
-
-- Date: 2026-08-27
-- Status: **Done.** Migration `202608270022_combined_balance.sql`, `lib/transactions.ts`,
-  `lib/ledger-window.ts`, `app/transactions-view.tsx`, `supabase/tests/010_combined_balance.sql` (new),
-  `tests/transactions.test.ts`, `tests/ledger-window.test.ts`. Applied to the local synthetic project
-  and the recovery destination; **hosted is on 021 and this has not been pushed there.**
-- Context: the owner ran the deployed ledger from D-158 and sent a screenshot. Supersedes the
-  **floor** that D-158 shipped hours earlier, and closes the last of that entry's open behaviour.
-
-### What the deployment showed, which no test could have
-
-Three things at once, and two were defects. **The first load fetched 297 rows, not 100** — paging is
-per account and three accounts hold rows (about 1,259, 248 and 97), so the first load is one page
-each. Correct, and three times the figure the scoping had quoted; the saving is real but nearer
-170 KB against 785 KB than the 50 KB claimed. **The "Load older rows" control rendered as prose**,
-because it was given no class and inherited the surrounding paragraph — the only route to the rest
-of the ledger read as the last three words of a sentence. `.link-button` already existed for exactly
-this. **And the all-accounts column was an em dash on every visible row.**
-
-### The floor was correct and the wrong shape
-
-D-158's floor suppressed the combined figure below the date where every account's balance is known,
-rather than printing a plausible number that is not the ledger's. That judgement stands and would
-stand again. What it could not survive is the real distribution: **the largest account sets the
-floor**, its window reaches back only a hundred rows, and everything older went blank. A column that
-is right and empty is better than one that is wrong, and worse than one that works.
-
-### Why the derivation moved to SQL, and why that is not D-120's mistake
-
-D-120 refused re-implementing the **matching rule** in PL/pgSQL, because that would be one rule in
-two languages with tests for only one. This is the opposite move. The balance had a client
-implementation that a page **cannot feed correctly** — the combined figure is a fact about *every*
-account at a moment, and a per-account window has no way to know another account's history further
-back than its own rows reach. So it now has exactly one implementation instead of one-and-a-floor,
-and `combinedBalanceByTransaction` is deleted rather than left to disagree.
-
-**The owner's reason is the better one and is why it is a helper rather than an inlined query.**
-PLAN task 44 wants this number too: the combined balance over time is the series any balance chart
-is drawn from. `private.combined_balances(uuid)` is callable by whatever task 44 becomes, which is
-the same argument D-158 made for one candidate query serving two callers.
-
-### The identity, which is what makes it one pass rather than a lateral join
-
-An account's balance at a row is its opening plus everything it has moved since, so summed over
-accounts the combined balance is `sum(openings) + running total of every account's movement`. That
-is a window function over one ordering, not a per-row subquery over every account.
-
-**`delta` is the difference between printed balances, not the row's own movement**, and the
-distinction is load-bearing rather than stylistic. They agree whenever a statement chain is intact.
-They differ across a gap between two separately imported statements — and there the printed balance
-is the truth while a movement sum would drift from it silently. The client's walk read printed
-balances for that reason and this keeps the property. `010_combined_balance.sql` asserts it by
-writing a gap directly, since no import path produces one on purpose.
-
-**The ordering had to match `compareTransactions` reversed exactly**, which is `source_date asc,
-source_time asc nulls first, id DESC`. The id direction is the one to get wrong: it does not flip in
-the display sort, so negating the first two clauses and keeping the third gives a different sequence
-at every tie — and untimed rows sharing a date are ordinary here.
-
-### Exact money
-
-Every term is a `bigint` of minor units and nothing divides. `sum(...) over (...)` over `bigint`
-returns `numeric`, so the running total is cast back explicitly; an implicit numeric leaking into a
-money path is the habit this app does not have, and pgTAP caught the same thing in the test's own
-cross-check before it caught anything else.
-
-### What moved rather than being lost
-
-The client's combined-balance suite moved to `supabase/tests/010_combined_balance.sql` with the
-derivation: an account seeded from its own opening, the answer being independent of the order rows
-arrive in, an account with no rows contributing nothing — plus the case the client could never
-satisfy, two accounts of unequal window depth. **That case is the defect written down**: the client
-printed 110000 against an early row where the truth was 10000, because the shallow account's later
-balance leaked backwards.
-
-- Evidence: Vitest **830 passed / 7 skipped across 40 files** (from 845/7/40 — nine client
-  balance assertions moved into pgTAP and are not lost, plus the slip-exclusion test whose subject
-  no longer exists). pgTAP **312 across 10 files** (from 299 across 9) with migrations 001–**022**,
-  13 of them the new suite. Playwright owner **32/32**, isolated **34 passed / 4 skipped**, portable
-  recovery re-run against a destination rebuilt on 022. Production build clean at **twenty-two**
-  `/api/v1/` routes, unchanged. `tsc`, `pnpm exec eslint .` and `check:docs --strict` clean. Backup
-  contract **unchanged at v7** — no table, no column. D-120 (the two-engines refusal, and why this is
-  not it), D-158 (superseded on the floor), and PLAN task 44, which is the reason this is reusable.
-
-## D-160 — Statistics compute in SQL, and division never produces money: a ratio is not a figure the ledger keeps
-
-- Date: 2026-08-27
-- Status: **Scoped and settled. Nothing is built and nothing is measured.** The owner answered all
-  three open questions on 2026-08-27, before this entry was ever committed, so the answers are
-  recorded here rather than in a superseding entry. `PLAN.md` task 44 carries the full scoping;
-  this entry records the rules it settled, because both outlive the task's text — a PLAN entry
-  gets rewritten and this file does not.
-- Context: the owner asked for task 44 to be scoped rather than built, on the reasoning that D-158
-  and D-159 both went better because their questions were answered before their SQL was written.
-  Three questions were open. Two are answered by precedent this repository already set; the third is
-  a policy this app has never needed, because until now nothing in it divided.
-
-### The category breakdown is not this task's, and saying so early is the point
-
-The page everyone pictures is spend by category, and **the ledger has no categories**: the columns
-and both routes have existed since migration 001, and live holds **1 category against 1,465
-transactions**. A chart drawn over that is *a figure that is right and empty* — D-158's all-accounts
-column again, caught this time in a scoping document instead of in a screenshot of production. The
-breakdown belongs to task 25, and task 44 is shaped so it arrives later as one more grouping key.
-
-What is populated on every confirmed row today is time, account, direction, and the bank's own
-`transaction_label`. `cash_entries` is the only population in this ledger that is categorised at all,
-because it takes `category_id` and `counterparty` at capture.
-
-### Statistics compute in PostgreSQL, and this is D-159's line rather than D-120's
-
-A statistic is whole-ledger by definition and **the client no longer holds the whole ledger** — it
-holds a page (D-158). Computing on the device means fetching everything again, which is precisely
-the payload task 45 removed. D-159 already decided this shape for the same reason and built
-`private.combined_balances(uuid)` as a reusable helper *for this task*.
-
-**It is not the two-engines mistake D-120 refused**, and the distinction is the one D-159 drew:
-D-120 protects a *rule that judges a specific row*, carrying ~85 tested cases, from being written a
-second time in a language with no tests for it. An aggregate judges nothing — it sums. The shape
-follows `list_account_transactions_page`: `security definer`, pinned `search_path`, gated on
-`private.has_strong_owner_access`, returning an empty shape rather than raising, revoked from
-`public` and `anon`, granted to `authenticated`, with the private helper still granted to nobody.
-**SQL computes and the client formats**; money crosses the wire as canonical minor-unit strings.
-
-### Division never produces money
-
-This is the new rule. Every average, share and trend is a division, and money in this app is a
-signed 64-bit integer of minor units (D-002) that has never been divided by anything.
-
-**A ratio is not money.** Three tiers follow from that:
-
-1. **Totals, nets and subtotals do not divide at all.** Sums of `bigint`, exactly as the shipped
-   totals strip does. They are money and stay money.
-2. **A share travels as its numerator and its denominator**, two exact minor-unit strings, and
-   becomes a percentage in the presentation layer for display only. **A percentage is a label**:
-   nothing is derived from one and none is stored. Two consequences are accepted rather than papered
-   over — shares printed to one decimal **will not sum to exactly 100.0**, and the remedy is to show
-   the exact parts beside them rather than fudge the last slice; and **a zero denominator is
-   undefined, not zero**, so a period with no spending prints an absence.
-3. **An average of money is money**, which is why it is the trap. Two forms are permitted and no
-   third: **integer division that keeps its remainder** — `sum / n` with `sum % n`, so
-   `quotient * n + remainder = sum` holds exactly — or **no average at all**. Twelve exact monthly
-   totals answer the question better than one average of them, and a chart reads them better than a
-   number does. **Prefer the series to the average.**
-
-**The specific way this will be got wrong: `avg()` over `bigint` returns `numeric`, and so does
-`sum() over ()`.** D-159 already had to cast one back explicitly. The first person who writes the
-obvious `avg(amount_minor)` puts a `numeric` into a money path with nothing complaining, so **the
-return types become a contract asserted in pgTAP** — every money column declared `bigint` or `text`,
-with a test that fails by name the moment a `numeric` or a `double precision` appears there. A rule
-that is only written down is a rule that is only remembered.
-
-### Two findings that are decisions, not details
-
-**`include_in_reporting` exists and nothing has ever read it.** The column is on
-`transaction_overlays` from migration 001, `mutate_overlay` writes it,
-`PUT /api/v1/transactions/[id]/overlay` accepts it, and both `lib/backup-contract.ts` and
-`lib/transactions.ts` carry it — and **no query in this repository filters on it**. Task 44 would be
-its first consumer. If the statistics page honours the flag and the ledger's totals strip does not,
-two totals over one ledger disagree on one screen and both are right. Either both honour it or the
-flag is retired.
-
-**Slips and cards must never be summed.** A paired slip *is* the statement row (D-063), so summing
-`source_components` counts each payment exactly once; adding slips would double it. An unmatched slip
-is money that moved with no statement row yet, and the honest treatment is to report how many there
-are beside the totals rather than fold their amounts in. **`cash_entries` is out of v1 by the owner's
-decision** — cash is real money that no statement carries, and **the balance series could not include
-it in any case**, a cash entry having no `post_balance_minor` and never having entered a printed
-balance chain.
-
-### What the owner settled, the same day and before this entry was committed
-
-All three questions were answered on 2026-08-27, so this entry records answers rather than leaving
-them open. **Cash is out of v1**: `cash_entries` is not read, and the page says on its face that its
-figures are about statement rows alone rather than letting a total quietly stand for all spending.
-**`include_in_reporting` is honoured, and the ledger's totals strip is retrofitted in the same
-change** — the alternative was retiring the flag, and the reason to keep it arrived with the figures
-the owner asked for, below. **The figures are monthly incoming, spending and net as a series; average
-incoming and spending per day and per week; daily closing balance; the largest transactions in the
-window; and a per-month transaction count.** The owner also asked for charts, so the page is
-chart-led: a **line of balance over time** and **paired bars of incoming against spending per month**,
-with the averages as stat tiles and the largest transactions as a table.
-
-**Internal transfers are why the flag survives.** Money moved between the owner's own accounts leaves
-one as a withdrawal and arrives at the other as a deposit, and both are real statement rows. Summed
-naively, **incoming and spending are each inflated while net stays correct** — so the two figures the
-owner actually asked for are precisely the two the flag protects. Honouring it is one predicate.
-**What is missing is a way to set it**: nothing in the app toggles it, so it defaults `true`
-everywhere and the filter is inert until a control exists, which is the smallest piece of follow-on
-work this task creates. Detecting transfers automatically is a matching rule and belongs beside
-task 25.
-
-**The denominator is the decision inside an average**, and getting it wrong is undetectable from the
-figure alone. *Average daily spending* over **calendar days elapsed** is a burn rate; over **days that
-had a transaction** it answers how big a busy day is. **Calendar days elapsed is the answer.** Two
-boundaries follow: **the current period is partial**, so dividing this month by 31 on the 10th
-understates it threefold and the current period must divide by days elapsed so far; and **the first
-period is partial too**, because the history starts where the first import starts. And **an average of
-an average is not an average** — `avg_week` is the total over its weeks, never `avg_day × 7`, because
-the partial weeks at either end make those different numbers.
-
-**The chart wants daily closing balance, not the per-transaction series.** `private.combined_balances`
-returns one row per transaction — 1,604 of them — where a chart draws at most one point per day.
-A `distinct on` over the existing helper narrows it: no new derivation, no division, and a payload
-sized by the history's length rather than its row count.
-
-**The strict CSP rules out a charting library from a CDN**, and `lib/security-headers.ts` states that
-widening the policy is never the remedy. Either an installed dependency bundled by Next, or **inline
-SVG drawn by the app** — the recommendation, on a dozen monthly pairs and a few hundred daily points,
-because it adds no dependency, inherits the palette and both themes, and raises no CSP question.
-
-**Task 44 goes before task 25.** Nothing on this page needs a category: it is one function, one route,
-one page, where task 25 is a migration, a provenance table, a backup-contract version and a
-measurement of a model against a rules baseline. Building 44 first also gives 25 somewhere to land,
-where the reverse order categorises 1,465 rows with nothing able to show what it bought.
-
-- Evidence: scoping only — no code, no migration, no measurement. Read from source:
-  `supabase/migrations/202607240001_foundation.sql` (the overlay columns and `include_in_reporting`),
-  `202608090013_cash_entries_and_corrections.sql` (`cash_entries` carries `category_id`),
-  `202608270022_combined_balance.sql` (`private.combined_balances`, and the explicit `::bigint` cast),
-  `lib/money.ts`, `lib/transactions.ts`. Related: D-002 (canonical integer money), D-063 (a paired
-  slip is the statement row), D-120 (the two-engines refusal, and why this is not it), D-155, D-158,
-  D-159, and PLAN tasks 25, 44 and 45.
 
 ## D-161 — The statistics surface is built, and every real defect in it was found by rendering it or by review, never by the gate
 
@@ -892,113 +539,131 @@ disagreeing with the code they sat above, which is how the next reader gets it w
   look at the deployed thing), D-158, D-138 (an audit of an absent element reports a clean route),
   D-137 (one declared colour scheme), D-120, D-002.
 
-## D-162 — A partial period is not comparable to a whole one, and the first look at the real ledger is what said so
+## D-164 — The eighth archive boundary is fenced on both sides, so the shallowest cut is the only honest one
 
 - Date: 2026-08-27
-- Status: **Done.** `app/statistics-view.tsx`, `app/statistics-charts.tsx`, `tests/statistics.test.ts`.
-  Deployed surface only; **no migration and no schema change**, so nothing hosted moved.
-- Context: the owner opened the deployed `/statistics` for the first time and sent screenshots.
-  Follows D-161 within the hour, on the pattern D-158 → D-159 already set.
+- Status: **Done, uncommitted.** `docs/decisions/ARCHIVE-D-154-D-156.md` (new), `DECISIONS.md`, `HANDOFF.md`. No code, no SQL.
+- Context: this file reached **116,722 of its 120,000-byte budget (97%)** against entries running 3–10 KB, so the next decision would have failed `check:docs --strict` mid-task. Every authorized task appends one, so it blocked all of them.
 
-### What the real ledger showed that no fixture could
+### Three entries, because this is the first range fenced on both sides
 
-**The opening month rendered a comparison of `+1002%`.** July 2025 is a **partial** month — the
-ledger starts on the 3rd — and it was being compared against a full August. The arithmetic was
-correct and the figure was meaningless: twenty-nine days of spending against thirty-one is not a
-rate, and nothing on the row said so.
+D-133's rule — **a boundary excludes every open question** — with D-140's test, *a question is closed when the code has stopped asking it*, and D-154's step-over. Applied honestly they stop the range at **D-154 … D-156, 20 KB**, where the seventh moved eleven entries and 75 KB. Every earlier boundary had settled ground above it; this one does not.
 
-**The invented fixture could not have found it.** Five months, and its first month was partial too —
-but the *second* month's comparison looked unremarkable because the seeded amounts were flat. A real
-ledger's opening month is short **and** unrepresentative, and only the second of those shows up as an
-absurd number.
+- **D-153, below.** `DEFAULT_FONT` is `system`, and D-153 says flipping that one constant is the whole of making Press Start 2P the default. The owner leans to it and has not decided — D-137's *"but we'll see"* in different clothes, and the fifth boundary refused D-137 for that reason.
+- **D-157, above.** PLAN task 49 was authorized the same day and revises D-157's own measurement: `size-adjust` pins cap height and not advance width, and task 49 decides which of `ascent-override`, `descent-override` and `line-gap-override` go on top. Archiving a measurement in the session that revises it files a live argument as settled.
+- **D-158, beyond it.** `list_match_candidates`' unbounded scan, recorded in its migration and unfixed.
 
-**The rule: a comparison is printed only when both periods are whole.** Suppressed rather than
-corrected — rescaling either side to a common length would invent spending no statement records, and
-the exact figure for each month is already in its own row. The cell carries a `title` saying which of
-the two reasons applies, so an em dash is never unexplained.
+The three that moved closed on each other: **D-154** is the seventh boundary and this entry answers it; **D-155** is superseded in as many words by D-158, which paged the ledger D-155 left unpaged; **D-156** deferred the phone shell header under its own heading and D-157 fixed it one entry later.
 
-**The axis printed `Jul` and `Aug` twice.** Fourteen months from July 2025 to August 2026, and two
-pairs of labels were indistinguishable. The year is appended only when the window actually spans more
-than one, so the ordinary case stays uncluttered; the label-thinning threshold widens to match.
+**The cheaper cut was priced and refused.** D-153 too would have reached 71%, D-157 and D-158 as well 54% — the difference between three entries of headroom and fifteen. Raising the budget was not considered, for the reason D-134 records and D-149 paid.
 
-### What was checked rather than assumed
+### D-154's advice was aimed here, and is carried forward so the maintained file keeps it
 
-**The screenshots are in a pixel face, and reading figures off one is not evidence.** Two apparent
-discrepancies in the totals were digits misread, not defects. The identities were therefore
-**cross-checked against the real distribution in the database**, not against the picture: the
-day-of-week split and the monthly series each sum to the same **1,604** transactions and to the same
-money as the whole-window total, across **14** months and **7** buckets. That is D-159's move — an
-independent derivation over the real data rather than over invented rows — and it is the only thing
-that turned "these numbers look odd" into "these numbers are right".
+**"Relocated unchanged" means the prose is unchanged, not that every byte is**: a link written relative to the repo root resolves two directories wrong from `docs/decisions/`, and the remedy is that the label keeps the full path while the target becomes the bare sibling filename. **This range carries no relative link**, checked before the move rather than after. Byte-identity was **proved by diff against `git show HEAD:DECISIONS.md`**, not by reading — normalising line endings first, since git stores this CRLF file with LF.
 
-**Every one of the 1,604 rows is reportable**, so `include_in_reporting` still moves no figure.
-**But the real ledger now shows exactly why it will**: a `Transfer Withdrawal` and a
-`Transfer in` of the same amount on the same date appear in the two largest-movement lists — one
-internal transfer, inflating both money-in and money-out while net stays correct. **That is the
-argument for building the control**, and it is no longer hypothetical.
+### Three prose drifts in this file's preamble that `check:docs` structurally cannot see
 
-- Evidence: Vitest **853 passed / 7 skipped across 41 files** (from 849; four assert the comparison
-  predicate directly, so a refactor that drops the guard fails rather than printing the figure
-  again). pgTAP **347 across 11**, Playwright owner **32/32**, isolated **34 / 4 skipped**, build
-  clean, `tsc`, `eslint` and `check:docs --strict` clean. Related: D-161, D-159 (look at the deployed
-  thing; cross-check against the real distribution), D-138.
+It validates the index against the entries and that every link resolves; it never asks whether the prose describing the archives is true. **The seventh archive was missing from the list of relocated ranges entirely** — the paragraph said *"Six settled ranges"* and named six, while `ARCHIVE-D-142-D-152.md` existed, was linked from `HANDOFF.md`, and had its own index section here. And **two paragraphs still described the file as of the fifth boundary**. All three replaced, not annotated: D-052's rule for `HANDOFF.md` binds a maintained pointer wherever it lives.
 
-## D-163 — Money carries its direction as colour and never renders in a pixel face, and phone rows become real cards
+### This entry is short on purpose
+
+D-146 already found that a shallow boundary argues for **shorter entries** rather than more archives, and a boundary entry that spends 7 KB saying it moved 20 is the clearest available counter-example. **The ninth boundary is two or three ordinary entries away** and will meet the same wall in the same place until the default face and task 49 are settled.
+
+- Evidence: **116,722 → 96,270 bytes on the move (97% → 80%)**, and **100 KB (85%)** with this entry appended, as `check:docs` reports it. **164 decisions across nine files**, index matching one for one, `pnpm check:docs --strict` clean. **No test, migration or build re-run, deliberately** — nothing outside `docs/` and the continuity files moved. D-133 (the rule), D-140 (the test), D-154 (the step-over and the link advice discharged), D-146 (shallow on purpose, the first time), D-134/D-149 (why the budget is not raised), D-130 (the budget), D-052 (replace, do not append).
+
+## D-165 — `include_in_reporting` gets a control, and the erasure it could have caused is made unrepresentable rather than remembered
 
 - Date: 2026-08-27
-- Status: **Done.** `app/globals.css`, `app/ledger-summary.tsx`, `app/ledger-statement-row.tsx`,
-  `app/statistics-view.tsx`. **No migration, no schema, no route.** Three of the owner's four
-  requests from 2026-08-27; the fourth (font metrics) is measurement-first and is PLAN task 48.
-- Context: the owner asked for red/green on money, for rows that separate on a phone, and for
-  amounts that do not shift when the typeface changes.
+- Status: **Done, uncommitted.** `lib/transactions.ts`, `lib/ledger-window.ts`, `app/api/v1/transactions/[id]/overlay/route.ts`, `app/ledger-statement-row.tsx`, `app/ledger-shared.ts`, `app/transactions-view.tsx`, `app/globals.css`, `tests/transactions.test.ts`, `tests/ledger-window.test.ts`, `tests/e2e/owner-session.spec.ts`, `tests/helpers/local-owner.ts`. **No SQL and no new route** — the build still emits twenty-three `/api/v1/` routes.
+- Context: PLAN task 48, authorized by the owner. The column has existed since migration 001 and has been read by statistics and the ledger's totals since 023, and **nothing in the app could set it**, so the filter was inert. The deployed page showed an internal transfer inflating money-in and money-out alike.
 
-### The chart's green fails as text, and that is not a detail
+### The hazard is a silent success, so the guard is a type rather than a rule
 
-`#5c8a1a` clears the dataviz checks as a **mark** — those need 3:1 against the surface. As **text**
-it measures **4.03** on this paper against the 4.5 that body text requires. Reusing the chart value
-for coloured figures would have shipped an accessibility regression on the strength of a check that
-had already passed for a different purpose. Money-in is therefore `--money-in: #4a6f14` (**5.75**),
-a darker step of the same hue; money-out is `--money-out: #9b2c2c`, which is `--red` and passes both
-bars at **7.37**. **Two tokens, two contrast bars, one hue family.**
+`PUT .../overlay` takes the **whole** overlay and `update_transaction_overlay` writes it with `on conflict do update set` over every column. A body naming only the flag is refused by a `.strict()` schema and is therefore safe. **A body sending the rest as `null` is accepted**, and erases the description, counterparty, effective date, category and note the owner typed on a row he was only trying to mark.
 
-**`.positive` already existed and was the reason green read as grey** — it pointed at
-`--celadon-ink`, a dark olive. There was no `.negative` at all, so money out had never been coloured.
+So no caller builds a body. `overlayWriteBody(transaction, change)` derives it from the row and `change` may only narrow that derivation, which hands the same guarantee to the next field editor for free. `overlayWriteBodySchema` moved out of the route and next to it, so a test asserts the builder's output against the contract the route **actually enforces** rather than against a copy.
 
-**Colour is applied by value, not by role, wherever the figure can cross zero.** Deposits are always
-money in; a *net* is not, and colouring it by its heading would tell the owner he gained in a month
-he lost. Zero stays neutral in every case — calling it an arrival is a judgement the ledger never
-made. Every coloured figure still prints its own sign, so colour reinforces and never carries the
-meaning alone.
+**Red-proved twice rather than assumed.** With the builder returning nulls, three Vitest cases fail by name and the browser spec fails on *the description the owner typed must survive a toggle*. The end-to-end case is the one that matters: it seeds a populated overlay through `psql` — nothing in the app could write those fields before this — toggles through the real UI, and reads the row back to find only the flag and the revision moved.
 
-### Amounts leave the pixel stack, and the reason is a mistake that already happened
+### Two things found while building it
 
-`--font-data` is redefined per typeface, so **every figure in every table was being drawn in the
-chosen pixel face**. That is not cosmetic: at small sizes those faces render `0`, `2`, `5` and `8`
-closely enough to be transposed, and it happened for real — two figures were misread off a
-screenshot of the deployed statistics page and were nearly reported as arithmetic defects (D-162).
-A face that a careful reader misreads on a screenshot is a face the owner misreads at a glance.
+**The route was returning the owner's uuid.** The RPC answers `to_jsonb(o)`, the whole row; the ledger reads overlays as that row minus `owner_id` and `transaction_id`, and `transactionOverlaySchema` is strict about the difference. The route strips both now, which both stops shipping an identity to a screen that never reads it (D-155's rule on `fingerprint`) and lets a stored overlay be folded straight back into the window with no second contract.
 
-`.numeric` now takes `--font-money`, which is the mono stack under every typeface. **The pixel
-character stays on prose, headings and labels; the numbers do not take part.** The per-face
-`font-size` step-downs that existed to shrink pixel glyphs inside numeric cells are removed with
-them — they would otherwise shrink a mono face that never needed the correction.
+**`resetOwnerImportSurface` never cleared `transaction_overlays`** — the fourth table in that function needing the "delete before the rows it references" comment the other three already carry. It never bit because nothing but `confirm_import` could write one, and those ids are fresh every run. The moment a test seeded one it did not look like a leak: `session_replication_role = replica` disables the FK triggers, so the overlay outlived its transaction and the *next* run failed on a primary key in a table that test never mentioned.
 
-### A hover cannot fix a phone
+### Where the control went, and why the totals move with it
 
-The stacked mode already turned each row into a block, but every one shared the page background and
-was parted from the next by a single hairline, so a list ran together into one field of figures.
-Desktop never showed it: the columns do the separating there, and `tbody tr:hover` picks out the row
-under the pointer.
+**The Status cell**, not a new column and not a detail panel. A column was refused on width — the table sets 1160px and the merged view 1280px, and D-138 is what a wide ledger costs. A detail panel was refused because **on these rows there is none**: `pair-detail` exists only where a slip or card matched, and internal transfers are statement-only. The Status cell is already a single em dash on exactly those rows, so the control costs no width — **measured 148px of content in a 148px cell in all four faces, both states**, and the check was proved able to fail (457px and 523px under a deliberate break).
 
-**That hover is exactly why the fix could not be one.** There is no hover on a touch screen, so the
-device with the problem is the device the existing remedy never reaches. Rows are real cards now — a
-gap, a border, and the `--frame-outer` / `--frame-inner` pair the panels already use, so the
-treatment is this app's existing vocabulary rather than one invented for tables. The statistics
-tables gained the desktop hover they never had.
+**`withOverlay` corrects the account's totals, because they came from SQL that honours the flag.** Replacing the overlay and stopping would leave the strip stating a figure the rows contradict. The client can do it exactly rather than approximately — it holds the row's whole component array, which is the set the server summed, every term a `bigint`, nothing divided. `totals.rows` is untouched, matching the migration's own words. A test writes the same flag twice to prove the adjustment keys on the *change* and not on the write.
 
-- Evidence: Vitest **853 passed / 7 skipped across 41 files**, Playwright owner **32/32**, isolated
-  **34 / 4 skipped**, build clean, `tsc`, `eslint` and `check:docs --strict` clean. Re-screenshotted
-  at 390px through `.runtime/statistics-audit.spec.ts`: **document 390px against a 390px viewport**,
-  zero elements over, zero blank tiles. Contrast measured rather than judged. Related: D-162 (the
-  misread figures), D-157 (`size-adjust`, and its standing note that it does not fix width), D-137,
-  D-138.
+### What `/code-review` found, and the serious one was reachable in one keystroke
+
+**The totals honoured the flag on one branch and not the other.** The strip prefers the server's whole-account figure, which has applied `include_in_reporting` in SQL since 023 — but falls back to `summarizeRows` the moment a text query or a confirmed-status filter narrows the population beyond what SQL was asked about. That function summed every confirmed row's components regardless. So: exclude a row, watch Money in fall, **type one character in the search box, and it is counted again** — with the row still wearing its "Excluded" chip. That is the exact inverse of the disclosure the chip exists to make. The filter belongs in `summarizeRows` rather than at the call site, so the two branches cannot disagree; only confirmed rows are filtered, because the flag is a column on `transaction_overlays` and a slip is not a transaction. Red-proved: without it, three cases fail by name.
+
+Three review findings landed on the picker and are in D-166 with the rest of task 49.
+
+- Evidence: Vitest **873 passed / 7 skipped across 41 files** (from 853/7/41). Playwright owner **33/33** (from 32), isolated **38 passed / 4 skipped** (from 34). `tsc`, `pnpm exec eslint .` and the production build clean at twenty-three routes. axe already covers the ledger with rows at three places in the owner suite, so the control passed it. **pgTAP deliberately not re-run — no SQL moved.** D-161 (the readers), D-155 (dropping an identity from a payload), D-138 (the width this avoided), D-064 (no chip for the ordinary state), D-152 (the guard-follows-the-code discipline).
+
+## D-166 — The typeface work pinned nothing vertical, because the measurement said every reflow in this app is a width one
+
+- Date: 2026-08-27
+- Status: **Done, uncommitted.** `app/font-picker.tsx`, `app/globals.css`, `tests/e2e/font-picker.spec.ts`, `.runtime/font-reflow.spec.ts` and its config (throwaway). No SQL, no route, no contract change.
+- Context: PLAN task 49, authorized. The owner asked that switching the face not move the page. The task prescribed a remedy — pin the vertical box with `ascent-override`, `descent-override` and `line-gap-override` — and required measurement first.
+
+### The prescribed remedy was measured and not built
+
+Font boxes per 100px of the stack each face resolves to: IBM Plex **165**, Press Start 2P **70** (with **zero** descent), Pixelify Sans **133**, Silkscreen **142**. A spread that wide should reflow everything — and **nothing reflowed**. Page geometry across both routes was identical to the pixel in three of the four faces.
+
+The reason is that **every line height in this stylesheet is an explicit ratio** in the `font:` shorthand, so a font's own ascent and descent never reach layout. Three descriptors on three faces would have been dead weight and a claim the numbers do not support. **When a measurement contradicts a conclusion the measurement wins**, and here it contradicted the plan rather than the code.
+
+### What did move was one flex row, and the cause was text capped by width
+
+**`.header-side` measured 71px in IBM Plex against 88px in Press Start 2P**, pushing every landmark below it down 16–17px on both routes. The header was the only box on either route whose height changed at all.
+
+The cause was the font picker's standing note: a sentence in a **width-capped** box occupies a face-dependent number of lines. Folding it behind the `(i)` is D-156's own rule applied where it had not been — *standing copy folds; a message about the write you just made does not* — so the refusal and the "stored but not shown" line stay on screen and only the standing sentence moves. It took the header from 171px to **148px in every face**, which is 23px of first screen that D-156 and D-157 were both trying to buy.
+
+**The same defect was one control along.** The phone's privacy chip was capped at 130px, which made `.header-side` 83px against 100px at 390px. Given the panel's full width the sentence fits one line in every face.
+
+### The guard is committed, and it caught two things a throwaway could not
+
+`tests/e2e/font-picker.spec.ts` now asserts that **every box in the shell header keeps its height in every face**, on both the desktop and phone projects.
+
+- It found the phone case at all. The throwaway harness ran desktop only, which is D-138's standing lesson arriving again: a measured desktop width is not a phone.
+- **It was racy and said so.** `document.fonts.ready` resolves immediately when nothing is pending, and a browser requests a face only once something uses it — so the moment after `router.refresh()` applies `data-font` there may be no load yet, the fallback's geometry gets measured, and the run passes or fails on timing. It did both, in consecutive runs. Asking for the resolved stack by name starts the load and then waits for it.
+
+**The whole document's height is deliberately not asserted.** Body prose re-wraps when the face changes — `size-adjust` pins cap height and not advance width — so a paragraph taking one more line is the reachable boundary rather than a defect: 979px against 961px at phone width with **both headers identical**. Asserting it would be asserting "identical positions", which task 49 named as not reachable and which this entry did not deliver.
+
+### Three review findings, all on the disclosure, and all three were the same mistake
+
+The `(i)` was first written **inside** the `<label>` wrapping the select. That is the defect `app/ledger-note.tsx` documents in its own docblock and D-156 records having shipped once: a `<label>`'s accessible name is computed from its subtree, so the button's `sr-only` text joined it and the select announced as *"Typeface About this typeface"* — plus the whole note once open. It also broke the HTML content model, since a `<button>` is labelable and a label may hold only its own control. **The comment written beside it claimed axe had verified it**, which is a claim the docblock being quoted says in as many words cannot be true: axe reports no violation here, because the name is non-empty and contains the visible text. `tests/e2e/font-picker.spec.ts` now pins the computed name with `exact: true`, panel open and closed, and it was red-proved by putting the note back.
+
+The same placement made `.font-picker label > span` (0,1,2) outrank `.note-panel` (0,1,0), so the panel would have drawn at 10px, uppercase, in `--font-data` — and `.note-panel` carries `letter-spacing: normal; text-transform: none` precisely to undo an ancestor's label styling, which is the one place that defence loses. Moving the note to a sibling ends all three.
+
+**And `:empty { display: none }` defeated the reason the message region was made unconditional.** The paragraph is `aria-live` and is always rendered so the screen reader is watching it *before* it has news — but `display: none` removes it from the accessibility tree, so for assistive technology it appeared at the same moment as its text after all, which is the failure the unconditional render exists to prevent. It is clipped now: in the tree, zero height.
+
+- Evidence: Playwright isolated **38 passed / 4 skipped** (from 34), including the new guard and the accessible-name pin on both projects, and axe on every route; owner **33/33**. Vitest **873 / 7 across 41 files** — the three added are D-165's. `tsc`, ESLint and the production build clean. D-157 (the `size-adjust` this revises and the limit it states), D-156 (the fold rule), D-153 (the `ch`-cap defect of the same family), D-138 (a measured width is not a phone).
+
+## D-167 — The ninth boundary steps over two open questions at once, and the rate is now the finding
+
+- Date: 2026-08-27
+- Status: **Done, uncommitted.** `docs/decisions/ARCHIVE-D-157-D-163.md` (new), `DECISIONS.md`, `HANDOFF.md`. No code, no SQL.
+- Context: this file hit **112 KB of 120,000 bytes (96%)** — the second breach of the day. The eighth boundary had left it at 85% that same afternoon.
+
+### Five entries, and two holes in the middle of one range
+
+**D-157, D-159, D-160, D-162 and D-163 moved. D-158 and D-161 did not**, and D-154's step-over is what makes that a range rather than three. It is the first time the step has been needed twice inside one cut.
+
+- **D-158** — `list_match_candidates`' unbounded scan, written into its own migration comment and unfixed. Still asking.
+- **D-161** — it says so under its own heading, *What this task created and did not close*: no window picker and no account filter. `public.ledger_statistics` takes `p_from` and `p_to` and the route parses them, with nothing sending them, which is the code asking in the plainest available form. That is PLAN task 46, scoped and **not authorized**.
+- **D-160 was the near miss.** Its named follow-on was that *nothing sets `include_in_reporting`* — built the same day as D-165. Without that, this range would have stopped at D-159 and moved 16 KB instead of 31.
+
+**D-157 moved because a question closed, which is what D-164 said the ninth would need.** That entry predicted the ninth would meet the same wall in the same place until D-153's default face and D-157's metrics were settled. Task 49 settled D-157's and D-166 records the answer. D-153 is unchanged and stays.
+
+### The rate, which is the part worth carrying
+
+**Two boundaries in one day, 85% → 96% in an afternoon.** D-146 first said the rate matters more than the percentage; this is the second demonstration and the clearest. Two decision entries and one review's findings were enough to breach a budget the previous boundary had just cleared 15 KB of headroom in. **A boundary is part of finishing a feature, not a periodic chore** — and the lever is shorter entries, which D-164 argued and this entry is trying to obey.
+
+**What the maintained file holds now is unusual and is the intended shape**: four singletons — D-141, D-153, D-158, D-161 — each alone because each is still asking, then D-164 onward. A reader gets the open questions and the current work and nothing settled. The fragmentation is the price of keeping D-133's rule exactly, not a sign of it slipping.
+
+- Evidence: **114,607 → 83,771 bytes, 96% → 70%**, the deepest cut since the seventh. The five relocated entries proved byte-identical to `HEAD` by diff rather than by reading, after normalising line endings. **Nothing in the range carried a relative link**, checked before the move. `pnpm check:docs --strict` passes with the counts unchanged, which is what proves nothing was dropped. D-133 (the rule), D-140 (the test), D-154 (the step-over), D-164 (the eighth, and the prediction this confirms), D-146 (the rate), D-130 (the budget).

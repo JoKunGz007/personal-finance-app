@@ -225,3 +225,24 @@ the top of `GOTCHAS.md`.
 - Cause: `select plan(N)` is a promise about how many assertions will run, and TAP treats a mismatch as a harness failure rather than an assertion failure — so the reassuring line and the failing line are both true and sit next to each other.
 - Avoid: derive the number instead of counting by hand. `grep -c '^select \(ok\|is\|throws_ok\)(' supabase/tests/<file>.sql` is what the plan should say, and it is worth re-running after any edit that adds an assertion.
 - Verify: 2026-08-27. `plan(30)` against 35 assertions produced exactly that output; `plan(35)` turned the same file green with nothing else changed.
+
+## A reset helper that skips an overlay table leaves an orphan the FK triggers were disabled to allow
+
+- Symptom: a browser spec seeds `public.transaction_overlays` for a transaction it also creates, passes, and then **the next run** fails with `duplicate key value violates unique constraint "transaction_overlays_pkey"` — naming a table that run has not touched yet.
+- Cause: `resetOwnerImportSurface` runs under `set session_replication_role = replica`, which disables the FK triggers as well as the append-only ones. It deleted `source_transactions` and never `transaction_overlays`, so the overlay outlived its transaction instead of failing — and sat there until a fixture reused the id. Three other overlay tables in that same function carry a comment saying exactly this; the transaction overlay was missed because nothing in the app could write one outside `confirm_import`, whose ids are fresh every run, so the gap was unreachable until a test seeded one directly (PLAN task 48, D-165).
+- Avoid: when a reset disables FK triggers, every table pointing at a deleted row must be listed **before** it, and "no code writes this yet" is not a reason to leave one out — a test is code. Grep the migrations for tables carrying the id being deleted rather than working from memory of which ones the app uses.
+- Verify: 2026-08-27. Seeding an overlay, running the spec twice, and watching the second run fail on the primary key; adding `overlay_revisions` and `transaction_overlays` before `source_transactions` turned it green and repeatable (D-165).
+
+## A backtick inside a `psql` template literal closes the SQL string and the error names a TypeScript line
+
+- Symptom: `Failed to type check. ./tests/helpers/local-owner.ts:216:9 Type error: ',' expected.` pointing at a line of SQL **comment**, during a Playwright run's `webServer` build.
+- Cause: the helper builds its SQL in a JavaScript template literal, so a backtick anywhere inside it — including inside a `--` comment written in this repo's usual style of quoting `identifiers` — terminates the string. Everything after it is parsed as TypeScript. The existing comments in that function avoid backticks for exactly this reason and nothing says so.
+- Avoid: no backticks and no `${` in SQL comments inside a template literal. Write the identifier bare. Running `pnpm typecheck` after editing a helper catches it in seconds; discovering it through a browser suite's build costs a full server start.
+- Verify: 2026-08-27. The error above, from a comment reading ``the categories `confirm_import` stores``; removing the two backticks compiled (D-165).
+
+## `document.fonts.ready` resolves before a newly applied face has been requested
+
+- Symptom: a spec that switches typeface and measures the page passes and fails on alternate runs with no change in between, reporting header heights that differ by 44px one run and not at all the next.
+- Cause: a browser requests a font file only when something actually uses it. Immediately after `router.refresh()` rewrites `data-font`, there may be no pending load at all — so `document.fonts.ready` resolves at once, the **fallback's** metrics are what gets measured, and whether the real face has arrived by the time the assertion runs is a race. Both outcomes look like a real result.
+- Avoid: name the stack and start the load — read `--font-body` off the computed style, `await document.fonts.load("16px " + stack)`, then `await document.fonts.ready`. That makes the request rather than hoping one is outstanding. The same applies to any canvas `measureText` probe: an unloaded family silently measures the fallback and every face reads identical, which looks like success.
+- Verify: 2026-08-27. Two consecutive runs of the same unchanged spec, one green and one failing by 44px; with the explicit load both projects are stable across repeated runs (D-166).

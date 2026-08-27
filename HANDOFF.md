@@ -16,17 +16,21 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141 onward** in full,
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-153, D-158, D-161 and D-164 onward** in full,
 with D-001…D-059 in [docs/decisions/ARCHIVE-D-001-D-059.md](docs/decisions/ARCHIVE-D-001-D-059.md),
 D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md),
 D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md),
 D-120…D-129 in [docs/decisions/ARCHIVE-D-120-D-129.md](docs/decisions/ARCHIVE-D-120-D-129.md),
-D-130…D-133 in [docs/decisions/ARCHIVE-D-130-D-133.md](docs/decisions/ARCHIVE-D-130-D-133.md) and
-D-134…D-140 in [docs/decisions/ARCHIVE-D-134-D-140.md](docs/decisions/ARCHIVE-D-134-D-140.md) and
-D-142…D-152 in [docs/decisions/ARCHIVE-D-142-D-152.md](docs/decisions/ARCHIVE-D-142-D-152.md);
-**the seventh range starts at D-142, not D-141** — D-141 is an open question and a boundary excludes those,
-so the maintained file carries D-141 **and** D-153 onward with a gap between them;
-the index at the top of `DECISIONS.md` covers all eight) →
+D-130…D-133 in [docs/decisions/ARCHIVE-D-130-D-133.md](docs/decisions/ARCHIVE-D-130-D-133.md),
+D-134…D-140 in [docs/decisions/ARCHIVE-D-134-D-140.md](docs/decisions/ARCHIVE-D-134-D-140.md),
+D-142…D-152 in [docs/decisions/ARCHIVE-D-142-D-152.md](docs/decisions/ARCHIVE-D-142-D-152.md),
+D-154…D-156 in [docs/decisions/ARCHIVE-D-154-D-156.md](docs/decisions/ARCHIVE-D-154-D-156.md) and
+D-157…D-163 **without D-158 and D-161** in [docs/decisions/ARCHIVE-D-157-D-163.md](docs/decisions/ARCHIVE-D-157-D-163.md);
+**the four gaps are the rule, not an accident** — a boundary excludes every open question and steps
+over one rather than stopping short (D-133, D-154, D-164, D-167). What is left in the maintained file
+is exactly the questions nobody has closed: the mailbox archive (D-141), the default typeface
+(D-153), `list_match_candidates`' unbounded scan (D-158) and the statistics filters (D-161);
+the index at the top of `DECISIONS.md` covers all ten) →
 [GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
 per section, since D-149** — read the index, then open the one section that applies).
 
@@ -83,24 +87,38 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
-- **Commit and push: GRANTED and LIVE for the 2026-08-27 session.** The owner's words were that this
-  session is free to commit and push **as much as it wants**, which is broader than every earlier
-  grant — those were counted and spent. **It is still a production deployment every time** and the
-  remedy is Instant Rollback in the dashboard, not a revert push, so the breadth of the grant is not
-  a reason to push more often; review before committing still holds (D-125). **It does not extend to
-  `supabase db push`**, which is its own ask with a backup verified from the database first, and it
-  **does not survive this session**. Earlier the same day: granted twice and used for four commits
-  across two pushes — `5418ba2`, `a462a81`, `cbf1c58` (as `48a2259..cbf1c58`), then `758efe6` (as
-  `cbf1c58..758efe6`), both deployed and both confirmed by the owner on screen. Before that: granted
-  2026-08-26 and used four times (`f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60`), all pushed.
-- **Task 45's build grant is DISCHARGED, 2026-08-27.** The owner authorized migration 021, the RPCs,
-  the route, the client and the tests, run locally, and all of that is built and green (D-158). **The
-  grant covered building and running locally and nothing else.** It did not cover `supabase db push`,
-  a commit, or a deploy, and none of those has happened. **Migration 021 exists on
-  `private-ledger-local` only**; every other project including hosted is on 020.
-- **The backup the owner exported on 2026-08-26 is still unverified from the database.** He said he
-  took it, which is his word rather than a reading. **Verify the sequence from the database before
-  asking for any push of 021** — the last agent reading was 33 on 2026-08-18. D-152's rule stands.
+- **Committing: GRANTED for this session's work, 2026-08-27. PUSHING: NOT GRANTED — ask.** The owner
+  authorized the commit explicitly and **separately from the push**, which is the distinction that
+  matters here: a commit is local and reversible, **a push to `main` is a production deployment**
+  whose only remedy is Instant Rollback in the dashboard rather than a revert push. `/code-review
+  high` ran first and found four defects, all fixed (D-125, six for six). The grant does not survive
+  this session and does not reach `supabase db push`.
+  Spent history, for the record: 2026-08-27 granted twice and used for ten commits
+  across several pushes — `5418ba2`, `a462a81`, `cbf1c58`, then `758efe6`, `6a8399b`, `9ce1f06`,
+  `d61485c`, `451b6ae`, `571d628`, `777e61a`; 2026-08-26 granted once and used four times
+  (`f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60`).
+- **Building PLAN tasks 48 and 49: GRANTED and SPENT, 2026-08-27** (D-165, D-166). Both are built,
+  the gate is green and **nothing is committed or deployed** — the grant covered building and
+  running locally and nothing else. Task 48 put the `include_in_reporting` control in the ledger's
+  Status cell; task 49 measured the typeface question, did **not** build the vertical-metric pins
+  the task prescribed because the measurement said they pin nothing, and fixed the one real reflow
+  instead. A further change to either needs a fresh ask, as does the commit.
+- **Taking the `DECISIONS.md` archive boundary: GRANTED and SPENT, 2026-08-27** (D-164). The eighth
+  boundary moved D-154 … D-156 (97% → 85%); the review write-ups then put it back to **96%** the
+  same afternoon, and the **ninth** moved D-157, D-159, D-160, D-162 and D-163 — stepping over D-158
+  and D-161, both still open — for **96% → 73%** (D-167). Task 49 closing D-157 is what bought the
+  depth, exactly as D-164 predicted. **The rate is the thing to watch**: two boundaries in one day.
+- **Building PLAN tasks 46 and 47: NOT GRANTED.** Scoped and discussed; the owner has not said to
+  start them.
+- **Task 45's build grant is DISCHARGED, 2026-08-27.** It covered building and running locally and
+  nothing else. Migration 021 has since been superseded by 022 and 023, and **every project is on
+  023 except `private-ledger-live`, which stays frozen on 012** — applied to hosted by the owner's
+  own `supabase db push --linked` on 2026-08-27 and read back from hosted afterwards.
+- **The backup was VERIFIED FROM THE DATABASE on 2026-08-27**, not taken on the owner's word: a
+  public `inet_server_addr()`, sequence **37 / last_exported_sequence 37**, backup record at 37 from
+  **2026-08-27 01:36 UTC**. Migration 023 changed schema and no owner data, so nothing staled it —
+  sequence and row count were identical afterwards. **The next migration needs its own reading**;
+  D-152's rule stands and a claim is not a measurement.
 - **The deployed ledger was looked at by the owner and found three things the gate could not**
   (D-159): the first load fetches **297 rows, not 100**, because paging is per account and three
   accounts hold rows; the **Load older rows control rendered as prose** for want of a class; and the
@@ -137,8 +155,8 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   nobody. **Sequence 37 and 1,604 rows unchanged**, so it moved schema and no owner data. Backup
   contract **unchanged at v7**. **Every project is on 023 except `private-ledger-live`, frozen on
   012.** `/code-review high` ran before the commit and found six defects, all fixed (D-161).
-  **Nothing in the app can set `include_in_reporting`**, and the real ledger holds **0** rows with
-  it off, so the new filter moves no figure today on either surface.
+  **The `include_in_reporting` control exists as of 2026-08-27** (D-165, uncommitted), and the real
+  ledger holds **0** rows with the flag off — so the filter still moves no figure on the deployment.
 - **PLAN tasks 48 and 49 are AUTHORIZED BY THE OWNER AND UNSTARTED, 2026-08-27.** He approved all
   four of his appearance requests; three shipped as D-163 and these two are what remain. Their
   shapes, and task 48's data-loss hazard, are in `PLAN.md` — what is recorded here is only that the
@@ -157,7 +175,7 @@ Every line here is a **reading**, not a fact. Re-take it rather than trusting it
   hypothetical.** All 1,604 rows are still reportable, so no figure moves yet — but a
   `Transfer Withdrawal` and a `Transfer in` of the same amount on the same date sit in the two
   largest-movement lists. One internal transfer, inflating money-in and money-out alike while net
-  stays correct. **Nothing in the app can set the flag**; that control is the next piece of work.
+  stays correct. **The control for it is built** (D-165) and is waiting on a commit and a deploy.
 - **The hosted backup was VERIFIED FROM THE DATABASE before the migration, 2026-08-27**, not taken
   on the owner's word: `inet_server_addr()` returned a public address, sequence **37 /
   last_exported_sequence 37**, backup record at 37 from **2026-08-27 01:36 UTC**, 1,604 rows. That

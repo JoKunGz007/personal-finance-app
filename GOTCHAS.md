@@ -156,6 +156,9 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A fixture that renders a QR reaches the internet for its WebAssembly, so the slip specs need the network
 - `pnpm supabase:test` exits non-zero on a passing run, so the exit code is not the result
 - A pgTAP plan that undercounts reports every subtest passing, and fails anyway
+- A reset helper that skips an overlay table leaves an orphan the FK triggers were disabled to allow
+- A backtick inside a `psql` template literal closes the SQL string and the error names a TypeScript line
+- `document.fonts.ready` resolves before a newly applied face has been requested
 
 ### Layout, typography and accessibility
 
@@ -177,6 +180,8 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A colour that passes as a chart mark can still fail as text
 - A pixel typeface applied to figures makes digits transposable
 - A row hover cannot separate rows on a phone
+- A table does not widen when a cell overflows, so `table.scrollWidth` cannot see a control that does not fit
+- Text capped by width occupies a face-dependent number of lines, so it reflows the box around it
 
 ### App, auth, routing and accessibility
 
@@ -212,6 +217,9 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A control with no class inherits the prose around it, and a suite that asks whether it exists cannot see that
 - A period-over-period comparison is nonsense unless both periods are whole
 - Reading a figure off a screenshot in a pixel typeface is not evidence
+- An endpoint that replaces a whole record turns a partial write into silent data loss
+- A total that honours a flag on one branch and not the other disagrees with itself in one keystroke
+- `display: none` on an empty `aria-live` region defeats the reason it was rendered empty
 
 ## Traps
 
