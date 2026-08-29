@@ -16,7 +16,7 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-153, D-158, D-161 and D-164 onward** in full,
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158, D-161, D-169 and D-170** in full,
 with D-001…D-059 in [docs/decisions/ARCHIVE-D-001-D-059.md](docs/decisions/ARCHIVE-D-001-D-059.md),
 D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md),
 D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md),
@@ -24,13 +24,16 @@ D-120…D-129 in [docs/decisions/ARCHIVE-D-120-D-129.md](docs/decisions/ARCHIVE-
 D-130…D-133 in [docs/decisions/ARCHIVE-D-130-D-133.md](docs/decisions/ARCHIVE-D-130-D-133.md),
 D-134…D-140 in [docs/decisions/ARCHIVE-D-134-D-140.md](docs/decisions/ARCHIVE-D-134-D-140.md),
 D-142…D-152 in [docs/decisions/ARCHIVE-D-142-D-152.md](docs/decisions/ARCHIVE-D-142-D-152.md),
-D-154…D-156 in [docs/decisions/ARCHIVE-D-154-D-156.md](docs/decisions/ARCHIVE-D-154-D-156.md) and
-D-157…D-163 **without D-158 and D-161** in [docs/decisions/ARCHIVE-D-157-D-163.md](docs/decisions/ARCHIVE-D-157-D-163.md);
-**the four gaps are the rule, not an accident** — a boundary excludes every open question and steps
-over one rather than stopping short (D-133, D-154, D-164, D-167). What is left in the maintained file
-is exactly the questions nobody has closed: the mailbox archive (D-141), the default typeface
-(D-153), `list_match_candidates`' unbounded scan (D-158) and the statistics filters (D-161);
-the index at the top of `DECISIONS.md` covers all ten) →
+D-154…D-156 in [docs/decisions/ARCHIVE-D-154-D-156.md](docs/decisions/ARCHIVE-D-154-D-156.md),
+D-157…D-163 **without D-158 and D-161** in [docs/decisions/ARCHIVE-D-157-D-163.md](docs/decisions/ARCHIVE-D-157-D-163.md) and
+D-153 with D-164…D-168 in [docs/decisions/ARCHIVE-D-153-D-168.md](docs/decisions/ARCHIVE-D-153-D-168.md);
+**the gaps are the rule, not an accident** — a boundary excludes every open question and steps
+over one rather than stopping short (D-133, D-154, D-164, D-167, D-171). What is left in the maintained file
+is the three questions nobody has closed — the mailbox archive (D-141), `list_match_candidates`'
+unbounded scan (D-158) and the statistics account filter (D-161) — plus **D-169 and D-170, which are
+settled arguments held back only because nobody has looked at what they render on the deployment**
+(D-171, and that fence expires the moment either page is seen); the index at the top of
+`DECISIONS.md` covers all eleven) →
 [GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
 per section, since D-149** — read the index, then open the one section that applies).
 
@@ -128,11 +131,15 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   because the measurement said they pin nothing, and fixed the one real reflow instead. **Both are
   deployed and the first was verified in the running app.** A further change to either needs a
   fresh ask.
-- **Taking the `DECISIONS.md` archive boundary: GRANTED and SPENT, 2026-08-27** (D-164). The eighth
-  boundary moved D-154 … D-156 (97% → 85%); the review write-ups then put it back to **96%** the
-  same afternoon, and the **ninth** moved D-157, D-159, D-160, D-162 and D-163 — stepping over D-158
-  and D-161, both still open — for **96% → 73%** (D-167). Task 49 closing D-157 is what bought the
-  depth, exactly as D-164 predicted. **The rate is the thing to watch**: two boundaries in one day.
+- **Taking the `DECISIONS.md` archive boundary: GRANTED and SPENT, 2026-08-29** (D-171). The owner
+  named it as the session's next action and said to carry on without waiting. The **tenth** moved
+  six entries — D-153 with D-164 … D-168 — for **86% → 61%**, stepping over D-158 and D-161 and
+  stopping below D-169 and D-170 because both change what renders and neither has been looked at
+  on the deployment. **It is done and uncommitted; committing it is a separate ask that has not
+  been made.** Previously: the eighth moved D-154 … D-156 (97% → 85%) and the **ninth** moved
+  D-157, D-159, D-160, D-162 and D-163 for **96% → 73%**, both on 2026-08-27 (D-164, D-167).
+  **The rate is the thing to watch**: three boundaries in three days, and each was bought by a
+  question closing rather than by the calendar.
 - **Building PLAN tasks 46 and 47: NOT GRANTED.** Scoped and discussed; the owner has not said to
   start them.
 - **Task 45's build grant is DISCHARGED, 2026-08-27.** It covered building and running locally and
@@ -182,19 +189,23 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `0b88ea2` and `origin/main` matches it.** **Four commits went out on 2026-08-29
-  and all four are deployed**: `de70c9e` (the continuity sync that could not record its own
+- **`main` is at `77c0d6b` and `origin/main` matches it.** **Five commits went out on 2026-08-29
+  and all five are deployed**: `de70c9e` (the continuity sync that could not record its own
   commit), `3b1205d` (five tap targets at phone width, D-168), `24b894a` (the default face D-169,
-  a sixth control, and the docs catching up) and `0b88ea2` (the statistics window picker, D-170).
-  **The last two change what renders** — the default face is what a device with no cookie gets, so
-  an existing browser keeps its stored choice and a fresh one does not. Three preceded them on
-  2026-08-27: `17a93ca`, `dd64051`, `de4acbb`.
-- **`DECISIONS.md` is at 86% and that is the next thing to deal with.** Four entries landed today.
-  **D-153 closed (D-169), so the tenth boundary can move it** along with everything settled around
-  it — the remaining fences are D-141, D-158 and D-161. Taking it is cheaper now than urgent later.
-- **The working tree holds only `eslint.config.mjs` and `playwright.config.ts`**, which are the two
-  deliberately local-only files and **must never be committed**. `git status --short` is what tells
-  them apart from ordinary work. Nothing else is uncommitted.
+  a sixth control, and the docs catching up), `0b88ea2` (the statistics window picker, D-170) and
+  `77c0d6b` (the sync that recorded them). **Two of them change what renders** — the default face
+  is what a device with no cookie gets, so an existing browser keeps its stored choice and a fresh
+  one does not. Three preceded them on 2026-08-27: `17a93ca`, `dd64051`, `de4acbb`.
+- **`DECISIONS.md` is at 61% after the tenth boundary, taken 2026-08-29 and uncommitted** (D-171).
+  Six entries moved — **D-153 with D-164 … D-168** — to `docs/decisions/ARCHIVE-D-153-D-168.md`,
+  stepping over D-158 and D-161 for the second boundary running. **D-169 and D-170 deliberately
+  stayed**: both change what renders and nobody has looked at either on the deployment, which is a
+  fence that expires the moment either page is seen. The remaining question fences are D-141,
+  D-158 and D-161. **`docs/gotchas/app.md` at 79% is now the file to watch.**
+- **The working tree holds `eslint.config.mjs` and `playwright.config.ts`, which must never be
+  committed, alongside the tenth boundary's uncommitted doc changes** — `DECISIONS.md`,
+  `HANDOFF.md`, `PLAN.md` and the new archive. `git status --short` is what tells the two
+  local-only configs apart from ordinary work, and it is worth running before every commit ask.
 - **The most recent deployment was verified in the running app, not in the dashboard** — the
   exclude control exercised on a real internal transfer, `/statistics` read back, the round trip
   returning every figure to its start, and the database showing the audit trail. Driven through the
@@ -220,13 +231,15 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
-- **Green on `de4acbb`**: Vitest **873 passed / 7 skipped across 41 files**; Playwright owner
+- **Green on `0b88ea2`**: Vitest **881 passed / 7 skipped across 41 files**; Playwright owner
   **33/33**, isolated **38 passed / 4 skipped**; `tsc`, `pnpm exec eslint .` and
-  `check:docs --strict` clean at **167 decisions and 184 traps**; production build clean at
+  `check:docs --strict` clean at **170 decisions and 191 traps**; production build clean at
   **twenty-three** `/api/v1/` routes. **pgTAP was deliberately not re-run — no SQL has moved since
-  migration 023**, which the owner applied himself.
-- **`DECISIONS.md` is at 73% after two boundaries in one day.** `docs/gotchas/app.md` is at 79% and
-  is the next file to watch.
+  migration 023**, which the owner applied himself. **The tenth boundary re-ran `check:docs
+  --strict` alone and nothing else, deliberately: nothing outside `docs/` and the continuity files
+  moved.** It reports **171 decisions and 191 traps**.
+- **`DECISIONS.md` is at 61% after the tenth boundary** (D-171). `docs/gotchas/app.md` is at 79%
+  and is the next file to watch.
 
 ### Machine facts that have no other home
 
