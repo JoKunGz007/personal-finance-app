@@ -6,7 +6,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 **What a date on a `Verify:` line means, and what a backfilled one does not.** An ordinary date is the day the trap was checked against a running system. A clause reading **`Dated <date> from <sha>`** is weaker and deliberately says so: it was recovered on 2026-08-10 from the commit that introduced the code the trap is about, so it marks when the trap became *true* rather than when it was last confirmed *still* true. Neither kind is a promise that the trap holds today — that is what makes the date worth having, since a trap whose date is months behind the code it names is the one to re-read first. A date was never invented for an entry whose evidence could not be found; those stay undated, which is honest and is what `--strict` will keep failing on.
 
-**One hundred and seventy-six traps, and this file is now the index to them rather than the file that holds them** (D-149, 2026-08-25). They were grouped on 2026-08-09 into the sections below — eight then, nine since `app.md` split on 2026-08-27 — added to since, and their bodies moved into `docs/gotchas/` — one file per section — when this file breached its budget a second time. **The split was owed rather than chosen**: D-134 raised the budget once and said the next breach was owed a split along these exact section headings, not a third raise. Neither move changed anything inside a trap; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. **The index below still lists every trap in every section**, which is what makes finding one cost a scan of this file and then exactly one open. `pnpm check:docs --strict` fails if the index and the bodies disagree.
+**One hundred and eighty-nine traps, and this file is now the index to them rather than the file that holds them** (D-149, 2026-08-25). They were grouped on 2026-08-09 into the sections below — eight then, nine since `app.md` split on 2026-08-27 — added to since, and their bodies moved into `docs/gotchas/` — one file per section — when this file breached its budget a second time. **The split was owed rather than chosen**: D-134 raised the budget once and said the next breach was owed a split along these exact section headings, not a third raise. Neither move changed anything inside a trap; `Last reviewed` above is deliberately unchanged, because reorganising a file is not reviewing what it claims. **The index below still lists every trap in every section**, which is what makes finding one cost a scan of this file and then exactly one open. `pnpm check:docs --strict` fails if the index and the bodies disagree.
 
 ## Index
 
@@ -33,6 +33,8 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - tesseract.js caches its language data into the process working directory
 - pgTAP run straight after `pnpm test` fails in `001` on a foreign key, and the change is not the cause
 - A PowerShell `**` path glob does not recurse, so the build's target check silently under-counts
+- A PowerShell `;` chain does not propagate exit codes, so a truncated log plus a later command's zero reads as a green suite
+- A scripted replacement's escape sequences survive one layer of quoting and not two, and land real newlines inside string literals
 
 ### Docker and the local Supabase projects
 
@@ -159,6 +161,9 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A reset helper that skips an overlay table leaves an orphan the FK triggers were disabled to allow
 - A backtick inside a `psql` template literal closes the SQL string and the error names a TypeScript line
 - `document.fonts.ready` resolves before a newly applied face has been requested
+- A Playwright config with `testDir: "."` and no `testMatch` runs every spec in that directory
+- A harness that signs in through a control the app later hid fails as a timeout, not as a missing selector
+- `resize_window` reports success on a maximized window and moves nothing
 
 ### Layout, typography and accessibility
 

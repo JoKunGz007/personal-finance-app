@@ -75,11 +75,24 @@ describe("reading a typeface preference from untrusted input", () => {
 });
 
 describe("the preference's own shape", () => {
-  it("keeps the legible stack as the default and lists it first", () => {
-    // The pixel faces are on trial (PLAN task 42) and the way back must not depend on the trial
-    // going well. A change here is a real decision, so it fails loudly rather than drifting.
-    expect(DEFAULT_FONT).toBe("system");
+  it("defaults to the owner's chosen face, and keeps the legible stack first and reachable", () => {
+    // **This assertion changed on 2026-08-29 and the way it changed is the point.** It read
+    // `DEFAULT_FONT === "system"` and failed the moment the owner chose Pixelify Sans, which is
+    // exactly what its own comment promised it would do — a default is a real decision, so it
+    // fails loudly rather than drifting. What was rewritten is the decision; what is asserted
+    // below is the invariant that outlives it (D-169).
+    expect(DEFAULT_FONT).toBe("pixelify-sans");
+
+    // **The way back to something legible must not depend on the default going well.** `system`
+    // stays in the closed set and stays first, so the picker offers it before any pixel face on
+    // every device, whatever the default becomes next.
+    expect(FONT_CHOICES).toContain("system");
     expect(FONT_CHOICES[0]).toBe("system");
+
+    // A default outside the closed set would make `fontChoiceFrom` return a value it also refuses,
+    // which is unrepresentable rather than merely unlikely — assert it, since the type alone stops
+    // being proof the moment someone widens `FontChoice`.
+    expect(FONT_CHOICES).toContain(DEFAULT_FONT);
   });
 
   it("gives every face a label and a note, so a new one cannot ship unexplained", () => {

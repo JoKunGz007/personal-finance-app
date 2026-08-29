@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { FONT_CHOICES, FONT_NOTES, type FontChoice } from "@/lib/ui-font";
+import { DEFAULT_FONT, FONT_CHOICES, FONT_NOTES, type FontChoice } from "@/lib/ui-font";
 
 /**
  * The typeface switch, driven in a real browser (D-153, `PLAN.md` task 42).
@@ -55,14 +55,17 @@ test("names the typeface select and nothing more", async ({ page }) => {
   // Open the panel and re-check: the disclosed copy is what joined the name in the broken version,
   // and only once it was open. A closed-panel-only assertion would have passed against the defect.
   await page.getByRole("button", { name: "About this typeface" }).click();
-  await expect(page.getByText(FONT_NOTES.system)).toBeVisible();
+  await expect(page.getByText(FONT_NOTES[DEFAULT_FONT])).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Typeface", exact: true })).toBeVisible();
 });
 
 test("applies a typeface, and remembers it across a reload", async ({ page }) => {
   await page.goto("/ledger");
-  await expect(page.locator(HTML), "a device with no cookie gets the legible default")
-    .toHaveAttribute("data-font", "system");
+  // **Named symbolically, not literally.** This read `"system"` until 2026-08-29 and broke when
+  // the owner made Pixelify Sans the default (D-169) - the assertion meant *the default* all along,
+  // and spelling it as one face made a decision elsewhere look like a regression here.
+  await expect(page.locator(HTML), "a device with no cookie gets the default face")
+    .toHaveAttribute("data-font", DEFAULT_FONT);
 
   await pick(page, "press-start-2p");
   await expect(page.getByLabel("Typeface")).toHaveValue("press-start-2p");
@@ -93,7 +96,7 @@ test("refuses a typeface it does not offer, and keeps the stored one", async ({ 
     return response.status;
   });
   expect(status, "an unknown face is a refusal, not a stored value").toBe(422);
-  await expect(page.locator(HTML)).toHaveAttribute("data-font", "system");
+  await expect(page.locator(HTML)).toHaveAttribute("data-font", DEFAULT_FONT);
 });
 
 test("refuses a body carrying a key this endpoint does not have", async ({ page }) => {

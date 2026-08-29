@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-153, D-158, D-161, and D-164 onward** — four gaps, and every one of them is the rule holding rather than an accident. A boundary excludes every open question (D-133), and where such a question sits inside an otherwise settled range the boundary **steps over it rather than stopping short of it** (D-154). What is left here is therefore the four questions nobody has closed, plus the current work. **D-141**: whether the mailbox source is deleted after import, deferred by the owner. **D-153**: whether Press Start 2P becomes the default face, one constant in `lib/ui-font.ts`. **D-158**: `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. **D-161**: the statistics surface has no window picker and no account filter, and the RPC takes `p_from` and `p_to` that nothing sends. `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions across the whole set, so the ids stay whole and the maintained file has never been required to be contiguous. Nine settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24, **D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md) on 2026-08-25, **D-142 … D-152** to [`docs/decisions/ARCHIVE-D-142-D-152.md`](docs/decisions/ARCHIVE-D-142-D-152.md) on 2026-08-26, **D-154 … D-156** to [`docs/decisions/ARCHIVE-D-154-D-156.md`](docs/decisions/ARCHIVE-D-154-D-156.md) on 2026-08-27, and **D-157 … D-163 without D-158 and D-161** to [`docs/decisions/ARCHIVE-D-157-D-163.md`](docs/decisions/ARCHIVE-D-157-D-163.md) the same day. The index below covers all ten files, so a reader can find any entry without opening any body.
+This file carries **D-141, D-153, D-158, D-161, and D-164 onward** — four gaps, and every one of them is the rule holding rather than an accident. A boundary excludes every open question (D-133), and where such a question sits inside an otherwise settled range the boundary **steps over it rather than stopping short of it** (D-154). What is left here is therefore the four questions nobody has closed, plus the current work. **D-141**: whether the mailbox source is deleted after import, deferred by the owner. **D-153**: the default face — **closed on 2026-08-29 by D-169**, which answered it with Pixelify Sans rather than the Press Start 2P the question was framed around, so this entry no longer fences the file and the tenth boundary can move it. **D-158**: `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. **D-161**: the statistics surface has no window picker and no account filter, and the RPC takes `p_from` and `p_to` that nothing sends. `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions across the whole set, so the ids stay whole and the maintained file has never been required to be contiguous. Nine settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24, **D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md) on 2026-08-25, **D-142 … D-152** to [`docs/decisions/ARCHIVE-D-142-D-152.md`](docs/decisions/ARCHIVE-D-142-D-152.md) on 2026-08-26, **D-154 … D-156** to [`docs/decisions/ARCHIVE-D-154-D-156.md`](docs/decisions/ARCHIVE-D-154-D-156.md) on 2026-08-27, and **D-157 … D-163 without D-158 and D-161** to [`docs/decisions/ARCHIVE-D-157-D-163.md`](docs/decisions/ARCHIVE-D-157-D-163.md) the same day. The index below covers all ten files, so a reader can find any entry without opening any body.
 
 **Every boundary sits where an argument ends rather than where a number is round**, and the fourth one is the clearest case of that rule so far. It was taken at **93%** of this file's byte budget and moved the whole arc in which both readers went to Cloud Vision and the local OCR engine was deleted. **The third boundary had explicitly refused to move D-120**, on the grounds that whether pre-fill stays was undecided and that question attached to D-120 and D-129 — which was true when written. **What closed it was not an argument but a shipped feature**: D-135 files a machine-read amount into the ledger without the owner looking at it at all, which is a stronger commitment than the trial ever asked for. *A question is closed when the code has stopped asking it*, and that is the test to apply at the next boundary rather than re-reading the prose.
 
@@ -247,6 +247,8 @@ What this file now holds is four open questions and the live frontier — the ma
 - **D-165** — `include_in_reporting` gets a control, and the erasure it could have caused is made unrepresentable rather than remembered
 - **D-166** — The typeface work pinned nothing vertical, because the measurement said every reflow in this app is a width one
 - **D-167** — The ninth boundary steps over two open questions at once, and the rate is now the finding
+- **D-168** — Five controls reach the tap standard on a phone, and the instrument that should have caught them had been blind since the change that hid its sign-in
+- **D-169** — The default face is Pixelify Sans, which closes D-153's question by answering it with a third option
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -667,3 +669,73 @@ The same placement made `.font-picker label > span` (0,1,2) outrank `.note-panel
 **What the maintained file holds now is unusual and is the intended shape**: four singletons — D-141, D-153, D-158, D-161 — each alone because each is still asking, then D-164 onward. A reader gets the open questions and the current work and nothing settled. The fragmentation is the price of keeping D-133's rule exactly, not a sign of it slipping.
 
 - Evidence: **114,607 → 83,771 bytes, 96% → 70%**, the deepest cut since the seventh. The five relocated entries proved byte-identical to `HEAD` by diff rather than by reading, after normalising line endings. **Nothing in the range carried a relative link**, checked before the move. `pnpm check:docs --strict` passes with the counts unchanged, which is what proves nothing was dropped. D-133 (the rule), D-140 (the test), D-154 (the step-over), D-164 (the eighth, and the prediction this confirms), D-146 (the rate), D-130 (the budget).
+
+## D-168 — Five controls reach the tap standard on a phone, and the instrument that should have caught them had been blind since the change that hid its sign-in
+
+- Date: 2026-08-29
+- Status: **Accepted, committed and deployed** as `3b1205d`. `app/globals.css` only — five rules inside the existing `@media (max-width: 700px)` block. No SQL, no route, no contract, no CSP change. `.runtime/mobile-audit.spec.ts` was repaired and extended alongside it and remains gitignored.
+- Context: the owner granted a browser session against the real deployment, which produced the first phone-width reading anyone has taken of `/statistics` and of task 48's control.
+
+### What was wrong
+
+**Task 48's own control was one of the five.** `.match-control .secondary-button` is 36px and `app/ledger-statement-row.tsx` wraps Exclude/Include in `.match-control`, so the control that shipped in `17a93ca` went out **8px under the phone standard this repo set for itself** — on `/ledger`, which is the surface D-138 was found on. Four others sat with it: `.note-toggle` at 26×26, `.header-toggle` at 40px, `.font-picker select` at 34px, and `.matching-banner .secondary-button` at 38px.
+
+**`.note-toggle` is the sharpest of them because D-156 made it load-bearing.** Folding standing copy behind the `(i)` means the `(i)` is the only route back to that copy; at 26px on a phone, the rule that saved vertical space put its own escape hatch under the tap standard.
+
+### Why nothing saw it, which is the part worth keeping
+
+`.runtime/mobile-audit.spec.ts` is the only instrument that measures tap targets at 390px, and it clicks `Dev sign-in` directly. **D-157 put every header control except the brand and the route row behind a `Settings` disclosure below 700px**, and the sign-in went with them — so the audit has timed out at phone width since `d7411b3` and nobody noticed for three days, because a gitignored throwaway only fails when someone asks it to run. **The change that introduced small controls and the change that blinded the audit shipped the same day.**
+
+Behind that sat a second, larger blind spot: **navigation resets the disclosure**, so every measurement the audit has ever taken ran with the panel shut, and the privacy chip and font picker were never inside a measured viewport at all. D-139 had already written the rule this breaks — *a surface that only exists after an action is a surface no walking audit can measure* — and it is now the third entry to be bitten by it.
+
+### What changed, and what deliberately did not
+
+Raised **at phone width only**, which is D-139's rule unchanged: the desktop base stays compact for a pointer. `.match-control` buttons and `.matching-banner` to 44px, `.header-toggle` 40→44, `.note-toggle` 26→44, `.font-picker select` 34→44.
+
+**The `/import` checkbox was measured at 24×24 and left alone.** It sits inside a `<label>`, so the label is what a thumb hits; inflating the box would have fixed the measurement rather than the problem — the same error as measuring the table instead of the cell. The audit now credits a wrapping label, but only when the label itself clears 44px.
+
+**`.matching-banner` is the one change resting on reasoning rather than a measurement**, because the banner exists only after a match and no walking audit reaches it. `/code-review high` confirmed the selector lands on real markup in `ledger-summary` and wins its cascade; that is weaker evidence than a reading and is recorded as such.
+
+### A sixth control, and only the real ledger could show it
+
+**`.link-button` measured 106x42 on the deployed `/ledger` — two pixels short.** The expand-the-hit-area pattern was already applied to it (`padding-block: 12px; margin-block: -12px`) and the arithmetic was simply out: an 18px line plus 12px each side is 42, not 44. Raised to 13px, with the negative margin tracking it so the layout footprint does not move.
+
+**No local audit could have found this.** The only `.link-button` on `/ledger` is *Load older rows*, which renders **only when there are more rows than the page holds** — and the phone harness seeds six. It took the owner opening the real 1,604-row ledger in a narrow window to put the control on screen at all. That is D-138 and D-139 arriving from a third direction: not a surface behind an action this time, but **a surface that exists only with enough data behind it**, which invented fixtures are structurally unable to produce.
+
+**The reading was taken at 478px, not 390.** Chrome clamps a window to roughly 500px wide, so window resizing cannot reach phone width on this machine at all — phone layout was active because the breakpoint is 700px, but this is not a phone-width reading and is not recorded as one. Device emulation remains the only thing that reaches 390, and a real phone remains the only thing that is one.
+
+### The cost is measured, because a comment saying *measured* is a claim that has to be true
+
+The audit shrinks every `.note-toggle` back to 26px in place, reads `body.scrollHeight`, restores and reads again — one pass, no second run. **`/ledger` grew 3788 → 3857 (+69px)** and the other four routes +18px each. Five `(i)` cost 69px and not 90, because some sit beside content already taller than 44px. That is exactly the arithmetic a comment would have gotten wrong (D-153's own lesson, restated).
+
+### Evidence
+
+`app/globals.css`, `.runtime/mobile-audit.spec.ts`. Phone audit at 390px: **all five routes plus a disclosure-open pass report `tap targets: all >= 44px`**, no route pans sideways (390 vs 390), and task 48's Status cell measures 324 against 324. Vitest **873 passed / 7 skipped across 41 files**; Playwright owner **33/33**, isolated **38 passed / 4 skipped** — including *switching the typeface moves nothing on the page* and axe on every route, both on the `mobile` project, which are what hold D-166's invariant across this change. `tsc`, `pnpm exec eslint .` and `check:docs --strict` clean; build clean. **pgTAP deliberately not re-run — no SQL moved.** D-138 (the defect class), D-139 (the rule this breaks for the third time), D-156 (why the `(i)` is load-bearing), D-157 (what hid the sign-in), D-165 (the control that shipped short).
+
+## D-169 — The default face is Pixelify Sans, which closes D-153's question by answering it with a third option
+
+- Date: 2026-08-29
+- Status: **Accepted, uncommitted at the time of writing.** `lib/ui-font.ts` (one constant and its comment) and `tests/ui-font.test.ts` (one assertion rewritten). No SQL, no route, no contract, no CSP change.
+- Context: D-153 left one question open — whether Press Start 2P becomes the default face — and it has fenced `DECISIONS.md` from archiving ever since. The owner answered it on 2026-08-29 by choosing **Pixelify Sans** instead.
+
+### The answer is not the one the question was framed around, and that is worth recording
+
+D-153 wrote the question as *whether Press Start 2P becomes the default*, because that was the owner's leading candidate. **The answer chose the third face.** So this closes the question rather than confirming it, and a reader who finds only D-153 would conclude the opposite of what happened.
+
+The choice is coherent with what has been measured since. `FONT_NOTES` describes Pixelify Sans as **closest to ordinary proportions**, and Press Start 2P advances a full em per glyph — which is what forced ledger figures down to 8px, because `-1,234,567.89` at thirteen characters wants 130px in a 117px box (D-153). Defaulting to the widest face would impose that trade on every device before anyone had chosen anything. Pixelify Sans keeps the pixel character and asks less of the layout.
+
+### What did not change, and must not
+
+**`system` stays first in `FONT_CHOICES` and one press away.** D-153's real invariant was never *which* face is default but that **the way back to something legible must not depend on the trial going well** — a cookie is per device, so a default is a starting point rather than a commitment. That is now asserted directly rather than implied by the default's value.
+
+**The Thai fallback is unchanged and is not a regression here.** All three pixel faces are Latin-only, and every switched stack keeps `IBM Plex Sans Thai` behind the pixel face, because Thai reaches this app as *data* — a counterparty name off a statement — and never as interface copy.
+
+### The test that failed is the reason to write tests this way
+
+`tests/ui-font.test.ts` asserted `DEFAULT_FONT === "system"` with a comment reading *"a change here is a real decision, so it fails loudly rather than drifting."* **It did exactly that**, on the first run after the constant changed. The assertion was rewritten to hold the decision *and* the invariant that outlives it: `system` present and first, and `DEFAULT_FONT` a member of the closed set — the last of which stops being guaranteed by the type the moment someone widens `FontChoice`.
+
+### Consequence for the archive, which is why this was cheap and valuable at once
+
+**D-153 no longer fences this file.** It was one of four open questions holding `DECISIONS.md` above its archive floor, and the cheapest of them to settle — one constant. The tenth boundary can now move D-153 and everything settled around it. The remaining fences are **D-141** (whether the mailbox source is deleted after import, deferred), **D-158** (`list_match_candidates`' unbounded scan) and **D-161** (the statistics filters, now `PLAN.md` task 46). D-164's prediction holds a second time: *what buys a boundary its depth is a question closing, not a chore.*
+
+- Evidence: `lib/ui-font.ts`, `tests/ui-font.test.ts`. Vitest **873 passed / 7 skipped across 41 files** after the change, `tsc` clean. D-153 (the question this closes), D-166 (why a face change moves nothing), PLAN task 42 (the trial this concludes).

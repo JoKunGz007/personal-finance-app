@@ -932,7 +932,14 @@ footer p { margin: 0; }
      screen — which is the whole of what the header work was about. */
   .brand small { display: none; }
   .skip-link { padding: 13px 16px; }
-  .link-button { padding-block: 12px; margin-block: -12px; }
+  /* **Measured at 106x42 on the deployed ledger, 2px short** (D-168). The expand-the-hit-area
+     pattern here was right and the arithmetic was two pixels out: an 18px line plus 12px each side
+     is 42, not 44. **No local audit could see this** — the only .link-button on /ledger is *Load
+     older rows*, which renders only when there are more rows than the page holds, and the phone
+     harness seeds six. It took the real 1,604-row ledger to put the control on screen at all,
+     which is D-138s family again: a surface that exists only with enough data behind it.
+     margin-block tracks padding-block so the layout footprint is unchanged. */
+  .link-button { padding-block: 13px; margin-block: -13px; }
 
   /* **The active-route marker rendered as a detached rounded box.** `box-shadow: inset 0 -2px` is
      clipped to the link's `border-radius`, so the underline curved up at both ends and read as a

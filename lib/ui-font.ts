@@ -48,12 +48,24 @@ export type FontChoice = (typeof FONT_CHOICES)[number];
 /**
  * What a device with no preference gets.
  *
- * **Deliberately not the owner's leading candidate.** He leans to Press Start 2P and can choose it
- * in one gesture, which the cookie then remembers per device; defaulting to it would instead impose
- * a face nobody had lived with yet on every fresh device, including whichever one he next opens to
- * check a balance. Flipping this constant is the whole of that change when he has decided.
+ * **Decided by the owner on 2026-08-29: Pixelify Sans, and not the candidate he had been leaning
+ * to.** The question this constant carried was whether Press Start 2P became the default; the
+ * answer chose the third face instead, which is why the question is closed rather than confirmed
+ * (D-169). Pixelify Sans is the pixel face closest to ordinary proportions, so it reads as a
+ * decision about character rather than a legibility trade — Press Start 2P advances a full em per
+ * glyph, which is what forced figures down to 8px, and imposing that on a device nobody has picked
+ * a face on is the cost this default exists to avoid.
+ *
+ * **The trial argument still holds and now runs the other way.** Any face here can be chosen in one
+ * gesture and the cookie remembers it per device, so a default is a starting point rather than a
+ * commitment. What must stay true is that the way back to something legible does not depend on the
+ * default going well: `system` remains in `FONT_CHOICES` and is one press away.
+ *
+ * **Latin only, so Thai falls back** — which is not a regression here, because every switched stack
+ * keeps IBM Plex Sans Thai behind the pixel face (D-153). Thai reaches this app as data, never as
+ * interface copy.
  */
-export const DEFAULT_FONT: FontChoice = "system";
+export const DEFAULT_FONT: FontChoice = "pixelify-sans";
 
 /** The cookie the layout reads. Prefixed so it cannot collide with a Supabase auth cookie. */
 export const FONT_COOKIE = "pl_ui_font";

@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-28.
+Last updated: 2026-08-29.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -100,6 +100,21 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   across several pushes — `5418ba2`, `a462a81`, `cbf1c58`, then `758efe6`, `6a8399b`, `9ce1f06`,
   `d61485c`, `451b6ae`, `571d628`, `777e61a`; 2026-08-26 granted once and used four times
   (`f46ee64`, `b4bc6be`, `d7411b3`, `fda6c60`).
+- **Driving the browser against the real deployment: GRANTED and SPENT, 2026-08-29.** The owner
+  connected Claude in Chrome and granted it explicitly. Used **read-only** — `/ledger` and
+  `/statistics` were read, nothing was written, no control was pressed, no credential handled.
+  **Not standing; it does not survive this session.** What it produced is in D-168 and `PLAN.md`
+  tasks 44 and 50.
+- **Fixing the phone tap targets: GRANTED, SPENT and SHIPPED, 2026-08-29** (D-168).
+  `/code-review high` ran before the commit ask, as D-125 requires, and found **nothing** in the
+  committed file — its six findings are all in the two never-committed local-only configs.
+- **Deleting two leftover synthetic accounts from `private-ledger-local`: GRANTED and SPENT,
+  2026-08-29.** This session's own residue from a run that accidentally collected every spec under
+  `.runtime/`; they blocked both Vitest and the owner suite through D-048's guard. Scoped to those
+  two ids on the disposable local project, and the row counts showed **zero** dependents, so no
+  trigger was disabled and the approved `session_replication_role` step proved unnecessary.
+  **`ALLOW_DESTRUCTIVE_TESTS` was not set and must not be** — that guard firing correctly is the
+  first time it has ever fired at all.
 - **Building PLAN tasks 48 and 49: GRANTED, SPENT, and now SHIPPED, 2026-08-27** (D-165, D-166).
   The build grant covered running locally only; the commit and the push were asked for separately
   and given. Task 48 put the `include_in_reporting` control in the ledger's Status cell; task 49
@@ -161,9 +176,10 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `de4acbb` and `origin/main` matches it.** Three commits went out on 2026-08-27:
-  `17a93ca` (PLAN tasks 48 and 49), `dd64051` (the eighth and ninth archive boundaries) and
-  `de4acbb` (the review fix and the deployment findings). **All three are deployed.**
+- **`main` is at `3b1205d` and `origin/main` matches it.** Two commits went out on 2026-08-29:
+  `de70c9e` (the continuity sync that could not record its own commit) and `3b1205d` (five tap
+  targets raised at phone width, D-168). **Both are deployed**, and unlike `de70c9e` the second
+  **changes what renders**. Three preceded them on 2026-08-27: `17a93ca`, `dd64051`, `de4acbb`.
 - **The working tree holds only `eslint.config.mjs` and `playwright.config.ts`**, which are the two
   deliberately local-only files and **must never be committed**. `git status --short` is what tells
   them apart from ordinary work. Nothing else is uncommitted.
@@ -230,6 +246,21 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   Vitest run against a cold stack fails in ways that look like defects.
 
 ## Live hazards on this machine
+
+- **OPEN, found by `/code-review high` on 2026-08-29 and not fixed.** The local-only
+  `playwright.config.ts` pins `GOOGLE_VISION_KEY` empty on the stated grounds that nothing in a
+  browser suite should reach a third party — but leaves `STATEMENT_MAILBOX_USER`,
+  `STATEMENT_MAILBOX_APP_PASSWORD` and `STATEMENT_MAILBOX_SENDERS` inherited from `.env.local`.
+  `/import` exposes `.sync-controls`, so **a spec added later that clicks Sync would open IMAP to
+  the real statement mailbox with the real app password.** Identical reasoning to the Vision pin,
+  one variable short. Pinning `STATEMENT_MAILBOX_APP_PASSWORD: ""` closes it. Recorded here rather
+  than fixed because that file is never committed and the owner edits it himself.
+- **OPEN, same review, same file.** Its `webServer.command` is `pnpm build && pnpm start`, which
+  inlines `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=0` into the shared
+  `.next`. **Run the suite, then `pnpm start` on 3000 to drive the app by hand, and the test build
+  is what gets served** — pointed at local Supabase with no Dev sign-in, whatever `.env.local` says.
+  `NEXT_PUBLIC_*` are baked at build time, so a restart does not clear it and only a rebuild does.
+  Same class as D-027, landed on the one config whose stated job is manual driving.
 
 - **CLOSED 2026-08-25 in the owner's working copy, and restated because the file is never
   committed.** The local-only `playwright.config.ts` now pins `GOOGLE_VISION_KEY` empty and carries
