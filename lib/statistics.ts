@@ -181,3 +181,95 @@ export function monthLabel(month: string): string {
     "July", "August", "September", "October", "November", "December"];
   return `${names[Number(index) - 1] ?? month} ${year}`;
 }
+
+/* ------------------------------------------------------------------ the window picker
+
+   PLAN task 46, the half that needs no SQL. `public.ledger_statistics` has taken `p_from` and
+   `p_to` since migration 023 and `app/api/v1/statistics/route.ts` has parsed them from the query
+   string since the same day — so the window has always been selectable by hand-editing a URL, and
+   what was missing was a control. Everything below is the arithmetic behind that control, kept
+   here rather than in the component because **a date boundary is exactly the kind of thing that
+   should be provable without a browser.**
+*/
+
+/** The offered windows. `all` is first because it is what the page shows with no choice made. */
+export const WINDOW_PRESETS = ["all", "this-month", "last-3-months", "this-year"] as const;
+
+export type WindowPreset = (typeof WINDOW_PRESETS)[number];
+
+/**
+ * What each preset is called, and the labels say *what they resolve to* rather than being clever.
+ *
+ * "Last 3 months" is three **calendar** months ending with the one still running, not ninety days
+ * and not three months back from today's date. Both readings are defensible; this one is stated
+ * here, computed below, and — the part that actually protects the reader — printed on the page as
+ * a resolved from/to pair with its day count, so the label never has to be trusted.
+ */
+export const WINDOW_PRESET_LABELS: Record<WindowPreset, string> = {
+  all: "All time",
+  "this-month": "This month",
+  "last-3-months": "Last 3 months",
+  "this-year": "This year"
+};
+
+/** A resolved window. `null` at either end means "as far as the ledger goes", which the RPC resolves. */
+export type StatisticsWindow = { readonly from: string | null; readonly to: string | null };
+
+const pad2 = (value: number): string => String(value).padStart(2, "0");
+
+/**
+ * Today, in the **viewer's own calendar**.
+ *
+ * **`toISOString().slice(0, 10)` is the wrong thing here and it is the obvious thing.** That yields
+ * the UTC date, and this ledger is kept in Bangkok at UTC+7 — so for the first seven hours of every
+ * local day it names *yesterday*, and on the first of the month "this month" would resolve to a
+ * window starting in the previous one. The local getters are correct precisely because they are
+ * local: a month starts when the owner's calendar says it does, not when Greenwich agrees.
+ */
+export function localToday(now: Date): string {
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+}
+
+/**
+ * Resolves a preset against a given day, as pure string arithmetic.
+ *
+ * **No `Date` is constructed from the input and none is needed.** Parsing `"2026-03-01"` into a
+ * `Date` and subtracting months invites two separate classes of defect — the local-versus-UTC
+ * offset above, and month-length clamping, where "three months before 31 May" is a date that does
+ * not exist. Working in year/month integers has neither: a month index is subtracted, and the day
+ * of month is only ever set to `01`, which every month has.
+ */
+export function windowForPreset(preset: WindowPreset, today: string): StatisticsWindow {
+  if (preset === "all") return { from: null, to: null };
+
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+
+  if (preset === "this-year") return { from: `${year}-01-01`, to: today };
+  if (preset === "this-month") return { from: `${year}-${pad2(month)}-01`, to: today };
+
+  // Three calendar months ending with the current one, so the span starts two months back.
+  const index = year * 12 + (month - 1) - 2;
+  return { from: `${Math.floor(index / 12)}-${pad2((index % 12) + 1)}-01`, to: today };
+}
+
+/**
+ * The query string for a window, which is also the definition of "no query string means all time".
+ *
+ * An absent parameter and an empty one are different to the route's schema — it reads
+ * `searchParams.get`, which yields `null` when absent and `""` when present and empty, and `""`
+ * fails the date pattern with a 400. So a null end is **omitted** rather than sent blank.
+ */
+export function windowSearch(window: StatisticsWindow): string {
+  const params = new URLSearchParams();
+  if (window.from !== null) params.set("from", window.from);
+  if (window.to !== null) params.set("to", window.to);
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
+}
+
+/** Whether a custom range is one the route will accept, so the page never sends a known 400. */
+export function isUsableWindow(window: StatisticsWindow): boolean {
+  if (window.from === null || window.to === null) return true;
+  return window.from <= window.to;
+}

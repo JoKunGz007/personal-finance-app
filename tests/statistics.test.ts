@@ -5,7 +5,13 @@ import {
   monthLabel,
   magnitudeChange,
   shareOf,
-  wholeWeeks
+  wholeWeeks,
+  windowForPreset,
+  windowSearch,
+  isUsableWindow,
+  localToday,
+  WINDOW_PRESETS,
+  WINDOW_PRESET_LABELS
 } from "@/lib/statistics";
 
 /**
@@ -165,5 +171,87 @@ describe("labels", () => {
   it("names a month without pulling in a date library", () => {
     expect(monthLabel("2026-03")).toBe("March 2026");
     expect(monthLabel("2026-12")).toBe("December 2026");
+  });
+});
+
+describe("the statistics window picker", () => {
+  it("resolves every preset against a mid-year day", () => {
+    expect(windowForPreset("all", "2026-08-29")).toEqual({ from: null, to: null });
+    expect(windowForPreset("this-month", "2026-08-29")).toEqual({ from: "2026-08-01", to: "2026-08-29" });
+    expect(windowForPreset("this-year", "2026-08-29")).toEqual({ from: "2026-01-01", to: "2026-08-29" });
+    // Three calendar months ending with the one still running: June, July, August.
+    expect(windowForPreset("last-3-months", "2026-08-29")).toEqual({ from: "2026-06-01", to: "2026-08-29" });
+  });
+
+  it("crosses a year boundary without arriving at month zero", () => {
+    // January minus two months is November of the previous year. Done with a raw `month - 2` this
+    // is `-1`, which `pad2` would render as "-1" and the route would refuse — so the arithmetic is
+    // a month *index* rather than a month number, and this is the case that proves it.
+    expect(windowForPreset("last-3-months", "2026-01-15")).toEqual({ from: "2025-11-01", to: "2026-01-15" });
+    expect(windowForPreset("last-3-months", "2026-02-01")).toEqual({ from: "2025-12-01", to: "2026-02-01" });
+    expect(windowForPreset("last-3-months", "2026-03-31")).toEqual({ from: "2026-01-01", to: "2026-03-31" });
+  });
+
+  it("never produces a day of month that does not exist", () => {
+    // "Three months before 31 May" is the classic clamping bug. Nothing here can hit it, because
+    // the start of a window is always the first of some month — assert that rather than trusting it.
+    for (const day of ["2026-05-31", "2026-03-31", "2026-01-31", "2024-02-29"]) {
+      for (const preset of ["this-month", "last-3-months", "this-year"] as const) {
+        const resolved = windowForPreset(preset, day);
+        expect(resolved.from, `${preset} from ${day}`).toMatch(/^\d{4}-\d{2}-01$/);
+        expect(resolved.to).toBe(day);
+      }
+    }
+  });
+
+  it("keeps every resolved window in order, for every preset on every day of a year", () => {
+    // The invariant the route enforces with a 400. Cheap to prove exhaustively rather than assume.
+    for (let month = 1; month <= 12; month += 1) {
+      for (const day of ["01", "15", "28"]) {
+        const today = `2026-${String(month).padStart(2, "0")}-${day}`;
+        for (const preset of WINDOW_PRESETS) {
+          const resolved = windowForPreset(preset, today);
+          if (resolved.from !== null && resolved.to !== null) {
+            expect(resolved.from <= resolved.to, `${preset} on ${today}`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it("reads today from the local calendar and not from UTC", () => {
+    // **The defect this guards is silent and only appears for part of the day.** Bangkok is UTC+7,
+    // so at 06:30 local on the first of a month it is still the previous month in UTC, and
+    // `toISOString().slice(0, 10)` would start "this month" in the month before.
+    const earlyOnTheFirst = new Date(2026, 8, 1, 6, 30);
+    expect(localToday(earlyOnTheFirst)).toBe("2026-09-01");
+    expect(windowForPreset("this-month", localToday(earlyOnTheFirst)).from).toBe("2026-09-01");
+    // And the last hour of a month, which fails the other way round in UTC-negative zones.
+    expect(localToday(new Date(2026, 7, 31, 23, 45))).toBe("2026-08-31");
+  });
+
+  it("omits an absent end rather than sending it blank", () => {
+    // `searchParams.get` yields "" for a present-but-empty parameter, which fails the route's date
+    // pattern with a 400 — so "all time" must send no parameters at all.
+    expect(windowSearch({ from: null, to: null })).toBe("");
+    expect(windowSearch({ from: "2026-08-01", to: null })).toBe("?from=2026-08-01");
+    expect(windowSearch({ from: null, to: "2026-08-29" })).toBe("?to=2026-08-29");
+    expect(windowSearch({ from: "2026-08-01", to: "2026-08-29" })).toBe("?from=2026-08-01&to=2026-08-29");
+  });
+
+  it("refuses a transposed custom range before it becomes a request", () => {
+    expect(isUsableWindow({ from: "2026-08-01", to: "2026-08-29" })).toBe(true);
+    expect(isUsableWindow({ from: "2026-08-29", to: "2026-08-29" })).toBe(true);
+    expect(isUsableWindow({ from: "2026-08-30", to: "2026-08-29" })).toBe(false);
+    // A half-open range is usable: the RPC resolves the absent end to the ledger's own.
+    expect(isUsableWindow({ from: "2026-08-30", to: null })).toBe(true);
+    expect(isUsableWindow({ from: null, to: null })).toBe(true);
+  });
+
+  it("gives every preset a label, so a new one cannot ship unnamed", () => {
+    for (const preset of WINDOW_PRESETS) {
+      expect(WINDOW_PRESET_LABELS[preset], `${preset} needs a label`).toBeTruthy();
+    }
+    expect(Object.keys(WINDOW_PRESET_LABELS).sort()).toEqual([...WINDOW_PRESETS].sort());
   });
 });

@@ -1041,6 +1041,33 @@ footer p { margin: 0; }
    six of their own, so they opt out of that geometry rather than inheriting widths meant for
    another surface. */
 .stats-section { margin-top: 34px; }
+
+/* ------------------------------------------------------------------ the window picker
+
+   PLAN task 46. **Every control here is born at 44px rather than raised to it later**, which is
+   the whole lesson of D-168: five controls shipped short because the standard was applied at the
+   end, and the only instrument that could see it was blind at the time. A `min-height` rather than
+   a `height`, so a wrapped label grows the chip instead of spilling out of it. */
+.window-picker { margin: 0 0 8px; padding: 0; border: 0; }
+.window-picker legend { padding: 0; color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.window-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.window-presets .chip {
+  min-height: 44px; padding: 10px 14px;
+  color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--paper-strong); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.window-presets .chip:hover { border-color: var(--blue); color: var(--blue); }
+/* **The pressed state is announced as well as drawn.** `aria-pressed` carries it for a screen
+   reader; this only has to make it visible, and colour alone would not — the border weight and the
+   fill change together. */
+.window-presets .chip.current { color: var(--paper-strong); border-color: var(--blue); background: var(--blue); }
+/* The label is the tap target, which is why the 24px checkbox inside it is not raised (D-168). */
+.window-custom-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.window-custom { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-top: 10px; }
+.window-custom label { display: grid; gap: 4px; }
+.window-custom label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.window-custom input[type="date"] { min-height: 44px; padding: 8px 10px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-size: 13px; }
+.window-custom .field-help { flex-basis: 100%; margin: 0; }
 .stats-section h2 { margin: 0 0 4px; font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
 .stats-section table { min-width: 560px; table-layout: auto; }
 .stats-section th:nth-child(n) { width: auto; }

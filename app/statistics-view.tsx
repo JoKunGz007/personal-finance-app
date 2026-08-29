@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatThb } from "@/lib/money";
 import {
   ISO_DAY_NAMES,
@@ -8,8 +8,15 @@ import {
   monthLabel,
   magnitudeChange,
   wholeWeeks,
+  windowForPreset,
+  windowSearch,
+  isUsableWindow,
+  localToday,
+  WINDOW_PRESETS,
+  WINDOW_PRESET_LABELS,
   type LargestMovement,
-  type LedgerStatistics
+  type LedgerStatistics,
+  type WindowPreset
 } from "@/lib/statistics";
 import { BalanceChart, MonthlyChart } from "@/app/statistics-charts";
 
@@ -73,15 +80,54 @@ function MovementTable(
 }
 
 export function StatisticsView() {
-  const [statistics, setStatistics] = useState<LedgerStatistics | null>(null);
+  // **The window the data came from is kept beside the data.** Holding the response alone cannot
+  // answer "do these figures belong to the window that is currently selected?", and that question
+  // is the whole difference between a page that is loading and a page that is quietly wrong.
+  const [loaded, setLoaded] = useState<{ search: string; data: LedgerStatistics } | null>(null);
   const [message, setMessage] = useState("Loading statistics…");
+  const [preset, setPreset] = useState<WindowPreset>("all");
+  const [custom, setCustom] = useState(false);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
+  // **Held in state rather than read per render, and re-read on every deliberate press.** Calling
+  // `localToday` inside the memo would make the resolved window a function of render timing, so a
+  // tab left open would refetch by itself at midnight. Freezing it at mount has the opposite
+  // defect: a tab open across midnight would answer a *deliberate* press of "This month" with last
+  // month, correctly labelled and wrong. Re-reading the clock where the owner acts has neither.
+  const [today, setToday] = useState(() => localToday(new Date()));
+
+  // An empty custom field is not a bound: it means that end is open, which is exactly what `null`
+  // says to the RPC. So a half-filled custom range is usable rather than an error state.
+  const window_ = useMemo(
+    () => (custom
+      ? { from: customFrom === "" ? null : customFrom, to: customTo === "" ? null : customTo }
+      : windowForPreset(preset, today)),
+    [custom, customFrom, customTo, preset, today]
+  );
+  const usable = isUsableWindow(window_);
+  const search = windowSearch(window_);
 
   useEffect(() => {
+    // A transposed range is refused here rather than sent: the route answers 400 and the page would
+    // replace a correct table with an error the owner can see is his own typing.
+    if (!usable) return;
     let cancelled = false;
+    // **No synchronous setState here.** Setting a "loading" message in the effect body causes a
+    // cascading render, and on a window change it never rendered anyway: `statistics` is still the
+    // previous window's, so the page shows figures rather than the message. What the owner actually
+    // needs to know is that the figures on screen belong to a *different* window than the one
+    // selected — which is derived below from the search the loaded data came with, not stored.
     void (async () => {
-      const response = await fetch("/api/v1/statistics", { cache: "no-store" }).catch(() => null);
+      const response = await fetch(`/api/v1/statistics${search}`, { cache: "no-store" }).catch(() => null);
       if (cancelled) return;
       if (!response || !response.ok) {
+        // **Clearing the data is what makes the message reachable, and that is the point.** Keeping
+        // the previous window's figures on a failure would leave the page showing numbers it can no
+        // longer vouch for, under a window line describing a window it never loaded — and the
+        // message below would render nowhere, because it only shows when there is nothing else to
+        // show. A ledger that cannot say what it is displaying displays nothing.
+        setLoaded(null);
         setMessage("Statistics could not be loaded. Sign in as the owner and try again.");
         return;
       }
@@ -91,20 +137,89 @@ export function StatisticsView() {
       // what a migration adding a field looks like, and a page that silently rendered the fields it
       // recognised would hide the mismatch until a figure went wrong.
       if (!parsed.success) {
+        setLoaded(null);
         setMessage("The statistics response did not match the expected shape.");
         return;
       }
-      setStatistics(parsed.data);
+      setLoaded({ search, data: parsed.data });
       setMessage("");
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [search, usable]);
 
-  if (!statistics) return <p className="field-help">{message}</p>;
+  // Derived, not stored: no second setState, and no way for the flag and the data to disagree.
+  const statistics = loaded?.data ?? null;
+  // **Gated on `usable`, because a refused range is not a request in flight.** Without it a
+  // transposed custom range says "updating…" directly above an alert saying nothing was requested.
+  const stale = loaded !== null && loaded.search !== search && usable;
+  // **The window the figures describe, which is not the one the picker currently shows.** Every
+  // sentence about what the data contains has to be written against this, not against `preset` —
+  // otherwise an empty month followed by a click on All time claims the ledger is empty while a
+  // full one is loading.
+  const loadedAllTime = loaded !== null && loaded.search === "";
+
+  // **The control renders before the guard below.** A window that returns no rows is an ordinary
+  // answer — pick a quiet month and the page should say so *with the picker still on screen*,
+  // because the way out of an empty window is to change it. An early return above the control
+  // would strand the owner on a dead page needing a reload.
+  const picker = (
+    <fieldset className="window-picker">
+      <legend>Window</legend>
+      <div className="window-presets">
+        {WINDOW_PRESETS.map((option) => (
+          <button
+            key={option}
+            type="button"
+            className={!custom && preset === option ? "chip current" : "chip"}
+            aria-pressed={!custom && preset === option}
+            onClick={() => { setCustom(false); setToday(localToday(new Date())); setPreset(option); }}
+          >
+            {WINDOW_PRESET_LABELS[option]}
+          </button>
+        ))}
+        <label className="window-custom-toggle">
+          <input type="checkbox" checked={custom} onChange={(event) => setCustom(event.target.checked)} />
+          <span>Custom</span>
+        </label>
+      </div>
+      {custom && (
+        <div className="window-custom">
+          <label>
+            <span>From</span>
+            <input type="date" value={customFrom} max={customTo === "" ? undefined : customTo}
+              onChange={(event) => setCustomFrom(event.target.value)} />
+          </label>
+          <label>
+            <span>To</span>
+            <input type="date" value={customTo} min={customFrom === "" ? undefined : customFrom}
+              onChange={(event) => setCustomTo(event.target.value)} />
+          </label>
+          {/* Both ends are optional on purpose — an empty field means "as far as the ledger goes",
+              which is what the RPC already does with a null bound. */}
+          <p className="field-help">Leave either end empty to run to the edge of the ledger.</p>
+        </div>
+      )}
+      {!usable && (
+        <p className="field-help" role="alert">That window ends before it starts, so nothing was requested.</p>
+      )}
+    </fieldset>
+  );
+
+  if (!statistics) return <>{picker}<p className="field-help">{message}</p></>;
 
   const { window: period, totals, averages, months, dayOfWeek, largestOut, largestIn, dailyBalances } = statistics;
   if (period.from === null || totals.transactions === 0) {
-    return <p className="field-help">There are no confirmed rows to summarise yet. Import a statement first.</p>;
+    return (
+      <>
+        {picker}
+        <p className="field-help">
+          {loadedAllTime
+            ? "There are no confirmed rows to summarise yet. Import a statement first."
+            : "No confirmed rows fall in this window. Widen it, or choose All time."}
+          {stale ? " · updating…" : ""}
+        </p>
+      </>
+    );
   }
 
   const perDay = "perDay" in averages ? averages.perDay : null;
@@ -114,14 +229,22 @@ export function StatisticsView() {
 
   return (
     <>
+      {picker}
       {/* The window, stated before any figure derived from it. A per-day average over 61 days and
-          one over 6 look identical on screen and mean very different things. */}
+          one over 6 look identical on screen and mean very different things. **This line is what
+          makes the picker's labels safe to be casual about**: whatever "Last 3 months" resolves to,
+          the resolved pair and its day count are printed here, so the reader never has to trust a
+          label over a figure. */}
       <p className="field-help">
         {period.from} to {period.to} · {period.days} days ({wholeWeeks(period.days)} whole weeks)
         {period.endsToday ? " · the last month is still running" : ""}
         {totals.excluded > 0
           ? ` · ${totals.excluded} row${totals.excluded === 1 ? "" : "s"} excluded from reporting`
           : ""}
+        {/* **Said on the line that states the window, because that is the line it contradicts.**
+            While a new window is in flight the figures below belong to the previous one, and this
+            sentence is the only thing on the page that would otherwise be read as describing them. */}
+        {stale ? " · updating…" : ""}
       </p>
 
       <dl className="statement-strip">
