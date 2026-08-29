@@ -1,10 +1,10 @@
 # Private Ledger execution plan
 
-Last verified: 2026-08-27
+Last verified: 2026-08-28
 
 ## Current checkpoint
 
-**The archive boundary is taken and both authorized tasks are built, 2026-08-27** (D-164, D-165, D-166). **Uncommitted, and nothing is deployed.**
+**Two archive boundaries are taken and both authorized tasks are built, committed, pushed and deployed, 2026-08-27** (D-164, D-165, D-166, D-167). **`main` is at `de4acbb` and `origin/main` matches it.** Task 48 was then verified in the running app.
 
 **`DECISIONS.md` was the blocker at 97%, and it took two boundaries in one day.** The eighth moved **D-154 … D-156** to `docs/decisions/ARCHIVE-D-154-D-156.md` — three entries, the shallowest of the eight, because it is the first range **fenced by an open question on both sides**: D-153 below (the default face is undecided) and D-157 above (task 49 revised its measurement the same day). The cheaper cut was priced at 71% and 54% and refused. Two decision entries and a review’s findings put it straight back to **96%**, so the **ninth** was taken the same afternoon (D-167): **D-157, D-159, D-160, D-162 and D-163**, stepping over **D-158** and **D-161** because both are still asking — the unbounded candidate scan, and the statistics surface’s own “did not close” list naming the missing filters. **96% → 73%.** What bought the depth was task 49 closing D-157’s question, exactly as D-164 predicted; D-153’s default face is still yours and still fences the file from below. **The rate is now the finding rather than the percentage**: the maintained file holds four singletons and the live frontier, which is the intended shape.
 
@@ -18,7 +18,7 @@ Last verified: 2026-08-27
 
 **Verified in the running app on 2026-08-27, not merely deployed** — the first time an agent has done that here, driven through the owner’s own signed-in browser session with no credential handled. The exclude control works end to end on a real internal transfer, `/statistics` agrees to the satang, the round trip is the identity, and the database shows the audit trail. **It also corrected this plan**: the excludable set is about **eighteen** rows, not the 248 that carry a transfer label — most name other people and are ordinary spending. See task 48.
 
-**Gate green**: Vitest **873 passed / 7 skipped across 41 files**; Playwright owner **33/33**, isolated **38 passed / 4 skipped**; `tsc`, `pnpm exec eslint .` and `check:docs --strict` clean at **166 decisions**; production build clean at **twenty-three** `/api/v1/` routes. **pgTAP deliberately not re-run — no SQL moved this session**, and no migration was written. **Nothing has been committed, pushed or deployed**; `main` is still at `777e61a`.
+**Gate green**: Vitest **873 passed / 7 skipped across 41 files**; Playwright owner **33/33**, isolated **38 passed / 4 skipped**; `tsc`, `pnpm exec eslint .` and `check:docs --strict` clean at **167 decisions and 184 traps**; production build clean at **twenty-three** `/api/v1/` routes. **pgTAP deliberately not re-run — no SQL moved this session**, and no migration was written. **All of it is committed, pushed and deployed** as `777e61a..de4acbb` — `17a93ca` (tasks 48 and 49), `dd64051` (both boundaries and a sync) and `de4acbb` (the review fix and what the deployment corrected).
 
 ## Current review blockers
 
@@ -530,7 +530,7 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
     - **Every `<td>` needs a `data-label`.** The phone stacked-table mode renders `attr(data-label)`; without it the tables became screens of unlabelled figures at 390px.
     - **The charts are inline SVG and the two series colours were validated**, not chosen — the app's own celadon and copper failed the dataviz chroma and normal-vision checks; `#5c8a1a` against `#9b2c2c` clears all five.
 
-    **Follow-on work this created and did not close**: **nothing in the app can set `include_in_reporting`**, so the filter is inert until a control ships — the smallest next piece; automatic transfer detection is a matching rule and belongs beside task 25; and there is no account filter and no window picker, the surface being whole-ledger and all-time.
+    **Follow-on work this created and did not close** — the state as of D-161; the first of the three has since shipped as task 48: **nothing in the app could set `include_in_reporting`**, so the filter was inert until a control shipped, which it did on 2026-08-27; automatic transfer detection is a matching rule and belongs beside task 25; and there is no account filter and no window picker, the surface being whole-ledger and all-time.
 
     **A run-rate projection (“at this pace you will spend X by month end”) was offered and declined by the owner on 2026-08-27**, on the grounds that it is a prediction rather than a fact. Recorded as a far-future maybe that may never be built, so nobody re-proposes it as an oversight.
 
@@ -646,7 +646,7 @@ Only after every local task above passes:
 
     **Reviewed 2026-08-23 and eight defects fixed** (D-142), discharging the review debt D-125 records against this commit. Four were one defect in four costumes — **a failure path that discarded information on a form whose failures are billed**: a transient reader 503 left rows the read button would never process again, a failed capture POST was excluded from capture forever, an unparsable 201 body reported an already-written slip as refused, and the reader being unreachable threw away the QR's own date even though `slipDateFromReference` never touches a recognised word. Every recovery path this form offered was "discard and re-read all fifty", at a paid read each. It now pre-fills whatever resolved, re-reads failed rows, re-sends refused ones (safe because `capture_slip` writes nothing for a slip already in the ledger), and claims its busy phase **before** awaiting the 1.1 MB WASM detector rather than after — that window let a second press send every image to the metered reader twice.
 
-48. **`include_in_reporting` needs a control, and the real ledger has already shown why.** **Asked for by the owner 2026-08-27, approved, and BUILT the same day** (D-165). Uncommitted; nothing deployed. The column has existed since migration 001, both statistics and the ledger's totals strip read it since migration 023 (D-161), and **nothing in the app can set it** — so the filter is inert and every figure is as if it were absent. **It is no longer hypothetical**: the deployed page shows a `Transfer Withdrawal` and a `Transfer in` of the same amount on the same date in the two largest-movement lists, one internal transfer inflating money-in and money-out alike while net stays correct.
+48. **`include_in_reporting` needs a control, and the real ledger has already shown why.** **Asked for by the owner 2026-08-27, approved, BUILT, committed, pushed and verified in the running app the same day** (D-165). The column has existed since migration 001 and both statistics and the ledger's totals strip have read it since migration 023 (D-161); until this task **nothing in the app could set it**, so the filter was inert and every figure stood as if it were absent. **It is no longer hypothetical**: the deployed page shows a `Transfer Withdrawal` and a `Transfer in` of the same amount on the same date in the two largest-movement lists, one internal transfer inflating money-in and money-out alike while net stays correct.
 
     **The hazard that shapes it, and it is a data-loss one.** `PUT /api/v1/transactions/[id]/overlay` takes the **whole** overlay and its schema is `.strict()`: description, counterparty, effective date, category, note and the flag, plus `expectedRevision`. A control that sent only the flag would be rejected; **one that sent the rest as null would erase whatever the owner had typed**, silently, on a row he was only trying to mark. The control must round-trip the overlay it already has, and a test must prove a toggle preserves a populated overlay rather than only that the flag changed.
 
@@ -662,7 +662,7 @@ Only after every local task above passes:
 
     **Open, and the owner's call**: `/statistics` reports **1603** transactions where the ledger strip reports **1604** rows, because the first counts what is reported and the second counts what the ledger holds. It is deliberate and the *N rows excluded from reporting* line reconciles them, but two counts for one ledger reads as a defect at a glance. **Still owed**: neither page has been seen on a real phone — every reading so far has been a desktop window.
 
-49. **Every typeface should occupy the same space, and the honest version of that is that nothing reflows.** **Asked for by the owner 2026-08-27, approved, and BUILT the same day** (D-166). Uncommitted; nothing deployed. He asked that switching the face not move the page, and offered Pixelify Sans as the reference to pin the others to.
+49. **Every typeface should occupy the same space, and the honest version of that is that nothing reflows.** **Asked for by the owner 2026-08-27, approved, and BUILT the same day** (D-166), committed, pushed and deployed the same day in `17a93ca`. He asked that switching the face not move the page, and offered Pixelify Sans as the reference to pin the others to.
 
     **Identical positions are not reachable and chasing them would waste the effort.** `size-adjust` — applied to all three pixel faces in D-157 — normalises apparent size by pinning cap height; **it does not touch advance widths**, and `app/globals.css` already says so in as many words. Press Start 2P is far wider per character than IBM Plex Sans Thai, so text wraps differently whatever descriptor is set.
 
