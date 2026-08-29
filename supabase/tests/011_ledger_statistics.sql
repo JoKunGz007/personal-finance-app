@@ -302,17 +302,22 @@ select is(
 
 -- ------------------------------------------------------------------- least privilege
 
+-- **The signatures gained a `uuid` in migration 024** and these three assertions name them
+-- literally, so they had to move with it — `has_function_privilege` resolves an exact signature and
+-- answered `function ... does not exist` rather than `false`. That is the check doing its job: a
+-- grant assertion that silently kept passing against a signature nobody calls any more would be the
+-- stale-exemption failure `scripts/check-docs.mjs` guards against in its own domain.
 select ok(
-  has_function_privilege('authenticated', 'public.ledger_statistics(date, date, integer)', 'execute'),
+  has_function_privilege('authenticated', 'public.ledger_statistics(date, date, integer, uuid)', 'execute'),
   'authenticated may execute the statistics function'
 );
 select ok(
-  not has_function_privilege('anon', 'public.ledger_statistics(date, date, integer)', 'execute'),
+  not has_function_privilege('anon', 'public.ledger_statistics(date, date, integer, uuid)', 'execute'),
   'anon may not'
 );
 select ok(
-  not has_function_privilege('authenticated', 'private.reportable_movements(uuid, date, date)', 'execute')
-    and not has_function_privilege('authenticated', 'private.daily_closing_balances(uuid, date, date)', 'execute'),
+  not has_function_privilege('authenticated', 'private.reportable_movements(uuid, date, date, uuid)', 'execute')
+    and not has_function_privilege('authenticated', 'private.daily_closing_balances(uuid, date, date, uuid)', 'execute'),
   'both private helpers are executable by nobody, exactly as private.combined_balances is'
 );
 

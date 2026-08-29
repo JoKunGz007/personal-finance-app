@@ -140,12 +140,12 @@ select set_config(
 -- ------------------------------------------------------------------- least privilege
 
 select ok(
-  has_function_privilege('authenticated', 'public.list_account_transactions_page(uuid, integer, date, time, uuid)', 'execute')
+  has_function_privilege('authenticated', 'public.list_account_transactions_page(uuid, integer, date, time, uuid, date, date)', 'execute')
     and has_function_privilege('authenticated', 'public.list_match_candidates()', 'execute'),
   'authenticated may execute both new read functions'
 );
 select ok(
-  not has_function_privilege('anon', 'public.list_account_transactions_page(uuid, integer, date, time, uuid)', 'execute')
+  not has_function_privilege('anon', 'public.list_account_transactions_page(uuid, integer, date, time, uuid, date, date)', 'execute')
     and not has_function_privilege('anon', 'public.list_match_candidates()', 'execute'),
   'anon may execute neither'
 );

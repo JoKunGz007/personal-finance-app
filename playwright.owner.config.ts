@@ -25,7 +25,12 @@ export default defineConfig({
   // Both owner-signed-in specs. `owner-access.spec.ts` covers the real sign-in surface —
   // TOTP enrolment and the code challenge — which needs the same build flag for the same
   // reason: it reaches those states through the development route's `?stop=aal1`.
-  testMatch: /owner-(session|access)\.spec\.ts/u,
+  // **A prefix rather than a list of names, so the next owner spec is collected by existing.**
+  // `owner-phone-audit.spec.ts` (PLAN task 51) was added on 2026-08-29 and the enumerated pattern
+  // would have left it silently uncollected — which is the exact failure that file exists to
+  // record: an instrument nobody runs is not an instrument. The three sibling configs all key off
+  // the same `owner-` prefix, so a new spec lands in this suite and out of the other two together.
+  testMatch: /owner-.*\.spec\.ts/u,
   fullyParallel: false,
   // **`fullyParallel: false` is not the same as serial, and the difference was invisible
   // while this config had one spec file.** It serialises tests *within* a file; separate
@@ -59,7 +64,21 @@ export default defineConfig({
       // depend on whose machine it is running on, and nothing about it should cost money or leave
       // the network. Empty makes the reader route answer 503 with the sentence written for a
       // deployment missing its key, which is deterministic everywhere and is what the spec asserts.
-      GOOGLE_VISION_KEY: ""
+      GOOGLE_VISION_KEY: "",
+      // **The same argument as the Vision key, one service along**, and this config is where it
+      // became reachable: `owner-phone-audit.spec.ts` walks `/import`, which renders
+      // `.sync-controls`. `.env.local` carries the owner's real statement mailbox — a dedicated
+      // Gmail with 2FA and an IMAP app password — and `next start` inherits all three variables
+      // from it, so a spec that ever clicks Sync would open IMAP against real mail from a suite
+      // whose entire fixture set is invented.
+      //
+      // `lib/server/statement-mailbox-session.ts` treats an empty password as **missing** rather
+      // than as a blank credential, so this fails the session closed instead of attempting an
+      // anonymous connection. All three, not just the password: a half-pinned mailbox is a
+      // configuration that exists in no other context and is not worth reasoning about.
+      STATEMENT_MAILBOX_USER: "",
+      STATEMENT_MAILBOX_APP_PASSWORD: "",
+      STATEMENT_MAILBOX_SENDERS: ""
     }
   },
   projects: [{ name: "desktop", use: { ...devices["Desktop Chrome"] } }]

@@ -255,6 +255,9 @@ What this file now holds is three open questions and the live frontier — the m
 - **D-169** — The default face is Pixelify Sans, which closes D-153's question by answering it with a third option
 - **D-170** — The statistics window is a control at last, and holding the response beside the window it came from is what makes the page able to say what it is showing
 - **D-171** — The tenth boundary moves the question that had fenced the file, and stops below the two changes nobody has looked at
+- **D-172** — The window picker's state moves into the address bar, and a preset is written by name while a custom range is written by its dates
+- **D-173** — The phone audit stops being a throwaway, and its first committed run found a control that had been escaping the viewport since before the audit existed
+- **D-174** — Migration 024: statistics take an account, and the balance series needs two sources because one account's truth is printed and the ledger's is derived
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -586,3 +589,92 @@ D-164 refused to archive a measurement in the session that revised it, because t
 **Three preamble paragraphs were replaced rather than annotated.** `check:docs` validates the index against the entries and that links resolve; it structurally cannot ask whether the prose describing the archives is true (D-164). All three were about to become false: what this file carries, the count of relocated ranges, and the paragraph naming the eighth and ninth as the ones to read before the tenth.
 
 - Evidence: **103,210 → 72,997 bytes, 86% → 61%**, as `check:docs` reports it. **171 decisions across eleven files**, index matching one for one, `pnpm check:docs --strict` clean. **No test, migration or build re-run, deliberately** — nothing outside `docs/` and the continuity files moved. D-133 (the rule), D-140 (the test), D-154 (the step-over), D-164 (the eighth, and the prediction this confirms a third time), D-167 (the ninth, and the rate), D-169 (the closing that bought this cut), D-138 and D-159 (why an unlooked-at rendering fences), D-130 (the budget).
+
+## D-172 — The window picker's state moves into the address bar, and a preset is written by name while a custom range is written by its dates
+
+- Date: 2026-08-29
+- Status: **Accepted, uncommitted.** `lib/statistics.ts`, `app/statistics-view.tsx`, `tests/statistics.test.ts` (+10). No SQL, no route, no contract change.
+- Context: D-170 shipped the window picker as component state, so a reload returned to All time and a chosen window could not be linked to. The owner asked for it on 2026-08-29.
+
+### The asymmetry is the design, not an inconsistency
+
+**A preset is encoded by name; a custom range is encoded by its dates.** A preset is a *rolling question* — "This month" should mean this month whenever the link is opened — so resolving it to dates before writing it down would freeze it into the question it happened to answer on the day it was copied. A custom range is already a pair of dates and has no name to give it. All time encodes to nothing, so a bare `/statistics` stays unambiguous.
+
+This is **not** `windowSearch`'s encoding, which always sends resolved dates because the RPC has no notion of a preset. The keys overlap deliberately: a bare `?from=…&to=…` with no preset named is read as a custom range, because those are the route's own parameters and hand-editing them was the only way to select a window for the two days before the picker existed.
+
+### `window` and `custom` are separate keys, and folding them was a real defect
+
+The first version wrote `window=custom` — one key carrying both the preset and the override — which **dropped the preset underneath it**. Ticking Custom on top of "This year" and unticking returned to This year in-session, but after a reload of the very URL the page had just written, unticking landed on All time. **The control behaved differently depending on whether the page had been reloaded**, which is the worst kind of difference because nothing on screen distinguishes the two states. Found by `/code-review high`. `window=custom` is still *read*, so a link written before the split still opens the window it names.
+
+### Written with `history.replaceState` rather than the router
+
+`router.replace` is the idiomatic call and the wrong one: `/statistics` is `force-dynamic`, so a router navigation fetches a fresh RSC payload from the server to move text in the address bar. **Replace and not push**, because the picker is a filter — pushing would make Back walk through every chip ever pressed, and the way out of a window is to choose another one.
+
+Read once, in a lazy initialiser, and written by an effect: one direction each way, so the URL and the state cannot develop a disagreement with themselves. Safe against a hydration mismatch because the page is `force-dynamic` — the server renders with the request's own parameters.
+
+- Evidence: `lib/statistics.ts`, `app/statistics-view.tsx`, `tests/statistics.test.ts`. Vitest **890 passed / 7 skipped across 41 files**. **Red-proved**: mutating `pickerSearch` to encode presets as resolved dates fails exactly the three rolling-question assertions, including the one written for it. D-170 (the picker this completes), D-162 (why a window's extent is reported as requested).
+
+## D-173 — The phone audit stops being a throwaway, and its first committed run found a control that had been escaping the viewport since before the audit existed
+
+- Date: 2026-08-29
+- Status: **Accepted, uncommitted.** `tests/e2e/owner-phone-audit.spec.ts` (new), `playwright.owner.config.ts`, `playwright.isolated.config.ts`, `app/globals.css`. PLAN task 51, decided by the owner. No SQL, no route, no contract change.
+- Context: D-168 found `.runtime/mobile-audit.spec.ts` had been blind at phone width for three days and nobody could have noticed, because a gitignored throwaway only fails when someone asks it to run.
+
+### What changed in the port, and none of it is cosmetic
+
+**It asserts instead of reporting.** The throwaway printed a list because PLAN task 28 was unscoped and no standard had been agreed. D-168 set one — 44px, at phone width only, per D-139 — and a standard nobody checks is a preference.
+
+**It seeds 120 rows rather than 6.** The page holds 100, so `Load older rows` renders. That is the control D-168 could only see because the owner opened a 1,604-row ledger in a narrow window: *a surface that exists only with enough data behind it*, which invented fixtures are structurally unable to produce unless they are sized to produce it.
+
+**Every route is measured twice, disclosure shut and open**, and `/statistics` a third time with the Custom tick on. The throwaway opened the disclosure on `/ledger` alone, so the privacy chip and font picker were never inside a measured viewport. The third pass came from `/code-review high`: `.window-custom input[type="date"]` renders only after a tick, which put it inside **this file's own definition** of a surface no walking audit can measure.
+
+**All three Playwright configs key off an `owner-` prefix now.** An enumerated pattern would have left this spec uncollected by the owner config and collected by the other two — the failure the file exists to record, on the file recording it. `owner-access.spec.ts` taught this lesson once already (D-149's era); a pattern naming one file is a list of one.
+
+### The defect it found on its first run
+
+**`/ledger` panned sideways at 390px.** The account filter `<select>` measured **404px in a 390px viewport** and took `documentElement.scrollWidth` to 420. A `<select>` is as wide as its longest `<option>`, and its automatic minimum blocked the grid track from shrinking even though the phone rule already sets `minmax(0, 1fr)`.
+
+**The rule predates D-168, so the audit missed it rather than the defect being new.** The committed version waits for the table *and* `Load older rows`; the throwaway waited a fixed 1500ms and measured before the account list arrived. **It is data-dependent** — the overflow is a function of how long the account labels are — so the same layout is clean for one ledger and broken for another. D-138's family from a fourth direction.
+
+**Which line fixes it was measured, not asserted.** `min-width: 0` and `max-width: 100%` are both required; each alone leaves the audit red. A `min-width: 0` on `.account-control` itself was tried and changed nothing, so it is not in the file — D-166's rule, that a comment saying *measured* is a claim that has to be true.
+
+### The reference an overflow check compares against
+
+Measuring every element against the viewport flagged `/import`'s stage list, 810px inside a container that scrolls on purpose. The question is now whether an element escapes **its own scroll container**, with whether the document pans asked separately. A deliberate scroller may be wider than the screen; nothing may spill out of the box holding it.
+
+- Evidence: the files above. Owner suite **34/34** (was 33/33). Isolated **38 passed / 4 skipped**, Vitest **890 / 7 skipped across 41**, `tsc`, `eslint`, `check:docs --strict`, build all clean, exit codes read individually rather than from a chained run (GOTCHAS). **Red-proved**: reverting the CSS returns the audit to red on the exact selector. **390px is not a phone** and this does not claim otherwise — Chrome clamps a real window near 500px, so emulation is the only thing reaching 390 here, and D-138 stands. D-168 (the blindness), D-139 (the rule), D-157 (what hid the sign-in), D-156 (why the `(i)` is load-bearing).
+
+## D-174 — Migration 024: statistics take an account, and the balance series needs two sources because one account's truth is printed and the ledger's is derived
+
+- Date: 2026-08-29
+- Status: **Written, applied to `private-ledger-local` only, and NOT on hosted.** `supabase/migrations/202608290024_statistics_account_and_ledger_dates.sql` (new), `supabase/tests/012_statistics_account_and_ledger_dates.sql` (new, 31), `supabase/tests/009_ledger_paging.sql` and `011_ledger_statistics.sql` (signature assertions). PLAN task 46's second half, plus the ledger date range task 47 turned out to need first. **No table, no column, no trigger, no new grantee; backup contract stays v7.**
+- Context: the owner authorized task 46 in full on 2026-08-29 and chose, on the calendar heatmap, to have the ledger's date filter built first and see whether the heatmap was still wanted.
+
+### Two features in one migration, because the cost is per-migration
+
+Each needs a signature change on a function the app already calls, and therefore a `db push` against hosted, a backup verified from the database first, and the owner running it himself (D-152). Two migrations would be two of each. Migration 017 bundled for this class of reason (D-104) — pieces designed together because the operational cost does not divide by feature.
+
+### 023 argued against an account filter, and the argument turned out to be its specification
+
+023 said *"the balance series is the combined position by construction, and an average whose denominator changed with a filter would be a different figure wearing the same label."* Both halves are still true and neither is an objection. Every average divides by **days in the window**, not by rows, so narrowing changes the numerator and leaves the divisor alone. What needed deciding was the chart:
+
+- **All accounts** — `private.combined_balances`, the derived running total (022). Nothing prints it.
+- **One account** — that account's own **printed** `post_balance_minor`. 022's own reasoning: the printed balance is the truth, and a derived figure drifts from it across a gap between two separately imported statements.
+
+**The tidy implementation is the wrong number.** Restricting `combined_balances` to one account's rows yields the *combined* position sampled at that account's dates — a real figure answering a question nobody asked. The pgTAP fixture is chosen so the two disagree on the same day, 113059 against 43058, and replacing the function with that tidy version fails exactly the two assertions written for it.
+
+### The window resolves inside the account
+
+An unbounded window now starts at the chosen account's own first row. An account opened last month has no history before that, and inheriting the ledger's span would divide its figures by years it did not exist for. "All time" means all of *this* account's time.
+
+### The ledger's bounds are not the ledger's cursor
+
+`list_account_transactions_page` already took `p_before_date`/`p_before_time`. Those are a **cursor**; `p_from`/`p_to` are **bounds**. The cursor walks inside the bounds, so a window narrower than a page still pages. **`totals.rows` describes the window when bounds are supplied and only then** — absent bounds, 023's contract is reproduced exactly.
+
+**One thing the window must not reach**: the combined balance on a row. It is a fact about the whole ledger up to that row, so recomputing it from the windowed rows would restart the running total at the window's edge and print a figure belonging to no account on any date. Asserted directly — a one-day window on one account still carries the whole-ledger figure.
+
+### Old signatures are dropped rather than left
+
+A defaulted parameter added to an existing function is an **overload**, not a replacement, and `ledger_statistics(p_from => x, p_to => y)` would then be ambiguous. Dropping is what makes this a change rather than a fork. **Three `has_function_privilege` assertions failed loudly on the old signatures** — in 011 and, missed on the first pass and caught by `/code-review high`, in 009. That is the check working: a grant assertion silently passing against a signature nobody calls would be a stale exemption.
+
+- Evidence: pgTAP **009: 33, 011: 35, 012: 31**, all against `private-ledger-local`. The partition reconciles — per-account totals sum to all-accounts on deposits, withdrawals, row count and excluded count, written as arithmetic on returned values rather than hard-coded numbers. Owner suite **34/34 against the migrated database**, which is what shows the app's existing calls still resolve through the new defaults and makes a database-first push safe. **`pnpm supabase:test` was not run as a whole**; the three affected files were run directly. **Nothing is built on top of this yet** — neither control exists, deliberately, because the database goes first. D-158 and D-161 (the follow-ons this answers), D-160 (statistics in SQL), D-152 (the backup rule this still owes), D-104 (why one migration).

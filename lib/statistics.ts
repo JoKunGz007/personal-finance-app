@@ -273,3 +273,98 @@ export function isUsableWindow(window: StatisticsWindow): boolean {
   if (window.from === null || window.to === null) return true;
   return window.from <= window.to;
 }
+
+/* ------------------------------------------------------ the picker's state in the address bar
+
+   The window picker was component state when it shipped (D-170), so a reload returned to All time
+   and a chosen window could not be linked to. What follows is the encoding that fixes it, kept
+   beside the window arithmetic and out of the component for the same reason the rest is: it is
+   decidable from a string and a string alone.
+*/
+
+/** Everything the picker holds. The component's four `useState` calls, as one value. */
+export type PickerState = {
+  readonly preset: WindowPreset;
+  readonly custom: boolean;
+  readonly customFrom: string;
+  readonly customTo: string;
+};
+
+/** What the page shows with no choice made, and what any unreadable URL falls back to. */
+export const DEFAULT_PICKER_STATE: PickerState = {
+  preset: "all",
+  custom: false,
+  customFrom: "",
+  customTo: ""
+};
+
+/**
+ * The picker's state as a query string, and **a preset is encoded by name while a custom range is
+ * encoded by its dates**. That asymmetry is the whole design and it is not an inconsistency.
+ *
+ * A preset is a *rolling question*: "This month" means this month whenever the link is opened, so
+ * resolving it to dates before writing it down would freeze it into a different question — the one
+ * it happened to answer on the day it was copied. A custom range is the opposite: it is already a
+ * pair of dates and there is no name to give it.
+ *
+ * **All time encodes to nothing**, so a bare `/statistics` is unambiguous and the common case
+ * leaves no query string to explain.
+ *
+ * This is *not* the same encoding as `windowSearch`, which speaks to the route. That one always
+ * sends resolved dates because the RPC has no notion of a preset. The keys overlap deliberately —
+ * see `pickerStateFromSearch`.
+ */
+export function pickerSearch(state: PickerState): string {
+  const params = new URLSearchParams();
+  // **`window` and `custom` are separate keys, because Custom is an override rather than a fifth
+  // preset.** Writing `window=custom` folded the two into one and lost the preset underneath it:
+  // ticking Custom on top of "This year" and unticking it returned to This year in-session, but
+  // after a reload of the very URL the page had just written, unticking landed on All time. The
+  // control behaved differently depending on whether the page had been reloaded, which is the
+  // worst kind of difference. Found by `/code-review high`.
+  if (state.preset !== "all") params.set("window", state.preset);
+  if (state.custom) {
+    params.set("custom", "1");
+    if (state.customFrom !== "") params.set("from", state.customFrom);
+    if (state.customTo !== "") params.set("to", state.customTo);
+  }
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
+}
+
+/**
+ * The inverse, and **total**: every string yields a state, because the input is a URL and a URL is
+ * whatever someone typed. Anything unrecognised falls back to All time rather than throwing, since
+ * the failure mode of a bad link should be the default page and not a blank one.
+ *
+ * **A bare `?from=…&to=…` with no `window` is read as a custom range**, which is leniency with a
+ * reason rather than politeness. Those are the exact parameters `app/api/v1/statistics/route.ts`
+ * has taken since migration 023, and hand-editing them was the only way to select a window for the
+ * two days before the picker existed (D-170). A URL that used to work keeps working, and it lands
+ * in the state that shows the reader what it did.
+ *
+ * The dates are returned **as written**. They are free text in the form and the component already
+ * treats an empty end as an open one and refuses a transposed pair (`isUsableWindow`); validating
+ * here as well would put the rule in two places and let them disagree.
+ */
+export function pickerStateFromSearch(search: string): PickerState {
+  const params = new URLSearchParams(search);
+  const named = params.get("window");
+  const from = params.get("from") ?? "";
+  const to = params.get("to") ?? "";
+
+  const preset = WINDOW_PRESETS.find((option) => option === named) ?? "all";
+  const custom =
+    params.get("custom") === "1"
+    // `window=custom` is the encoding this replaced, and it is still read so that a link written
+    // before the split keeps opening the window it names. It carries no preset, so it lands on
+    // All time underneath — which is exactly what it meant when it was written.
+    || named === "custom"
+    // A bare `from`/`to`, only when no preset is named. A URL saying both is a URL saying two
+    // things, and the named preset is the more deliberate of them.
+    || (named === null && (from !== "" || to !== ""));
+
+  return custom
+    ? { preset, custom: true, customFrom: from, customTo: to }
+    : { preset, custom: false, customFrom: "", customTo: "" };
+}

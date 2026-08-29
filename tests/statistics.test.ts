@@ -10,6 +10,9 @@ import {
   windowSearch,
   isUsableWindow,
   localToday,
+  pickerSearch,
+  pickerStateFromSearch,
+  DEFAULT_PICKER_STATE,
   WINDOW_PRESETS,
   WINDOW_PRESET_LABELS
 } from "@/lib/statistics";
@@ -253,5 +256,90 @@ describe("the statistics window picker", () => {
       expect(WINDOW_PRESET_LABELS[preset], `${preset} needs a label`).toBeTruthy();
     }
     expect(Object.keys(WINDOW_PRESET_LABELS).sort()).toEqual([...WINDOW_PRESETS].sort());
+  });
+});
+
+/**
+ * The picker's state in the address bar, so a reload returns to the chosen window and a window can
+ * be linked to. Component state only, when the picker shipped in D-170.
+ */
+describe("the window picker's state in the URL", () => {
+  it("encodes a preset by name and a custom range by its dates", () => {
+    // All time is the default, so it carries nothing and a bare `/statistics` stays unambiguous.
+    expect(pickerSearch(DEFAULT_PICKER_STATE)).toBe("");
+    expect(pickerSearch({ ...DEFAULT_PICKER_STATE, preset: "this-month" })).toBe("?window=this-month");
+    expect(pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31" }))
+      .toBe("?custom=1&from=2026-01-01&to=2026-03-31");
+    // An empty end is an open end, and an absent parameter is how the rest of this module says so.
+    expect(pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "" }))
+      .toBe("?custom=1&from=2026-01-01");
+  });
+
+  it("**keeps the preset a custom range was ticked on top of, so unticking means the same thing after a reload**", () => {
+    // `window=custom` folded the override into the preset and dropped what was underneath it. The
+    // control then behaved one way in-session and another after a reload of the URL it had itself
+    // written, which is the asymmetry this encoding exists to remove.
+    const ticked = { preset: "this-year" as const, custom: true, customFrom: "2026-02-01", customTo: "2026-02-28" };
+    expect(pickerSearch(ticked)).toBe("?window=this-year&custom=1&from=2026-02-01&to=2026-02-28");
+    expect(pickerStateFromSearch(pickerSearch(ticked))).toEqual(ticked);
+    // Unticking is the state the reader gets back, and it is the preset rather than All time.
+    expect(pickerStateFromSearch(pickerSearch(ticked)).preset).toBe("this-year");
+  });
+
+  it("still reads `window=custom`, so a link written before the split keeps working", () => {
+    expect(pickerStateFromSearch("?window=custom&from=2026-01-01&to=2026-03-31"))
+      .toEqual({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31" });
+  });
+
+  it("**a preset outlives the day it was linked on, and a custom range does not**", () => {
+    // The distinction the encoding exists for. A preset is written down by name, so resolving it
+    // twelve days later gives the later answer — the rolling question, not the frozen one.
+    const link = pickerSearch({ ...DEFAULT_PICKER_STATE, preset: "this-month" });
+    const reopened = pickerStateFromSearch(link);
+    expect(windowForPreset(reopened.preset, "2026-08-01")).toEqual({ from: "2026-08-01", to: "2026-08-01" });
+    expect(windowForPreset(reopened.preset, "2026-08-29")).toEqual({ from: "2026-08-01", to: "2026-08-29" });
+
+    // A custom range carries its dates, so it means the same thing on any day it is opened.
+    const fixed = pickerStateFromSearch(
+      pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31" })
+    );
+    expect(fixed).toEqual({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31" });
+  });
+
+  it("round-trips every preset and a custom range", () => {
+    for (const preset of WINDOW_PRESETS) {
+      const state = { ...DEFAULT_PICKER_STATE, preset };
+      expect(pickerStateFromSearch(pickerSearch(state)), `${preset} must survive the round trip`).toEqual(state);
+    }
+    const custom = { preset: "all" as const, custom: true, customFrom: "2026-02-01", customTo: "2026-02-28" };
+    expect(pickerStateFromSearch(pickerSearch(custom))).toEqual(custom);
+  });
+
+  it("reads a bare from/to as a custom range, so a hand-edited URL keeps working", () => {
+    // These are the route's own parameters, and hand-editing them was the only way to select a
+    // window for the two days before the picker existed (D-170).
+    expect(pickerStateFromSearch("?from=2026-05-01&to=2026-05-31"))
+      .toEqual({ preset: "all", custom: true, customFrom: "2026-05-01", customTo: "2026-05-31" });
+    expect(pickerStateFromSearch("?to=2026-05-31"))
+      .toEqual({ preset: "all", custom: true, customFrom: "", customTo: "2026-05-31" });
+  });
+
+  it("is total: anything unreadable falls back to All time rather than throwing", () => {
+    for (const search of ["", "?", "?window=", "?window=nonsense", "?window=THIS-MONTH", "?unrelated=1", "?window=all"]) {
+      expect(pickerStateFromSearch(search), `${search} must be readable`).toEqual(DEFAULT_PICKER_STATE);
+    }
+  });
+
+  it("lets a named preset win over stray dates, so one URL cannot mean two windows", () => {
+    expect(pickerStateFromSearch("?window=this-year&from=2020-01-01&to=2020-12-31"))
+      .toEqual({ ...DEFAULT_PICKER_STATE, preset: "this-year" });
+  });
+
+  it("keeps the custom dates as written, because the component owns that rule", () => {
+    // Transposed, and deliberately preserved: `isUsableWindow` is what refuses it, and putting the
+    // check here as well would let the two disagree about what is sendable.
+    const transposed = pickerStateFromSearch("?window=custom&from=2026-08-30&to=2026-08-29");
+    expect(transposed.customFrom).toBe("2026-08-30");
+    expect(isUsableWindow({ from: transposed.customFrom, to: transposed.customTo })).toBe(false);
   });
 });

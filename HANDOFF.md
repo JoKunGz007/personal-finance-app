@@ -131,17 +131,36 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   because the measurement said they pin nothing, and fixed the one real reflow instead. **Both are
   deployed and the first was verified in the running app.** A further change to either needs a
   fresh ask.
-- **Taking the `DECISIONS.md` archive boundary: GRANTED and SPENT, 2026-08-29** (D-171). The owner
-  named it as the session's next action and said to carry on without waiting. The **tenth** moved
-  six entries — D-153 with D-164 … D-168 — for **86% → 61%**, stepping over D-158 and D-161 and
-  stopping below D-169 and D-170 because both change what renders and neither has been looked at
-  on the deployment. **It is done and uncommitted; committing it is a separate ask that has not
-  been made.** Previously: the eighth moved D-154 … D-156 (97% → 85%) and the **ninth** moved
-  D-157, D-159, D-160, D-162 and D-163 for **96% → 73%**, both on 2026-08-27 (D-164, D-167).
-  **The rate is the thing to watch**: three boundaries in three days, and each was bought by a
-  question closing rather than by the calendar.
-- **Building PLAN tasks 46 and 47: NOT GRANTED.** Scoped and discussed; the owner has not said to
-  start them.
+- **Taking the `DECISIONS.md` archive boundary: GRANTED, SPENT, COMMITTED and PUSHED, 2026-08-29**
+  (D-171, `9a97f70`). The owner named it as the session's next action, then authorized the commit
+  and the push in two separate turns — the distinction D-125 exists to preserve. The **tenth**
+  moved six entries — D-153 with D-164 … D-168 — for **86% → 61%**, stepping over D-158 and D-161
+  and stopping below D-169 and D-170 because both change what renders and neither has been looked
+  at on the deployment. **`/code-review high` did not run**, and the owner was told why before the
+  ask: the change is four Markdown files with no code path to review. Previously: the eighth moved
+  D-154 … D-156 (97% → 85%) and the **ninth** moved D-157, D-159, D-160, D-162 and D-163 for
+  **96% → 73%**, both on 2026-08-27 (D-164, D-167). **The rate is the thing to watch**: three
+  boundaries in three days, each bought by a question closing rather than by the calendar.
+- **Building PLAN task 46's account filter and task 51's phone audit: GRANTED 2026-08-29, BUILT,
+  UNCOMMITTED.** Task 51 is done end to end (D-173). Task 46's second half is **half done on
+  purpose**: migration 024 is written and applied to `private-ledger-local`, and **no control is
+  built above it**, because the database goes first and 024 is not on hosted. The owner also chose
+  **the ledger's date filter ahead of the calendar heatmap** (task 47), whose SQL rides in the same
+  migration; that control is unbuilt for the same reason.
+- **`supabase db push` for migration 024: NOT GRANTED and NOT ASKED FOR YET.** It needs a **backup
+  verified from the database first** — the last reading is sequence 37 / last_exported_sequence 37
+  from 2026-08-27, and D-152's rule is that the next migration needs its own. The push is the
+  owner's own command; the harness classifier blocks it here.
+- **Deleting the three synthetic accounts from the production picker (task 50): AUTHORIZED
+  2026-08-29 and DELIBERATELY NOT DONE.** Two reasons, and the second is the one to read.
+  `202607270010_account_creation.sql:89` revokes `insert, update, delete on public.accounts from
+  authenticated`, so **the app has no delete path at all** and this needs SQL plus hosted access
+  either way. And the three labels come from `supabase/seed.sql:40,45`, which **also inserts a
+  synthetic auth user** — `synthetic.owner@example.invalid`, id `11111111-1111-4111-8111-111111111111`.
+  **Two queries distinguish a seed that reached production from three accounts made some other
+  way**, and they change what the right fix is: whether that user exists in `auth.users` on hosted,
+  and whether those accounts are owned by it or by the real owner id. **Deleting first destroys the
+  cheapest evidence**, and the accounts are inert — zero rows, no figure moves.
 - **Task 45's build grant is DISCHARGED, 2026-08-27.** It covered building and running locally and
   nothing else. Migration 021 has since been superseded by 022 and 023, and **every project is on
   023 except `private-ledger-live`, which stays frozen on 012** — applied to hosted by the owner's
@@ -189,23 +208,29 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `77c0d6b` and `origin/main` matches it.** **Five commits went out on 2026-08-29
-  and all five are deployed**: `de70c9e` (the continuity sync that could not record its own
+- **`main` is at `9a97f70` and `origin/main` matches it.** **Six commits went out on 2026-08-29
+  and all six are deployed**: `de70c9e` (the continuity sync that could not record its own
   commit), `3b1205d` (five tap targets at phone width, D-168), `24b894a` (the default face D-169,
-  a sixth control, and the docs catching up), `0b88ea2` (the statistics window picker, D-170) and
-  `77c0d6b` (the sync that recorded them). **Two of them change what renders** — the default face
-  is what a device with no cookie gets, so an existing browser keeps its stored choice and a fresh
-  one does not. Three preceded them on 2026-08-27: `17a93ca`, `dd64051`, `de4acbb`.
+  a sixth control, and the docs catching up), `0b88ea2` (the statistics window picker, D-170),
+  `77c0d6b` (the sync that recorded them) and `9a97f70` (the tenth archive boundary, D-171).
+  **Only two of the six change what renders** — `3b1205d`'s tap targets and `24b894a`/`0b88ea2`'s
+  default face and window picker; the other three are documentation and deploy no behaviour.
+  Three preceded them on 2026-08-27: `17a93ca`, `dd64051`, `de4acbb`.
 - **`DECISIONS.md` is at 61% after the tenth boundary, taken 2026-08-29 and uncommitted** (D-171).
   Six entries moved — **D-153 with D-164 … D-168** — to `docs/decisions/ARCHIVE-D-153-D-168.md`,
   stepping over D-158 and D-161 for the second boundary running. **D-169 and D-170 deliberately
   stayed**: both change what renders and nobody has looked at either on the deployment, which is a
   fence that expires the moment either page is seen. The remaining question fences are D-141,
   D-158 and D-161. **`docs/gotchas/app.md` at 79% is now the file to watch.**
-- **The working tree holds `eslint.config.mjs` and `playwright.config.ts`, which must never be
-  committed, alongside the tenth boundary's uncommitted doc changes** — `DECISIONS.md`,
-  `HANDOFF.md`, `PLAN.md` and the new archive. `git status --short` is what tells the two
-  local-only configs apart from ordinary work, and it is worth running before every commit ask.
+- **`eslint.config.mjs` and `playwright.config.ts` are the two deliberately local-only files and
+  must never be committed.** That is the durable fact; **what else the tree holds changes by the
+  hour, so read `git status --short` rather than any sentence here** and stage explicitly, never
+  with `git add -A`. This paragraph previously enumerated the rest of the tree and was **false
+  within one turn of being written** — it still claimed nothing else was uncommitted while migration
+  024, two pgTAP suites, a new browser spec and four source files sat beside it. A reader following
+  it would have concluded either that those files did not exist or that the two local-only configs
+  were ordinary work. Found by `/code-review high`, which is the failure mode D-131 names: a line
+  true when typed, never re-read.
 - **The most recent deployment was verified in the running app, not in the dashboard** — the
   exclude control exercised on a real internal transfer, `/statistics` read back, the round trip
   returning every figure to its start, and the database showing the audit trail. Driven through the
@@ -214,7 +239,7 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the database is
 
-- **Every project is on migration 023 except `private-ledger-live`, which stays frozen on 012.**
+- **`private-ledger-local` is on migration 024; hosted and the rest are on 023, and `private-ledger-live` stays frozen on 012.** 024 was applied to the local project alone, by piping the file into its `psql` rather than through any Supabase CLI command, so there was no path by which it could have reached hosted. **Hosted is unchanged and its head is still `202608270023`.**
   Read back from hosted after the owner's own `db push`: head `202608270023`, 23 applied,
   `public.ledger_statistics` executable by `authenticated` and not by `anon`,
   `private.reportable_movements` executable by nobody. Backup contract **unchanged at v7**.
@@ -272,20 +297,29 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ## Live hazards on this machine
 
-- **OPEN, found by `/code-review high` on 2026-08-29 and not fixed.** The local-only
-  `playwright.config.ts` pins `GOOGLE_VISION_KEY` empty on the stated grounds that nothing in a
-  browser suite should reach a third party — but leaves `STATEMENT_MAILBOX_USER`,
-  `STATEMENT_MAILBOX_APP_PASSWORD` and `STATEMENT_MAILBOX_SENDERS` inherited from `.env.local`.
-  `/import` exposes `.sync-controls`, so **a spec added later that clicks Sync would open IMAP to
-  the real statement mailbox with the real app password.** Identical reasoning to the Vision pin,
-  one variable short. Pinning `STATEMENT_MAILBOX_APP_PASSWORD: ""` closes it. Recorded here rather
-  than fixed because that file is never committed and the owner edits it himself.
-- **OPEN, same review, same file.** Its `webServer.command` is `pnpm build && pnpm start`, which
+- **CLOSED 2026-08-29, on the owner's instruction, and restated because the file is never
+  committed.** The local-only `playwright.config.ts` now pins **all three** `STATEMENT_MAILBOX_*`
+  variables empty. It had pinned `GOOGLE_VISION_KEY` on the stated grounds that nothing in a
+  browser suite should reach a third party, and left the mailbox inherited from `.env.local` while
+  `/import` exposes `.sync-controls` — so a spec added later that clicked Sync would have opened
+  IMAP to the real statement mailbox with the real app password. Identical reasoning, one service
+  short. `lib/server/statement-mailbox-session.ts` treats an empty password as **missing**, so the
+  session fails closed rather than attempting an anonymous connection. **A fresh clone still has
+  none of these lines**, which is why this stays written down.
+  **The same gap existed in both *committed* configs and `/code-review high` found it there** —
+  `playwright.owner.config.ts` (which now collects the phone audit, and that spec walks `/import`)
+  and `playwright.isolated.config.ts` (where `parser.spec.ts` and `statement-pdf.spec.ts` do).
+  Both are pinned now, and those two fixes **are** committed.
+- **CLOSED 2026-08-29, same file.** Its `webServer.command` is `pnpm build && pnpm start`, which
   inlines `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=0` into the shared
-  `.next`. **Run the suite, then `pnpm start` on 3000 to drive the app by hand, and the test build
-  is what gets served** — pointed at local Supabase with no Dev sign-in, whatever `.env.local` says.
-  `NEXT_PUBLIC_*` are baked at build time, so a restart does not clear it and only a rebuild does.
-  Same class as D-027, landed on the one config whose stated job is manual driving.
+  `.next` — so running the suite and then `pnpm start` on 3000 by hand served the **test** build,
+  pointed at local Supabase with no Dev sign-in, whatever `.env.local` said. Baked at build time,
+  so a restart did not clear it and only a rebuild did. Same class as D-027, on the one config
+  whose stated job is manual driving. A `globalTeardown` at `.runtime/clear-next-build.ts`
+  (gitignored, like the config's only permissible reference) now deletes `.next` after the run,
+  **turning a silent wrong answer into a loud absence**: the next `pnpm start` reports that it
+  cannot find a production build. **It does not run if the suite is interrupted**, so the hazard is
+  narrowed rather than gone.
 
 - **CLOSED 2026-08-25 in the owner's working copy, and restated because the file is never
   committed.** The local-only `playwright.config.ts` now pins `GOOGLE_VISION_KEY` empty and carries

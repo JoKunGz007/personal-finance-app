@@ -403,7 +403,7 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .file-control > span, .password-control > span, .backup-form label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 .file-control { position: relative; }
 .file-control input { position: absolute; inset: 22px 0 0; opacity: 0; cursor: pointer; }
-.file-control b, .password-control input, .backup-form input { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-weight: 400; }
+.file-control b, .password-control input, .backup-form input { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-weight: 400; min-width: 0; }
 .file-control b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .password-control small { position: absolute; transform: translateY(68px); color: var(--muted); font-size: 11px; }
 .primary-button, .secondary-button, .backup-button { min-height: 47px; padding: 11px 18px; border-radius: var(--radius); font-weight: 600; white-space: nowrap; }
@@ -450,7 +450,29 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .binding-controls { margin: 26px 0 0 167px; display: grid; grid-template-columns: auto minmax(260px, 1fr) auto; align-items: end; gap: 12px; }
 .account-control { display: grid; gap: 7px; }
 .account-control > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
-.account-control select, .account-control input { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-weight: 400; }
+/* **`min-width: 0` and `max-width: 100%`, and it takes both — each alone was measured and left the
+   defect in place.** Found 2026-08-29 by the phone audit's first committed run (PLAN task 51): the
+   ledger's account filter measured **404px inside a 390px viewport** and took
+   `documentElement.scrollWidth` to 420, so `/ledger` panned sideways on a phone.
+
+   A `<select>` is as wide as its longest `<option>`, and the phone rule already sets
+   `grid-template-columns: minmax(0, 1fr)` on `.ledger-controls`, so the *track* could shrink. What
+   could not was the select, whose automatic minimum is that longest option — "Synthetic SCB
+   savings account" and its masked digits, here. `min-width: 0` removes that floor so the track is
+   free to size down; `max-width: 100%` is what then holds the select to it, because its preferred
+   width is still content-derived. **Each was tried on its own and the audit stayed red both
+   times**, which is the only reason this comment can say which line does the work.
+
+   `min-width: 0` on `.account-control` itself was also tried, and removing it changed nothing —
+   so it is not here. A rule that survives only because nobody re-measured is the thing D-166 was
+   written about.
+
+   At every width rather than behind the phone media query, unlike the tap-target raises D-139
+   scopes: a control escaping its container is wrong at any width, and at desktop the tracks are
+   wide enough that nothing moves. **The overflow is data-dependent, which is why nothing saw it**
+   — it is a function of how long the account labels happen to be, so the same layout is clean for
+   one ledger and broken for another. D-138's family, arriving from a fourth direction. */
+.account-control select, .account-control input { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-weight: 400; min-width: 0; max-width: 100%; }
 .binding-bench .warning { margin-left: 167px; }
 
 /* The way out of a dead end, so it reads as an offer rather than as another control:

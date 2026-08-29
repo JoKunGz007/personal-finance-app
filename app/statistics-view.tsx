@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { formatThb } from "@/lib/money";
 import {
   ISO_DAY_NAMES,
   ledgerStatisticsSchema,
   monthLabel,
   magnitudeChange,
+  pickerSearch,
+  pickerStateFromSearch,
   wholeWeeks,
   windowForPreset,
   windowSearch,
@@ -85,10 +88,20 @@ export function StatisticsView() {
   // is the whole difference between a page that is loading and a page that is quietly wrong.
   const [loaded, setLoaded] = useState<{ search: string; data: LedgerStatistics } | null>(null);
   const [message, setMessage] = useState("Loading statistics…");
-  const [preset, setPreset] = useState<WindowPreset>("all");
-  const [custom, setCustom] = useState(false);
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+
+  // **The picker starts from the address bar, so a reload returns to the window that was chosen.**
+  // Read once, in a lazy initialiser, rather than kept in sync both ways: the URL seeds the state
+  // and the state writes the URL, and a single direction cannot develop a disagreement with itself.
+  //
+  // Safe against a hydration mismatch because `app/statistics/page.tsx` is `force-dynamic` — the
+  // server renders this component with the request's own parameters, so the first client render
+  // computes the same state from the same string rather than from a default the server never used.
+  const initialSearch = useSearchParams().toString();
+  const [initial] = useState(() => pickerStateFromSearch(initialSearch));
+  const [preset, setPreset] = useState<WindowPreset>(initial.preset);
+  const [custom, setCustom] = useState(initial.custom);
+  const [customFrom, setCustomFrom] = useState(initial.customFrom);
+  const [customTo, setCustomTo] = useState(initial.customTo);
 
   // **Held in state rather than read per render, and re-read on every deliberate press.** Calling
   // `localToday` inside the memo would make the resolved window a function of render timing, so a
@@ -107,6 +120,28 @@ export function StatisticsView() {
   );
   const usable = isUsableWindow(window_);
   const search = windowSearch(window_);
+
+  // **The address bar follows the picker, through `history.replaceState` rather than the router.**
+  //
+  // `router.replace` would be the idiomatic call and it is the wrong one here: this page is
+  // `force-dynamic`, so a router navigation fetches a fresh RSC payload from the server for a
+  // change that is entirely client state — a round trip, and a re-render, to move text in the
+  // address bar. `replaceState` moves the address bar and nothing else, which is all that is
+  // wanted. Next supports it explicitly for this case.
+  //
+  // **Replace and not push**, because the picker is a filter rather than navigation: pushing would
+  // make the Back button walk backwards through every chip that was ever pressed, and the way out
+  // of a window is to choose another one, not to undo.
+  const pickerUrl = pickerSearch({ preset, custom, customFrom, customTo });
+  useEffect(() => {
+    const current = `${globalThis.location.pathname}${globalThis.location.search}`;
+    const next = `${globalThis.location.pathname}${pickerUrl}`;
+    // Guarded only to skip a no-op call — on first load of a bare `/statistics` the two are
+    // already equal. A hand-edited `?from=x&to=y` **is** rewritten, to the canonical
+    // `?window=custom&from=x&to=y`, and that is wanted: the address bar should show what the page
+    // understood the link to mean, and the canonical form is the one worth copying.
+    if (current !== next) globalThis.history.replaceState(null, "", next);
+  }, [pickerUrl]);
 
   useEffect(() => {
     // A transposed range is refused here rather than sent: the route answers 400 and the page would

@@ -23,7 +23,11 @@ export default defineConfig({
   // out, it was collected here, failed four times over (two tests × two projects) and
   // reported `"Not Found" is not valid JSON` — the 404 body, parsed as the session it
   // expected. A pattern naming one file is a list of one, not a rule.
-  testIgnore: /owner-(session|access)\.spec\.ts/u,
+  //
+  // **So it is a rule now.** `owner-phone-audit.spec.ts` (2026-08-29, PLAN task 51) would have
+  // been the third file to learn this the same way. The prefix is the contract every config here
+  // keys off: `playwright.owner.config.ts` collects `owner-*` and the other two exclude it.
+  testIgnore: /owner-.*\.spec\.ts/u,
   fullyParallel: true,
   use: { baseURL: `http://127.0.0.1:${PORT}`, trace: "retain-on-failure" },
   webServer: {
@@ -49,7 +53,17 @@ export default defineConfig({
       // the owner's Windows user environment, and no browser run should reach a third party
       // because of whose machine it is on (D-129). No spec here drives a reader today; this is
       // what stops one added later from calling out by accident.
-      GOOGLE_VISION_KEY: ""
+      GOOGLE_VISION_KEY: "",
+      // The statement mailbox, on exactly the reasoning above and reachable from here: both
+      // `parser.spec.ts` and `statement-pdf.spec.ts` drive `/import`, which renders
+      // `.sync-controls`, and `next start` inherits the owner's real Gmail, IMAP app password and
+      // sender list from `.env.local`. An empty password reads as **missing** to
+      // `lib/server/statement-mailbox-session.ts`, so the session fails closed rather than trying
+      // an anonymous connection. All three, because a half-pinned mailbox is a configuration that
+      // exists nowhere else.
+      STATEMENT_MAILBOX_USER: "",
+      STATEMENT_MAILBOX_APP_PASSWORD: "",
+      STATEMENT_MAILBOX_SENDERS: ""
     }
   },
   projects: [
