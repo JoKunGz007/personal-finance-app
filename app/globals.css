@@ -855,7 +855,7 @@ footer p { margin: 0; }
   .site-nav { order: 3; flex-basis: 100%; }
   /* The toggle takes the brand's row; the panel takes a row of its own under the nav. */
   .header-toggle {
-    display: inline-flex; align-items: center; min-height: 40px; padding: 8px 14px;
+    display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px;
     color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius);
     background: var(--paper-strong); font-size: 13px; font-weight: 600;
   }
@@ -909,6 +909,24 @@ footer p { margin: 0; }
      it only appears after a capture and no automated run captures a card. Raised here rather than in
      the base rule, which is deliberately compact on a desktop where a pointer is doing the aiming. */
   .capture-result .secondary-button { min-height: 44px; padding: 10px 15px; }
+  /* **Task 48's control is one of these.** `ledger-statement-row.tsx` wraps Exclude/Include in
+     `.match-control`, whose buttons are 36px — so the control shipped 8px under the phone standard
+     this repo set for itself, on the same surface D-138 was found on. Measured at 72x36 by
+     `.runtime/mobile-audit.spec.ts` the first time that harness could sign in at 390px since
+     D-157. The base stays 36px for a desktop pointer, which is D-139's rule unchanged. */
+  .match-control .secondary-button, .match-control .primary-button { min-height: 44px; }
+  /* **No audit has seen this one and none can, walking.** The matching banner exists only after a
+     match, which is D-139's own blind spot restated on the control D-139 was about. Raised on the
+     same rule rather than waiting for a harness that can reach it. */
+  .matching-banner .secondary-button { min-height: 44px; }
+  /* **The smallest control in the app, and D-156 made it load-bearing.** Folding standing copy
+     behind the `(i)` means the `(i)` is the only way back to it, at 26px on a phone. Raised to the
+     full target rather than faked with a pseudo-element, so the measurement and the thumb agree.
+     It costs height on the heading rows that carry one; that cost is measured, not assumed. */
+  .note-toggle { width: 44px; height: 44px; font-size: 15px; }
+  /* 34px, inside the panel D-157 collapses — so it was never in a measured viewport until the
+     disclosure-open pass existed. */
+  .font-picker select { height: 44px; }
   .brand { padding-block: 4px; min-width: 0; }
   /* The strapline is decoration, and on a phone it is decoration costing a line of the first
      screen — which is the whole of what the header work was about. */
