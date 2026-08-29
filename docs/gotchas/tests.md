@@ -267,3 +267,17 @@ the top of `GOTCHAS.md`.
 - Cause: Chromium's window API silently ignores width and height on a window whose state is `maximized`; the call succeeds and is a no-op. The tool has no way to say so. `window.outerWidth >= screen.width` is the cheap test for it — 1707 against 1707 here. `window.open(url, name, "width=390,…")` is not a way around it either: without a user gesture the popup is blocked and returns `null`.
 - Avoid: **read `window.innerWidth` back after any resize** and treat the reading, not the tool's return value, as the result. This is the same family as the audit that measured `documentElement.clientWidth` after the viewport had already grown to contain the overflow, and as a ratio that adjusts to the thing it is checking: a success signal that describes something other than what was asked. A real device-emulation project (`devices["iPhone 13"]`) does not have this failure mode at all, and is the right instrument when the measurement matters.
 - Verify: 2026-08-29. Three consecutive resizes reported success with `innerWidth` unchanged at 1699 and `outerWidth` equal to `screen.width`; the popup fallback returned `blocked: true`.
+
+## `getByLabel` matches a case-insensitive substring, so a short label resolves a longer one
+
+- Symptom: `locator.fill` fails with a strict mode violation reading `getByLabel('To') resolved to 2 elements`, naming the date input the spec wanted **and** a checkbox labelled `Custom`. It reads as duplicate markup, so the search goes looking for a stray input that does not exist.
+- Cause: Playwright's `getByLabel` matches on a case-insensitive **substring** unless told otherwise, and `Cus`**`to`**`m` contains `to`. Short labels are the exposed ones, and a finance surface is full of them: `To`, `In`, `Out`, `Net`, `From` are all substrings of longer words that appear on the same pages.
+- Avoid: pass `{ exact: true }` on any label short enough to be contained in another — which in practice means any label under about five characters. The failure names two elements rather than zero, so read the *second* one: it tells you which longer label swallowed yours.
+- Verify: 2026-08-29. `getByLabel("To")` on `/statistics` resolved both the window picker's `To` date field and its `Custom` checkbox; `{ exact: true }` resolved one (D-170).
+
+## The first `p.field-help` on every page is a blank node in the header
+
+- Symptom: a spec reads the page's first `.field-help` expecting a sentence and gets `""`, then fails on a `toContain` whose expected value is obviously present on screen.
+- Cause: the font picker's help paragraph is rendered **unconditionally and empty** on every route, because it is an `aria-live` region and has to be in the accessibility tree *before* it has news or the announcement is missed (D-153). It sits in the header, above every page's own content, so `page.locator("p.field-help").first()` is that blank node on every route in the app.
+- Avoid: locate the sentence by what it says — `getByText(/…/)` — or scope to the landmark the spec is about. This generalises: **any deliberately-empty live region is a positional trap for every selector that counts or indexes by class**, and this app has more than one of them by design.
+- Verify: 2026-08-29. The window picker spec read `""` from `p.field-help` first while the window line rendered correctly a few nodes below it; a text locator passed (D-170).

@@ -249,6 +249,7 @@ What this file now holds is four open questions and the live frontier — the ma
 - **D-167** — The ninth boundary steps over two open questions at once, and the rate is now the finding
 - **D-168** — Five controls reach the tap standard on a phone, and the instrument that should have caught them had been blind since the change that hid its sign-in
 - **D-169** — The default face is Pixelify Sans, which closes D-153's question by answering it with a third option
+- **D-170** — The statistics window is a control at last, and holding the response beside the window it came from is what makes the page able to say what it is showing
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -739,3 +740,33 @@ The choice is coherent with what has been measured since. `FONT_NOTES` describes
 **D-153 no longer fences this file.** It was one of four open questions holding `DECISIONS.md` above its archive floor, and the cheapest of them to settle — one constant. The tenth boundary can now move D-153 and everything settled around it. The remaining fences are **D-141** (whether the mailbox source is deleted after import, deferred), **D-158** (`list_match_candidates`' unbounded scan) and **D-161** (the statistics filters, now `PLAN.md` task 46). D-164's prediction holds a second time: *what buys a boundary its depth is a question closing, not a chore.*
 
 - Evidence: `lib/ui-font.ts`, `tests/ui-font.test.ts`. Vitest **873 passed / 7 skipped across 41 files** after the change, `tsc` clean. D-153 (the question this closes), D-166 (why a face change moves nothing), PLAN task 42 (the trial this concludes).
+
+## D-170 — The statistics window is a control at last, and holding the response beside the window it came from is what makes the page able to say what it is showing
+
+- Date: 2026-08-29
+- Status: **Accepted, committed and deployed** as `0b88ea2`. `lib/statistics.ts`, `app/statistics-view.tsx`, `app/statistics/page.tsx`, `app/globals.css`, `tests/statistics.test.ts`. **No SQL, no route change, no contract change** — `PLAN.md` task 46's second half, the account filter, is untouched and needs migration 024.
+- Context: D-161 named the missing filters as follow-on and the owner authorized both halves on 2026-08-29, choosing presets **plus** a Custom tick rather than one or the other.
+
+### The feature was already reachable; what was missing was a control
+
+`public.ledger_statistics` has taken `p_from` and `p_to` since migration 023 and `app/api/v1/statistics/route.ts` has parsed them from the query string since the same day. **The window has therefore been selectable by hand-editing a URL for two days.** That is why this half ships alone and first: it is a control and its wiring, and it does not touch the database at all.
+
+### The arithmetic is a pure function, and two defect classes are designed out rather than tested around
+
+It lives beside the wire contract rather than in the component, because **a date boundary should be provable without a browser**. Month arithmetic works on a month *index*, so January minus two months is November of the previous year rather than month `-1`, which would render as `"-1"` and be refused by the route. A window always starts on the **first** of a month, so *"three months before 31 May"* — the classic clamping bug — cannot arise.
+
+**`localToday` reads the local getters and not `toISOString()`, and that is the sharpest of the three.** The UTC date names *yesterday* for the first seven hours of every local day at UTC+7, so on the first of a month "This month" would resolve to a window starting in the previous one. It is a defect that appears for part of the day and disappears, and it is what the obvious one-liner does. There is a test at 06:30 on the first.
+
+### What `/code-review high` caught, and the serious one was this change's own regression
+
+Holding the response alongside the window it came from — `{ search, data }` rather than `data` — is what lets the page distinguish *loading* from *quietly wrong*. **The first draft of it made the error path unreachable.** `setMessage` on a failed fetch or a failed parse changed nothing, because the message only renders when there is no data and the previous window's data was still there. A session expiring mid-change would have left correct-looking figures under a window line describing a window that never loaded, with an `· updating…` that could never clear — and it silently absorbed the strict-schema mismatch whose own comment says it *is reported rather than swallowed*. Both failure branches now clear the data: **a ledger that cannot say what it is displaying displays nothing.**
+
+Two more were staleness read from the wrong side. The empty-window sentence was derived from the **live picker** while the emptiness came from the **loaded response**, so a quiet month followed by a press of All time asserted *"There are no confirmed rows to summarise yet"* about a ledger with 1,604 of them. And `today` was frozen at mount, so a tab open across midnight answered a *deliberate* press of "This month" with last month — correctly labelled and wrong.
+
+### Three spec defects and no app defects, which is the finding about the harness rather than the feature
+
+The browser spec failed five times before it passed and **every failure was in the spec**. Three were traps this repository had already written down: the header's font-picker help paragraph renders unconditionally empty as an `aria-live` region (D-153), so `p.field-help` first is a blank node in a landmark the spec was not about; Next.js mounts its own empty `role="alert"` route announcer, which `GOTCHAS` already records; and a scripted replacement's escapes were eaten by a shell layer, which was added to `GOTCHAS` the same morning. **Having a trap written down did not prevent hitting it**, which is worth weighing against `PLAN.md` task 51.
+
+The fourth was new and is now recorded: `getByLabel` matches a **case-insensitive substring**, so a field labelled `To` also resolves a checkbox labelled `Custom`. The fifth was an assertion that encoded a misunderstanding of the feature rather than a defect in it — the window line reports the range *requested*, not the extent of the rows inside it, which is correct because the per-day average divides by the days requested.
+
+- Evidence: the files above; `.runtime/window-picker.spec.ts` (gitignored) drives it at iPhone 13 and asserts the narrowing through the **transaction count** rather than the caption, because a chip that highlights while the figures stand still is the defect D-159 was written about. Vitest **881 passed / 7 skipped across 41 files** (+8), Playwright owner **33/33**, isolated **38 passed / 4 skipped**, `tsc`, `eslint` and `check:docs --strict` clean, build clean. **pgTAP deliberately not re-run — no SQL moved.** D-159 (a control that renders as prose), D-160 and D-161 (the surface and the follow-on this closes half of), D-168 (why every control here is born at 44px).

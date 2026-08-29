@@ -105,6 +105,12 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   `/statistics` were read, nothing was written, no control was pressed, no credential handled.
   **Not standing; it does not survive this session.** What it produced is in D-168 and `PLAN.md`
   tasks 44 and 50.
+- **Building PLAN task 46: GRANTED 2026-08-29, both halves, and the FIRST HALF IS SHIPPED**
+  (D-170, `0b88ea2`). The window picker needed no SQL. **The account filter still does**: migration
+  024 for the two-source balance, which means a verified backup and the owner running `db push`
+  himself. That is not granted by the build authorization and must be asked for separately.
+- **The default face: DECIDED BY THE OWNER 2026-08-29 and SHIPPED** (D-169). Pixelify Sans, not
+  the Press Start 2P the question had been framed around.
 - **Fixing the phone tap targets: GRANTED, SPENT and SHIPPED, 2026-08-29** (D-168).
   `/code-review high` ran before the commit ask, as D-125 requires, and found **nothing** in the
   committed file — its six findings are all in the two never-committed local-only configs.
@@ -176,10 +182,16 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `3b1205d` and `origin/main` matches it.** Two commits went out on 2026-08-29:
-  `de70c9e` (the continuity sync that could not record its own commit) and `3b1205d` (five tap
-  targets raised at phone width, D-168). **Both are deployed**, and unlike `de70c9e` the second
-  **changes what renders**. Three preceded them on 2026-08-27: `17a93ca`, `dd64051`, `de4acbb`.
+- **`main` is at `0b88ea2` and `origin/main` matches it.** **Four commits went out on 2026-08-29
+  and all four are deployed**: `de70c9e` (the continuity sync that could not record its own
+  commit), `3b1205d` (five tap targets at phone width, D-168), `24b894a` (the default face D-169,
+  a sixth control, and the docs catching up) and `0b88ea2` (the statistics window picker, D-170).
+  **The last two change what renders** — the default face is what a device with no cookie gets, so
+  an existing browser keeps its stored choice and a fresh one does not. Three preceded them on
+  2026-08-27: `17a93ca`, `dd64051`, `de4acbb`.
+- **`DECISIONS.md` is at 86% and that is the next thing to deal with.** Four entries landed today.
+  **D-153 closed (D-169), so the tenth boundary can move it** along with everything settled around
+  it — the remaining fences are D-141, D-158 and D-161. Taking it is cheaper now than urgent later.
 - **The working tree holds only `eslint.config.mjs` and `playwright.config.ts`**, which are the two
   deliberately local-only files and **must never be committed**. `git status --short` is what tells
   them apart from ordinary work. Nothing else is uncommitted.
