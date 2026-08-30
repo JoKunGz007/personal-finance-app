@@ -258,6 +258,8 @@ What this file now holds is three open questions and the live frontier — the m
 - **D-172** — The window picker's state moves into the address bar, and a preset is written by name while a custom range is written by its dates
 - **D-173** — The phone audit stops being a throwaway, and its first committed run found a control that had been escaping the viewport since before the audit existed
 - **D-174** — Migration 024: statistics take an account, and the balance series needs two sources because one account's truth is printed and the ledger's is derived
+- **D-175** — The production picker's synthetic accounts were not a seed leak, and the hypothesis that said so survived two sessions until one value-free query killed it
+- **D-176** — Migration 024 reaches hosted, and the claim that an agent could not push it was wrong
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
@@ -678,3 +680,57 @@ An unbounded window now starts at the chosen account's own first row. An account
 A defaulted parameter added to an existing function is an **overload**, not a replacement, and `ledger_statistics(p_from => x, p_to => y)` would then be ambiguous. Dropping is what makes this a change rather than a fork. **Three `has_function_privilege` assertions failed loudly on the old signatures** — in 011 and, missed on the first pass and caught by `/code-review high`, in 009. That is the check working: a grant assertion silently passing against a signature nobody calls would be a stale exemption.
 
 - Evidence: pgTAP **009: 33, 011: 35, 012: 31**, all against `private-ledger-local`. The partition reconciles — per-account totals sum to all-accounts on deposits, withdrawals, row count and excluded count, written as arithmetic on returned values rather than hard-coded numbers. Owner suite **34/34 against the migrated database**, which is what shows the app's existing calls still resolve through the new defaults and makes a database-first push safe. **`pnpm supabase:test` was not run as a whole**; the three affected files were run directly. **Nothing is built on top of this yet** — neither control exists, deliberately, because the database goes first. D-158 and D-161 (the follow-ons this answers), D-160 (statistics in SQL), D-152 (the backup rule this still owes), D-104 (why one migration).
+
+## D-175 — The production picker's synthetic accounts were not a seed leak, and the hypothesis that said so survived two sessions until one value-free query killed it
+
+- Date: 2026-08-30
+- Status: **Done.** Three rows deleted from `public.accounts` on the hosted project by the owner. **No migration, no code, no schema change** — a scoped `delete` run in the dashboard SQL Editor. PLAN task 50.
+- Context: the first browser reading of the deployed `/ledger` (D-168) found the account picker offering **six** accounts, three of them `Synthetic … ···· 4242` with zero rows. The owner authorized deleting them on 2026-08-29.
+
+### The leading explanation was wrong, and it was wrong for two sessions
+
+`supabase/seed.sql` inserts exactly those three labels, and `config.toml` has `[db.seed] enabled = true`, so **the seed reaching production was the obvious reading** — and it was written into `HANDOFF.md` as such. It also implied something much worse than three empty rows: the same file inserts a synthetic `auth.users` row and calls `bind_ledger_owner`.
+
+**It is refuted.** Read from hosted: **no `synthetic.owner@example.invalid` in `auth.users`**, `ledger_owners` holds one row and it is not the synthetic id, and **no `categories` or `mutation_sequences` rows** for it. The seed inserts that user in its *first* statement, so it never ran there.
+
+### What was actually true, and why it stops being alarming
+
+The three accounts carried the seed's **exact primary keys** while being **owned by the real owner**, and they **predate all three real accounts**. The seed pins `owner_id` to the synthetic id, so it cannot have written them.
+
+That fingerprint — keys preserved, ownership rewritten to the caller — is what `public.restore_backup` does (D-013). A synthetic backup restored into the new hosted project during setup fits it exactly; so does hand-setup at the same moment. **Nothing distinguishes the two and nothing turns on which**: both are historical, neither can recur, and no process needed changing. That is the finding that made this a deletion rather than an incident.
+
+### The method is the transferable part
+
+**Every question was answered with counts and booleans.** The diagnostic returned nine labelled rows, none of them a label, a digit, a date or a balance, so the owner could paste the result back verbatim with nothing to redact. The provenance question — *did these predate the real accounts* — was asked as a single `boolean` rather than by reading `created_at`. **No real value was read or written anywhere in this investigation**, and it was not a constraint that cost anything: the value-free form was also the form that answered fastest.
+
+**"Success. No rows returned" is not a row count.** The dashboard says that for any statement with no result set, so a guarded `delete` that matched nothing looks identical to one that matched three. The count came from a separate `select` afterwards. D-152's rule in a new place: a claim is not a measurement.
+
+### The delete, and what it deliberately could not do
+
+Scoped to three primary keys, and **self-guarding**: `owner_id = (select owner_id from public.ledger_owners)` plus a `not exists` against each of the three tables holding a foreign key to `public.accounts` — `source_transactions`, `import_batches`, `notification_cards`. It **cannot remove an account holding anything**, so the dependency check was evidence rather than the safety mechanism. `public.accounts` has **no triggers**, so the delete is neither refused nor audited and does not move `mutation_sequences` — which is why one verified backup covered this and migration 024 together.
+
+- Evidence: read back from hosted — **3 accounts remaining, 0 labelled `Synthetic%`**. Backup **verified from the database first**, sequence 39 / last_exported_sequence 39 with a record at 39 (D-152). **This is the one change to the real ledger the audit trail does not record**, which is the cost of there being no delete path in the app at all: `202607270010_account_creation.sql` revokes `insert, update, delete on public.accounts from authenticated`. D-168 (the reading that found them), D-013 (the restore semantics that explain them), D-152 (the backup rule), D-060 (why every figure here is a count).
+
+## D-176 — Migration 024 reaches hosted, and the claim that an agent could not push it was wrong
+
+- Date: 2026-08-30
+- Status: **Done.** `supabase db push --linked` applied `202608290024` to the hosted project. No code, no continuity change beyond this. Supersedes **D-174**'s status line, which said the migration was on `private-ledger-local` only and not on hosted — true when written.
+- Context: D-174 wrote the migration and left it unpushed, correctly, because a push needs its own ask and a backup verified from the database.
+
+### The preconditions, met in order
+
+**The backup was verified from the database, not taken on report** — `sequence` 39, `last_exported_sequence` 39, one `backup_records` row at 39, read from hosted before anything was written (D-152). **A `--dry-run` ran first** and named exactly one file, which is the check that the push is the change it is believed to be rather than a batch nobody counted. Then the push, exit 0, and `supabase migration list --linked` read back showing **all 24 migrations matching local and remote**.
+
+### The correction, which is the part worth carrying
+
+**A previous session asserted that an agent could not reach hosted at all, and that was wrong.** The reasoning was: no access token in the dotfile locations, no `SUPABASE_ACCESS_TOKEN`, no `SUPABASE_DB_PASSWORD`, no `PGPASSWORD`. All four readings were accurate; **the conclusion drawn from them was not.** The Supabase CLI on this machine is `node_modules/.bin/supabase`, is **not on `PATH`**, and holds its credentials somewhere none of those checks looked — `supabase migration list --linked` connects and reads the remote migration table without prompting for anything.
+
+**D-108 already recorded an agent pushing 016, 017 and 018 on 2026-08-15**, with explicit authorization and widened access. The continuity docs had since acquired the shorter line *"the owner runs it"*, which described an arrangement rather than a capability, and it was repeated as though it were the latter.
+
+*A partial check is evidence about what was checked, never about what was not.* The failure was not the four readings; it was answering a capability question with them and stating the answer with more confidence than they carried. **The owner is who noticed**, by asking whether this had been done before.
+
+### What is still owed
+
+**The function grants have not been read back from hosted.** D-108's push verified its effect rather than its having applied — `anon` privileges counted, not assumed. The equivalent here is that `public.ledger_statistics(date,date,integer,uuid)` and `public.list_account_transactions_page(uuid,integer,date,time,uuid,date,date)` are executable by `authenticated` and not `anon`, that both private helpers are executable by nobody, and that **the old 3-argument and 5-argument signatures are gone rather than sitting alongside**. The CLI has no arbitrary-SQL command, so that reading is the dashboard's and is not yet taken.
+
+- Evidence: `--dry-run` naming only `202608290024`; push exit 0; `migration list --linked` showing 24 for 24. **The ledger was not read back for row counts or sequence afterwards** — 024 changes four function bodies and no data, so nothing should have moved, and that is a reasoning rather than a measurement. D-174 (the migration), D-152 (the backup rule), D-108 (the precedent this session forgot), D-094 (the hosted project).

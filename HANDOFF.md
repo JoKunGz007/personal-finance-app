@@ -142,25 +142,33 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   **96% → 73%**, both on 2026-08-27 (D-164, D-167). **The rate is the thing to watch**: three
   boundaries in three days, each bought by a question closing rather than by the calendar.
 - **Building PLAN task 46's account filter and task 51's phone audit: GRANTED 2026-08-29, BUILT,
-  UNCOMMITTED.** Task 51 is done end to end (D-173). Task 46's second half is **half done on
+  COMMITTED and PUSHED as `676a8ea`.** Task 51 is done end to end and deployed (D-173). Task 46's second half is **half done on
   purpose**: migration 024 is written and applied to `private-ledger-local`, and **no control is
   built above it**, because the database goes first and 024 is not on hosted. The owner also chose
   **the ledger's date filter ahead of the calendar heatmap** (task 47), whose SQL rides in the same
   migration; that control is unbuilt for the same reason.
-- **`supabase db push` for migration 024: NOT GRANTED and NOT ASKED FOR YET.** It needs a **backup
+- **`supabase db push` for migration 024: GRANTED, RUN AND SPENT, 2026-08-30.** It needs a **backup
   verified from the database first** — the last reading is sequence 37 / last_exported_sequence 37
-  from 2026-08-27, and D-152's rule is that the next migration needs its own. The push is the
-  owner's own command; the harness classifier blocks it here.
-- **Deleting the three synthetic accounts from the production picker (task 50): AUTHORIZED
-  2026-08-29 and DELIBERATELY NOT DONE.** Two reasons, and the second is the one to read.
-  `202607270010_account_creation.sql:89` revokes `insert, update, delete on public.accounts from
-  authenticated`, so **the app has no delete path at all** and this needs SQL plus hosted access
-  either way. And the three labels come from `supabase/seed.sql:40,45`, which **also inserts a
-  synthetic auth user** — `synthetic.owner@example.invalid`, id `11111111-1111-4111-8111-111111111111`.
-  **Two queries distinguish a seed that reached production from three accounts made some other
-  way**, and they change what the right fix is: whether that user exists in `auth.users` on hosted,
-  and whether those accounts are owned by it or by the real owner id. **Deleting first destroys the
-  cheapest evidence**, and the accounts are inert — zero rows, no figure moves.
+  from 2026-08-27, and D-152's rule is that the next migration needs its own. **Who runs it has varied**: an
+  agent pushed 016, 017 and 018 on 2026-08-15 with explicit authorization and widened access
+  (D-108, after a `--dry-run`); the owner ran 021, 022 and 023 himself on 2026-08-27.
+  **Hosted is reachable from this machine and a previous claim that it was not was wrong.**
+  `supabase migration list --linked` connects and reads the remote migration table without
+  prompting — verified 2026-08-30, with hosted at 023 and `202608290024` showing an empty remote.
+  The CLI is `node_modules/.bin/supabase`, **not on `PATH`**, and its credentials live in neither
+  the dotfiles nor the environment variables an agent checks first, which is how that wrong claim
+  was reached: a capability limit asserted from a partial check. **Whether the harness treats
+  `db push` differently from a read is untested.**
+- **The three synthetic accounts in the production picker (task 50): DONE 2026-08-30** (D-175). The
+  hypothesis first written here — that `supabase/seed.sql` had reached production — **was wrong and
+  is refuted**: hosted holds no `synthetic.owner@example.invalid`, `ledger_owners` is not the
+  synthetic id, and there are no `categories` or `mutation_sequences` rows for it. The accounts
+  carried the seed's primary keys while being **owned by the real owner** and predating all three
+  real accounts, which is `public.restore_backup`'s fingerprint (D-013) or hand-setup — historical
+  either way, and not recurring. **Three rows deleted by the owner in the dashboard SQL Editor,
+  after a backup verified from the database at sequence 39 / 39.** Read back: **3 accounts
+  remaining, 0 labelled `Synthetic%`.** `public.accounts` has no triggers, so **this change is not
+  in the audit trail** — the app has no delete path at all, migration 010 having revoked it.
 - **Task 45's build grant is DISCHARGED, 2026-08-27.** It covered building and running locally and
   nothing else. Migration 021 has since been superseded by 022 and 023, and **every project is on
   023 except `private-ledger-live`, which stays frozen on 012** — applied to hosted by the owner's
@@ -208,15 +216,22 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `9a97f70` and `origin/main` matches it.** **Six commits went out on 2026-08-29
-  and all six are deployed**: `de70c9e` (the continuity sync that could not record its own
+- **`main` is at `676a8ea` and `origin/main` matches it.** **Seven commits went out on 2026-08-29
+  and all seven are deployed**: `de70c9e` (the continuity sync that could not record its own
   commit), `3b1205d` (five tap targets at phone width, D-168), `24b894a` (the default face D-169,
   a sixth control, and the docs catching up), `0b88ea2` (the statistics window picker, D-170),
-  `77c0d6b` (the sync that recorded them) and `9a97f70` (the tenth archive boundary, D-171).
-  **Only two of the six change what renders** — `3b1205d`'s tap targets and `24b894a`/`0b88ea2`'s
-  default face and window picker; the other three are documentation and deploy no behaviour.
-  Three preceded them on 2026-08-27: `17a93ca`, `dd64051`, `de4acbb`.
-- **`DECISIONS.md` is at 61% after the tenth boundary, taken 2026-08-29 and uncommitted** (D-171).
+  `77c0d6b` (the sync that recorded them), `9a97f70` (the tenth archive boundary, D-171) and
+  `676a8ea` (the committed phone audit, the picker's URL state and migration 024 — D-172, D-173,
+  D-174). **Four of the seven change what renders**, and **nobody has looked at any of the four on
+  the deployment**: the default face, the window picker, the account-filter overflow fix, and the
+  picker's state in the address bar. Three preceded them on 2026-08-27: `17a93ca`, `dd64051`,
+  `de4acbb`.
+- **Migration 024 is on hosted as of 2026-08-30**, pushed by an agent with the owner's authorization
+  and a backup verified at 39/39 first. **Nothing in the deployed app calls the new parameters yet**,
+  so the database is ahead of the app — which is the intended order and leaves the two controls
+  (task 46's account filter, task 47's ledger date range) free to be built against a database that
+  already has them.
+- **`DECISIONS.md` is at 72% after three entries landed on top of the tenth boundary** (D-171 took it to 61%; D-172, D-173 and D-174 followed the same day).
   Six entries moved — **D-153 with D-164 … D-168** — to `docs/decisions/ARCHIVE-D-153-D-168.md`,
   stepping over D-158 and D-161 for the second boundary running. **D-169 and D-170 deliberately
   stayed**: both change what renders and nobody has looked at either on the deployment, which is a
@@ -239,7 +254,7 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the database is
 
-- **`private-ledger-local` is on migration 024; hosted and the rest are on 023, and `private-ledger-live` stays frozen on 012.** 024 was applied to the local project alone, by piping the file into its `psql` rather than through any Supabase CLI command, so there was no path by which it could have reached hosted. **Hosted is unchanged and its head is still `202608270023`.**
+- **Hosted and `private-ledger-local` are on migration 024; `private-ledger-recovery` is on 023 and `private-ledger-live` stays frozen on 012.** **024 was pushed to hosted on 2026-08-30 by an agent, authorized by the owner in the same turn**, after a `--dry-run` that named only `202608290024` and with the backup verified from the database first at sequence 39 / last_exported_sequence 39. **Read back from hosted rather than trusted**: `supabase migration list --linked` shows all **24** migrations matching local and remote. The function grants still want their own reading.
   Read back from hosted after the owner's own `db push`: head `202608270023`, 23 applied,
   `public.ledger_statistics` executable by `authenticated` and not by `anon`,
   `private.reportable_movements` executable by nobody. Backup contract **unchanged at v7**.
