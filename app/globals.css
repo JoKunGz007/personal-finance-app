@@ -16,22 +16,35 @@
   as a link. **Colour is never the only carrier** — every one of those states also says what it is in
   words (D-123) — which is what makes near-neighbour hues tolerable rather than a defect.
 
-  **Cornsilk is the ground itself, not a card colour** (D-137). `--mist` *is* `#FEFAE0`, and the
-  surfaces above it lift toward white rather than the page sitting on something duller. The ladder
-  runs mist → paper → paper-strong and stays in that order; inverting it makes every border in the
-  file read backwards.
+  **Cornsilk is the ground itself, not a card colour** (D-137). In the light scheme `--mist` *is*
+  `#FEFAE0`, and the surfaces above it lift toward white rather than the page sitting on something
+  duller. **The ladder runs mist → paper → paper-strong and stays in that order in every scheme** —
+  in the dark ones it climbs from a dark ground toward lighter panels, which is the same
+  relationship, not an inversion. Reversing it makes every border in the file read backwards.
 
-  **This app declares one colour scheme and has no dark block** (D-137). That is a decision, not an
-  omission: the ground is warm enough to read against for long stretches, and a second scheme is a
-  second set of contrast facts that nothing here measures. `color-scheme: light` below is what makes
-  a date picker and a select dropdown obey it on a device whose OS is dark. **If a dark block ever
-  returns, read the `GOTCHAS.md` trap about tokens that invert between schemes first** — the
-  variable-plus-literal pairings that failed on 2026-08-21 are still in this file and will fail again.
+  **There are four colour schemes as of 2026-09-01, and that reverses D-137.** One light and three
+  dark; `[data-theme]` on `<html>` selects between them, written server-side from a cookie by
+  `app/layout.tsx` so the first paint is already right. D-137's argument for one scheme was that a
+  second is a second set of contrast facts nothing here measures — the answer is
+  `tests/ui-theme.test.ts`, which measures **every** scheme against floors calibrated from the
+  shipped light palette. Read `lib/ui-theme.ts` for why three darks rather than one.
 
-  Contrast against `--mist`, measured rather than eyeballed: `--muted` 5.9:1, `--blue` 5.3:1,
-  `--red` 7.1:1, `--celadon-ink` on `--celadon` 6.3:1. All clear AA for body text, which is what the
-  axe checks in the Playwright suites hold this file to. Everything above the ground is lighter than
-  it, so these are the floor rather than an average.
+  **The `GOTCHAS.md` trap about tokens that invert between schemes was live in this file and is now
+  closed.** Eleven rules paired a `var(--…)` background with a literal `color`, which is correct in
+  light and unreadable in dark. All eleven are tokens below — `--on-action`, `--warn-ink`,
+  `--resync-ink`, `--verified-ink`, `--verified-rail`, `--celadon-dot`, `--backup-edge`. Their light
+  values are exactly the literals they replaced, so **the light scheme renders unchanged**. The one
+  surviving literal is `#fff` on `.owner-access-qr`, and it is deliberate: an authenticator reads
+  that square off the screen and a quiet zone must be white in every scheme.
+
+  **Do not write a literal colour into a rule below.** If a value is missing, add a token to all four
+  blocks — the test fails if any scheme declares a different set from the others.
+
+  Contrast, measured rather than eyeballed, and re-measured for all four schemes. Against `--mist`
+  in light: `--muted` 5.9:1, `--blue` 5.4:1, `--red` 7.2:1, `--celadon-ink` on `--celadon` 6.2:1.
+  Every scheme's full table is in `tests/ui-theme.test.ts`, which is the authority; the floors there
+  were calibrated *from* the light palette, because five plausible-looking floors failed against the
+  scheme this app has shipped all along — the palette was right and the floors were wrong.
 */
 :root {
   color-scheme: light;
@@ -61,6 +74,37 @@
      than the same value reused. `--money-out` is `--red`, which passes both at 7.37. */
   --money-in: #4a6f14;
   --money-out: #9b2c2c;
+  /* **The seven promoted literals** (2026-09-01). Each was a hardcoded colour paired with a
+     `var(--…)` surface, which is the latent failure `GOTCHAS.md` describes. Every value here is
+     byte-identical to the literal it replaced, so this promotion changed nothing on screen.
+     `--on-action` is the text over an action fill: it was the keyword `white`, on three rules, one
+     of which already carried a dark-mode override — which is what made the other two look
+     deliberate rather than forgotten. */
+  --on-action: #ffffff;
+  --warn-ink: #7a4a12;
+  --resync-ink: #8a5518;
+  --verified-ink: #4a5a24;
+  --verified-rail: #606c38;
+  --celadon-dot: #7d8c47;
+  --backup-edge: #86b9a2;
+  /* **The modal scrim, and it cannot be `--navy`.** `.detail-dialog::backdrop` mixed the *text*
+     colour at 65% until this was found in review — correct in daylight, where the ink is near-black,
+     and exactly backwards in every dark scheme, where the ink is near-white. Measured: the backdrop
+     went from 19% luminance in daylight to **38% in all three darks**, so opening a dialog washed
+     the page *lighter* than the app behind it and glared in the dark room the scheme exists for.
+     Its light value is `--navy`'s, so daylight is unchanged. This is the `GOTCHAS.md` inversion trap
+     in its subtler form: not a literal paired with a variable, but a variable used for a role that
+     flips with the scheme. */
+  --scrim: #283618;
+  /* **The chart series, which were `const INK`/`DEPOSIT`/`WITHDRAWAL` in `statistics-charts.tsx`
+     until 2026-09-01.** That file's own docstring claimed the charts "inherit the app's palette and
+     its one declared colour scheme for free" — they did not, because a JS constant inherits nothing,
+     and on a dark ground `#283618` ink would have been invisible. The same pair feeds the calendar
+     heatmap's two ramps (D-179), so both surfaces move together or neither does. A mark needs 3:1
+     against its surface where text needs 4.5, which is why `--chart-in` is a lighter step than
+     `--money-in` rather than the same value reused (D-163). */
+  --chart-in: #5c8a1a;
+  --chart-out: #9b2c2c;
   /* **Amounts never render in a pixel face.** `--font-data` is redefined per typeface below, so
      before this every figure on every table was drawn in the chosen pixel font — where `0`, `2`,
      `5` and `8` are close enough at small sizes to be misread. That happened for real: two figures
@@ -70,6 +114,164 @@
   --font-money: "IBM Plex Mono", "Cascadia Mono", monospace;
   --font-body: "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
   --font-data: "IBM Plex Mono", "Cascadia Mono", monospace;
+}
+
+/*
+  The three dark schemes (2026-09-01, reversing D-137).
+
+  **Only colour tokens are redeclared below.** `--radius` and the three font stacks are facts about
+  the layout and the typeface trial, not about the scheme, so they are inherited from `:root` and a
+  block that redeclared one would be saying something it does not mean.
+
+  **`system` under a dark OS duplicates the Night Town values, and the duplication is forced.** CSS
+  cannot alias one rule to another, and resolving `system` server-side is impossible because the
+  server never learns `prefers-color-scheme` — the alternative is the blocking inline script this
+  app's CSP would then have to admit, which is the same trade `lib/ui-font.ts` already refused for
+  the typeface. So the values are written twice and `tests/ui-theme.test.ts` asserts the two blocks
+  agree token for token. **Change one and you must change the other**; the test says so out loud
+  rather than leaving it to a comment nobody re-reads.
+
+  `color-scheme` per block is what makes a native date picker and a `<select>` dropdown follow the
+  page. `light dark` on `system` hands the device both decisions at once; a pinned scheme names
+  itself, so choosing Daylight on a dark-OS phone gets light controls rather than dark ones on a
+  cream page.
+*/
+
+:root[data-theme="system"] { color-scheme: light dark; }
+
+/* Night Town — the owner's choice, 2026-09-01. Deep blue-violet ground, warm accents as lamplight.
+   The one scheme where the app is cool-grounded, which is the trade he accepted: it is the most
+   unmistakably *night* of the three and the biggest departure from the warm-throughout palette. */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --mist: #1e2440;
+    --paper: #272e4d;
+    --paper-strong: #31385a;
+    --navy: #f0ecdc;
+    --muted: #b3b6cc;
+    --line: #525a85;
+    --blue: #f0a960;
+    --blue-dark: #f8c188;
+    --celadon: #31432c;
+    --celadon-ink: #cfe0a8;
+    --saffron: #e8b070;
+    --saffron-wash: #3a3320;
+    --red: #f28a86;
+    --frame-outer: #c98a45;
+    --frame-inner: #3d446a;
+    --money-in: #a6d36a;
+    --money-out: #f28a86;
+    --on-action: #1e2440;
+    --warn-ink: #e8b070;
+    --resync-ink: #f0bc82;
+    --verified-ink: #a6d36a;
+    --verified-rail: #7fae45;
+    --celadon-dot: #a6d36a;
+    --backup-edge: #7fc0a3;
+    --scrim: #080a18;
+    --chart-in: #8ac84e;
+    --chart-out: #e5766e;
+  }
+}
+
+:root[data-theme="night"] {
+  color-scheme: dark;
+  --mist: #1e2440;
+  --paper: #272e4d;
+  --paper-strong: #31385a;
+  --navy: #f0ecdc;
+  --muted: #b3b6cc;
+  --line: #525a85;
+  --blue: #f0a960;
+  --blue-dark: #f8c188;
+  --celadon: #31432c;
+  --celadon-ink: #cfe0a8;
+  --saffron: #e8b070;
+  --saffron-wash: #3a3320;
+  --red: #f28a86;
+  --frame-outer: #c98a45;
+  --frame-inner: #3d446a;
+  --money-in: #a6d36a;
+  --money-out: #f28a86;
+  --on-action: #1e2440;
+  --warn-ink: #e8b070;
+  --resync-ink: #f0bc82;
+  --verified-ink: #a6d36a;
+  --verified-rail: #7fae45;
+  --celadon-dot: #a6d36a;
+  --backup-edge: #7fc0a3;
+  --scrim: #080a18;
+  --chart-in: #8ac84e;
+  --chart-out: #e5766e;
+}
+
+/* Lamplit — dark walnut, cornsilk ink, warm throughout. The game's own furniture: Stardew's
+   dialogue boxes and inventory are wood, not black. The only candidate where the copper/olive/
+   caramel hue separation survives the move without being re-argued. */
+:root[data-theme="lamplit"] {
+  color-scheme: dark;
+  --mist: #2b2018;
+  --paper: #352921;
+  --paper-strong: #40332a;
+  --navy: #f5ecd8;
+  --muted: #c2b394;
+  --line: #64524a;
+  --blue: #e8a05c;
+  --blue-dark: #f2b878;
+  --celadon: #3d4a1e;
+  --celadon-ink: #d3e0a8;
+  --saffron: #dda15e;
+  --saffron-wash: #3d2e1c;
+  --red: #f08a7f;
+  --frame-outer: #c07a33;
+  --frame-inner: #4a3a2c;
+  --money-in: #a8cf6a;
+  --money-out: #f08a7f;
+  --on-action: #2b2018;
+  --warn-ink: #dda15e;
+  --resync-ink: #e8b273;
+  --verified-ink: #a8cf6a;
+  --verified-rail: #83b046;
+  --celadon-dot: #a8cf6a;
+  --backup-edge: #7bbd9f;
+  --scrim: #0d0906;
+  --chart-in: #8fc44a;
+  --chart-out: #e0705f;
+}
+
+/* Cellar — near-black green, built by darkening `--navy` (#283618, Black Forest) into a ground.
+   Nothing new enters the palette: the day's ink becomes the night's floor. It measures best of the
+   three on almost every pair, and its risk is the one no ratio reports — a dark green can read as
+   muddy grey-green on a phone in daylight rather than as a deliberate night. */
+:root[data-theme="cellar"] {
+  color-scheme: dark;
+  --mist: #1a2110;
+  --paper: #232b16;
+  --paper-strong: #2c351d;
+  --navy: #eef0d8;
+  --muted: #b4bd92;
+  --line: #4e5936;
+  --blue: #e6a05a;
+  --blue-dark: #f2b878;
+  --celadon: #3a4a20;
+  --celadon-ink: #d5e4a6;
+  --saffron: #dda15e;
+  --saffron-wash: #382c18;
+  --red: #f0897d;
+  --frame-outer: #bd7a30;
+  --frame-inner: #3f4a28;
+  --money-in: #a9d268;
+  --money-out: #f0897d;
+  --on-action: #1a2110;
+  --warn-ink: #dda15e;
+  --resync-ink: #e8b273;
+  --verified-ink: #a9d268;
+  --verified-rail: #84b247;
+  --celadon-dot: #a9d268;
+  --backup-edge: #7bbd9f;
+  --scrim: #070a04;
+  --chart-in: #8ec84a;
+  --chart-out: #e2725f;
 }
 
 /*
@@ -246,13 +448,21 @@ button:disabled { cursor: wait; opacity: .65; }
 .brand strong { font-weight: 600; letter-spacing: -.01em; }
 .brand small { margin-top: 1px; color: var(--muted); font: 400 10px/1.2 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 .privacy-chip { display: inline-flex; align-items: center; gap: 8px; color: var(--celadon-ink); font-size: 13px; font-weight: 500; }
-/* The typeface switch (PLAN task 42). Its note carries the Thai-fallback warning, and a refusal
-   when one happens, so it must be able to wrap without changing the header's height on a phone. */
-.font-picker { display: grid; gap: 4px; }
-.font-picker label { display: inline-flex; align-items: center; gap: 8px; }
-.font-picker label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
-.font-picker select { height: 34px; padding: 4px 8px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-size: 13px; }
-.font-picker select:disabled { opacity: .6; cursor: wait; }
+/* **The two header preference switches — typeface (PLAN task 42) and colours (2026-09-01).**
+   One rule set under `.ui-picker`, which both carry alongside their own name. The colour picker
+   arrived as a near-copy of the typeface one, and duplicating this block for it would have meant
+   two places to keep the phone measurements in step — the `px` cap, the `:empty` clip and the 44px
+   touch height are each the fix for a defect found on a real device, and a copy would have been
+   the version that missed the next one. `.font-picker` and `.theme-picker` survive as hooks for
+   anything that needs to name one specifically.
+
+   Their notes carry a standing sentence behind the `(i)`, and a refusal when one happens, so each
+   must be able to wrap without changing the header's height on a phone. */
+.ui-picker { display: grid; gap: 4px; }
+.ui-picker label { display: inline-flex; align-items: center; gap: 8px; }
+.ui-picker label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.ui-picker select { height: 34px; padding: 4px 8px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-size: 13px; }
+.ui-picker select:disabled { opacity: .6; cursor: wait; }
 /* **`px`, not `ch`.** `ch` is a unit of the font being switched, so a `34ch` cap grew from 208px to
    353px the moment a pixel face was chosen — the note got wider exactly when the header had least
    room. A fixed cap is the one thing here that must not scale with the choice. */
@@ -260,19 +470,19 @@ button:disabled { cursor: wait; opacity: .65; }
    width-capped sentence occupies a face-dependent number of lines and that was the **only** thing
    on either route whose height changed with the typeface. `:empty` keeps it out of the header's
    standing box entirely, so the header's height no longer depends on there being a message. */
-.font-picker .field-help { max-width: 240px; margin: 0; font-size: 11px; }
+.ui-picker .field-help { max-width: 240px; margin: 0; font-size: 11px; }
 /* **Clipped rather than `display: none`, and the difference is the whole reason it is unconditional.**
    This is an `aria-live` region: it has to be in the accessibility tree *before* it has news, or
    the screen reader is not watching it when the text arrives and the announcement is commonly
    dropped. `display: none` removes it from the tree, which would have made "always rendered" mean
    nothing. Clipping keeps it observed while costing no height, so the header's standing box is
    still independent of whether there is a message. */
-.font-picker .field-help:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-/* The picker's own disclosure. Narrower than the page-level panels: it hangs off a header control
-   rather than a heading. `.font-picker` is a grid, so the panel already takes its own row — it is
+.ui-picker .field-help:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* A picker's own disclosure. Narrower than the page-level panels: it hangs off a header control
+   rather than a heading. `.ui-picker` is a grid, so the panel already takes its own row — it is
    a **sibling** of the `<label>`, never a child, for the accessible-name reason in the component. */
-.font-picker .note-panel { max-width: 34ch; }
-.privacy-chip i { width: 8px; height: 8px; border-radius: 50%; background: #7d8c47; box-shadow: 0 0 0 4px color-mix(in srgb, var(--celadon) 55%, transparent); }
+.ui-picker .note-panel { max-width: 34ch; }
+.privacy-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--celadon-dot); box-shadow: 0 0 0 4px color-mix(in srgb, var(--celadon) 55%, transparent); }
 
 /* One row of routes, since routing replaced the single page (PLAN task 19). Deliberately
    plain: this is a four-item ledger app, and anything that needed a disclosure pattern to
@@ -321,7 +531,10 @@ button:disabled { cursor: wait; opacity: .65; }
 .owner-access-panel label { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 .owner-access-panel input { width: 9ch; height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); font: 500 17px/1 var(--font-data); letter-spacing: .12em; }
 /* Fixed size and a white plate under it: an authenticator reads the square from the screen,
-   and a QR rendered on a tinted or scaled background is the one that will not scan. */
+   and a QR rendered on a tinted or scaled background is the one that will not scan.
+   **The one literal colour left in this file, and the only rule that must not follow the scheme.**
+   A quiet zone is white in daylight and white at midnight; tokenising this would make the dark
+   schemes serve an unscannable code. Deliberate, not missed by the 2026-09-01 sweep. */
 .owner-access-qr { width: 184px; height: 184px; padding: 10px; border-radius: var(--radius); background: #fff; }
 .owner-access-secret code { padding: 3px 7px; border-radius: 5px; background: color-mix(in srgb, var(--line) 40%, transparent); font: 500 13px/1.5 var(--font-data); overflow-wrap: anywhere; }
 .link-button { color: var(--blue); background: none; border: 0; padding: 0; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
@@ -333,7 +546,7 @@ button:disabled { cursor: wait; opacity: .65; }
 .stage-nav li + li { padding-left: 18px; border-left: 1px solid var(--line); }
 .stage-nav li span { display: inline-grid; width: 21px; height: 21px; place-items: center; border: 1px solid var(--line); border-radius: 50%; font: 500 10px/1 var(--font-data); }
 .stage-nav li.active { color: var(--navy); box-shadow: inset 0 -3px var(--blue); font-weight: 600; }
-.stage-nav li.active span { color: white; border-color: var(--blue); background: var(--blue); }
+.stage-nav li.active span { color: var(--on-action); border-color: var(--blue); background: var(--blue); }
 .stage-nav li.done { color: var(--celadon-ink); }
 .stage-nav li.done span { color: var(--celadon-ink); border-color: var(--celadon-ink); background: var(--celadon); }
 
@@ -407,10 +620,10 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .file-control b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .password-control small { position: absolute; transform: translateY(68px); color: var(--muted); font-size: 11px; }
 .primary-button, .secondary-button, .backup-button { min-height: 47px; padding: 11px 18px; border-radius: var(--radius); font-weight: 600; white-space: nowrap; }
-.primary-button { color: white; border: 1px solid var(--blue); background: var(--blue); }
+.primary-button { color: var(--on-action); border: 1px solid var(--blue); background: var(--blue); }
 .primary-button:hover { border-color: var(--blue-dark); background: var(--blue-dark); }
 .secondary-button { color: var(--blue); border: 1px solid var(--blue); background: transparent; }
-.secondary-button:hover { color: white; background: var(--blue); }
+.secondary-button:hover { color: var(--on-action); background: var(--blue); }
 /* The quiet third rank, for an action that should stay out of the way but still be hittable.
    Two `Discard` buttons and the amount finder's control were bare browser defaults — 24px tall,
    below any usable tap target on a phone, and the only unstyled buttons in the app. Their quietness
@@ -673,7 +886,7 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
    `.positive` was `--celadon-ink`, a dark olive that read as grey rather than as green. */
 .positive { color: var(--money-in) !important; }
 .negative { color: var(--money-out) !important; }
-.warning { margin-top: 22px; padding: 14px 16px; display: flex; gap: 18px; color: #7a4a12; border: 1px solid var(--saffron); background: var(--saffron-wash); font-size: 13px; }
+.warning { margin-top: 22px; padding: 14px 16px; display: flex; gap: 18px; color: var(--warn-ink); border: 1px solid var(--saffron); background: var(--saffron-wash); font-size: 13px; }
 .warning strong { white-space: nowrap; }
 .warning.error { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--paper)); }
 
@@ -700,19 +913,19 @@ td time, td strong, td span, td small { display: block; }
 td time { font: 500 13px/1.2 var(--font-data); }
 td small, td span { margin-top: 3px; color: var(--muted); font-size: 12px; }
 td strong { font-weight: 500; }
-td em { display: inline-block; margin-top: 5px; padding: 2px 6px; color: #7a4a12; background: var(--saffron-wash); font: normal 500 9px/1.3 var(--font-data); text-transform: uppercase; }
+td em { display: inline-block; margin-top: 5px; padding: 2px 6px; color: var(--warn-ink); background: var(--saffron-wash); font: normal 500 9px/1.3 var(--font-data); text-transform: uppercase; }
 td select { width: 100%; padding: 8px 26px 8px 9px; color: var(--navy); border: 1px solid var(--line); border-radius: 4px; background-color: var(--paper-strong); }
 .numeric { text-align: right; font-family: var(--font-money); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .resync-row { box-shadow: inset 3px 0 var(--saffron); }
-.resync-label { color: #8a5518; font: 500 9px/1 var(--font-data); text-transform: uppercase; }
+.resync-label { color: var(--resync-ink); font: 500 9px/1 var(--font-data); text-transform: uppercase; }
 .detail-button { padding: 7px 0; color: var(--blue); border: 0; border-bottom: 1px solid currentColor; background: transparent; font-size: 12px; }
 
-.backup-band { margin-bottom: 70px; padding: 28px 30px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, .7fr); align-items: end; gap: 48px; color: var(--celadon-ink); border: 1px solid #86b9a2; background: color-mix(in srgb, var(--celadon) 55%, var(--paper)); }
-.backup-band.stale { color: #7a4a12; border-color: var(--saffron); background: var(--saffron-wash); }
+.backup-band { margin-bottom: 70px; padding: 28px 30px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, .7fr); align-items: end; gap: 48px; color: var(--celadon-ink); border: 1px solid var(--backup-edge); background: color-mix(in srgb, var(--celadon) 55%, var(--paper)); }
+.backup-band.stale { color: var(--warn-ink); border-color: var(--saffron); background: var(--saffron-wash); }
 .backup-band h2 { font-size: 27px; }
 .backup-form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; }
 .backup-button { color: var(--paper-strong); border: 1px solid var(--celadon-ink); background: var(--celadon-ink); }
-.stale .backup-button { border-color: #7a4a12; background: #7a4a12; }
+.stale .backup-button { border-color: var(--warn-ink); background: var(--warn-ink); }
 footer { padding: 25px clamp(20px, 5vw, 76px); display: flex; justify-content: space-between; color: var(--muted); border-top: 1px solid var(--line); background: var(--paper); font-size: 12px; }
 footer span { color: var(--navy); font-weight: 600; }
 footer p { margin: 0; }
@@ -745,7 +958,7 @@ footer p { margin: 0; }
    wash. Saffron is already this app's "not settled yet" signal (a stale backup). */
 .provisional-row { background: color-mix(in srgb, var(--saffron-wash) 55%, transparent); }
 .provisional-row td:first-child { box-shadow: inset 3px 0 var(--saffron); }
-.verified-row td:first-child { box-shadow: inset 3px 0 #606c38; }
+.verified-row td:first-child { box-shadow: inset 3px 0 var(--verified-rail); }
 /* Cash is the owner's record too, and deliberately not saffron: saffron is this app's "not
    settled yet", and a cash payment is settled — it simply has no bank behind it and never
    will. A rule without a wash says "owner's record, complete" rather than "waiting". */
@@ -766,8 +979,8 @@ footer p { margin: 0; }
 /* Five states, and the row says which in words rather than by colour alone — the difference
    between the bank's record and the owner's is the most important thing this table says. */
 .status-chip { display: inline-block; padding: 3px 7px; border: 1px solid currentColor; border-radius: 3px; font: 500 9px/1.35 var(--font-data); font-style: normal; text-transform: uppercase; letter-spacing: .05em; }
-.status-chip.verified { color: #4a5a24; }
-.status-chip.awaiting { color: #7a4a12; }
+.status-chip.verified { color: var(--verified-ink); }
+.status-chip.awaiting { color: var(--warn-ink); }
 .status-chip.needs-review { color: var(--red); }
 .status-chip.cash { color: var(--muted); }
 /* A row the owner has taken out of reporting (PLAN task 48). `--muted` rather than a fifth hue:
@@ -817,7 +1030,7 @@ footer p { margin: 0; }
 .matching-banner .secondary-button { flex-shrink: 0; min-height: 38px; padding: 8px 15px; font-size: 12px; }
 
 .detail-dialog { width: min(680px, calc(100% - 32px)); max-height: calc(100vh - 48px); padding: 0; color: var(--navy); border: 1px solid var(--navy); border-radius: var(--radius); background: var(--paper); }
-.detail-dialog::backdrop { background: color-mix(in srgb, var(--navy) 65%, transparent); }
+.detail-dialog::backdrop { background: color-mix(in srgb, var(--scrim) 65%, transparent); }
 .detail-dialog > div { padding: 28px; }
 .dialog-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .dialog-heading h2 { margin: 0; font-size: 28px; font-weight: 500; letter-spacing: -.02em; }
@@ -891,7 +1104,7 @@ footer p { margin: 0; }
   .header-panel .header-side { flex-basis: 100%; }
   /* The standing face note is behind the `(i)` since PLAN task 49, so what is left here is only a
      refusal or a "stored but not shown" line — rare, and worth the width when it does appear. */
-  .font-picker .field-help { max-width: none; font-size: 10px; }
+  .ui-picker .field-help { max-width: none; font-size: 10px; }
   .stage-nav { overflow-x: auto; }
   .stage-nav ol { min-width: 810px; }
   main { width: calc(100% - 32px); }
@@ -952,7 +1165,7 @@ footer p { margin: 0; }
   .note-toggle { width: 44px; height: 44px; font-size: 15px; }
   /* 34px, inside the panel D-157 collapses — so it was never in a measured viewport until the
      disclosure-open pass existed. */
-  .font-picker select { height: 44px; }
+  .ui-picker select { height: 44px; }
   .brand { padding-block: 4px; min-width: 0; }
   /* The strapline is decoration, and on a phone it is decoration costing a line of the first
      screen — which is the whole of what the header work was about. */

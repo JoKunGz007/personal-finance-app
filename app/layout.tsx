@@ -16,6 +16,13 @@ import { cookies } from "next/headers";
 import type { Metadata, Viewport } from "next";
 import { SiteHeader } from "@/app/site-header";
 import { FONT_COOKIE, fontChoiceFrom } from "@/lib/ui-font";
+import {
+  SYSTEM_DARK,
+  THEME_COOKIE,
+  THEME_GROUNDS,
+  colorSchemeFor,
+  themeChoiceFrom
+} from "@/lib/ui-theme";
 
 export const metadata: Metadata = {
   title: "Private Ledger",
@@ -27,15 +34,33 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest"
 };
 
-// **`themeColor` must equal `--mist`, and it is the one colour no screenshot can check.** It tints
-// the browser's own chrome around the page on a phone, so a stale value shows as a band in the wrong
-// colour above the app — invisible to the headless audit, which never renders chrome. It sat at the
-// pre-2026-08-21 blue-grey for a full day after the palette changed.
+// **`themeColor` must equal the chosen scheme's `--mist`, and it is the one colour no screenshot can
+// check.** It tints the browser's own chrome around the page on a phone, so a stale value shows as a
+// band in the wrong colour above the app — invisible to the headless audit, which never renders
+// chrome. It sat at the pre-2026-08-21 blue-grey for a full day after the palette changed.
 //
-// `light` rather than `light dark`: this app declares one scheme (D-137), and the declaration is
-// what makes a date picker and a select dropdown render light on a device whose OS is dark. Without
-// it those controls come back dark against a cream page.
-export const viewport: Viewport = { colorScheme: "light", themeColor: "#fefae0" };
+// **A function rather than a constant since 2026-09-01**, because there are four schemes and the
+// answer depends on a cookie. `generateViewport` may read one; the static export could not, so a
+// constant here would have gone stale for three of the four the moment dark landed —
+// `THEME_GROUNDS` is asserted against `globals.css` in `tests/ui-theme.test.ts` so the two cannot
+// drift the way they did before.
+//
+// Under `system` the meta gets **both** values with media conditions attached, which is the only way
+// to answer a question whose answer the server does not know. A pinned scheme gets one colour and
+// `colorScheme` names itself, so choosing Daylight on a dark-OS phone gets light native controls
+// rather than dark ones on a cream page.
+export async function generateViewport(): Promise<Viewport> {
+  const theme = themeChoiceFrom((await cookies()).get(THEME_COOKIE)?.value);
+  return {
+    colorScheme: colorSchemeFor(theme),
+    themeColor: theme === "system"
+      ? [
+          { media: "(prefers-color-scheme: light)", color: THEME_GROUNDS.light },
+          { media: "(prefers-color-scheme: dark)", color: THEME_GROUNDS[SYSTEM_DARK] }
+        ]
+      : THEME_GROUNDS[theme]
+  };
+}
 
 // The shell — header, main, footer — belongs to every route since routing landed, so it
 // lives here instead of inside a page component. Each route renders its own sections into
@@ -48,15 +73,20 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   // input: a cookie is client-supplied, and the only thing that can reach this attribute is one of
   // four known tokens. (`lib/ui-font.ts` carries the full reasoning — it can name the API this file
   // may not, because the guard against client storage covers `app/` and nothing else.)
-  const font = fontChoiceFrom((await cookies()).get(FONT_COOKIE)?.value);
+  // One read for both preferences: `cookies()` is a request-scoped store, so asking twice would be
+  // two awaits for one answer. The scheme goes through `themeChoiceFrom`, total over untrusted input
+  // for the same reason and in the same shape as the face beside it (`lib/ui-theme.ts`).
+  const jar = await cookies();
+  const font = fontChoiceFrom(jar.get(FONT_COOKIE)?.value);
+  const theme = themeChoiceFrom(jar.get(THEME_COOKIE)?.value);
   return (
-    <html lang="en" data-font={font}>
+    <html lang="en" data-font={font} data-theme={theme}>
       <body>
         <nav aria-label="Skip links">
           <a className="skip-link" href="#main">Skip to content</a>
         </nav>
         <div className="app-shell">
-          <SiteHeader font={font} />
+          <SiteHeader font={font} theme={theme} />
           <main id="main">{children}</main>
           <footer><span>Private Ledger</span><p>No analytics · no session replay · no financial response caching</p></footer>
         </div>

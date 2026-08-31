@@ -174,6 +174,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - An `aria-label` replaces a button's words rather than adding to them, and axe says nothing
 - A control that disables itself takes the focus with it
 - A token that inverts between colour schemes makes every hardcoded partner a latent failure
+- A variable used for a role that flips is the same trap, and no contrast floor reports it
 - The browser suite that covers the signed-in app is desktop-only, so phone width is unmeasured there
 - A colour declared outside the stylesheet does not move when the stylesheet does
 - An element selector cannot reset a property a class set, and the rule still reads as if it did

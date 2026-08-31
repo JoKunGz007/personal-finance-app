@@ -1,24 +1,53 @@
 # Design system
 
-Last rewritten 2026-08-26. **Every token below was read out of `app/globals.css`, not remembered** —
-this file documented the cool-mist/navy palette for five days after the app stopped using it, and
-`pnpm check:docs --strict` could not see that because it reads structure rather than meaning. If you
-change a colour, change it here in the same commit or this file becomes wrong again silently.
+Last rewritten 2026-08-26, and revised 2026-09-01 when the dark schemes landed. **Every token below
+was read out of `app/globals.css`, not remembered** — this file documented the cool-mist/navy palette
+for five days after the app stopped using it, and `pnpm check:docs --strict` could not see that
+because it reads structure rather than meaning. If you change a colour, change it here in the same
+commit or this file becomes wrong again silently. **What now also holds this file honest is
+`tests/ui-theme.test.ts`**, which measures the real values out of the stylesheet — but it checks
+contrast, not prose, so the sentences here are still yours to keep true.
 
 ## Direction
 
-A warm paper ledger that reads like a farm almanac rather than a bank portal. Cornsilk is the ground
-itself, not a card floating on something darker; surfaces lift *towards* a warm white above it. The
-interface still borrows its structure from a reconciliation worksheet — a wide ruled table, restrained
-labels, one persistent balance trace, and the balance rail beside the rows where a saffron diamond
-marks a known gap.
+A warm paper ledger that reads like a farm almanac rather than a bank portal. In daylight, cornsilk
+is the ground itself, not a card floating on something darker; surfaces lift *towards* a warm white
+above it. After dark the ladder runs the same way from a darker floor. The interface still borrows
+its structure from a reconciliation worksheet — a wide ruled table, restrained labels, one persistent
+balance trace, and the balance rail beside the rows where a saffron diamond marks a known gap.
 
-**The pixel typefaces are on trial and the palette is not.** The faces can be switched per device; the
-colours are fixed and reach every route.
+**The pixel typefaces are on trial and so, now, is the ground.** Both switch per device, and for the
+same reason: what is comfortable at arm's length on a monitor is a different proposition on a phone
+at night.
+
+## Schemes
+
+**Four, since 2026-09-01, and this reverses D-137.** One light and three dark, selected by
+`[data-theme]` on `<html>`, written server-side from a cookie so the first paint is already right.
+`lib/ui-theme.ts` is the only place that decides which exist.
+
+| Choice | Ground | What it is |
+| --- | --- | --- |
+| `system` | follows the device | Daylight by day, Night Town after dark. **The default.** |
+| `light` | `#fefae0` | Daylight — the cornsilk almanac, unchanged since 2026-08-21 |
+| `night` | `#1e2440` | Night Town — deep blue-violet, warm accents as lamplight. **The owner's choice** |
+| `lamplit` | `#2b2018` | Dark walnut and cornsilk ink; warm throughout, the game's own furniture |
+| `cellar` | `#1a2110` | Near-black green, built by darkening `--navy` into a ground |
+
+**Three darks rather than one is deliberate.** The choice was made from renderings of invented data
+on a desktop, and the real test is the owner's own ledger on his own phone at night — a palette that
+can only be re-evaluated by editing CSS and redeploying will not be re-evaluated. All three are held
+to identical floors, so switching can never ship an unmeasured scheme.
+
+**D-137's argument against a second scheme was that nothing measured it.** That is what
+`tests/ui-theme.test.ts` retires: every scheme, every pair with a floor, plus token-set parity,
+`themeColor` agreement, and a grep that fails on any colour literal written outside a token block.
+Adding a fourth scheme costs one CSS block and one array entry.
 
 ## Tokens
 
-Names as they appear in `:root`. The owner chose the palette on 2026-08-21.
+Names as they appear in `:root`, with their **light** values; each dark scheme redeclares all 26.
+The owner chose the light palette on 2026-08-21 and the dark grounds on 2026-09-01.
 
 | Token | Value | Role |
 | --- | --- | --- |
@@ -37,15 +66,40 @@ Names as they appear in `:root`. The owner chose the palette on 2026-08-21.
 | `--red` | `#9b2c2c` | Blocking errors only |
 | `--frame-outer` | `#8a4a15` | Panel chrome: the outer ring |
 | `--frame-inner` | `#f0e2bd` | Panel chrome: the inner ring |
+| `--money-in` | `#4a6f14` | An amount received, as text |
+| `--money-out` | `#9b2c2c` | An amount paid, as text |
+| `--on-action` | `#ffffff` | Text over an action fill |
+| `--warn-ink` | `#7a4a12` | Text on the saffron wash |
+| `--resync-ink` | `#8a5518` | The resynchronisation label |
+| `--verified-ink` | `#4a5a24` | The verified status chip |
+| `--verified-rail` | `#606c38` | The rail beside a verified row |
+| `--celadon-dot` | `#7d8c47` | The privacy chip's dot |
+| `--backup-edge` | `#86b9a2` | The backup band's border |
+| `--chart-in` | `#5c8a1a` | Income, as a chart mark and a calendar ramp |
+| `--chart-out` | `#9b2c2c` | Spending, as a chart mark and a calendar ramp |
 
 **`--blue` and `--blue-dark` are copper and have been since 2026-08-21.** The names were not changed
 with the values, deliberately: they are referenced from roughly a hundred declarations and a rename
 is a large diff that changes nothing on screen. Read them as "the action colour".
 
-**Four colour literals live outside this stylesheet and none is in the gate**: `themeColor` in
-`app/layout.tsx`, `background_color` and `theme_color` in `public/manifest.webmanifest`, and the two
-fills in `public/icon.svg`. All four were stale for a day and across two deployments after the
-palette changed. Sweep them by hand when a colour moves.
+**The last nine tokens were literals until 2026-09-01** and every one of them was a latent failure of
+the kind `GOTCHAS.md` describes — a rule pairing a `var(--…)` surface with a hardcoded `color` is
+correct in one scheme and unreadable in the other. `--chart-in` and `--chart-out` were worse: JS
+constants in `app/statistics-charts.tsx`, under a docstring claiming they inherited the palette. Each
+light value above is byte-identical to the literal it replaced, so promoting them changed nothing on
+screen. **A mark needs 3:1 and text needs 4.5**, which is why `--chart-in` is a lighter step than
+`--money-in` rather than the same value reused (D-163).
+
+**One literal survives on purpose**: `#fff` on `.owner-access-qr`. An authenticator reads that square
+off the screen and a quiet zone is white at midnight too.
+
+**Colour literals outside the stylesheet.** `themeColor` in `app/layout.tsx` is now generated from
+the cookie and asserted against `--mist` by `tests/ui-theme.test.ts` — the check that was missing
+when it sat at the pre-retheme blue-grey for a day across two deployments. Still unguarded and still
+to be swept by hand: `background_color` and `theme_color` in `public/manifest.webmanifest`, and the
+two fills in `public/icon.svg`. **Both are deliberately left on the light palette** — a manifest is
+static and cannot follow a cookie, and the icon is a dark plate with cornsilk rules that reads on
+either ground.
 
 ## Panel chrome
 
@@ -98,7 +152,15 @@ accessible name joins its ancestor's, and axe reports nothing about it.
 Avoid gradients, nested cards, KPI tiles, decorative motion, observation tooling, and colour-only
 status. Support 320px layouts, visible keyboard focus, native semantics and reduced motion.
 
-**There is no dark scheme** (D-137), and that is a decision with the owner's own qualifier on it — he
-said *"but we'll see"*. `color-scheme: light` in `:root` and in `app/layout.tsx` is what makes native
-date pickers and selects obey it. The cost is a bright page on a dark-OS phone at night and nobody
-has tried that.
+**There are four colour schemes** (2026-09-01), reversing D-137 — which dropped the dark scheme with
+the owner's own *"but we'll see"* attached, and whose hedge a later entry withdrew on the
+understanding that he would say so if it changed. He said so. `color-scheme` is declared per scheme
+in `globals.css` and generated per cookie in `app/layout.tsx`, which is what makes native date
+pickers and selects obey the page. The cost D-137 accepted — a bright page on a dark-OS phone at
+night — is paid off; what replaces it is the cost of measuring four schemes instead of one, and
+`tests/ui-theme.test.ts` is where that is paid.
+
+**Both pickers are one control shape.** `.ui-picker` in `globals.css` carries the geometry for the
+typeface and the colour switch alike, because the phone measurements in it — the `px` note cap, the
+`:empty` clip, the 44px touch height — are each the fix for a defect found on a real device, and a
+copied block would have been the one that missed the next.

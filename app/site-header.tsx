@@ -4,8 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { FontPicker } from "@/app/font-picker";
+import { ThemePicker } from "@/app/theme-picker";
 import { OwnerAccess } from "@/app/owner-access";
 import type { FontChoice } from "@/lib/ui-font";
+import type { ThemeChoice } from "@/lib/ui-theme";
 import { announceOwnerReady } from "@/lib/owner-ready";
 
 // The shell every route renders inside (PLAN task 19).
@@ -22,10 +24,11 @@ const ROUTES = [
   { href: "/recovery", label: "Recovery" }
 ] as const;
 
-// The chosen typeface arrives as a prop rather than being read here, because the cookie that holds
-// it is httpOnly and this is a client component. `app/layout.tsx` resolves it server-side and hands
-// it down, which is also what keeps the face correct on first paint (PLAN task 42).
-export function SiteHeader({ font }: { font: FontChoice }) {
+// The chosen typeface and colour scheme arrive as props rather than being read here, because the
+// cookies that hold them are httpOnly and this is a client component. `app/layout.tsx` resolves both
+// server-side and hands them down, which is also what keeps the face and the ground correct on first
+// paint (PLAN task 42; the scheme reverses D-137).
+export function SiteHeader({ font, theme }: { font: FontChoice; theme: ThemeChoice }) {
   const pathname = usePathname();
   const [session, setSession] = useState("");
   /**
@@ -129,6 +132,7 @@ export function SiteHeader({ font }: { font: FontChoice }) {
       <div className="header-side">
         <span className="privacy-chip"><i aria-hidden="true" /> Documents stay on this device</span>
         <FontPicker value={font} />
+        <ThemePicker value={theme} />
         {/* Local acceptance only, and opt-in. The bundler inlines the flag at build time, so
             in a build that did not set it the comparison is `undefined === "1"` and this is
             never rendered — though the literal below does survive in the chunk, since a dead

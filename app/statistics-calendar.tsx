@@ -46,9 +46,16 @@ import {
  * picker uses, rather than a second hand-rolled query-string builder that could drift from it.
  */
 
-/** A colour step on one ramp, or `null` for an empty cell. `pct` is already clamped to [12, 100]. */
-function ramp(hex: string, pct: number): string {
-  return `color-mix(in srgb, ${hex} ${pct}%, var(--paper))`;
+/**
+ * A colour step on one ramp. `pct` is already clamped to [12, 100].
+ *
+ * **`ink` is a custom property, not a literal, and both ends of the mix now move with the scheme.**
+ * It was a hex string until 2026-09-01; `var(--paper)` was already the surface half, so a dark
+ * scheme would have mixed a fixed light-scheme green into a dark panel and produced a ramp that ran
+ * the wrong way at its faint end. `color-mix()` accepts a `var()` for either operand.
+ */
+function ramp(ink: string, pct: number): string {
+  return `color-mix(in srgb, ${ink} ${pct}%, var(--paper))`;
 }
 
 /** One direction's intensity against the window's own peak for that direction. Floored at 12 so a

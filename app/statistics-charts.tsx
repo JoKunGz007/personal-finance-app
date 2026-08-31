@@ -12,23 +12,39 @@ import { magnitude, monthLabel, type DailyBalance, type MonthlyStatistic } from 
  * problem gets solved — so a CDN-loaded library is not available at any price. That leaves a bundled
  * dependency or this. At two charts, a dozen monthly pairs and a few hundred daily points, a library
  * would be a large dependency earning very little, and it would arrive with its own colours to
- * override. These inherit the app's palette and its one declared colour scheme for free (D-137).
+ * override.
  *
- * **The series colours were validated rather than chosen.** `#5c8a1a` against `#9b2c2c` clears every
- * check in the dataviz palette validator on this app's paper surface — lightness band, chroma floor,
- * CVD separation (ΔE 11.1 worst case, deutan), normal-vision separation (25.9) and contrast — where
- * the app's own celadon and copper inks failed two of them. `#9b2c2c` is already `--red` in
- * `globals.css`; only the green is new. **Colour is never the only encoding**: both series carry a
+ * **These did not inherit the app's palette, and this docstring used to claim they did.** Until
+ * 2026-09-01 the five colours below were hex literals in this module, and the sentence here read
+ * "these inherit the app's palette and its one declared colour scheme for free (D-137)" — which was
+ * false in the only way that mattered: a JS constant inherits nothing. It went unnoticed for as long
+ * as there was exactly one scheme for it to agree with. The moment a dark one landed, `#283618` ink
+ * would have been drawn on a `#1e2440` ground at 1.2:1. They are custom properties now, so the claim
+ * is true rather than merely unfalsified.
+ *
+ * **The series colours were validated rather than chosen.** In the light scheme `#5c8a1a` against
+ * `#9b2c2c` clears every check in the dataviz palette validator on this app's paper surface —
+ * lightness band, chroma floor, CVD separation (ΔE 11.1 worst case, deutan), normal-vision
+ * separation (25.9) and contrast — where the app's own celadon and copper inks failed two of them.
+ * Each dark scheme carries its own pair, measured against its own ground in `tests/ui-theme.test.ts`.
+ * **All three darks separate the two series slightly less well under deuteranopia than daylight
+ * does** — a dark ground compresses red-green — which is above the floor but is a real narrowing.
+ * **Colour is never the only encoding**, and that is what makes it tolerable: both series carry a
  * legend, a hover read-out, and the same figures again in the table below the charts.
  */
 
-const INK = "#283618";
-const MUTED = "#5c6636";
-const GRID = "#ddd5b0";
+// **Custom properties rather than values, so every scheme moves these together with the surface
+// behind them.** An inline SVG in the document tree resolves `var(--…)` against the element's own
+// computed style exactly as any other element does; a standalone `.svg` file would not, which is
+// one more reason these charts are written here rather than shipped as assets.
+const INK = "var(--navy)";
+const MUTED = "var(--muted)";
+const GRID = "var(--line)";
 // Exported for `app/statistics-calendar.tsx`, which draws the same two directions as colour and
-// needs the identical validated pair rather than a second copy that could drift from it.
-export const DEPOSIT = "#5c8a1a";
-export const WITHDRAWAL = "#9b2c2c";
+// needs the identical pair rather than a second copy that could drift from it. It composes them
+// into `color-mix()`, which takes a custom property as readily as a literal.
+export const DEPOSIT = "var(--chart-in)";
+export const WITHDRAWAL = "var(--chart-out)";
 
 // Short names rather than `04`, which reads as a day as easily as a month.
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
@@ -164,7 +180,7 @@ export function BalanceChart({ points }: { points: readonly DailyBalance[] }) {
                   stroke={MUTED} strokeWidth={1} strokeDasharray="3 3" />
             {/* A 2px surface ring, so the marker stays legible wherever it lands on the line. */}
             <circle cx={x(active.time)} cy={y(active.value)} r={5}
-                    fill={INK} stroke="#fffdf0" strokeWidth={2} />
+                    fill={INK} stroke="var(--paper)" strokeWidth={2} />
           </g>
         )}
         {/* Hit targets are wider than the marks, which is what makes a 300-point line hoverable.

@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-31.
+Last updated: 2026-09-01.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -141,6 +141,18 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   exported it himself rather than authorizing it be done through his browser session. **Not
   standing; every one of these gates reverts to not-granted for the next session**, on this file's
   own rule that nothing here survives past the session that spent it.
+- **A session opened 2026-09-01 with commit, push, deploy, `db push`, hosted-browser and
+  real-data read all GRANTED together, unprompted — and NONE of them was spent.** The work that
+  session produced (D-180, four colour schemes) needed no SQL, and it reached the commit ask with
+  the gate green but had not been asked at the time this was written. **Every one of those gates
+  reverts to not-granted for the next session**, on this file's own rule. **Do not read "granted
+  and unspent" as "still granted."**
+- **The dark scheme: ASKED FOR BY THE OWNER 2026-09-01, and it reverses a decision he had closed.**
+  D-137 dropped it with a *"but we'll see"*; a later entry withdrew that hedge and recorded that he
+  would say so if it changed. He said so. **Night Town is his choice**, from three candidates he
+  asked to compare on a canvas before deciding; Lamplit and Cellar stay switchable at his request.
+  Any change to which schemes exist, or to which one `system` resolves to, is his call and not a
+  maintenance decision — `SYSTEM_DARK` in `lib/ui-theme.ts` is the one constant that encodes it.
 - **The default face: DECIDED BY THE OWNER 2026-08-29 and SHIPPED** (D-169). Pixelify Sans, not
   the Press Start 2P the question had been framed around.
 - **Fixing the phone tap targets: GRANTED, SPENT and SHIPPED, 2026-08-29** (D-168).
@@ -250,18 +262,25 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `7d9d4e6` and `origin/main` matches it.** Three commits landed 2026-08-31 and all
-  three are deployed: `4f51a7e` (task 46's account filter, D-177), `5c016a9` (task 47's ledger date
-  filter, D-178) and `7d9d4e6` (task 47's calendar heatmap, D-179) — task 47 is now closed in full.
-  **This entry was itself stale for two sessions** (it still named `676a8ea` from 2026-08-29 after
-  both D-177 and D-178 had already shipped past it) — read `git log` rather than trusting how
-  current this line looks, on the same D-131 lesson the paragraph below already names.
+- **`main` is at `cf46a49` and `origin/main` matches it.** `cf46a49` is the eleventh archive
+  boundary (docs only); the three deployed feature commits before it are `4f51a7e` (task 46's
+  account filter, D-177), `5c016a9` (task 47's ledger date filter, D-178) and `7d9d4e6` (task 47's
+  calendar heatmap, D-179) — task 47 is closed in full. **D-180's four colour schemes are not in
+  any of them**; they are uncommitted, see below. **This entry has been stale twice** (it named
+  `676a8ea` for two sessions after D-177 and D-178 shipped past it, then `7d9d4e6` after `cf46a49`
+  landed) — read `git log` rather than trusting how current this line looks, on the same D-131
+  lesson the paragraph below already names.
 - **Every commit since 2026-08-29 that changes what renders has now been looked at on the
   deployment** — D-177 and D-178 both verified `/statistics` and `/ledger` live, which is also what
-  closed D-169 and D-170's rendering fence in `DECISIONS.md` (corrected there this session; it had
-  still claimed "nobody has looked" after D-177 already had). **The one exception is phone width**:
-  neither the account filter, the date filter, nor the calendar heatmap has been seen on a real
-  phone or at a true 390px viewport — an owed reading across all three, not just the newest one.
+  closed D-169 and D-170's rendering fence in `DECISIONS.md` (corrected there 2026-09-01; it had
+  still claimed "nobody has looked" after D-177 already had). **Two readings are owed and they
+  should be taken in one pass**, because both need the deployment and a phone:
+  *(a)* **phone width** — neither the account filter, the date filter, nor the calendar heatmap has
+  been seen on a real phone or at a true 390px viewport; and *(b)* **any dark scheme against real
+  rows** — the status chips, the verified rail, the provisional tag, the backup band and the
+  calendar render only with data, and the local project's ledger is empty, so D-180 was verified
+  against empty surfaces only. Every one of those uses a token promoted from a literal on
+  2026-09-01, which is exactly the class of change a green gate has twice failed to judge here.
 - **The eleventh archive boundary is taken, `DECISIONS.md` at 83%.** D-161, D-169 and D-170 moved to
   [`docs/decisions/ARCHIVE-D-161-D-170.md`](docs/decisions/ARCHIVE-D-161-D-170.md) on 2026-09-01,
   bought by the same two things this file already recorded: D-161's fence closing (D-177) and
@@ -273,6 +292,17 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   must never be committed.** That is the durable fact; **what else the tree holds changes by the
   hour, so read `git status --short` rather than any sentence here** and stage explicitly, never
   with `git add -A`.
+- **The four colour schemes are UNCOMMITTED in the working tree, 2026-09-01** (D-180, PLAN task 52).
+  Built, reviewed and fully gated, never committed, pushed or deployed. Five new files
+  (`lib/ui-theme.ts`, `app/theme-picker.tsx`, `app/api/v1/ui/theme/route.ts`,
+  `tests/ui-theme.test.ts`, `tests/e2e/theme-picker.spec.ts`) and seven changed
+  (`app/globals.css`, `app/layout.tsx`, `app/site-header.tsx`, `app/font-picker.tsx`,
+  `app/statistics-charts.tsx`, `app/statistics-calendar.tsx`, `DESIGN.md`) alongside the continuity
+  docs. **Stage them explicitly and leave the two local-only files alone.** No SQL, so nothing needs
+  `db push`.
+- **`DECISIONS.md` is at 91%**, up from 83% — D-180 is a long entry. A twelfth boundary is not far
+  off, and the header now records why D-180 itself is fenced: it supersedes an archived entry and
+  carries an unverified rendering of its own.
 
 ### Where the database is
 
@@ -299,13 +329,18 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
-- **Green on `7d9d4e6`**: `tsc --noEmit` clean; `eslint .` clean (2 pre-existing warnings in
-  `app/transactions-view.tsx`, unrelated to any change since D-178); `check:docs --strict` clean at
-  **179 decisions and 191 traps**; `pnpm build` clean at **twenty-three** `/api/v1/` routes; Vitest
-  **910 passed / 7 skipped across 42 files**; pgTAP **all 13 files, 390 assertions**, re-run because
-  migration 025 moved SQL. Playwright not re-run this session — verification was manual, in a real
-  browser, against both `next build && next start` (invented local data) and the real hosted
-  deployment (real ledger, owner's own signed-in session).
+- **Green on the uncommitted working tree, 2026-09-01** (`cf46a49` plus D-180): `tsc --noEmit`
+  clean; `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`,
+  untouched since before D-178); `check:docs --strict` clean at **180 decisions and 192 traps**;
+  `pnpm build` clean at **twenty-four** `/api/v1/` routes (+1, `/api/v1/ui/theme`); Vitest
+  **941 passed / 7 skipped across 43 files**; Playwright **isolated 70 passed / 8 skipped**,
+  re-run because the header gained a control — it now includes axe over every route in each of the
+  three dark schemes, on desktop and mobile. **pgTAP not re-run: no SQL has moved since migration
+  025.** **Playwright owner not re-run** — that suite wipes the seeded owner and nothing in this
+  change touches a signed-in surface's data path, but it is untested against the new header and is
+  the obvious thing to run first if anything looks wrong.
+- **Previously green on `7d9d4e6`**: Vitest **910 / 7 across 42 files**, pgTAP **all 13 files, 390
+  assertions**, build at twenty-three routes, `check:docs` at 179 and 191.
 
 ### Machine facts that have no other home
 

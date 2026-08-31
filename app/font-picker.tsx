@@ -99,7 +99,7 @@ export function FontPicker({ value }: { value: FontChoice }) {
     ?? (stale ? `${FONT_LABELS[chosen]} is saved. Reload to see it — this page could not refresh itself.` : null);
 
   return (
-    <div className="font-picker">
+    <div className="ui-picker font-picker">
       <label>
         <span>Typeface</span>
         <select
