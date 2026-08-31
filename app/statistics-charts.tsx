@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { formatThb } from "@/lib/money";
-import { monthLabel, type DailyBalance, type MonthlyStatistic } from "@/lib/statistics";
+import { magnitude, monthLabel, type DailyBalance, type MonthlyStatistic } from "@/lib/statistics";
 
 /**
  * The two charts, as inline SVG.
@@ -25,8 +25,10 @@ import { monthLabel, type DailyBalance, type MonthlyStatistic } from "@/lib/stat
 const INK = "#283618";
 const MUTED = "#5c6636";
 const GRID = "#ddd5b0";
-const DEPOSIT = "#5c8a1a";
-const WITHDRAWAL = "#9b2c2c";
+// Exported for `app/statistics-calendar.tsx`, which draws the same two directions as colour and
+// needs the identical validated pair rather than a second copy that could drift from it.
+export const DEPOSIT = "#5c8a1a";
+export const WITHDRAWAL = "#9b2c2c";
 
 // Short names rather than `04`, which reads as a day as easily as a month.
 const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
@@ -206,7 +208,6 @@ export function MonthlyChart({ months }: { months: readonly MonthlyStatistic[] }
   const plotWidth = width - pad.left - pad.right;
   const plotHeight = height - pad.top - pad.bottom;
 
-  const magnitude = (value: string) => { const v = BigInt(value); return v < 0n ? -v : v; };
   const max = months.reduce((peak, m) => {
     const local = magnitude(m.deposits) > magnitude(m.withdrawals) ? magnitude(m.deposits) : magnitude(m.withdrawals);
     return local > peak ? local : peak;

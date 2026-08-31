@@ -17,6 +17,15 @@ export const ledgerAccountSchema = z.object({
 
 export const accountListSchema = z.object({ accounts: z.array(ledgerAccountSchema) }).strict();
 
+/**
+ * The shape an account id has to have before it is worth sending anywhere — not proof the account
+ * exists, only that a caller who typed it meant a uuid. Shared by `lib/statistics.ts`'s picker and
+ * `app/transactions-view.tsx`'s own initial state, both of which read an `account` query parameter
+ * off a URL that may have been hand-edited or followed from a link written before either surface
+ * added the param, and both fall back to "no account chosen" on anything that fails it.
+ */
+export const ACCOUNT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 export type LedgerAccount = z.infer<typeof ledgerAccountSchema>;
 
 // Wire contract for POST /api/v1/accounts. `currency` and `timezone` are absent on

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
-import { isUsableRange, type DateRange } from "@/lib/date-range";
+import { useSearchParams } from "next/navigation";
+import { ACCOUNT_ID_PATTERN, accountListSchema, type LedgerAccount } from "@/lib/accounts";
+import { isUsableRange, rangeFromSearch, type DateRange } from "@/lib/date-range";
+import { isoDateSchema } from "@/lib/dates";
 import {
   cursorAfter,
   ledgerPageSchema,
@@ -186,7 +188,20 @@ export function TransactionsView() {
   // the owner start a second correction against a revision the first is about to move past.
   const [correcting, setCorrecting] = useState<string | null>(null);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string>(ALL_ACCOUNTS);
+  /**
+   * The incoming link's own query string, read once. **Seeds the account and date filters below and
+   * writes nothing back** — unlike `/statistics`'s picker, this page has never round-tripped its
+   * filters through the address bar, and adding that is not this task's scope. What is in scope is
+   * the other direction: PLAN task 47's calendar links here with `from`, `to` and, when one was
+   * selected, `account`, on the same "account" and date-range keys `lib/statistics.ts` already
+   * uses — so a day opens already filtered rather than landing on the unfiltered ledger with the
+   * date fields merely pre-filled and Reload still to press.
+   */
+  const initialSearch = useSearchParams().toString();
+  const [selected, setSelected] = useState<string>(() => {
+    const account = new URLSearchParams(initialSearch).get("account");
+    return account !== null && ACCOUNT_ID_PATTERN.test(account) ? account : ALL_ACCOUNTS;
+  });
   const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>(ALL_STATUSES);
@@ -199,9 +214,26 @@ export function TransactionsView() {
    * account, so an owner asking for March cannot be answered by hiding what happens to be on
    * screen — the fetch itself has to be bounded. That is why this state feeds `load`/`loadMore`
    * rather than `visibleRows`, and why it only takes effect on Reload rather than filtering live.
+   *
+   * **Seeded from the incoming link, same as `selected` above.** `load` below reads `range`
+   * (derived from these) on the very first call, not only on a Reload press, so a link naming a day
+   * bounds the first fetch — no extra press is needed for the calendar's own promise to hold.
+   *
+   * **Each end is validated before it is accepted, unlike every other seed above.** A preset or an
+   * account id fails safe on a bad value — the picker falls back to a known option, the select
+   * shows "Unknown account" — but a malformed date string here would reach the RPC unchecked and
+   * come back as a load error before the owner has touched anything. `isoDateSchema` is the same
+   * check the wire contract itself uses, so what is accepted here is exactly what the route would
+   * accept. Found by `/code-review high`.
    */
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => {
+    const from = rangeFromSearch(initialSearch).from;
+    return from !== null && isoDateSchema.safeParse(from).success ? from : "";
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    const to = rangeFromSearch(initialSearch).to;
+    return to !== null && isoDateSchema.safeParse(to).success ? to : "";
+  });
   const range: DateRange = useMemo(
     () => ({ from: dateFrom === "" ? null : dateFrom, to: dateTo === "" ? null : dateTo }),
     [dateFrom, dateTo]

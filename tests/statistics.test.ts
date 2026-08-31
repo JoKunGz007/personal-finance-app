@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  daysInMonth,
+  dailyMovementSchema,
   exactAverageSchema,
+  isoWeekdayOf,
   ledgerStatisticsSchema,
   monthLabel,
+  monthsBetween,
   magnitudeChange,
   shareOf,
   wholeWeeks,
@@ -34,7 +38,8 @@ const emptyWindow = {
   dayOfWeek: [],
   largestOut: [],
   largestIn: [],
-  dailyBalances: []
+  dailyBalances: [],
+  dailyMovements: []
 };
 
 describe("the statistics wire contract", () => {
@@ -361,5 +366,49 @@ describe("the window picker's state in the URL", () => {
     const transposed = pickerStateFromSearch("?window=custom&from=2026-08-30&to=2026-08-29");
     expect(transposed.customFrom).toBe("2026-08-30");
     expect(isUsableWindow({ from: transposed.customFrom, to: transposed.customTo })).toBe(false);
+  });
+});
+
+describe("the calendar's own arithmetic", () => {
+  // PLAN task 47's heatmap (migration 025). No prior coverage existed for any of these three
+  // functions (`/code-review high` found the gap) — every fixed point below was computed
+  // independently via `Date.UTC(...).getUTCDay()`, a different method from `isoWeekdayOf`'s own
+  // Sakamoto's-algorithm implementation, so a transcription error in either would show up here.
+
+  it("counts the days a month has, including the leap-year edge", () => {
+    expect(daysInMonth(2026, 1)).toBe(31);
+    expect(daysInMonth(2026, 2)).toBe(28); // 2026 is not a leap year
+    expect(daysInMonth(2024, 2)).toBe(29); // 2024 is
+    expect(daysInMonth(2000, 2)).toBe(29); // divisible by 400: a leap year
+    expect(daysInMonth(1900, 2)).toBe(28); // divisible by 100 but not 400: not a leap year
+    expect(daysInMonth(2026, 4)).toBe(30);
+    expect(daysInMonth(2026, 12)).toBe(31);
+  });
+
+  it("resolves a calendar date's ISO weekday against independently-computed fixed points", () => {
+    expect(isoWeekdayOf(2026, 1, 1)).toBe(4); // Thursday
+    expect(isoWeekdayOf(2026, 8, 31)).toBe(1); // Monday
+    expect(isoWeekdayOf(2024, 2, 29)).toBe(4); // Thursday, the leap day itself
+    expect(isoWeekdayOf(2026, 2, 1)).toBe(7); // Sunday
+    expect(isoWeekdayOf(2000, 1, 1)).toBe(6); // Saturday
+    expect(isoWeekdayOf(2026, 12, 31)).toBe(4); // Thursday
+    expect(isoWeekdayOf(2026, 3, 1)).toBe(7); // Sunday, the month after a non-leap February
+  });
+
+  it("lists every month a range touches, inclusive of both ends", () => {
+    expect(monthsBetween("2026-03-05", "2026-03-20")).toEqual(["2026-03"]);
+    expect(monthsBetween("2026-03-05", "2026-04-10")).toEqual(["2026-03", "2026-04"]);
+    // The year boundary is ordinary integer arithmetic here, not a special case.
+    expect(monthsBetween("2025-11-01", "2026-02-01"))
+      .toEqual(["2025-11", "2025-12", "2026-01", "2026-02"]);
+  });
+
+  it("accepts the sparse-array shape `dailyMovements` actually returns", () => {
+    expect(dailyMovementSchema.safeParse(
+      { date: "2026-03-05", deposits: "100001", withdrawals: "0", transactions: 2 }
+    ).success).toBe(true);
+    expect(dailyMovementSchema.safeParse(
+      { date: "2026-03-05", deposits: "100001", withdrawals: "0", transactions: 2, extra: true }
+    ).success).toBe(false);
   });
 });

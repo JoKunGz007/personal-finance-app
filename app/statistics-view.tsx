@@ -25,6 +25,7 @@ import {
 } from "@/lib/statistics";
 import { ALL_ACCOUNTS } from "@/app/ledger-shared";
 import { BalanceChart, MonthlyChart } from "@/app/statistics-charts";
+import { SpendingCalendar } from "@/app/statistics-calendar";
 
 /**
  * Direction as colour, **reinforcing a sign that is already printed** rather than replacing it.
@@ -288,8 +289,11 @@ export function StatisticsView() {
 
   if (!statistics) return <>{picker}<p className="field-help">{message}</p></>;
 
-  const { window: period, totals, averages, months, dayOfWeek, largestOut, largestIn, dailyBalances } = statistics;
-  if (period.from === null || totals.transactions === 0) {
+  const { window: period, totals, averages, months, dayOfWeek, largestOut, largestIn, dailyBalances, dailyMovements } = statistics;
+  // **Both ends checked, not just `from`.** The RPC only ever sets them together — both null or
+  // both a real date — but the schema carries them as independently nullable, and the calendar
+  // below needs both narrowed to `string` rather than trusting that pairing by cast.
+  if (period.from === null || period.to === null || totals.transactions === 0) {
     return (
       <>
         {picker}
@@ -361,6 +365,20 @@ export function StatisticsView() {
             : "This account's own closing balance for each day, as its statements printed it."}
         </p>
         <BalanceChart points={dailyBalances} />
+      </section>
+
+      {/* **New, PLAN task 47's heatmap half.** Every field it needs was already exact money and a
+          date — see `lib/statistics.ts`'s `dailyMovementSchema` for why the array is sparse rather
+          than one entry per calendar day. */}
+      <section className="stats-section" aria-labelledby="calendar-title">
+        <h2 id="calendar-title">Spending calendar</h2>
+        <p className="field-help">Pick a day to open the ledger filtered to it.</p>
+        <SpendingCalendar
+          movements={dailyMovements}
+          periodFrom={period.from}
+          periodTo={period.to}
+          accountId={accountId}
+        />
       </section>
 
       <section className="stats-section" aria-labelledby="monthly-chart-title">

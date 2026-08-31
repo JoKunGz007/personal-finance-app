@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
 import { appendRange, isUsableRange, type DateRange } from "@/lib/date-range";
 import { minorUnitStringSchema, type MinorUnitString } from "@/lib/money";
+import { ACCOUNT_ID_PATTERN } from "@/lib/accounts";
 
 /**
  * Wire contract for `GET /api/v1/statistics`, which returns `public.ledger_statistics` verbatim
@@ -79,6 +80,23 @@ export const dailyBalanceSchema = z.object({
   balance: minorUnitStringSchema
 }).strict();
 
+/**
+ * One day's reportable movement, for the statistics calendar (PLAN task 47, migration 025).
+ *
+ * **Sparse, not one entry per calendar day.** A date with no reportable movement — nothing
+ * happened, or its only movement was excluded from reporting — has no entry at all, on the owner's
+ * own choice: a calendar cell with no data is drawn as empty rather than as a zero-value step of the
+ * ramp, and a zero here would claim a fact (the day had a reportable movement of exactly nothing)
+ * that is different from the truth (the day has nothing to report). The client's job is to leave the
+ * gap, not to fill it.
+ */
+export const dailyMovementSchema = z.object({
+  date: isoDateSchema,
+  deposits: minorUnitStringSchema,
+  withdrawals: minorUnitStringSchema,
+  transactions: z.number().int().nonnegative()
+}).strict();
+
 export const ledgerStatisticsSchema = z.object({
   window: z.object({
     from: isoDateSchema.nullable(),
@@ -106,13 +124,15 @@ export const ledgerStatisticsSchema = z.object({
   // in bigger lumps, so on an ordinary ledger every row of a joint top ten is a payday.
   largestOut: z.array(largestMovementSchema),
   largestIn: z.array(largestMovementSchema),
-  dailyBalances: z.array(dailyBalanceSchema)
+  dailyBalances: z.array(dailyBalanceSchema),
+  dailyMovements: z.array(dailyMovementSchema)
 }).strict();
 
 export type LedgerStatistics = z.infer<typeof ledgerStatisticsSchema>;
 export type MonthlyStatistic = z.infer<typeof monthlyStatisticSchema>;
 export type DayOfWeekStatistic = z.infer<typeof dayOfWeekStatisticSchema>;
 export type DailyBalance = z.infer<typeof dailyBalanceSchema>;
+export type DailyMovement = z.infer<typeof dailyMovementSchema>;
 export type LargestMovement = z.infer<typeof largestMovementSchema>;
 
 /**
@@ -126,7 +146,10 @@ export function wholeWeeks(days: number): number {
   return Math.floor(days / 7);
 }
 
-const magnitude = (value: MinorUnitString): bigint => {
+// Exported for `app/statistics-charts.tsx` and `app/statistics-calendar.tsx`, which each need the
+// same BigInt-absolute-value logic for the same money-sign domain and previously carried their own
+// copies — found by `/code-review high`.
+export const magnitude = (value: MinorUnitString): bigint => {
   const amount = BigInt(value);
   return amount < 0n ? -amount : amount;
 };
@@ -358,9 +381,6 @@ export function pickerSearch(state: PickerState): string {
   return query === "" ? "" : `?${query}`;
 }
 
-/** The shape an account id has to have before it is worth sending. Not proof the account exists. */
-const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
-
 /**
  * The inverse, and **total**: every string yields a state, because the input is a URL and a URL is
  * whatever someone typed. Anything unrecognised falls back to All time rather than throwing, since
@@ -386,7 +406,7 @@ export function pickerStateFromSearch(search: string): PickerState {
   // Anything that is not a uuid falls back to the combined ledger, on the same rule as an
   // unrecognised preset: the failure mode of a bad link is the default page, not a blank one.
   const account = params.get("account");
-  const accountId = account !== null && ACCOUNT_ID.test(account) ? account : null;
+  const accountId = account !== null && ACCOUNT_ID_PATTERN.test(account) ? account : null;
   const custom =
     params.get("custom") === "1"
     // `window=custom` is the encoding this replaced, and it is still read so that a link written
@@ -403,4 +423,48 @@ export function pickerStateFromSearch(search: string): PickerState {
   return custom
     ? { preset, custom: true, customFrom: from, customTo: to, accountId }
     : { preset, custom: false, customFrom: "", customTo: "", accountId };
+}
+
+/* ------------------------------------------------------------------ the calendar's own arithmetic
+
+   PLAN task 47's heatmap. Laying out a month grid needs two things `windowForPreset` above does not:
+   which weekday a day-of-month falls on, and how many days a month has. Both are ordinary calendar
+   facts rather than anything to do with "now", so the local-versus-UTC trap above does not apply
+   here — but a `Date` is still avoided, on the same reasoning: these are provable as integer
+   arithmetic, and a `Date` would smuggle in a runtime timezone for a question that has none.
+*/
+
+const isLeapYear = (year: number): boolean =>
+  (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+/** How many days a given month has. `month` is 1-12. */
+export function daysInMonth(year: number, month: number): number {
+  const lengths = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return lengths[month - 1] ?? 30;
+}
+
+/**
+ * The ISO weekday (1 = Monday … 7 = Sunday) of a calendar date, by Sakamoto's algorithm.
+ *
+ * Pure integer arithmetic over the proleptic Gregorian calendar — no `Date`, so no timezone can
+ * enter a question that has none. Matches `ISO_DAY_NAMES`' own numbering.
+ */
+export function isoWeekdayOf(year: number, month: number, day: number): number {
+  const t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+  const y = month < 3 ? year - 1 : year;
+  const shift = (t[month - 1] ?? 0);
+  // Sakamoto's algorithm yields 0 = Sunday; ISO numbers Monday as 1, so Sunday becomes 7.
+  const sunday0 = (y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) + shift + day) % 7;
+  return sunday0 === 0 ? 7 : sunday0;
+}
+
+/** Every `YYYY-MM` a range touches, inclusive of both ends' months, earliest first. */
+export function monthsBetween(from: string, to: string): string[] {
+  const fromIndex = Number(from.slice(0, 4)) * 12 + (Number(from.slice(5, 7)) - 1);
+  const toIndex = Number(to.slice(0, 4)) * 12 + (Number(to.slice(5, 7)) - 1);
+  const months: string[] = [];
+  for (let index = fromIndex; index <= toIndex; index += 1) {
+    months.push(`${Math.floor(index / 12)}-${pad2((index % 12) + 1)}`);
+  }
+  return months;
 }

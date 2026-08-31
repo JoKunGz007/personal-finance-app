@@ -103,7 +103,12 @@ export function LedgerControls({
         </button>
         {loaded ? (
           <>
-            <AccountSelect accounts={accounts} value={selected} onChange={onSelectAccount} disabled={suspended} />
+            {/* **`showUnknown` on**, now that `selected` can arrive seeded from a URL (PLAN task
+                47's calendar) rather than only from this control's own `onChange` — an id that
+                names no account the owner holds must say so rather than silently rendering as
+                "All accounts" while the page is genuinely narrowed to it. Same reasoning as
+                `/statistics`'s own account select (D-177). */}
+            <AccountSelect accounts={accounts} value={selected} onChange={onSelectAccount} disabled={suspended} showUnknown />
             {/* **The one control here that changes what is fetched, not merely what is shown.**
                 Account, Order, Status and Filter all narrow rows already held by the client
                 (`app/transactions-view.tsx`); a date window has to narrow the fetch itself, because
