@@ -120,6 +120,15 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   `origin/main`, and confirmed deployed by reading the real hosted app in the owner's own
   signed-in browser session: the select listed his three real accounts and narrowing to one
   correctly changed every figure. Task 46 is done.
+- **Building PLAN task 47's ledger date filter: GRANTED 2026-08-31** ("yep go for task 47").
+  Built, reviewed (`/code-review high`, per D-125) and verified locally in a real browser
+  against `next build && next start` — see the checkpoint in `PLAN.md` for the gate and what was
+  seen. **`/api/v1/accounts/[id]/transactions/route.ts` and `lib/transactions.ts` were already
+  uncommitted in the tree when this session started**; this grant covers finishing and committing
+  that groundwork alongside the control that finally exercises it, on the same reasoning D-177
+  covered `lib/date-range.ts`. **Not committed, not asked for separately** — this grant covered
+  building and running locally only; the calendar heatmap PLAN task 47 also names stays
+  unauthorized and untouched.
 - **The default face: DECIDED BY THE OWNER 2026-08-29 and SHIPPED** (D-169). Pixelify Sans, not
   the Press Start 2P the question had been framed around.
 - **Fixing the phone tap targets: GRANTED, SPENT and SHIPPED, 2026-08-29** (D-168).

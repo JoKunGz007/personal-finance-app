@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   compareTransactions,
+  cursorAfter,
+  ledgerPageSearch,
   matchesCashQuery,
   matchesQuery,
   matchesSlipQuery,
@@ -11,6 +13,7 @@ import {
   overlayWriteResponseSchema,
   summarize,
   ledgerPageSchema,
+  type LedgerCursor,
   type LedgerTransaction
 } from "@/lib/transactions";
 import { slipListSchema, type CapturedSlip } from "@/lib/slips";
@@ -47,6 +50,46 @@ function transaction(overrides: Partial<LedgerTransaction> = {}): LedgerTransact
     ...overrides
   };
 }
+
+/**
+ * The query string one ledger page request carries (migration 024, PLAN task 47).
+ *
+ * `app/transactions-view.tsx` builds this on both the first page of every account and every
+ * deeper one `loadMore` fetches, and the two used to be built separately — the defect this
+ * function exists to make impossible is a deeper page that forgets the window its first page was
+ * bounded by.
+ */
+describe("the query string for a ledger page request", () => {
+  it("carries neither part when both are absent", () => {
+    expect(ledgerPageSearch({ from: null, to: null }, null)).toBe("");
+  });
+
+  it("carries the window alone, with no cursor set", () => {
+    expect(ledgerPageSearch({ from: "2026-01-01", to: "2026-01-31" }, null))
+      .toBe("?from=2026-01-01&to=2026-01-31");
+    // An open end is omitted, on the same rule `lib/date-range.ts` uses everywhere else.
+    expect(ledgerPageSearch({ from: "2026-01-01", to: null }, null)).toBe("?from=2026-01-01");
+  });
+
+  it("carries the cursor alone, beforeTime omitted when the row it points at has none", () => {
+    const cursor: LedgerCursor = { beforeDate: "2026-01-15", beforeTime: null, beforeId: "11111111-1111-4111-8111-111111111111" };
+    expect(ledgerPageSearch({ from: null, to: null }, cursor))
+      .toBe("?beforeDate=2026-01-15&beforeId=11111111-1111-4111-8111-111111111111");
+  });
+
+  it("carries both, the window first and the cursor after it", () => {
+    const cursor: LedgerCursor = { beforeDate: "2026-01-15", beforeTime: "10:00:00", beforeId: "11111111-1111-4111-8111-111111111111" };
+    expect(ledgerPageSearch({ from: "2026-01-01", to: "2026-01-31" }, cursor))
+      .toBe("?from=2026-01-01&to=2026-01-31&beforeDate=2026-01-15&beforeId=11111111-1111-4111-8111-111111111111&beforeTime=10%3A00%3A00");
+  });
+
+  it("reads the cursor off the last row of a page, or null when the page was empty", () => {
+    expect(cursorAfter([])).toBeNull();
+    const rows = [transaction({ id: "11111111-1111-4111-8111-111111111111", source_date: "2026-01-01" }),
+      transaction({ id: "22222222-2222-4222-8222-222222222222", source_date: "2026-01-02", source_time: "08:00:00" })];
+    expect(cursorAfter(rows)).toEqual({ beforeDate: "2026-01-02", beforeTime: "08:00:00", beforeId: "22222222-2222-4222-8222-222222222222" });
+  });
+});
 
 describe("transaction wire contract", () => {
   it("accepts the shape list_account_transactions returns", () => {

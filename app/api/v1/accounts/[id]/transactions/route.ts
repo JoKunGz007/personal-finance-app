@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isUsableRange } from "@/lib/date-range";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { LEDGER_PAGE_SIZE } from "@/lib/transactions";
 
@@ -25,6 +26,28 @@ const cursorSchema = z.object({
   "A ledger page cursor needs its date and its id together."
 );
 
+/**
+ * The window, which is **not** the cursor above (migration 024, PLAN task 47).
+ *
+ * Both are dates on the same request and they do different jobs: the cursor is where the last page
+ * stopped and it walks, while these are bounds and they fence. A window narrower than a page still
+ * pages, because the database applies the cursor *inside* the bounds rather than instead of them —
+ * which is also why the two are parsed apart here instead of being folded into one object that
+ * would invite reading either as the other.
+ *
+ * Each end is independently optional, and a transposed pair is refused here as well as in the
+ * database (`ledger window ends before it begins`), so neither side is trusting the other.
+ *
+ * **The refusal itself is `isUsableRange`, not a copy of it.** `app/statistics-view.tsx` and
+ * `app/transactions-view.tsx` both refuse a transposed pair client-side on that same function; a
+ * second, independently written comparison here — even one that reads identically today — is
+ * exactly the shape that drifts the day one of the two is touched and the other is not.
+ */
+const windowSchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()
+}).refine(isUsableRange, "A ledger window ends on or after it starts.");
+
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
@@ -38,6 +61,13 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     beforeId: url.searchParams.get("beforeId")
   });
   if (!cursor.success) return routeError("The ledger page cursor is invalid.", 400);
+  const window = windowSchema.safeParse({
+    from: url.searchParams.get("from"),
+    to: url.searchParams.get("to")
+  });
+  // Its own message rather than the cursor's, because the two are separately hand-editable and a
+  // caller told "the cursor is invalid" about a date he typed would go looking in the wrong place.
+  if (!window.success) return routeError("The ledger window is invalid.", 400);
 
   // The page size is the route's to decide, not the caller's. The database clamps it as well —
   // that is the invariant — but a route that forwarded any number a query string carried would be
@@ -47,7 +77,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     p_limit: LEDGER_PAGE_SIZE,
     p_before_date: cursor.data.beforeDate,
     p_before_time: cursor.data.beforeTime,
-    p_before_id: cursor.data.beforeId
+    p_before_id: cursor.data.beforeId,
+    // **The bounds, after the cursor and named rather than positional.** Migration 024 dropped the
+    // five-argument signature rather than leaving it alongside, so there is one function to resolve
+    // to. Absent bounds reproduce the old contract exactly, `totals` included.
+    p_from: window.data.from,
+    p_to: window.data.to
   });
   if (error) return routeError("Transactions could not be loaded.", 400);
 

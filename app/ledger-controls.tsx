@@ -27,12 +27,17 @@ export function LedgerControls({
   order,
   status,
   query,
+  dateFrom,
+  dateTo,
+  rangeUsable,
   modes,
   onLoad,
   onSelectAccount,
   onOrderChange,
   onStatusChange,
-  onQueryChange
+  onQueryChange,
+  onDateFromChange,
+  onDateToChange
 }: {
   busy: boolean;
   /** Whether rows have arrived. The filters are meaningless until they have, so they wait. */
@@ -42,12 +47,19 @@ export function LedgerControls({
   order: Order;
   status: StatusFilter;
   query: string;
+  /** The ledger window's bounds, empty string for an open end (PLAN task 47, migration 024). */
+  dateFrom: string;
+  dateTo: string;
+  /** Whether the current pair is sendable — false for a transposed range. */
+  rangeUsable: boolean;
   modes: LedgerModes;
   onLoad: () => void;
   onSelectAccount: (accountId: string) => void;
   onOrderChange: (order: Order) => void;
   onStatusChange: (status: StatusFilter) => void;
   onQueryChange: (query: string) => void;
+  onDateFromChange: (value: string) => void;
+  onDateToChange: (value: string) => void;
 }) {
   const suspended = modes.picking || modes.pickingCard;
 
@@ -86,12 +98,31 @@ export function LedgerControls({
         {/* **"Load transactions" is now the retry, not the way in.** The ledger loads on arrival
             (PLAN task 43), so the label the owner ordinarily sees is Reload; the other wording is
             what is left after a first load that failed, and pressing it is the way back. */}
-        <button type="button" className="secondary-button" disabled={busy || suspended} onClick={onLoad}>
+        <button type="button" className="secondary-button" disabled={busy || suspended || !rangeUsable} onClick={onLoad}>
           {busy ? "Loading…" : loaded ? "Reload" : "Load transactions"}
         </button>
         {loaded ? (
           <>
             <AccountSelect accounts={accounts} value={selected} onChange={onSelectAccount} disabled={suspended} />
+            {/* **The one control here that changes what is fetched, not merely what is shown.**
+                Account, Order, Status and Filter all narrow rows already held by the client
+                (`app/transactions-view.tsx`); a date window has to narrow the fetch itself, because
+                a page holds only the newest rows and an owner asking for March cannot be answered
+                by hiding what happens to already be on screen. That is why this does not filter
+                live like the others: it only takes effect on the next Reload, which is the one
+                button here that already means "go back to the server" (migration 024, PLAN task
+                47). Both ends independently optional, on the same "open end" rule the statistics
+                picker uses (`lib/date-range.ts`). */}
+            <label className="account-control">
+              <span>From</span>
+              <input type="date" value={dateFrom} disabled={suspended} max={dateTo === "" ? undefined : dateTo}
+                onChange={(event) => onDateFromChange(event.target.value)} />
+            </label>
+            <label className="account-control">
+              <span>To</span>
+              <input type="date" value={dateTo} disabled={suspended} min={dateFrom === "" ? undefined : dateFrom}
+                onChange={(event) => onDateToChange(event.target.value)} />
+            </label>
             <label className="account-control">
               <span>Order</span>
               <select value={order} onChange={(event) => onOrderChange(event.target.value as Order)}>
@@ -128,6 +159,11 @@ export function LedgerControls({
                 onChange={(event) => onQueryChange(event.target.value)}
               />
             </label>
+            {!rangeUsable && (
+              <p className="field-help ledger-range-warning" role="alert">
+                That date range ends before it starts, so Reload has nothing to send.
+              </p>
+            )}
           </>
         ) : null}
       </div>

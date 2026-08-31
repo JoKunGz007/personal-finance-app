@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { appendRange, type DateRange } from "@/lib/date-range";
 import { isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema, type MinorUnitString } from "@/lib/money";
 import type { CapturedSlip } from "@/lib/slips";
@@ -179,6 +180,31 @@ export function cursorAfter(page: readonly LedgerTransaction[]): LedgerCursor | 
   const last = page[page.length - 1];
   if (last === undefined) return null;
   return { beforeDate: last.source_date, beforeTime: last.source_time, beforeId: last.id };
+}
+
+/**
+ * The query string for one page request: the window, then the cursor inside it.
+ *
+ * **Both travel on every deeper page, and forgetting the window on the second one is the defect
+ * this function exists to make impossible.** A cursor sent without its bounds walks out of the
+ * window the owner selected and returns rows from outside it, so the table grows rows the line
+ * above it says are not there. They were built at two separate call sites before this — the first
+ * page and the "load older rows" press — which is exactly the shape that lets one of them drift.
+ *
+ * `beforeTime` is omitted when null rather than sent blank, because an untimed row is a real cursor
+ * position and the route's pattern rejects `""`; the range omits its open ends for the same reason
+ * (`appendRange`).
+ */
+export function ledgerPageSearch(range: DateRange, cursor: LedgerCursor | null): string {
+  const params = new URLSearchParams();
+  appendRange(params, range);
+  if (cursor !== null) {
+    params.set("beforeDate", cursor.beforeDate);
+    params.set("beforeId", cursor.beforeId);
+    if (cursor.beforeTime !== null) params.set("beforeTime", cursor.beforeTime);
+  }
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
 }
 
 /**

@@ -731,6 +731,10 @@ footer p { margin: 0; }
 .ledger-table.merged th:nth-child(7) { width: 160px; }
 .combined-balance { color: var(--muted); }
 .ledger-controls .secondary-button { height: 47px; }
+/* Spans every column the grid currently has, at any width — same technique as
+   `.ledger-controls > button` two rules below for the tablet breakpoint, generalised with `-1`
+   rather than a width-specific column count so it does not need its own entry at each breakpoint. */
+.ledger-range-warning { grid-column: 1 / -1; margin: 0; }
 .ledger-strip { grid-template-columns: repeat(4, 1fr); }
 .ledger-empty { margin: 26px 0 0; padding: 22px; color: var(--muted); border: 1px solid var(--line); background: var(--mist); }
 .ledger-status { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }

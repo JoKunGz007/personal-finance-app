@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isUsableRange } from "@/lib/date-range";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
@@ -17,14 +18,14 @@ export const dynamic = "force-dynamic";
  * checked here — whether that account is the caller's own is the database's question, and
  * `ledger_statistics` answers it by filtering on `auth.uid()` rather than by trusting this.
  */
+// **The refusal is `isUsableRange`, not a second copy of it** — `app/statistics-view.tsx` and
+// `app/transactions-view.tsx` both refuse a transposed pair client-side on that same function
+// (PLAN task 47, found duplicated by `/code-review high` when the ledger's own window landed).
 const windowSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   account: z.string().uuid().nullable()
-}).refine(
-  (w) => w.from === null || w.to === null || w.from <= w.to,
-  "A statistics window ends on or after it starts."
-);
+}).refine(isUsableRange, "A statistics window ends on or after it starts.");
 
 // The size of the largest-movements list is the route's decision, not the caller's, on the same
 // reasoning as the ledger's page size: a route that forwarded any number a query string carried

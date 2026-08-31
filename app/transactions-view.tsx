@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
+import { isUsableRange, type DateRange } from "@/lib/date-range";
 import {
   cursorAfter,
   ledgerPageSchema,
+  ledgerPageSearch,
   matchCandidateListSchema,
   matchesCardQuery,
   matchesCashQuery,
@@ -116,6 +118,17 @@ export function TransactionsView() {
    */
   const [ledgerWindow, setLedgerWindow] = useState<LedgerWindow | null>(null);
   /**
+   * The date bounds `ledgerWindow` was actually fetched with — **not** the same thing as the live
+   * `dateFrom`/`dateTo` state below, and the difference is exactly Statistics' `{ search, data }`
+   * split (`app/statistics-view.tsx`, D-170). The date inputs only take effect on the next Reload,
+   * so an owner who edits them and then presses "Load older rows" without reloading must not have
+   * that press silently switch to the unapplied bounds: `loadMore` walks a cursor that was produced
+   * *under this range*, and fencing it with a different one would return a page whose rows and
+   * whose account totals (`AccountWindow.totals`, bounded by the RPC only when bounds are supplied)
+   * belong to two different windows stitched into one account.
+   */
+  const [appliedRange, setAppliedRange] = useState<DateRange>({ from: null, to: null });
+  /**
    * Rows outside the window that reconciliation still has to see, from `list_match_candidates`.
    *
    * **Evidence, not rows to show.** They are unioned into what the matching rule runs over and
@@ -177,6 +190,39 @@ export function TransactionsView() {
   const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>(ALL_STATUSES);
+  /**
+   * The ledger's own date window (migration 024, PLAN task 47) — empty string for an open end, on
+   * the same convention `app/statistics-view.tsx` uses.
+   *
+   * **Unlike every other filter on this page, it is not client-side.** Account, Order, Status and
+   * Filter all narrow rows the client already holds; a page holds only the newest rows for each
+   * account, so an owner asking for March cannot be answered by hiding what happens to be on
+   * screen — the fetch itself has to be bounded. That is why this state feeds `load`/`loadMore`
+   * rather than `visibleRows`, and why it only takes effect on Reload rather than filtering live.
+   */
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const range: DateRange = useMemo(
+    () => ({ from: dateFrom === "" ? null : dateFrom, to: dateTo === "" ? null : dateTo }),
+    [dateFrom, dateTo]
+  );
+  const rangeUsable = isUsableRange(range);
+  /**
+   * What to say about `appliedRange`, or nothing when it is fully open.
+   *
+   * **Said because the reach line below it would otherwise lie by omission.** "Showing 40 of 40
+   * confirmed rows" reads as *the whole ledger* — and once a window is applied, both numbers are
+   * the RPC's bounded count (migration 024: `totals.rows` honours the bounds when they are
+   * supplied), so 40 could just as easily be everything in one narrow month. The reach line states
+   * a fraction; this states what the fraction is *of*.
+   */
+  const appliedRangeLabel = appliedRange.from === null && appliedRange.to === null
+    ? null
+    : appliedRange.from === null
+      ? `up to ${appliedRange.to}`
+      : appliedRange.to === null
+        ? `from ${appliedRange.from} onward`
+        : `${appliedRange.from} to ${appliedRange.to}`;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
@@ -600,6 +646,15 @@ export function TransactionsView() {
    * different path from the one that runs.
    */
   async function load(automatic = false) {
+    // A transposed range is refused here rather than sent: the route would answer 400 and the
+    // reload would replace a working table with an error the owner can see is his own typing.
+    // Reload is already disabled on the same condition — this is what stops the other three
+    // callers (mount, the sign-in retry, a cash payment's refresh) from sending it anyway.
+    if (!rangeUsable) {
+      setError("That date range ends before it starts, so nothing was requested.");
+      return;
+    }
+
     // **Which load is allowed to write the state.** Two can overlap now in a way they could not
     // when nothing loaded until asked: the load on arrival can still be in flight when recording a
     // cash payment starts a second one. Whichever *starts* last is the one holding the newer
@@ -656,11 +711,14 @@ export function TransactionsView() {
       // the newest N of its own account.
       let next = emptyWindow();
       for (const account of accountsResult.data.accounts) {
-        const result = await ledgerRequest(`/api/v1/accounts/${account.id}/transactions`, ledgerPageSchema, {
-          fallback: `Transactions could not be loaded for ${account.label}.`,
-          unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
-          offContract: `The transactions response for ${account.label} did not match its contract.`
-        });
+        // The window's own bounds, cursor null for a first page — `ledgerPageSearch` is what
+        // `loadMore` below reuses so a deeper page cannot forget them.
+        const result = await ledgerRequest(
+          `/api/v1/accounts/${account.id}/transactions${ledgerPageSearch(range, null)}`, ledgerPageSchema, {
+            fallback: `Transactions could not be loaded for ${account.label}.`,
+            unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
+            offContract: `The transactions response for ${account.label} did not match its contract.`
+          });
         if (!result.ok) {
           setError(result.why);
           return;
@@ -752,6 +810,10 @@ export function TransactionsView() {
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
       setCandidates(candidateResult.data.candidates);
+      // Set together, because they describe one fetch. `appliedRange` is what `loadMore` must walk
+      // inside of — recording it only here, never from the live inputs, is what keeps an edited but
+      // unapplied date field from reaching a deeper page before Reload does.
+      setAppliedRange(range);
       // Last, and it is what `loaded` is read from. A reload replaces the window rather than
       // extending it: the pages it just fetched are the newest ones again, and appending them to
       // a window that already held them would show every row twice.
@@ -797,10 +859,10 @@ export function TransactionsView() {
         // row of a non-empty page — but reading one would silently re-fetch the first page and
         // duplicate every row, so it is skipped rather than trusted.
         if (cursor === null) continue;
-        const query = new URLSearchParams({ beforeDate: cursor.beforeDate, beforeId: cursor.beforeId });
-        if (cursor.beforeTime !== null) query.set("beforeTime", cursor.beforeTime);
+        // `appliedRange`, not `range`: the cursor was produced walking *this* window, and an
+        // edited-but-not-yet-reloaded date field must not reach a deeper page ahead of Reload.
         const result = await ledgerRequest(
-          `/api/v1/accounts/${page.accountId}/transactions?${query.toString()}`, ledgerPageSchema, {
+          `/api/v1/accounts/${page.accountId}/transactions${ledgerPageSearch(appliedRange, cursor)}`, ledgerPageSchema, {
             fallback: "The next page of the ledger could not be loaded.",
             unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
             offContract: "The next page did not match its contract."
@@ -1061,12 +1123,17 @@ export function TransactionsView() {
         order={order}
         status={status}
         query={query}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        rangeUsable={rangeUsable}
         modes={modes}
         onLoad={() => void load()}
         onSelectAccount={setSelected}
         onOrderChange={setOrder}
         onStatusChange={setStatus}
         onQueryChange={setQuery}
+        onDateFromChange={setDateFrom}
+        onDateToChange={setDateTo}
       />
 
       {error ? (
@@ -1085,6 +1152,15 @@ export function TransactionsView() {
 
       {ledgerWindow ? (
         <>
+          {/* Stated before any figure it qualifies, on the same rule `app/statistics-view.tsx`
+              follows for its own window line — a reader should never have to trust a date input
+              over what is actually on screen. Suppressed during matching, on the same terms as the
+              reach line further down: that mode is its own view of the ledger and this would
+              describe a different question than the one the banner is already answering. */}
+          {appliedRangeLabel && !picking && !pickingCard ? (
+            <p className="ledger-status">Showing confirmed rows {appliedRangeLabel}.</p>
+          ) : null}
+
           <LedgerSummary
             modes={modes}
             matchingSlip={matchingSlip}
