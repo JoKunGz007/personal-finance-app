@@ -1090,6 +1090,16 @@ footer p { margin: 0; }
 .window-custom label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 .window-custom input[type="date"] { min-height: 44px; padding: 8px 10px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-size: 13px; }
 .window-custom .field-help { flex-basis: 100%; margin: 0; }
+/* The window fieldset and the account select side by side on a wide screen, stacked on a narrow
+   one — same breakpoint as the stacked ledger tables below, so the picker and the tables it
+   controls change shape together rather than at two different widths. */
+.statistics-picker { display: flex; align-items: flex-start; gap: 24px; margin-bottom: 8px; }
+.statistics-picker .window-picker { flex: 1 1 auto; margin-bottom: 0; min-width: 0; }
+.statistics-account { flex: 0 0 auto; width: 220px; max-width: 100%; }
+@media (max-width: 700px) {
+  .statistics-picker { flex-direction: column; gap: 12px; }
+  .statistics-account { width: 100%; }
+}
 .stats-section h2 { margin: 0 0 4px; font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
 .stats-section table { min-width: 560px; table-layout: auto; }
 .stats-section th:nth-child(n) { width: auto; }

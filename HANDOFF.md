@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-08-29.
+Last updated: 2026-08-31.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -30,7 +30,9 @@ D-153 with D-164…D-168 in [docs/decisions/ARCHIVE-D-153-D-168.md](docs/decisio
 **the gaps are the rule, not an accident** — a boundary excludes every open question and steps
 over one rather than stopping short (D-133, D-154, D-164, D-167, D-171). What is left in the maintained file
 is the three questions nobody has closed — the mailbox archive (D-141), `list_match_candidates`'
-unbounded scan (D-158) and the statistics account filter (D-161) — plus **D-169 and D-170, which are
+unbounded scan (D-158) and the statistics account filter (D-161, whose control is now built,
+reviewed and committed per D-177 but stays open here until deployed) — plus **D-169 and
+D-170, which are
 settled arguments held back only because nobody has looked at what they render on the deployment**
 (D-171, and that fence expires the moment either page is seen); the index at the top of
 `DECISIONS.md` covers all eleven) →
@@ -108,10 +110,14 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   `/statistics` were read, nothing was written, no control was pressed, no credential handled.
   **Not standing; it does not survive this session.** What it produced is in D-168 and `PLAN.md`
   tasks 44 and 50.
-- **Building PLAN task 46: GRANTED 2026-08-29, both halves, and the FIRST HALF IS SHIPPED**
-  (D-170, `0b88ea2`). The window picker needed no SQL. **The account filter still does**: migration
-  024 for the two-source balance, which means a verified backup and the owner running `db push`
-  himself. That is not granted by the build authorization and must be asked for separately.
+- **Building PLAN task 46: GRANTED 2026-08-29, both halves, and BOTH ARE NOW BUILT** (D-170,
+  `0b88ea2`; D-177). The window picker needed no SQL and shipped 2026-08-29. The account filter
+  needed migration 024, which reached hosted 2026-08-30 (D-176) under a separate `db push` grant;
+  its control was built, reviewed (`/code-review high`, per D-125) and verified against
+  `private-ledger-local` on 2026-08-31. **Committing and pushing this work: GRANTED 2026-08-31**
+  ("let's commit and push first, so you can verify") — spent the same turn; check `git log -1`
+  and `git status --short` against this file's own "never trust a line, re-read `git status`"
+  rule rather than this sentence for whether it landed.
 - **The default face: DECIDED BY THE OWNER 2026-08-29 and SHIPPED** (D-169). Pixelify Sans, not
   the Press Start 2P the question had been framed around.
 - **Fixing the phone tap targets: GRANTED, SPENT and SHIPPED, 2026-08-29** (D-168).
@@ -142,11 +148,16 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   **96% → 73%**, both on 2026-08-27 (D-164, D-167). **The rate is the thing to watch**: three
   boundaries in three days, each bought by a question closing rather than by the calendar.
 - **Building PLAN task 46's account filter and task 51's phone audit: GRANTED 2026-08-29, BUILT,
-  COMMITTED and PUSHED as `676a8ea`.** Task 51 is done end to end and deployed (D-173). Task 46's second half is **half done on
-  purpose**: migration 024 is written and applied to `private-ledger-local`, and **no control is
-  built above it**, because the database goes first and 024 is not on hosted. The owner also chose
-  **the ledger's date filter ahead of the calendar heatmap** (task 47), whose SQL rides in the same
-  migration; that control is unbuilt for the same reason.
+  COMMITTED and PUSHED as `676a8ea`.** Task 51 is done end to end and deployed (D-173). Task 46's
+  second half was **half done on purpose at the time**: migration 024 was written and applied to
+  `private-ledger-local` only, with no control above it, because the database goes first and 024
+  was not yet on hosted. **Both preconditions have since cleared**: 024 reached hosted 2026-08-30
+  (D-176) and the control itself was built, reviewed and committed 2026-08-31 (D-177) — see the
+  task 46 bullet above for its current, not-yet-deployed state. The owner also chose **the
+  ledger's date filter ahead of the calendar heatmap** (task 47), whose SQL rides in the same
+  migration; **that control remains entirely unbuilt** — `lib/date-range.ts` is committed (D-177
+  needed it as a dependency of `lib/statistics.ts`) but nothing under `app/` imports it for a
+  ledger date filter yet.
 - **`supabase db push` for migration 024: GRANTED, RUN AND SPENT, 2026-08-30.** It needs a **backup
   verified from the database first** — the last reading is sequence 37 / last_exported_sequence 37
   from 2026-08-27, and D-152's rule is that the next migration needs its own. **Who runs it has varied**: an

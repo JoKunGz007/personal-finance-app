@@ -1,9 +1,9 @@
 "use client";
 
 import { type LedgerAccount } from "@/lib/accounts";
+import { AccountSelect } from "@/app/account-select";
 import { LedgerNote } from "@/app/ledger-note";
 import {
-  ALL_ACCOUNTS,
   ALL_STATUSES,
   type LedgerModes,
   type Order,
@@ -91,17 +91,7 @@ export function LedgerControls({
         </button>
         {loaded ? (
           <>
-            <label className="account-control">
-              <span>Account</span>
-              <select value={selected} disabled={suspended} onChange={(event) => onSelectAccount(event.target.value)}>
-                <option value={ALL_ACCOUNTS}>All accounts</option>
-                {(accounts ?? []).map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.label} ···· {account.last_four}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <AccountSelect accounts={accounts} value={selected} onChange={onSelectAccount} disabled={suspended} />
             <label className="account-control">
               <span>Order</span>
               <select value={order} onChange={(event) => onOrderChange(event.target.value as Order)}>

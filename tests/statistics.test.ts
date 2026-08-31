@@ -268,10 +268,10 @@ describe("the window picker's state in the URL", () => {
     // All time is the default, so it carries nothing and a bare `/statistics` stays unambiguous.
     expect(pickerSearch(DEFAULT_PICKER_STATE)).toBe("");
     expect(pickerSearch({ ...DEFAULT_PICKER_STATE, preset: "this-month" })).toBe("?window=this-month");
-    expect(pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31" }))
+    expect(pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31", accountId: null }))
       .toBe("?custom=1&from=2026-01-01&to=2026-03-31");
     // An empty end is an open end, and an absent parameter is how the rest of this module says so.
-    expect(pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "" }))
+    expect(pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "", accountId: null }))
       .toBe("?custom=1&from=2026-01-01");
   });
 
@@ -279,7 +279,7 @@ describe("the window picker's state in the URL", () => {
     // `window=custom` folded the override into the preset and dropped what was underneath it. The
     // control then behaved one way in-session and another after a reload of the URL it had itself
     // written, which is the asymmetry this encoding exists to remove.
-    const ticked = { preset: "this-year" as const, custom: true, customFrom: "2026-02-01", customTo: "2026-02-28" };
+    const ticked = { preset: "this-year" as const, custom: true, customFrom: "2026-02-01", customTo: "2026-02-28", accountId: null };
     expect(pickerSearch(ticked)).toBe("?window=this-year&custom=1&from=2026-02-01&to=2026-02-28");
     expect(pickerStateFromSearch(pickerSearch(ticked))).toEqual(ticked);
     // Unticking is the state the reader gets back, and it is the preset rather than All time.
@@ -288,7 +288,7 @@ describe("the window picker's state in the URL", () => {
 
   it("still reads `window=custom`, so a link written before the split keeps working", () => {
     expect(pickerStateFromSearch("?window=custom&from=2026-01-01&to=2026-03-31"))
-      .toEqual({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31" });
+      .toEqual({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31", accountId: null });
   });
 
   it("**a preset outlives the day it was linked on, and a custom range does not**", () => {
@@ -301,9 +301,9 @@ describe("the window picker's state in the URL", () => {
 
     // A custom range carries its dates, so it means the same thing on any day it is opened.
     const fixed = pickerStateFromSearch(
-      pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31" })
+      pickerSearch({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31", accountId: null })
     );
-    expect(fixed).toEqual({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31" });
+    expect(fixed).toEqual({ preset: "all", custom: true, customFrom: "2026-01-01", customTo: "2026-03-31", accountId: null });
   });
 
   it("round-trips every preset and a custom range", () => {
@@ -311,17 +311,37 @@ describe("the window picker's state in the URL", () => {
       const state = { ...DEFAULT_PICKER_STATE, preset };
       expect(pickerStateFromSearch(pickerSearch(state)), `${preset} must survive the round trip`).toEqual(state);
     }
-    const custom = { preset: "all" as const, custom: true, customFrom: "2026-02-01", customTo: "2026-02-28" };
+    const custom = { preset: "all" as const, custom: true, customFrom: "2026-02-01", customTo: "2026-02-28", accountId: null };
     expect(pickerStateFromSearch(pickerSearch(custom))).toEqual(custom);
+  });
+
+  it("carries an account id through the round trip, appended after the window", () => {
+    const uuid = "11111111-2222-4333-8444-555555555555";
+    const narrowed = { preset: "this-month" as const, custom: false, customFrom: "", customTo: "", accountId: uuid };
+    expect(pickerSearch(narrowed)).toBe(`?window=this-month&account=${uuid}`);
+    expect(pickerStateFromSearch(pickerSearch(narrowed))).toEqual(narrowed);
+
+    // `windowSearch` is the route's own encoding, not the picker's — same key, same position.
+    expect(windowSearch({ from: "2026-01-01", to: "2026-01-31" }, uuid)).toBe(`?from=2026-01-01&to=2026-01-31&account=${uuid}`);
+    expect(windowSearch({ from: null, to: null }, null)).toBe("");
+  });
+
+  it("drops an account id that is not a uuid, on the same rule as an unrecognised preset", () => {
+    for (const account of ["not-a-uuid", "11111111-2222-4333-8444", "", "11111111222243338444555555555555"]) {
+      expect(pickerStateFromSearch(`?account=${account}`).accountId, `${account} must not survive`).toBeNull();
+    }
+    // Case is not significant — a uuid is written in either case in the wild.
+    const upper = "11111111-2222-4333-8444-555555555555".toUpperCase();
+    expect(pickerStateFromSearch(`?account=${upper}`).accountId).toBe(upper);
   });
 
   it("reads a bare from/to as a custom range, so a hand-edited URL keeps working", () => {
     // These are the route's own parameters, and hand-editing them was the only way to select a
     // window for the two days before the picker existed (D-170).
     expect(pickerStateFromSearch("?from=2026-05-01&to=2026-05-31"))
-      .toEqual({ preset: "all", custom: true, customFrom: "2026-05-01", customTo: "2026-05-31" });
+      .toEqual({ preset: "all", custom: true, customFrom: "2026-05-01", customTo: "2026-05-31", accountId: null });
     expect(pickerStateFromSearch("?to=2026-05-31"))
-      .toEqual({ preset: "all", custom: true, customFrom: "", customTo: "2026-05-31" });
+      .toEqual({ preset: "all", custom: true, customFrom: "", customTo: "2026-05-31", accountId: null });
   });
 
   it("is total: anything unreadable falls back to All time rather than throwing", () => {

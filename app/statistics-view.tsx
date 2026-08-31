@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
+import { AccountSelect } from "@/app/account-select";
 import { formatThb } from "@/lib/money";
 import {
   ISO_DAY_NAMES,
@@ -21,6 +23,7 @@ import {
   type LedgerStatistics,
   type WindowPreset
 } from "@/lib/statistics";
+import { ALL_ACCOUNTS } from "@/app/ledger-shared";
 import { BalanceChart, MonthlyChart } from "@/app/statistics-charts";
 
 /**
@@ -102,6 +105,30 @@ export function StatisticsView() {
   const [custom, setCustom] = useState(initial.custom);
   const [customFrom, setCustomFrom] = useState(initial.customFrom);
   const [customTo, setCustomTo] = useState(initial.customTo);
+  // **The account filter** (PLAN task 46's second half, migration 024). Null is the combined
+  // ledger, which is what the page shows until someone narrows it.
+  const [accountId, setAccountId] = useState<string | null>(initial.accountId);
+
+  /**
+   * The accounts the filter offers, which are **labels for a choice the page can already make**.
+   *
+   * Deliberately not blocking: the window and every figure on the page are answerable without this
+   * list, so a failed accounts request leaves the statistics intact and only leaves the filter with
+   * nothing to offer. `null` is "not loaded yet" and `[]` is "loaded and there are none" — the
+   * select needs to tell those apart to know whether an id it holds is unknown or merely early.
+   */
+  const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const response = await fetch("/api/v1/accounts", { cache: "no-store" }).catch(() => null);
+      if (cancelled || !response || !response.ok) return;
+      const parsed = accountListSchema.safeParse(await response.json().catch(() => null));
+      if (cancelled || !parsed.success) return;
+      setAccounts(parsed.data.accounts);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // **Held in state rather than read per render, and re-read on every deliberate press.** Calling
   // `localToday` inside the memo would make the resolved window a function of render timing, so a
@@ -119,7 +146,11 @@ export function StatisticsView() {
     [custom, customFrom, customTo, preset, today]
   );
   const usable = isUsableWindow(window_);
-  const search = windowSearch(window_);
+  // **The account is part of the key, not only part of the request.** `loaded.search` is compared
+  // against this to decide whether the figures on screen belong to the selection currently made,
+  // and an account that changed without either date moving would otherwise leave one account's
+  // totals standing under another account's name with nothing calling them stale.
+  const search = windowSearch(window_, accountId);
 
   // **The address bar follows the picker, through `history.replaceState` rather than the router.**
   //
@@ -132,7 +163,7 @@ export function StatisticsView() {
   // **Replace and not push**, because the picker is a filter rather than navigation: pushing would
   // make the Back button walk backwards through every chip that was ever pressed, and the way out
   // of a window is to choose another one, not to undo.
-  const pickerUrl = pickerSearch({ preset, custom, customFrom, customTo });
+  const pickerUrl = pickerSearch({ preset, custom, customFrom, customTo, accountId });
   useEffect(() => {
     const current = `${globalThis.location.pathname}${globalThis.location.search}`;
     const next = `${globalThis.location.pathname}${pickerUrl}`;
@@ -198,6 +229,7 @@ export function StatisticsView() {
   // because the way out of an empty window is to change it. An early return above the control
   // would strand the owner on a dead page needing a reload.
   const picker = (
+    <div className="statistics-picker">
     <fieldset className="window-picker">
       <legend>Window</legend>
       <div className="window-presets">
@@ -238,6 +270,20 @@ export function StatisticsView() {
         <p className="field-help" role="alert">That window ends before it starts, so nothing was requested.</p>
       )}
     </fieldset>
+      {/* Shared with `/ledger` (`app/account-select.tsx`) rather than a second copy of the same
+          options list — including `.account-control`'s overflow fix, the rule D-173's phone audit
+          found missing at 404px in a 390px viewport. `showUnknown` is on here and off on the
+          ledger: an id in this page's URL genuinely narrows every figure below, so the control has
+          to say so rather than fall back to "All accounts" while `accounts` is still loading or the
+          id names nothing the owner holds. */}
+      <AccountSelect
+        accounts={accounts}
+        value={accountId ?? ALL_ACCOUNTS}
+        onChange={(value) => setAccountId(value === ALL_ACCOUNTS ? null : value)}
+        className="statistics-account"
+        showUnknown
+      />
+    </div>
   );
 
   if (!statistics) return <>{picker}<p className="field-help">{message}</p></>;
@@ -301,8 +347,19 @@ export function StatisticsView() {
         </dl>
       )}
 
+      {/* **Which balance this is, said on the page, because the filter changes where the figure
+          comes from** (migration 024, D-174). With no account chosen the line is the derived
+          combined position, since no statement prints what the owner held across accounts; with one
+          chosen it is that account's own printed closing balance, because per account the bank has
+          already done the arithmetic and its figure is the authoritative one. Two different sources
+          under one heading would be the page's most quietly misleading line without this. */}
       <section className="stats-section" aria-labelledby="balance-chart-title">
         <h2 id="balance-chart-title">Balance over time</h2>
+        <p className="field-help">
+          {accountId === null
+            ? "Your combined position across every account, derived over the whole ledger."
+            : "This account's own closing balance for each day, as its statements printed it."}
+        </p>
         <BalanceChart points={dailyBalances} />
       </section>
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
+import { appendRange, isUsableRange, type DateRange } from "@/lib/date-range";
 import { minorUnitStringSchema, type MinorUnitString } from "@/lib/money";
 
 /**
@@ -212,8 +213,14 @@ export const WINDOW_PRESET_LABELS: Record<WindowPreset, string> = {
   "this-year": "This year"
 };
 
-/** A resolved window. `null` at either end means "as far as the ledger goes", which the RPC resolves. */
-export type StatisticsWindow = { readonly from: string | null; readonly to: string | null };
+/**
+ * A resolved window. `null` at either end means "as far as the ledger goes", which the RPC resolves.
+ *
+ * **The same object the ledger's date filter uses** (`lib/date-range.ts`), and deliberately not a
+ * second declaration of the same pair: a window selected here and a window selected there encode
+ * identically, so one link opens either page on the same days.
+ */
+export type StatisticsWindow = DateRange;
 
 const pad2 = (value: number): string => String(value).padStart(2, "0");
 
@@ -260,18 +267,22 @@ export function windowForPreset(preset: WindowPreset, today: string): Statistics
  * `searchParams.get`, which yields `null` when absent and `""` when present and empty, and `""`
  * fails the date pattern with a 400. So a null end is **omitted** rather than sent blank.
  */
-export function windowSearch(window: StatisticsWindow): string {
+export function windowSearch(window: StatisticsWindow, accountId: string | null = null): string {
   const params = new URLSearchParams();
-  if (window.from !== null) params.set("from", window.from);
-  if (window.to !== null) params.set("to", window.to);
+  appendRange(params, window);
+  // **Last, so that an all-accounts request is byte-for-byte what it was before the filter
+  // existed.** The account is also the reason this string is the cache key the view compares
+  // against: narrowing to one account changes every figure on the page without moving either
+  // date, so a key built from the window alone would leave the previous account's figures on
+  // screen under the new account's name and never call them stale.
+  if (accountId !== null) params.set("account", accountId);
   const query = params.toString();
   return query === "" ? "" : `?${query}`;
 }
 
 /** Whether a custom range is one the route will accept, so the page never sends a known 400. */
 export function isUsableWindow(window: StatisticsWindow): boolean {
-  if (window.from === null || window.to === null) return true;
-  return window.from <= window.to;
+  return isUsableRange(window);
 }
 
 /* ------------------------------------------------------ the picker's state in the address bar
@@ -288,6 +299,14 @@ export type PickerState = {
   readonly custom: boolean;
   readonly customFrom: string;
   readonly customTo: string;
+  /**
+   * The account every figure is narrowed to, or `null` for the combined ledger.
+   *
+   * **It belongs to the picker rather than beside it**, because it is the other half of the same
+   * question — "which money, over which days" — and a link that carried the days but not the
+   * account would reopen to a different page than the one that was copied.
+   */
+  readonly accountId: string | null;
 };
 
 /** What the page shows with no choice made, and what any unreadable URL falls back to. */
@@ -295,7 +314,8 @@ export const DEFAULT_PICKER_STATE: PickerState = {
   preset: "all",
   custom: false,
   customFrom: "",
-  customTo: ""
+  customTo: "",
+  accountId: null
 };
 
 /**
@@ -328,9 +348,18 @@ export function pickerSearch(state: PickerState): string {
     if (state.customFrom !== "") params.set("from", state.customFrom);
     if (state.customTo !== "") params.set("to", state.customTo);
   }
+  // **After the window, and read back with a shape check rather than trusted.** An account id is
+  // the one part of this state that is not self-describing — a preset is checked against a list
+  // and a date against the route's pattern, while an account is a uuid the page cannot verify
+  // without asking the server. What it can do is refuse anything that is not a uuid at all, which
+  // is what keeps a hand-edited link from turning into a 400 the reader cannot act on.
+  if (state.accountId !== null) params.set("account", state.accountId);
   const query = params.toString();
   return query === "" ? "" : `?${query}`;
 }
+
+/** The shape an account id has to have before it is worth sending. Not proof the account exists. */
+const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 /**
  * The inverse, and **total**: every string yields a state, because the input is a URL and a URL is
@@ -354,6 +383,10 @@ export function pickerStateFromSearch(search: string): PickerState {
   const to = params.get("to") ?? "";
 
   const preset = WINDOW_PRESETS.find((option) => option === named) ?? "all";
+  // Anything that is not a uuid falls back to the combined ledger, on the same rule as an
+  // unrecognised preset: the failure mode of a bad link is the default page, not a blank one.
+  const account = params.get("account");
+  const accountId = account !== null && ACCOUNT_ID.test(account) ? account : null;
   const custom =
     params.get("custom") === "1"
     // `window=custom` is the encoding this replaced, and it is still read so that a link written
@@ -364,7 +397,10 @@ export function pickerStateFromSearch(search: string): PickerState {
     // things, and the named preset is the more deliberate of them.
     || (named === null && (from !== "" || to !== ""));
 
+  // **The account survives both branches**, because it is orthogonal to the window: unticking
+  // Custom changes which days are counted and must not silently widen which account they are
+  // counted on.
   return custom
-    ? { preset, custom: true, customFrom: from, customTo: to }
-    : { preset, custom: false, customFrom: "", customTo: "" };
+    ? { preset, custom: true, customFrom: from, customTo: to, accountId }
+    : { preset, custom: false, customFrom: "", customTo: "", accountId };
 }
