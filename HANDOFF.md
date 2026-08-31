@@ -262,14 +262,13 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   still claimed "nobody has looked" after D-177 already had). **The one exception is phone width**:
   neither the account filter, the date filter, nor the calendar heatmap has been seen on a real
   phone or at a true 390px viewport — an owed reading across all three, not just the newest one.
-- **`DECISIONS.md` is at 99% of its byte budget and the next entry will likely fail `check:docs
-  --strict` outright.** Five entries landed since the tenth boundary (D-171) without a further
-  boundary being taken: D-172 … D-179 are new, and D-161's fence lifted (D-177) along with D-169 and
-  D-170's (D-177, corrected in this file this session). **The next session's first action should be
-  an eleventh archive boundary** — D-161, D-169 and D-170 are all free to move now, and the header
-  paragraph already says so; this session judged the surgery itself (excising the right byte range
-  from an 800-line file, mid-task) too risky to do alongside a feature push and left it undone
-  rather than rush it. `docs/gotchas/app.md` at 79% is the file to watch after that.
+- **The eleventh archive boundary is taken, `DECISIONS.md` at 83%.** D-161, D-169 and D-170 moved to
+  [`docs/decisions/ARCHIVE-D-161-D-170.md`](docs/decisions/ARCHIVE-D-161-D-170.md) on 2026-09-01,
+  bought by the same two things this file already recorded: D-161's fence closing (D-177) and
+  D-169/D-170's rendering fence expiring the same day, both sitting unmoved for a session because
+  nobody had re-read the header. `check:docs --strict` clean at **179 decisions and 191 traps**
+  after the move — no id lost, no gap opened. `docs/gotchas/app.md` at 79% is the next file to
+  watch.
 - **`eslint.config.mjs` and `playwright.config.ts` are the two deliberately local-only files and
   must never be committed.** That is the durable fact; **what else the tree holds changes by the
   hour, so read `git status --short` rather than any sentence here** and stage explicitly, never

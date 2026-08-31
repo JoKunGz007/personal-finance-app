@@ -4,13 +4,45 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-161, D-169 and D-170** — two open questions, one newly-closed one still sitting with them, and the live frontier, and every gap in that list is the rule holding rather than an accident. A boundary excludes every open question (D-133), and where such a question sits inside an otherwise settled range the boundary **steps over it rather than stopping short of it** (D-154). **D-141**: whether the mailbox source is deleted after import, deferred by the owner. **D-158**: `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. **D-161**: the statistics surface's missing filters — **closed for good on 2026-08-31**, the window picker on 2026-08-29 (D-170) and the account filter, reviewed, committed, pushed and deployed (D-177) two days later; a future boundary is free to move it, none has yet. **D-169 and D-170 are here for a different reason**: they are settled arguments whose *rendering* nobody has looked at on the deployment, which is a fence the first nine boundaries never met — see D-171. `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions across the whole set, so the ids stay whole and the maintained file has never been required to be contiguous. Ten settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to [`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09, **D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md) on 2026-08-18, **D-114 … D-119** to [`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19, **D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md) on 2026-08-23, **D-130 … D-133** to [`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24, **D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md) on 2026-08-25, **D-142 … D-152** to [`docs/decisions/ARCHIVE-D-142-D-152.md`](docs/decisions/ARCHIVE-D-142-D-152.md) on 2026-08-26, **D-154 … D-156** to [`docs/decisions/ARCHIVE-D-154-D-156.md`](docs/decisions/ARCHIVE-D-154-D-156.md) on 2026-08-27, **D-157 … D-163 without D-158 and D-161** to [`docs/decisions/ARCHIVE-D-157-D-163.md`](docs/decisions/ARCHIVE-D-157-D-163.md) the same day, and **D-153 with D-164 … D-168** to [`docs/decisions/ARCHIVE-D-153-D-168.md`](docs/decisions/ARCHIVE-D-153-D-168.md) on 2026-08-29. The index below covers all eleven files, so a reader can find any entry without opening any body.
+This file carries **D-141, D-158 and the live frontier from D-171** — one open question below the
+range this boundary just moved, one above it, and everything since the tenth boundary. **D-141**:
+whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
+`list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. `scripts/check-docs.mjs`
+pools this file with every archive and checks ids for duplicates and omissions across the whole set,
+so the ids stay whole and the maintained file has never been required to be contiguous. Eleven
+settled ranges were relocated unchanged, not rewritten: **D-001 … D-059** to
+[`docs/decisions/ARCHIVE-D-001-D-059.md`](docs/decisions/ARCHIVE-D-001-D-059.md) on 2026-08-09,
+**D-060 … D-113** to [`docs/decisions/ARCHIVE-D-060-D-113.md`](docs/decisions/ARCHIVE-D-060-D-113.md)
+on 2026-08-18, **D-114 … D-119** to
+[`docs/decisions/ARCHIVE-D-114-D-119.md`](docs/decisions/ARCHIVE-D-114-D-119.md) on 2026-08-19,
+**D-120 … D-129** to [`docs/decisions/ARCHIVE-D-120-D-129.md`](docs/decisions/ARCHIVE-D-120-D-129.md)
+on 2026-08-23, **D-130 … D-133** to
+[`docs/decisions/ARCHIVE-D-130-D-133.md`](docs/decisions/ARCHIVE-D-130-D-133.md) on 2026-08-24,
+**D-134 … D-140** to [`docs/decisions/ARCHIVE-D-134-D-140.md`](docs/decisions/ARCHIVE-D-134-D-140.md)
+on 2026-08-25, **D-142 … D-152** to
+[`docs/decisions/ARCHIVE-D-142-D-152.md`](docs/decisions/ARCHIVE-D-142-D-152.md) on 2026-08-26,
+**D-154 … D-156** to [`docs/decisions/ARCHIVE-D-154-D-156.md`](docs/decisions/ARCHIVE-D-154-D-156.md)
+on 2026-08-27, **D-157 … D-163 without D-158 and D-161** to
+[`docs/decisions/ARCHIVE-D-157-D-163.md`](docs/decisions/ARCHIVE-D-157-D-163.md) the same day,
+**D-153 with D-164 … D-168** to
+[`docs/decisions/ARCHIVE-D-153-D-168.md`](docs/decisions/ARCHIVE-D-153-D-168.md) on 2026-08-29, and
+**D-161 with D-169 and D-170** to
+[`docs/decisions/ARCHIVE-D-161-D-170.md`](docs/decisions/ARCHIVE-D-161-D-170.md) on 2026-09-01. The
+index below covers all twelve files, so a reader can find any entry without opening any body.
 
 **Every boundary sits where an argument ends rather than where a number is round**, and the fourth one is the clearest case of that rule so far. It was taken at **93%** of this file's byte budget and moved the whole arc in which both readers went to Cloud Vision and the local OCR engine was deleted. **The third boundary had explicitly refused to move D-120**, on the grounds that whether pre-fill stays was undecided and that question attached to D-120 and D-129 — which was true when written. **What closed it was not an argument but a shipped feature**: D-135 files a machine-read amount into the ledger without the owner looking at it at all, which is a stronger commitment than the trial ever asked for. *A question is closed when the code has stopped asking it*, and that is the test to apply at the next boundary rather than re-reading the prose.
 
-What this file now holds is two open questions, one closed one still sitting with them, and the live frontier — the mailbox archive and an unbounded candidate scan remain open; the statistics surface's missing filters **closed for good on 2026-08-31 (D-177)**, reviewed, built, committed, pushed and deployed, confirmed against the owner's real ledger. **The rendering fence on D-169 and D-170 has since expired**: D-177's own verification opened `/statistics` live on the deployed hosted app, which is the default face and the window picker both rendering in the one place either could be seen — the two entries stay in this file only because no boundary has moved them yet, not because either is still unseen. **PLAN task 47 is now closed in full**: the ledger's own date filter (D-178) and the calendar heatmap the owner deferred behind it (D-179), both shipped and confirmed against the real ledger the same day, one owed reading left — the heatmap at phone width.
+**What this file now holds is two open questions and the live frontier from D-171 on** — the mailbox archive and an unbounded candidate scan remain open. Everything else that had fenced it is gone: D-161 closed 2026-08-31 (D-177), and D-169/D-170's rendering fence expired the same day (the same verification that closed D-161 opened `/statistics` live on the deployment) but sat unmoved for a session because nobody re-read the header before this boundary. **PLAN task 47 is now closed in full**: the ledger's own date filter (D-178) and the calendar heatmap (D-179), both confirmed against the real ledger 2026-08-31, one owed reading left — the heatmap at phone width.
 
-**Three boundaries in three days, and the rate is still the finding rather than the percentage.** The eighth moved three entries and left this file at 85%; two decisions and a review's findings put it back to **96% the same afternoon**, and the ninth then moved five for **70%**. Four entries on 2026-08-29 took it to **86%**, and the tenth moved six — D-153 with D-164 … D-168 — for **86% → 61%**. **What bought the depth was a question closing, exactly as D-164 and D-167 both predicted it would**: D-169 answered the default face, so D-153 stopped fencing the file from below and took the arc that had been stacked behind it. **What the tenth stopped short of is new**, and D-171 is the entry to read for it: a decision can be settled and its rendering still unseen, and this file does not archive the second thing as though it were the first.
+**The eleventh boundary moved D-161, D-169 and D-170 for 99% → roughly 83%**, on the same
+non-contiguous-but-grouped pattern the ninth and tenth used: D-161 was stepped over twice before
+because it was open, and closes here rather than beside the ids next to it in the file. **What
+bought this one was two questions closing on the same day and a header nobody had re-read since**:
+D-177 answered both — the account filter that had fenced D-161, and the live look at `/statistics`
+that lifted D-169/D-170's rendering fence — and the tenth boundary's own text (D-171) had said
+plainly that the fence "expires the moment either page is seen." It was seen on 2026-08-31; this is
+the first boundary since to act on that. **D-141 and D-158 are stepped over again, unchanged**:
+neither has closed.
 
 **The size guard measures bytes, not lines, and that correction is the reason this archive exists** (`scripts/check-docs.mjs`). The budget was 1,200 lines and this file passed it at 1,132 while being 332 KB — roughly 80,000 tokens, most of a context window — because the entries grew sideways rather than downward. A guard that exists to stop a log outgrowing a single read has to measure what a read actually costs.
 
@@ -228,9 +260,9 @@ What this file now holds is two open questions, one closed one still sitting wit
 
 - **D-159** — The combined balance is computed once in SQL, because a per-account window cannot see another account's history
 - **D-160** — Statistics compute in SQL, and division never produces money: a ratio is not a figure the ledger keeps
-### Current 
+### Archived 
 —
- this file
+ `docs/decisions/ARCHIVE-D-161-D-170.md`
 
 - **D-161** — The statistics surface is built, and every real defect in it was found by rendering it or by review, never by the gate
 ### Archived 
@@ -248,12 +280,16 @@ What this file now holds is two open questions, one closed one still sitting wit
 - **D-166** — The typeface work pinned nothing vertical, because the measurement said every reflow in this app is a width one
 - **D-167** — The ninth boundary steps over two open questions at once, and the rate is now the finding
 - **D-168** — Five controls reach the tap standard on a phone, and the instrument that should have caught them had been blind since the change that hid its sign-in
+### Archived 
+—
+ `docs/decisions/ARCHIVE-D-161-D-170.md`
+
+- **D-169** — The default face is Pixelify Sans, which closes D-153's question by answering it with a third option
+- **D-170** — The statistics window is a control at last, and holding the response beside the window it came from is what makes the page able to say what it is showing
 ### Current 
 —
  this file
 
-- **D-169** — The default face is Pixelify Sans, which closes D-153's question by answering it with a third option
-- **D-170** — The statistics window is a control at last, and holding the response beside the window it came from is what makes the page able to say what it is showing
 - **D-171** — The tenth boundary moves the question that had fenced the file, and stops below the two changes nobody has looked at
 - **D-172** — The window picker's state moves into the address bar, and a preset is written by name while a custom range is written by its dates
 - **D-173** — The phone audit stops being a throwaway, and its first committed run found a control that had been escaping the viewport since before the audit existed
@@ -371,193 +407,6 @@ Records are complete on the client at any window depth, so their contribution is
 Nothing in the app calls it after this. It is left in place and still granted because `supabase/tests/001_security.sql` pins its grants, and dropping a published, granted function is a contract change of its own rather than a side effect of this one.
 
 - Evidence, after the review's fixes: Vitest **845 passed / 7 skipped across 40 files** (from 823/7/39) — 21 in the new `tests/ledger-window.test.ts` and 1 in `tests/transactions.test.ts`, skip count unchanged at 7. pgTAP **299 across 9 files** (from 266 across 8) with migrations 001–**021**: 33 assertions covering the keyset order including `nulls last`, three pages covering the ledger with no repeat and no gap, whole-account totals from any page, the limit clamp, the refused partial cursor, all four clauses of the candidate predicate, a weak session reading nothing, and the page's key set pinned at three so `carriedBalance` cannot quietly return. Playwright owner **32/32** including a new end-to-end paging spec over 105 seeded rows; isolated **34 passed / 4 skipped**. Production build clean at **twenty-two** `/api/v1/` routes, up one. `tsc` and `pnpm exec eslint .` clean with zero warnings. `check:docs --strict` clean. Backup contract **unchanged at v7** — no table gains a column. **`/security-review` found nothing**, verified against live `pg_proc` rather than read off the migration: both new functions are `SECURITY DEFINER` with a pinned `search_path`, granted to `authenticated` only, and `private.ledger_transaction_json` — which takes an owner id — is granted to nobody and is not `SECURITY DEFINER`. No dynamic SQL anywhere. D-063 (reconciliation over the whole ledger, preserved), D-067 (the manual override reaching past the automatic window), D-120 (the two-engines refusal this obeys), D-125 (review before asking to commit, four for four now), D-155 (superseded), D-157 (the change before this one).
-
-## D-161 — The statistics surface is built, and every real defect in it was found by rendering it or by review, never by the gate
-
-- Date: 2026-08-27
-- Status: **Built and validated against the local synthetic project only.** Migration
-  `202608270023_ledger_statistics.sql`, `lib/statistics.ts` (new), `app/api/v1/statistics/route.ts`
-  (new), `app/statistics/page.tsx` (new), `app/statistics-view.tsx` (new),
-  `app/statistics-charts.tsx` (new), `app/globals.css`, `app/site-header.tsx`,
-  `supabase/tests/011_ledger_statistics.sql` (new), `tests/statistics.test.ts` (new).
-  **Not pushed to any hosted or live project**; every project but the local one is on 022.
-- Context: implements D-160's scoping. The owner chose the figures, ruled cash out of v1, left
-  `include_in_reporting` to this session's judgement, and asked for charts.
-
-### What shipped
-
-One RPC returns the whole page, because every figure on it is a fact about the same window and
-assembling them from several round trips would let them disagree while the owner watches. Monthly
-incoming, spending, net and row count as a series; averages per day and per week; daily closing
-balance; the largest movements in each direction; a day-of-week split; and the count of rows the
-reporting flag removed. Two charts as **inline SVG** — a balance line and paired monthly bars — with
-the averages as stat tiles and every charted figure repeated as an exact-money table.
-
-**`include_in_reporting` has its first reader in this migration**, and
-`list_account_transactions_page`'s money totals were retrofitted in the same change so two surfaces
-cannot disagree about one ledger. **Nothing in the app can set the flag yet**, so both are unchanged
-in behaviour today; the control is this task's follow-on work. The **balance series deliberately
-does not honour it** — the flag says do not count this as income or spending, not that the money
-failed to move.
-
-### The money rule, and the guard that proves it
-
-Every average is integer division that keeps its remainder, so
-`quotient * divisor + remainder = total` holds exactly — asserted for a positive total and for a
-negative one, because withdrawals are stored negative and PostgreSQL truncates toward zero on both
-operators. **The weekly average is `total * 7 / days`, one division on a scaled numerator**, and the
-pgTAP fixture is chosen so that formula and `avg_day * 7` give **different** answers: 17219 against
-17213. A suite that only checked the identity would have passed against either.
-
-**Both new guards were broken deliberately and watched to fail by name.** Compounding the daily
-truncation failed *"the weekly average divides once on a scaled numerator and is NOT the daily
-quotient times seven"*; dropping the reporting predicate failed four assertions across the totals and
-the monthly series. Reverted, and green again.
-
-### The four defects, and where each was caught
-
-1. **`jsonb_agg(sum(...))` is a nested aggregate** and PostgreSQL refuses it at run time, not at
-   apply time — the migration applied cleanly and the function failed on first call. Caught by the
-   pgTAP suite.
-2. **`sum()` over `bigint` returns `numeric`** — the exact trap this migration's own header warns
-   about, and it surfaced **in the test written to check the surface**, not in the surface.
-3. **A signed month-over-month delta inverts for spending.** Caught by reading a passing test back
-   and disbelieving it: `-15000 − (-10000) = -5000` is "5,000 more went out" and prints as a fall.
-   The comparison now works on magnitudes, so growth reads as growth in both directions, and the
-   sign-ambiguous delta was removed from the wire entirely.
-4. **Two failures visible only in a screenshot.** At 390px every statistics table became screens of
-   unlabelled figures, because the phone stacked-table mode renders `attr(data-label)` and these
-   tables carried none — right, and unreadable. And a single largest-movements list ranked by
-   absolute size was **ten deposits**, since income moves in bigger lumps than spending does; the
-   list meant to explain a surprising month explained nothing. Both are now fixed, and both are
-   exactly what D-159 said would keep happening: *look at the real thing after every deploy*, and
-   before asking for one.
-
-### The charts
-
-**Inline SVG rather than a library.** The strict CSP admits no CDN, so the choice was a bundled
-dependency or this; at two charts and a few hundred points a library would be a large dependency
-earning very little and would arrive with its own colours to override.
-
-**The series colours were validated rather than chosen.** `#5c8a1a` against `#9b2c2c` clears all
-five checks of the dataviz validator on this app's paper surface — CVD separation ΔE 11.1 worst case
-(deutan), normal-vision 25.9. The app's own celadon and copper inks were tried first and **failed**
-the chroma floor and the normal-vision floor, which is the argument for running the check rather
-than trusting the palette. `#9b2c2c` is already `--red`; only the green is new. Colour is never the
-only encoding: legend, hover read-out, and the same figures again as tables.
-
-### What this task created and did not close
-
-**Nothing sets `include_in_reporting`**, so the filter is inert until a control ships — the smallest
-piece of follow-on work here. **Automatic transfer detection** (equal amount, opposite direction,
-adjacent date, two of the owner's own accounts) is a matching rule and belongs beside task 25.
-**A run-rate projection was declined by the owner** as a prediction rather than a fact; recorded in
-`PLAN.md` as a far-future maybe. **Cash is out of v1**, and the page says so on its face rather than
-letting a total quietly stand for all spending. **There is no account filter and no window picker**:
-the surface is whole-ledger, all accounts, all time.
-
-### What `/code-review` found afterwards, including one the audit was structurally unable to see
-
-Run at `high` before the commit, per D-125 — **five for five** on finding a real defect.
-
-**The one that mattered: `.stats-section table { min-width: 560px }` escaped the viewport at 390px,
-and this is D-138 reintroduced on a new surface.** It sits after the phone block, so at specificity
-0,1,1 it outranks that block's `table, tbody, … { min-width: 0 }` reset at 0,0,1 — media queries add
-none — and with `.table-scroll` set to `overflow: visible` there the width had nothing to scroll
-inside. A 390px viewport rendered a 576px document.
-
-**The audit had screenshotted that exact page and reported no overflow, because the check measured
-against `document.documentElement.clientWidth`.** Once content overflows, the document element grows
-to contain it, so every element is compared against the width the bug itself produced and nothing can
-ever be wider than it. **A check that expands to fit the defect is not a check.** Corrected to
-`window.innerWidth`, it reproduced the fault immediately — *viewport 390px, document 576px, 8
-elements over* — and reports 390/390 after the fix. The screenshot had carried the evidence all
-along: it came back 576px wide for a 390px viewport, and that was not read as the symptom it was.
-
-**Four more, all real.** The balance line interpolated between points, drawing a smooth slope across
-gaps where the balance was in fact **constant** — it is a step function and is now drawn as one. The
-balance chart was reachable only by hover, with no keyboard path and no table twin (three hundred
-daily rows would be a worse answer than none), so the series now carries a `<desc>` with its opening,
-closing and extremes; and its `aria-live` figcaption, which announced once per point crossed while
-dragging, is no longer live. The largest-movement lists emitted a **leg** amount under the field name
-`net`, so the interest/tax pairing appears in both lists under figures that are neither row's net —
-renamed to `amount`. And the monthly axis drew every label, which on a multi-year window is a smear
-rather than an axis; it thins on slot width now.
-
-**Two in the tests themselves, which is the uncomfortable half.** The share test named *"does not
-force three shares to sum to exactly one hundred"* used 3333/3333/3334 of 10000 — which **does**
-reconcile to 100.00 — so it asserted the opposite of its name and proved nothing. Three exact thirds
-were the case that shows the gap, and it now uses those. And `shareOf`'s docblock promised one
-decimal place where the scale yields two. Neither would have changed a figure; both were documents
-disagreeing with the code they sat above, which is how the next reader gets it wrong.
-- Evidence: pgTAP **347 across 11 files** (from 346 across 10; 35 of them the new suite) with
-  migrations 001–**023**. Vitest **849 passed / 7 skipped across 41 files** (from 830/7/40, 19 of
-  them new). Playwright owner **32/32**. Production build clean at **twenty-three** `/api/v1/`
-  routes (from twenty-two). `tsc`, `pnpm exec eslint .` and `check:docs --strict` clean
-  (**160 decisions, 171 traps**). Backup contract **unchanged at v7** — no table, no column.
-  `.runtime/statistics-audit.spec.ts` seeds five months, reads back all nine stat tiles, counts the
-  marks and screenshots desktop and 390px; **zero blank tiles, zero elements wider than the
-  viewport**. Related: D-160 (the scoping this implements), D-159 (compute where the facts are, and
-  look at the deployed thing), D-158, D-138 (an audit of an absent element reports a clean route),
-  D-137 (one declared colour scheme), D-120, D-002.
-
-## D-169 — The default face is Pixelify Sans, which closes D-153's question by answering it with a third option
-
-- Date: 2026-08-29
-- Status: **Accepted, uncommitted at the time of writing.** `lib/ui-font.ts` (one constant and its comment) and `tests/ui-font.test.ts` (one assertion rewritten). No SQL, no route, no contract, no CSP change.
-- Context: D-153 left one question open — whether Press Start 2P becomes the default face — and it has fenced `DECISIONS.md` from archiving ever since. The owner answered it on 2026-08-29 by choosing **Pixelify Sans** instead.
-
-### The answer is not the one the question was framed around, and that is worth recording
-
-D-153 wrote the question as *whether Press Start 2P becomes the default*, because that was the owner's leading candidate. **The answer chose the third face.** So this closes the question rather than confirming it, and a reader who finds only D-153 would conclude the opposite of what happened.
-
-The choice is coherent with what has been measured since. `FONT_NOTES` describes Pixelify Sans as **closest to ordinary proportions**, and Press Start 2P advances a full em per glyph — which is what forced ledger figures down to 8px, because `-1,234,567.89` at thirteen characters wants 130px in a 117px box (D-153). Defaulting to the widest face would impose that trade on every device before anyone had chosen anything. Pixelify Sans keeps the pixel character and asks less of the layout.
-
-### What did not change, and must not
-
-**`system` stays first in `FONT_CHOICES` and one press away.** D-153's real invariant was never *which* face is default but that **the way back to something legible must not depend on the trial going well** — a cookie is per device, so a default is a starting point rather than a commitment. That is now asserted directly rather than implied by the default's value.
-
-**The Thai fallback is unchanged and is not a regression here.** All three pixel faces are Latin-only, and every switched stack keeps `IBM Plex Sans Thai` behind the pixel face, because Thai reaches this app as *data* — a counterparty name off a statement — and never as interface copy.
-
-### The test that failed is the reason to write tests this way
-
-`tests/ui-font.test.ts` asserted `DEFAULT_FONT === "system"` with a comment reading *"a change here is a real decision, so it fails loudly rather than drifting."* **It did exactly that**, on the first run after the constant changed. The assertion was rewritten to hold the decision *and* the invariant that outlives it: `system` present and first, and `DEFAULT_FONT` a member of the closed set — the last of which stops being guaranteed by the type the moment someone widens `FontChoice`.
-
-### Consequence for the archive, which is why this was cheap and valuable at once
-
-**D-153 no longer fences this file.** It was one of four open questions holding `DECISIONS.md` above its archive floor, and the cheapest of them to settle — one constant. The tenth boundary can now move D-153 and everything settled around it. The remaining fences are **D-141** (whether the mailbox source is deleted after import, deferred), **D-158** (`list_match_candidates`' unbounded scan) and **D-161** (the statistics filters, now `PLAN.md` task 46). D-164's prediction holds a second time: *what buys a boundary its depth is a question closing, not a chore.*
-
-- Evidence: `lib/ui-font.ts`, `tests/ui-font.test.ts`. Vitest **873 passed / 7 skipped across 41 files** after the change, `tsc` clean. D-153 (the question this closes), D-166 (why a face change moves nothing), PLAN task 42 (the trial this concludes).
-
-## D-170 — The statistics window is a control at last, and holding the response beside the window it came from is what makes the page able to say what it is showing
-
-- Date: 2026-08-29
-- Status: **Accepted, committed and deployed** as `0b88ea2`. `lib/statistics.ts`, `app/statistics-view.tsx`, `app/statistics/page.tsx`, `app/globals.css`, `tests/statistics.test.ts`. **No SQL, no route change, no contract change** — `PLAN.md` task 46's second half, the account filter, is untouched and needs migration 024.
-- Context: D-161 named the missing filters as follow-on and the owner authorized both halves on 2026-08-29, choosing presets **plus** a Custom tick rather than one or the other.
-
-### The feature was already reachable; what was missing was a control
-
-`public.ledger_statistics` has taken `p_from` and `p_to` since migration 023 and `app/api/v1/statistics/route.ts` has parsed them from the query string since the same day. **The window has therefore been selectable by hand-editing a URL for two days.** That is why this half ships alone and first: it is a control and its wiring, and it does not touch the database at all.
-
-### The arithmetic is a pure function, and two defect classes are designed out rather than tested around
-
-It lives beside the wire contract rather than in the component, because **a date boundary should be provable without a browser**. Month arithmetic works on a month *index*, so January minus two months is November of the previous year rather than month `-1`, which would render as `"-1"` and be refused by the route. A window always starts on the **first** of a month, so *"three months before 31 May"* — the classic clamping bug — cannot arise.
-
-**`localToday` reads the local getters and not `toISOString()`, and that is the sharpest of the three.** The UTC date names *yesterday* for the first seven hours of every local day at UTC+7, so on the first of a month "This month" would resolve to a window starting in the previous one. It is a defect that appears for part of the day and disappears, and it is what the obvious one-liner does. There is a test at 06:30 on the first.
-
-### What `/code-review high` caught, and the serious one was this change's own regression
-
-Holding the response alongside the window it came from — `{ search, data }` rather than `data` — is what lets the page distinguish *loading* from *quietly wrong*. **The first draft of it made the error path unreachable.** `setMessage` on a failed fetch or a failed parse changed nothing, because the message only renders when there is no data and the previous window's data was still there. A session expiring mid-change would have left correct-looking figures under a window line describing a window that never loaded, with an `· updating…` that could never clear — and it silently absorbed the strict-schema mismatch whose own comment says it *is reported rather than swallowed*. Both failure branches now clear the data: **a ledger that cannot say what it is displaying displays nothing.**
-
-Two more were staleness read from the wrong side. The empty-window sentence was derived from the **live picker** while the emptiness came from the **loaded response**, so a quiet month followed by a press of All time asserted *"There are no confirmed rows to summarise yet"* about a ledger with 1,604 of them. And `today` was frozen at mount, so a tab open across midnight answered a *deliberate* press of "This month" with last month — correctly labelled and wrong.
-
-### Three spec defects and no app defects, which is the finding about the harness rather than the feature
-
-The browser spec failed five times before it passed and **every failure was in the spec**. Three were traps this repository had already written down: the header's font-picker help paragraph renders unconditionally empty as an `aria-live` region (D-153), so `p.field-help` first is a blank node in a landmark the spec was not about; Next.js mounts its own empty `role="alert"` route announcer, which `GOTCHAS` already records; and a scripted replacement's escapes were eaten by a shell layer, which was added to `GOTCHAS` the same morning. **Having a trap written down did not prevent hitting it**, which is worth weighing against `PLAN.md` task 51.
-
-The fourth was new and is now recorded: `getByLabel` matches a **case-insensitive substring**, so a field labelled `To` also resolves a checkbox labelled `Custom`. The fifth was an assertion that encoded a misunderstanding of the feature rather than a defect in it — the window line reports the range *requested*, not the extent of the rows inside it, which is correct because the per-day average divides by the days requested.
-
-- Evidence: the files above; `.runtime/window-picker.spec.ts` (gitignored) drives it at iPhone 13 and asserts the narrowing through the **transaction count** rather than the caption, because a chip that highlights while the figures stand still is the defect D-159 was written about. Vitest **881 passed / 7 skipped across 41 files** (+8), Playwright owner **33/33**, isolated **38 passed / 4 skipped**, `tsc`, `eslint` and `check:docs --strict` clean, build clean. **pgTAP deliberately not re-run — no SQL moved.** D-159 (a control that renders as prose), D-160 and D-161 (the surface and the follow-on this closes half of), D-168 (why every control here is born at 44px).
 
 ## D-171 — The tenth boundary moves the question that had fenced the file, and stops below the two changes nobody has looked at
 
