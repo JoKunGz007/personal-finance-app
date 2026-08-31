@@ -129,7 +129,18 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   and `lib/transactions.ts` were already uncommitted in the tree when this session started**; this
   commit finished and landed that groundwork alongside the control that finally exercises it, on
   the same reasoning D-177 covered `lib/date-range.ts`. **The calendar heatmap PLAN task 47 also
-  names stays unauthorized and unbuilt** — this closes only the plain filter.
+  names was built the same day, under a later, broader grant — see below.** Task 47 is closed in
+  full.
+- **A new session opened 2026-08-31 with commit, push, deploy, `db push` and real-ledger read all
+  GRANTED TOGETHER, unprompted, and the owner opened the hosted ledger in the browser for it** — the
+  broadest single grant this file has recorded. **Spent building and shipping the calendar heatmap**
+  (D-179, `7d9d4e6`, migration 025). **One sub-grant was asked for separately even so**: exporting a
+  fresh backup before the `db push`, because the standing one read stale (sequence 43 against a last
+  export of 39) and a write against the owner's real financial data — even an additive, safety-
+  mechanism one — was judged outside what "db push" alone was understood to cover. The owner
+  exported it himself rather than authorizing it be done through his browser session. **Not
+  standing; every one of these gates reverts to not-granted for the next session**, on this file's
+  own rule that nothing here survives past the session that spent it.
 - **The default face: DECIDED BY THE OWNER 2026-08-29 and SHIPPED** (D-169). Pixelify Sans, not
   the Press Start 2P the question had been framed around.
 - **Fixing the phone tap targets: GRANTED, SPENT and SHIPPED, 2026-08-29** (D-168).
@@ -239,70 +250,63 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `676a8ea` and `origin/main` matches it.** **Seven commits went out on 2026-08-29
-  and all seven are deployed**: `de70c9e` (the continuity sync that could not record its own
-  commit), `3b1205d` (five tap targets at phone width, D-168), `24b894a` (the default face D-169,
-  a sixth control, and the docs catching up), `0b88ea2` (the statistics window picker, D-170),
-  `77c0d6b` (the sync that recorded them), `9a97f70` (the tenth archive boundary, D-171) and
-  `676a8ea` (the committed phone audit, the picker's URL state and migration 024 — D-172, D-173,
-  D-174). **Four of the seven change what renders**, and **nobody has looked at any of the four on
-  the deployment**: the default face, the window picker, the account-filter overflow fix, and the
-  picker's state in the address bar. Three preceded them on 2026-08-27: `17a93ca`, `dd64051`,
-  `de4acbb`.
-- **Migration 024 is on hosted as of 2026-08-30**, pushed by an agent with the owner's authorization
-  and a backup verified at 39/39 first. **Nothing in the deployed app calls the new parameters yet**,
-  so the database is ahead of the app — which is the intended order and leaves the two controls
-  (task 46's account filter, task 47's ledger date range) free to be built against a database that
-  already has them.
-- **`DECISIONS.md` is at 72% after three entries landed on top of the tenth boundary** (D-171 took it to 61%; D-172, D-173 and D-174 followed the same day).
-  Six entries moved — **D-153 with D-164 … D-168** — to `docs/decisions/ARCHIVE-D-153-D-168.md`,
-  stepping over D-158 and D-161 for the second boundary running. **D-169 and D-170 deliberately
-  stayed**: both change what renders and nobody has looked at either on the deployment, which is a
-  fence that expires the moment either page is seen. The remaining question fences are D-141,
-  D-158 and D-161. **`docs/gotchas/app.md` at 79% is now the file to watch.**
+- **`main` is at `7d9d4e6` and `origin/main` matches it.** Three commits landed 2026-08-31 and all
+  three are deployed: `4f51a7e` (task 46's account filter, D-177), `5c016a9` (task 47's ledger date
+  filter, D-178) and `7d9d4e6` (task 47's calendar heatmap, D-179) — task 47 is now closed in full.
+  **This entry was itself stale for two sessions** (it still named `676a8ea` from 2026-08-29 after
+  both D-177 and D-178 had already shipped past it) — read `git log` rather than trusting how
+  current this line looks, on the same D-131 lesson the paragraph below already names.
+- **Every commit since 2026-08-29 that changes what renders has now been looked at on the
+  deployment** — D-177 and D-178 both verified `/statistics` and `/ledger` live, which is also what
+  closed D-169 and D-170's rendering fence in `DECISIONS.md` (corrected there this session; it had
+  still claimed "nobody has looked" after D-177 already had). **The one exception is phone width**:
+  neither the account filter, the date filter, nor the calendar heatmap has been seen on a real
+  phone or at a true 390px viewport — an owed reading across all three, not just the newest one.
+- **`DECISIONS.md` is at 99% of its byte budget and the next entry will likely fail `check:docs
+  --strict` outright.** Five entries landed since the tenth boundary (D-171) without a further
+  boundary being taken: D-172 … D-179 are new, and D-161's fence lifted (D-177) along with D-169 and
+  D-170's (D-177, corrected in this file this session). **The next session's first action should be
+  an eleventh archive boundary** — D-161, D-169 and D-170 are all free to move now, and the header
+  paragraph already says so; this session judged the surgery itself (excising the right byte range
+  from an 800-line file, mid-task) too risky to do alongside a feature push and left it undone
+  rather than rush it. `docs/gotchas/app.md` at 79% is the file to watch after that.
 - **`eslint.config.mjs` and `playwright.config.ts` are the two deliberately local-only files and
   must never be committed.** That is the durable fact; **what else the tree holds changes by the
   hour, so read `git status --short` rather than any sentence here** and stage explicitly, never
-  with `git add -A`. This paragraph previously enumerated the rest of the tree and was **false
-  within one turn of being written** — it still claimed nothing else was uncommitted while migration
-  024, two pgTAP suites, a new browser spec and four source files sat beside it. A reader following
-  it would have concluded either that those files did not exist or that the two local-only configs
-  were ordinary work. Found by `/code-review high`, which is the failure mode D-131 names: a line
-  true when typed, never re-read.
-- **The most recent deployment was verified in the running app, not in the dashboard** — the
-  exclude control exercised on a real internal transfer, `/statistics` read back, the round trip
-  returning every figure to its start, and the database showing the audit trail. Driven through the
-  owner's **own signed-in browser session**; **no credential was handled** and that boundary did not
-  move. **Neither page has been seen on a real phone**, which is the reading still owed.
+  with `git add -A`.
 
 ### Where the database is
 
-- **Hosted and `private-ledger-local` are on migration 024; `private-ledger-recovery` is on 023 and `private-ledger-live` stays frozen on 012.** **024 was pushed to hosted on 2026-08-30 by an agent, authorized by the owner in the same turn**, after a `--dry-run` that named only `202608290024` and with the backup verified from the database first at sequence 39 / last_exported_sequence 39. **Read back from hosted rather than trusted**: `supabase migration list --linked` shows all **24** migrations matching local and remote. The function grants still want their own reading.
-  Read back from hosted after the owner's own `db push`: head `202608270023`, 23 applied,
-  `public.ledger_statistics` executable by `authenticated` and not by `anon`,
-  `private.reportable_movements` executable by nobody. Backup contract **unchanged at v7**.
-- **The backup was verified FROM THE DATABASE on 2026-08-27**, not taken on the owner's word: a
-  public `inet_server_addr()`, sequence **37 / last_exported_sequence 37**, a backup record at 37.
-  **The next migration needs its own reading** — D-152's rule, and a claim is not a measurement.
-- **The real ledger holds 1,604 transactions across 3 accounts.** `transaction_overlays` held
-  **zero rows** until 2026-08-27 and now holds **one**, at revision 2 with the flag back to true and
-  every other field null — the exclude/include round trip, with two entries each in
-  `overlay_revisions` and `audit_events`. **No row is currently out of reporting.**
+- **Hosted and `private-ledger-local` are on migration 025; `private-ledger-recovery` is on 023 and
+  `private-ledger-live` stays frozen on 012.** **025 was pushed to hosted on 2026-08-31**, authorized
+  the same session as commit/push/deploy/`db push`/real-ledger-read together, after a `--dry-run`
+  naming only `202608310025`. **The standing backup was found stale before the push** — sequence 43
+  against a last export of 39, four mutations behind — and the owner exported a fresh one when
+  asked rather than the push proceeding on the old reading; re-verified at 43/43 before `db push`
+  ran. **Read back from hosted rather than trusted**: `supabase migration list --linked` shows all
+  **25** migrations matching local and remote, and `public.ledger_statistics(date,date,integer,uuid)`
+  reads back executable by `authenticated` and not by `anon`. Backup contract **unchanged at v7**.
+- **The backup was verified FROM THE DATABASE on 2026-08-31**, not taken on the owner's word: a
+  sequence and last-exported reading, taken before and after the export, both from
+  `public.mutation_sequences` via `supabase db query --linked`. **The next migration needs its own
+  reading** — D-152's rule, and a claim is not a measurement.
+- **The real ledger's row and account counts are not restated here** — read them from the database
+  or the deployed app rather than from a figure that ages the moment it is written; the last reading
+  this file carried (1,604 rows, 3 accounts, 2026-08-27) is superseded by every import since and is
+  exactly the kind of homeless-but-stale fact this file's own rule warns against restating.
 - **Roughly 18 rows are genuine internal transfers, not the 248 that carry a transfer label.** Most
   transfer-labelled rows name other people and are ordinary spending. That correction is in `PLAN.md`
   task 48 and it matters, because the larger number was briefly used to argue a feature was urgent.
 
 ### The gate, as last run
 
-- **Green on `0b88ea2`**: Vitest **881 passed / 7 skipped across 41 files**; Playwright owner
-  **33/33**, isolated **38 passed / 4 skipped**; `tsc`, `pnpm exec eslint .` and
-  `check:docs --strict` clean at **170 decisions and 191 traps**; production build clean at
-  **twenty-three** `/api/v1/` routes. **pgTAP was deliberately not re-run — no SQL has moved since
-  migration 023**, which the owner applied himself. **The tenth boundary re-ran `check:docs
-  --strict` alone and nothing else, deliberately: nothing outside `docs/` and the continuity files
-  moved.** It reports **171 decisions and 191 traps**.
-- **`DECISIONS.md` is at 61% after the tenth boundary** (D-171). `docs/gotchas/app.md` is at 79%
-  and is the next file to watch.
+- **Green on `7d9d4e6`**: `tsc --noEmit` clean; `eslint .` clean (2 pre-existing warnings in
+  `app/transactions-view.tsx`, unrelated to any change since D-178); `check:docs --strict` clean at
+  **179 decisions and 191 traps**; `pnpm build` clean at **twenty-three** `/api/v1/` routes; Vitest
+  **910 passed / 7 skipped across 42 files**; pgTAP **all 13 files, 390 assertions**, re-run because
+  migration 025 moved SQL. Playwright not re-run this session — verification was manual, in a real
+  browser, against both `next build && next start` (invented local data) and the real hosted
+  deployment (real ledger, owner's own signed-in session).
 
 ### Machine facts that have no other home
 
