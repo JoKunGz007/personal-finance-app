@@ -141,12 +141,11 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   exported it himself rather than authorizing it be done through his browser session. **Not
   standing; every one of these gates reverts to not-granted for the next session**, on this file's
   own rule that nothing here survives past the session that spent it.
-- **A session opened 2026-09-01 with commit, push, deploy, `db push`, hosted-browser and
-  real-data read all GRANTED together, unprompted — and NONE of them was spent.** The work that
-  session produced (D-180, four colour schemes) needed no SQL, and it reached the commit ask with
-  the gate green but had not been asked at the time this was written. **Every one of those gates
-  reverts to not-granted for the next session**, on this file's own rule. **Do not read "granted
-  and unspent" as "still granted."**
+- **A session opened 2026-09-01 with commit, push, deploy, `db push`, hosted-browser and real-data
+  read all GRANTED together, unprompted, and SPENT on `12d0302`** — the four colour schemes (D-180)
+  and their live confirmation (D-181). **`db push` was granted and never used**: no SQL moved, so
+  no migration needed one, and an unused grant is not a credit. **Every one of these gates reverts
+  to not-granted for the next session**, on this file's own rule — ask again.
 - **The dark scheme: ASKED FOR BY THE OWNER 2026-09-01, and it reverses a decision he had closed.**
   D-137 dropped it with a *"but we'll see"*; a later entry withdrew that hedge and recorded that he
   would say so if it changed. He said so. **Night Town is his choice**, from three candidates he
@@ -275,12 +274,13 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   closed D-169 and D-170's rendering fence in `DECISIONS.md` (corrected there 2026-09-01; it had
   still claimed "nobody has looked" after D-177 already had). **Two readings are owed and they
   should be taken in one pass**, because both need the deployment and a phone:
-  *(a)* **phone width** — neither the account filter, the date filter, nor the calendar heatmap has
-  been seen on a real phone or at a true 390px viewport; and *(b)* **any dark scheme against real
-  rows** — the status chips, the verified rail, the provisional tag, the backup band and the
-  calendar render only with data, and the local project's ledger is empty, so D-180 was verified
-  against empty surfaces only. Every one of those uses a token promoted from a literal on
-  2026-09-01, which is exactly the class of change a green gate has twice failed to judge here.
+  *(a)* **phone width** — neither the account filter, the date filter, the calendar heatmap nor any
+  dark scheme has been seen on a real phone or at a true 390px viewport, and a resize on the hosted
+  tab did not propagate last time it was tried; and *(b)* **the awaiting-slip chip and the resync
+  label in a dark scheme** — neither appeared in the window loaded on 2026-09-01, so both are
+  measured only in the unit suite. **The larger half of (b) is discharged**: D-181 read 297 real
+  rows in Night Town and confirmed the status chips, the verified rail and the calendar on their
+  real surfaces. Phone width is now the single reading that three entries are all waiting on.
 - **The eleventh archive boundary is taken, `DECISIONS.md` at 83%.** D-161, D-169 and D-170 moved to
   [`docs/decisions/ARCHIVE-D-161-D-170.md`](docs/decisions/ARCHIVE-D-161-D-170.md) on 2026-09-01,
   bought by the same two things this file already recorded: D-161's fence closing (D-177) and
@@ -292,17 +292,14 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   must never be committed.** That is the durable fact; **what else the tree holds changes by the
   hour, so read `git status --short` rather than any sentence here** and stage explicitly, never
   with `git add -A`.
-- **The four colour schemes are UNCOMMITTED in the working tree, 2026-09-01** (D-180, PLAN task 52).
-  Built, reviewed and fully gated, never committed, pushed or deployed. Five new files
-  (`lib/ui-theme.ts`, `app/theme-picker.tsx`, `app/api/v1/ui/theme/route.ts`,
-  `tests/ui-theme.test.ts`, `tests/e2e/theme-picker.spec.ts`) and seven changed
-  (`app/globals.css`, `app/layout.tsx`, `app/site-header.tsx`, `app/font-picker.tsx`,
-  `app/statistics-charts.tsx`, `app/statistics-calendar.tsx`, `DESIGN.md`) alongside the continuity
-  docs. **Stage them explicitly and leave the two local-only files alone.** No SQL, so nothing needs
-  `db push`.
-- **`DECISIONS.md` is at 91%**, up from 83% — D-180 is a long entry. A twelfth boundary is not far
-  off, and the header now records why D-180 itself is fenced: it supersedes an archived entry and
-  carries an unverified rendering of its own.
+- **The four colour schemes are committed as `12d0302`, pushed and deployed, 2026-09-01** (D-180,
+  D-181, PLAN task 52), and confirmed against the real hosted ledger in the owner's own signed-in
+  session. **No SQL moved, so nothing needed `db push`** — the broad grant this session opened with
+  was spent on commit, push, deploy and the real-ledger read only.
+- **`DECISIONS.md` is at 95%** (measured, not estimated — the first guess written here said 93%),
+  up from 83% this morning: D-180 and D-181 are both long. **A twelfth
+  boundary is the next housekeeping job** and the header records what fences the newest entries:
+  D-180 supersedes D-137, which is archived, so it must stay findable from the maintained file.
 
 ### Where the database is
 
