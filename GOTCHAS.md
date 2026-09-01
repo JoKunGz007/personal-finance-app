@@ -193,6 +193,8 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - `grid-column: span 2` in a one-column grid does not clamp, it invents a second column
 - A background token equal to the surface behind it paints nothing, and nothing is what review sees
 - `border-collapse: collapse` discards an equal-width border, so the lower cell's rule never paints
+- `position: sticky` is inert inside a horizontally scrolling wrapper, because the other axis is dragged along
+- A collapsed table border does not travel with a `position: sticky` cell
 
 ### App, auth, routing and accessibility
 
@@ -250,5 +252,5 @@ these section headings rather than a third raise. The owner chose the split.
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 29 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
 | App, auth, routing and accessibility | 41 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
-| Layout, typography and accessibility | 21 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
+| Layout, typography and accessibility | 23 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 

@@ -326,6 +326,43 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-183** — The calendar reads a year at a time, three across, and every month answers for its own days
 - **D-184** — D-182 and D-183 deploy, and both are confirmed against the real ledger
 - **D-185** — D-182's day heading declared a band and a rule that both painted nothing, and the fix makes 2px load-bearing
+- **D-186** — The day heading sticks, and the reason it could not was the horizontal scroller rather than the heading
+
+## D-186 — The day heading sticks, and the reason it could not was the horizontal scroller rather than the heading
+
+- Date: 2026-09-01
+- Status: **Built, reviewed, gated, committed as `9e8b75c`, pushed and deployed.** Confirmed on the deployed build with no injected styles: at 1600px the scroller reads `visible`, the heading reads `sticky` and pins across 500px of scroll; at 1200px the scroller reads `auto`, the heading reads `static` and carries its 2px border with no shadow. `app/globals.css` and `tests/ui-theme.test.ts` (+1). No SQL, no route, no contract change.
+- Context: the owner asked for the sticky heading after living with D-185's band. It looks like a two-line change and is not.
+
+### `position: sticky` alone does nothing here, and the heading is not the reason
+
+`.table-scroll` carries `overflow-x: auto` so the 1280px ledger table stays reachable on a narrow screen. **CSS drags the other axis to `auto` along with it**, so that element becomes a scroll container and therefore the sticky scrollport. It has no height of its own and never scrolls vertically, so a sticky heading inside it has nowhere to stick. Measured on the deployment before any code was written: with sticky applied and nothing else, scrolling 500px moved the heading the full 500px.
+
+`overflow-y: clip` does not rescue it — paired with `overflow-x: auto` it computes to `hidden`, which is still a scroll container. So the scroller itself has to go, and it may only go where the table does not need it.
+
+### Two options were built and the owner chose after using both
+
+A **width-gated** sticky (drop the scroller only where the table already fits) and a **scroll pane** (give `.table-scroll` a bounded height so it scrolls vertically and sticky works at every width) were rendered behind a switch on the owner's own signed-in deployment. He chose width-gated, and the recommendation agreed, for reasons that were measured rather than asserted: at a 775px viewport with 90px rows, full-page scrolling shows **8 rows** while a pane showing permanent controls shows **6** — the pane charges a quarter of the visible rows for the pinned heading, on the one surface whose job is reading rows in sequence. It also splits the page into two scroll contexts with **Load older rows** stranded in the outer one, since that control is a button after the table rather than a scroll trigger.
+
+### The threshold was measured, and the arithmetic that preceded it was wrong
+
+The first estimate assumed the shell's gutter was a fixed 308px and put the safe floor near 1588px. **The gutter scales with the viewport**, so that was wrong by roughly 200px. Read off the real ledger instead: the page still overflows at **1320px** and no longer does at **1360px**. The gate is **1400px**, verified directly at 1400, 1420, 1440, 1600 and 1688. Below it nothing changes at all.
+
+### A collapsed border does not travel with a pinned cell
+
+A collapsed border belongs to the table rather than the cell, so it stays at the row's original position and scrolls away while the pinned cell moves — the heading arrives at the top of the screen with no rule above it. Proved in an isolated repro over invented rows, pinned and in flow, with the shadow on and off. So `border-top-color: transparent` hands the rule to `box-shadow: inset 0 2px 0 var(--navy)`, which is painted on the cell and travels with the pin; the border keeps its 2px of layout so nothing shifts, and dropping its colour is what stops the in-flow headings drawing the line twice. The outer `0 1px 0 var(--line)` gives the pinned heading a bottom edge against the rows sliding under it.
+
+### `/code-review high` found three, all fixed before the commit
+
+**The rule was unscoped.** `.table-scroll` is shared by six surfaces — the slips list, the import review and three statistics tables besides the ledger — and taking the scroller off all of them to give the ledger a sticky heading is a change nobody asked for. Every one of those tables sits under 1280px and would survive it today, **which is exactly what makes it a trap**: it looks correct until the first wider table is added. Now `.table-scroll:has(> .ledger-table)`, which also fails safe — an engine without `:has()` drops the block and gets the pre-sticky behaviour rather than a broken page.
+
+**The first heading gained a doubled rule.** It sits directly under the `thead`, whose bottom border is already the line there, which is what `border-top: 0` on `:first-child` has always been for. The inset shadow does not inherit that reasoning and painted a second line a pixel below the first. It now takes the bottom edge only.
+
+**The guard pinned neither.** It asserted the substring `.table-scroll`, which matches the scoped and unscoped selector alike, and said nothing about the first-child exception — both defects were reintroduced and the test stayed green. All five assertions now red-prove individually.
+
+### Consequence
+
+**This is desktop-only and deliberately so.** Below 1400px, and at the ≤700px block where the heading is `display: block`, nothing changes — so the phone still shows what it showed before D-185. The owed phone reading now covers ten entries.
 
 ## D-185 — D-182's day heading declared a band and a rule that both painted nothing, and the fix makes 2px load-bearing
 
