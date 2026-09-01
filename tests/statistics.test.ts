@@ -10,7 +10,9 @@ import {
   magnitudeChange,
   shareOf,
   wholeWeeks,
+  wholeYearOf,
   windowForPreset,
+  yearWindow,
   windowSearch,
   isUsableWindow,
   localToday,
@@ -200,6 +202,20 @@ describe("the statistics window picker", () => {
     expect(windowForPreset("last-3-months", "2026-03-31")).toEqual({ from: "2026-01-01", to: "2026-03-31" });
   });
 
+  // PLAN task 53 - the sixth-month depth the calendar's three-column layout made worth asking for.
+  it("resolves the six-month preset to six calendar months ending with this one", () => {
+    // March through August: six months ending with the one still running, so the span starts five
+    // months back rather than six. That is the same off-by-one the three-month case turns on, which
+    // is why both depths now read out of one table rather than out of two separate subtractions.
+    expect(windowForPreset("last-6-months", "2026-08-29")).toEqual({ from: "2026-03-01", to: "2026-08-29" });
+    expect(windowForPreset("last-6-months", "2026-01-15")).toEqual({ from: "2025-08-01", to: "2026-01-15" });
+    // The cases that cross the year boundary from either side of it. June minus five is January of
+    // the same year; May minus five is December of the previous one, which is the one a raw
+    // `month - 5` gets wrong.
+    expect(windowForPreset("last-6-months", "2026-06-30")).toEqual({ from: "2026-01-01", to: "2026-06-30" });
+    expect(windowForPreset("last-6-months", "2026-05-04")).toEqual({ from: "2025-12-01", to: "2026-05-04" });
+  });
+
   it("never produces a day of month that does not exist", () => {
     // "Three months before 31 May" is the classic clamping bug. Nothing here can hit it, because
     // the start of a window is always the first of some month — assert that rather than trusting it.
@@ -268,6 +284,37 @@ describe("the statistics window picker", () => {
  * The picker's state in the address bar, so a reload returns to the chosen window and a window can
  * be linked to. Component state only, when the picker shipped in D-170.
  */
+describe("a whole year as a window", () => {
+  // PLAN task 53. A year is deliberately *not* a preset: every entry in WINDOW_PRESETS is a rolling
+  // question that resolves differently tomorrow, and "2025" is two dates that will never move. So
+  // it encodes as a custom range, and these two functions are the pair that converts between them.
+  it("spans January to December, whichever year", () => {
+    expect(yearWindow(2025)).toEqual({ from: "2025-01-01", to: "2025-12-31" });
+    // A leap year ends on the 31st like every other: February is nowhere near either bound.
+    expect(yearWindow(2024)).toEqual({ from: "2024-01-01", to: "2024-12-31" });
+  });
+
+  it("reads a whole year back out of a custom range, and refuses anything else", () => {
+    expect(wholeYearOf("2025-01-01", "2025-12-31")).toBe(2025);
+    // A year that is *nearly* whole is not a year. Each of these is one day short at one end, and
+    // labelling any of them "2025" would misdescribe the window actually on screen.
+    expect(wholeYearOf("2025-01-02", "2025-12-31")).toBeNull();
+    expect(wholeYearOf("2025-01-01", "2025-12-30")).toBeNull();
+    expect(wholeYearOf("2025-01-01", "2026-12-31")).toBeNull();
+    // An open end is not a year either, and neither is an empty field - which is the state the
+    // custom inputs are in for every window that was chosen by a chip.
+    expect(wholeYearOf("", "")).toBeNull();
+    expect(wholeYearOf("2025-01-01", "")).toBeNull();
+  });
+
+  it("round-trips every year the control could offer", () => {
+    for (let year = 2015; year <= 2035; year += 1) {
+      const range = yearWindow(year);
+      expect(wholeYearOf(range.from, range.to), `${year} must read back as itself`).toBe(year);
+    }
+  });
+});
+
 describe("the window picker's state in the URL", () => {
   it("encodes a preset by name and a custom range by its dates", () => {
     // All time is the default, so it carries nothing and a bare `/statistics` stays unambiguous.

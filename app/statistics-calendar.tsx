@@ -64,6 +64,19 @@ function intensity(value: bigint, peakValue: bigint): number {
   return value > 0n ? Math.max(12, Number((value * 100n) / peakValue)) : 0;
 }
 
+/**
+ * The hovered day, short, for the readout that sits beside its own month's heading.
+ *
+ * Day and month only: the heading two words to its left already carries the year, and a readout
+ * that repeats it is three redundant characters in the tightest line on the page. `+07:00` on
+ * `app/ledger-shared.ts`'s rule rather than the viewer's zone - a ledger date is a Bangkok date,
+ * and formatting it locally would move it across a day boundary for anyone reading from elsewhere.
+ */
+function shortDay(date: string): string {
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
+    .format(new Date(`${date}T00:00:00+07:00`));
+}
+
 export function SpendingCalendar(
   { movements, periodFrom, periodTo, accountId }:
   { movements: readonly DailyMovement[]; periodFrom: string; periodTo: string; accountId: string | null }
@@ -106,9 +119,30 @@ export function SpendingCalendar(
               day: i + 1
             }))
           ];
+          // **The readout belongs to the month being pointed at, not to the figure.** It stood in
+          // the `figcaption` alone until 2026-09-01, which is one fixed spot above twelve months:
+          // reading December's figures meant looking back to the top of a very tall block, and at
+          // three columns the distance is horizontal as well. Each month now answers for its own
+          // days. The height it occupies is reserved in CSS whether or not it is filled, because a
+          // readout that grows the heading moves the cell out from under the pointer.
+          const readout = active !== null && active.startsWith(month) ? active : null;
           return (
             <section key={month} className="cal-month" aria-labelledby={`${titleId}-${month}`}>
-              <h3 id={`${titleId}-${month}`}>{monthLabel(month)}</h3>
+              <div className="cal-month-head">
+                <h3 id={`${titleId}-${month}`}>{monthLabel(month)}</h3>
+                {/* **`aria-hidden`, and the `figcaption` below is why.** That element is already
+                    this figure's accessible twin and already announces the hovered day politely;
+                    a second copy here would either announce everything twice or set up two live
+                    regions racing to describe one pointer. This one is for the eye. */}
+                <span className="cal-month-readout" aria-hidden="true">
+                  {readout === null
+                    ? ""
+                    : active_
+                      ? <><strong>{shortDay(readout)}</strong> · {active_.transactions} row{active_.transactions === 1 ? "" : "s"} ·
+                          in {formatThb(active_.deposits)} · out {formatThb(active_.withdrawals)}</>
+                      : <><strong>{shortDay(readout)}</strong> · no reportable movement</>}
+                </span>
+              </div>
               {/* A plain grid of links, not an ARIA `grid` widget — there is no row/column
                   navigation to expose, only a list of days that happen to be laid out in a
                   calendar shape. */}
@@ -152,13 +186,26 @@ export function SpendingCalendar(
           Only two cases, not three: `active` can only ever be a date a live cell set it to, and
           every live cell is already inside the window by construction, so a third "hovered but
           outside the window" branch was unreachable dead code. Found by `/code-review high`. */}
-      <figcaption aria-live="polite">
-        {active === null
-          ? <>Pick a day to open the ledger filtered to it. Hover or focus a day for its figures.</>
-          : active_
-            ? <><strong>{active}</strong> · {active_.transactions} row{active_.transactions === 1 ? "" : "s"} ·
-                in {formatThb(active_.deposits)} · out {formatThb(active_.withdrawals)}</>
-            : <><strong>{active}</strong> · no reportable movement</>}
+      {/* **What is left here is the half the section heading does not already say, and the live
+          region.** The figures moved to the month headings on 2026-09-01; the sentence that came
+          back in their place said "Pick a day to open the ledger filtered to it", which
+          `app/statistics-view.tsx` already prints as a `field-help` directly above this figure -
+          so it rendered twice, permanently, where before it was at least replaced on hover.
+          `/code-review high` counted it. The hover instruction is the part that is genuinely only
+          true of this figure, so it is the part that stays.
+
+          **The live region remains exactly one element in one place.** The month readouts are
+          `aria-hidden`; a second announcing region would have two of them racing to describe one
+          pointer. */}
+      <figcaption>
+        Hover or focus a day for its figures.
+        <span className="sr-only" aria-live="polite">
+          {active === null
+            ? ""
+            : active_
+              ? `${active}: ${active_.transactions} row${active_.transactions === 1 ? "" : "s"}, in ${formatThb(active_.deposits)}, out ${formatThb(active_.withdrawals)}`
+              : `${active}: no reportable movement`}
+        </span>
       </figcaption>
     </figure>
   );

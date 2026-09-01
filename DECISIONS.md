@@ -322,7 +322,82 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-179** — The calendar heatmap, PLAN task 47's deferred second half: two ramps not one, sparse not dense, and migration 025
 - **D-180** — Four colour schemes, reversing D-137, and a test that retires the argument against them
 - **D-181** — D-180 deploys, and the dark schemes are confirmed against the real ledger
+- **D-182** — The ledger reads a day at a time, the strip carries a balance, and the control row stops sizing one row's tracks for another
+- **D-183** — The calendar reads a year at a time, three across, and every month answers for its own days
 
+## D-182 — The ledger reads a day at a time, the strip carries a balance, and the control row stops sizing one row's tracks for another
+
+- Date: 2026-09-01
+- Status: **Built, reviewed and gated. Not committed, not pushed, not deployed.** `app/transactions-view.tsx`, `app/ledger-controls.tsx`, `app/ledger-summary.tsx`, `app/ledger-shared.ts`, `lib/slip-reconcile.ts`, `app/globals.css`; `tests/slip-reconcile.test.ts` (+4). No SQL, no route, no contract change — the build still emits **24** `/api/v1/` routes and every project stays on migration 025.
+- Context: the owner read the deployed `/ledger` and asked for three things in one message — rows separated by day with a heading, a balance beside Net movement, and a control row whose fields stopped being different widths for no reason. The third turned out to be a defect rather than a preference, and the reasoning behind each of the first two is what this entry is for.
+
+### Day headings, and why the totals could not be summed here
+
+Every row of a day now sits under a heading carrying the weekday, the date, the row count and the day's movements. `lib/slip-reconcile.ts`'s new `dayGroups` returns a map keyed by the **id of the row that opens each day**, so the table asks one question per row while rendering in order rather than restructuring the list into an array of arrays and then keeping two orderings in step.
+
+**The day's figures come from `summarizeRows` — the function the strip above the table already uses — and not from a second summation.** That is the whole design of it: a row the owner excluded through `include_in_reporting` must be absent from the day's money and from the window's money, or present in both. A second loop here is precisely how those two would come to disagree, and D-165 records the last time this app had two answers to one question.
+
+**In and out are printed separately and a net figure is never printed**, which is the owner's own reading on the calendar (D-179) applied one surface along: a day that took 20,000 in and paid 19,500 out is not a 500 day. **A direction that did not move is omitted rather than printed as zero** — the one place this differs from the strip, because the strip is one line read once while this repeats over every day on screen, and a column of `+B0.00` says nothing the absent figure does not.
+
+**Paging needed no special handling and that is worth recording, because it looked like it would.** A day split across a page boundary would grow a second heading only if the rows were grouped per page; they are grouped after `compareRows` has ordered the whole loaded set by date, so every row of a day is contiguous however many fetches they arrived on. `dayGroups` groups **adjacent equals** and says so, and the test asserts both halves — sorted input gives one heading per day, unsorted input gives one per run.
+
+**Grouping is off while a slip or card is being matched by hand, whatever the control says.** That mode lists one captured record and the rows it could be — candidates drawn from across the ledger by bank and amount — so a day heading over them would total unrelated rows. It is the same reason the totals strip disappears entirely in that mode, and the control itself stays live so the setting survives the mode rather than being lost to it.
+
+### The balance follows the account and the window, and deliberately not the search box
+
+The strip goes from four figures to five. The new one is the printed balance of the **newest row in scope**, where scope is the loaded window narrowed by account and by nothing else.
+
+**The owner asked for it to follow the filter, and it does — for the two filters where that is meaningful.** Narrow to March and it reads the balance March closed on, which is why it prints `at` and a date rather than calling itself current. But Status and the search box narrow which rows are *displayed*, and the balance printed on whichever row a search happened to match is not a balance of anything. That is not an omission: it is the same line `app/transactions-view.tsx` already drew for `scope` itself, whose own comment says a running total of whatever a search matched would not be a balance.
+
+**It is uncoloured, alone among the five.** The other four are movements, where the sign is the finding; a balance is a position, and painting a healthy account green would be the strip's opinion rather than the ledger's. An em dash where the scope holds no confirmed row — a window of slips and cash has movements and no printed balance, and no figure is the honest answer.
+
+### The control row was sized for one of its two rows
+
+`.ledger-controls` declared `auto minmax(200px, 260px) minmax(140px, 170px) minmax(200px, 1fr)` — four tracks chosen for the controls that happened to land on the **first** row. The second row inherited them for entirely different controls, so **From** rendered in the 140–170px track while **To** rendered in the 200px–1fr one, and the free-text **Filter** wrapped into that same narrow track and came out narrower than either date. Every complaint the owner made about this row was that one line of CSS.
+
+Four equal `minmax(0, 1fr)` columns now, with the button and the wide field placing themselves, and the grouping toggle on a row of its own because it is a display switch rather than a narrowing.
+
+### The fix for that introduced a phone-width defect that no check could see, and a screenshot caught it
+
+`grid-column: span 2` on the Filter field is correct at four tracks and at two. At the ≤700px breakpoint the grid is **one** track, and a span does not clamp to the tracks that exist — it creates an implicit second column that nothing sizes, so every control landing in it renders at zero width on top of its neighbour. At 390px the Reload button ran off the left edge and the Order and Status labels printed as `ORDSTATUS`.
+
+**`document.documentElement.scrollWidth` read 390 against a 390 viewport throughout.** The phone audit's whole instrument is sideways overflow, and zero-width tracks add nothing to a page's width — so the one committed guard for this surface would have stayed green over an unreadable control bar. It is D-173's family from a new direction, and it is now its own trap in `docs/gotchas/appearance.md`.
+
+### Gate
+
+`tsc` clean; `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`, untouched); `check:docs --strict` clean; `pnpm build` clean at **24** `/api/v1/` routes; Vitest **949 passed / 7 skipped across 43 files** (+8). **pgTAP deliberately not re-run — no SQL has moved since migration 025.** Verified in a real browser against `next build && next start` with **301 invented local rows** seeded for the purpose: 101 day headings over 200 loaded rows, the balance reading the newest row with its date, and the control row correct at 1440px, at 980px and at 390px. No real financial data was read or reproduced.
+
+## D-183 — The calendar reads a year at a time, three across, and every month answers for its own days
+
+- Date: 2026-09-01
+- Status: **Built, reviewed and gated. Not committed, not pushed, not deployed.** `app/statistics-calendar.tsx`, `app/statistics-view.tsx`, `lib/statistics.ts`, `app/globals.css`; `tests/statistics.test.ts` (+4). No SQL and no contract change — `dailyMovements` (migration 025) already carries everything this needed.
+- Context: the owner read D-179's calendar on the deployment and made three observations: the months stack in one column so no two can be compared, there is no way to ask for one particular year, and the hover readout sits in one fixed place far from the day being pointed at. All three are about reading a year rather than about the data.
+
+### Three columns, and the layout is the feature
+
+`.cal-months` was `flex-direction: column`. Twelve months in one column is a four-thousand-pixel scroll in which comparing March with October means remembering March. Three across and four down is a year on one screen — two across at ≤980px, one at ≤700px, because three columns at phone width would put a day cell below the 44px tap standard D-168 set, and a calendar you cannot press is not a calendar.
+
+### A year is a custom range, not a preset, and the difference is the whole design
+
+`WINDOW_PRESETS` gains `last-6-months` — the owner asked for it beside the three-month one, and both depths now read their offset out of one table so an off-by-one cannot land in only one of them.
+
+**A year does not join that list.** Every preset is a *rolling* question: "This month" resolves differently tomorrow, which is why `pickerSearch` encodes presets by name and a link to one keeps meaning what it said. "2025" is two dates that will never move — the custom shape exactly. So the year control sets a custom range through `yearWindow`, and reads its own selected value back out through `wholeYearOf` rather than storing a second copy of a fact the two date inputs already hold. Choosing a year ticks Custom and fills those inputs, where the owner can see precisely what was asked for.
+
+**A `<select>` rather than a twelfth chip**: the presets are a fixed count, the years grow by one every January, and a control bar that grows without bound stops being readable. The list is learned from the responses — the page opens on All time, so the first response's `window.from` is the ledger's own first row — and only ever reaches further back, so choosing "This month" cannot make 2025 unreachable.
+
+**Naming 31 December for the year still running is not clamped, and the first draft of this code claimed it was.** `/code-review high` caught a docstring asserting the RPC clamps the end to the ledger's last row. It does not: choosing the current year resolves to a genuine 365-day window and every average divides by 365 rather than by the days elapsed, so "per day" reads lower here than under the "This year" preset. **That is the intended reading** — a year means the whole year, and the preset beside it is the one that means "so far" — but the comment had it backwards on a money path, which is the kind of thing that is true until someone believes it. The resolved from/to pair and the day count are printed above the figures they divided, which is the same protection the preset labels rest on.
+
+### The readout moved to the month it describes
+
+The hovered day's figures stood in the figure's single `figcaption`. With twelve months in three columns, reading December's figures meant looking up and across to a fixed spot at the top. Each month now carries its own readout line beside its heading.
+
+**Its height is reserved whether or not it is filled, and that is not tidiness.** A readout that grows the heading pushes that month's grid down, which moves the cell out from under the pointer, which fires `mouseleave`, which clears the readout, which shrinks the heading and puts the cell back — forever. The `min-height` is what stops the flicker.
+
+**The month readouts are `aria-hidden` and the live region stayed exactly one element in one place.** Two regions would race to describe one pointer. `/code-review high` also caught that the sentence left behind in the `figcaption` duplicated the `field-help` printed directly above the figure — permanently, where before it was at least replaced on hover — so what remains there is only the half that is true of this figure alone.
+
+### Gate
+
+`tsc` clean; `eslint .` clean; `check:docs --strict` clean; `pnpm build` clean at 24 routes; Vitest **949 passed / 7 skipped across 43 files**. Verified in a real browser against `next build && next start` over an invented nine-month ledger: three columns of 409px with no document overflow, twelve months in four rows when a year is chosen, the year round-tripping through the URL and back into the select on reload, the readout rendering beside its own month's heading, and one column with 44px cells at 390px. No real financial data was read or reproduced.
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
 - Date: 2026-08-23

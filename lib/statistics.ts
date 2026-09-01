@@ -217,7 +217,7 @@ export function monthLabel(month: string): string {
 */
 
 /** The offered windows. `all` is first because it is what the page shows with no choice made. */
-export const WINDOW_PRESETS = ["all", "this-month", "last-3-months", "this-year"] as const;
+export const WINDOW_PRESETS = ["all", "this-month", "last-3-months", "last-6-months", "this-year"] as const;
 
 export type WindowPreset = (typeof WINDOW_PRESETS)[number];
 
@@ -233,7 +233,20 @@ export const WINDOW_PRESET_LABELS: Record<WindowPreset, string> = {
   all: "All time",
   "this-month": "This month",
   "last-3-months": "Last 3 months",
+  "last-6-months": "Last 6 months",
   "this-year": "This year"
+};
+
+/**
+ * How many months a rolling preset reaches back **before** the month still running.
+ *
+ * A table rather than a subtraction written twice: "Last 3 months" and "Last 6 months" are the
+ * same question at two depths, and the defect a second copy invites is an off-by-one in only one
+ * of them - three calendar months ending with this one starts two months back, not three.
+ */
+const PRESET_MONTHS_BACK: Record<"last-3-months" | "last-6-months", number> = {
+  "last-3-months": 2,
+  "last-6-months": 5
 };
 
 /**
@@ -278,9 +291,47 @@ export function windowForPreset(preset: WindowPreset, today: string): Statistics
   if (preset === "this-year") return { from: `${year}-01-01`, to: today };
   if (preset === "this-month") return { from: `${year}-${pad2(month)}-01`, to: today };
 
-  // Three calendar months ending with the current one, so the span starts two months back.
-  const index = year * 12 + (month - 1) - 2;
+  // N calendar months ending with the current one, so the span starts N-1 months back.
+  const index = year * 12 + (month - 1) - PRESET_MONTHS_BACK[preset];
   return { from: `${Math.floor(index / 12)}-${pad2((index % 12) + 1)}-01`, to: today };
+}
+
+/**
+ * One whole calendar year, as the fixed range it is.
+ *
+ * **Deliberately not a preset.** Every entry in `WINDOW_PRESETS` is a *rolling* question - "This
+ * month" resolves differently tomorrow, which is why `pickerSearch` encodes those by name and a
+ * link to one keeps meaning what it said. "2025" is the opposite: it is two dates that will never
+ * move, so it encodes as a custom range and needs no new spelling in the URL.
+ *
+ * **`to` is 31 December even for the year still running, and nothing clamps it.** An earlier
+ * version of this comment claimed the RPC clamped the end to the ledger's own last row; it does
+ * not, and `/code-review high` caught the claim before it could mislead anyone. What actually
+ * happens is what the window says: choosing the current year resolves to a **365-day** window, and
+ * every average on the page divides by 365 rather than by the days elapsed - so "per day" reads
+ * lower for the current year here than the same figures read under the "This year" preset, which
+ * stops at today.
+ *
+ * **That is the intended reading and not an oversight.** "2026" as a *year* is the whole year; the
+ * preset beside it is the one that means "so far". The two are different questions and the page
+ * never leaves the reader to guess which was asked, because `window.days` and the resolved
+ * from/to pair are printed above the figures they divided - the same protection D-174's preset
+ * labels rest on.
+ */
+export function yearWindow(year: number): { from: string; to: string } {
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+}
+
+/**
+ * The year a custom range names, when it names exactly one whole year, and null otherwise.
+ *
+ * The inverse of `yearWindow`, and the reason the year control can show itself as selected after a
+ * reload without storing a second copy of the state that `customFrom`/`customTo` already hold.
+ */
+export function wholeYearOf(from: string, to: string): number | null {
+  const start = /^(\d{4})-01-01$/.exec(from);
+  if (start === null) return null;
+  return to === `${start[1]}-12-31` ? Number(start[1]) : null;
 }
 
 /**

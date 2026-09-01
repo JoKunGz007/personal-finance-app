@@ -931,7 +931,32 @@ footer span { color: var(--navy); font-weight: 600; }
 footer p { margin: 0; }
 
 .ledger-band { margin-bottom: 70px; }
-.ledger-controls { margin: 22px 0 0 167px; display: grid; grid-template-columns: auto minmax(200px, 260px) minmax(140px, 170px) minmax(200px, 1fr); align-items: end; gap: 14px; }
+/* **Four equal tracks, and the controls say where they go.** Until 2026-09-01 this read
+   `auto minmax(200px, 260px) minmax(140px, 170px) minmax(200px, 1fr)`, and every complaint about
+   this row was that shape rather than taste. A track list can only be right for one row, and this
+   one had two: **From** fell in the 140-170px track while **To** fell in the 200px-1fr one, so a
+   matched pair of date inputs rendered at visibly different widths; and **Filter**, the freest-text
+   control on the page, wrapped into that same 140-170px track and came out narrower than either
+   date. The fix is to stop encoding row identity in the track sizes - four equal columns, with the
+   button and the wide field placing themselves. `minmax(0, ...)` rather than `1fr` for the reason
+   spelled out at `.account-control` above: a `<select>` whose longest option is an account label
+   will not shrink under an `auto` floor, and that is what took /ledger sideways at 390px (D-173). */
+.ledger-controls { margin: 22px 0 0 167px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: end; gap: 14px; }
+/* Row 1 is Reload, Account, From, To; row 2 is Order, Status, Filter. The button keeps its own
+   width inside a full track rather than stretching across it - it is an action, not a field. */
+.ledger-controls > .secondary-button { justify-self: start; width: max-content; }
+/* **The one field that earns two tracks.** Account, Order and Status are closed lists whose widest
+   option is known; Filter takes arbitrary text, and its placeholder alone - "Description, reference,
+   branch..." - overran a single track. It lands last on row 2, so spanning two fills the row. */
+.ledger-controls > .ledger-filter { grid-column: span 2; }
+/* A row of its own: this is a display switch, not a narrowing of the ledger, and it reads wrongly
+   sitting in the run of filters above it. */
+.ledger-controls > .ledger-grouping { grid-column: 1 / -1; }
+/* 44px and a real checkbox size, on D-168's tap standard - the whole label is the target, which is
+   what `display: flex` on a `<label>` buys. `justify-self: start` so the hit area ends with the
+   text rather than running the width of the page. */
+.ledger-grouping { display: inline-flex; align-items: center; justify-self: start; gap: 10px; min-height: 44px; padding: 0 2px; color: var(--navy); font-size: 13px; font-weight: 500; cursor: pointer; }
+.ledger-grouping input { width: 20px; height: 20px; margin: 0; accent-color: var(--blue); }
 /* The shared nth-child widths assume the import review table. This one carries a
    sixth money column in merged mode, which that rule would squeeze to 70px. */
 .ledger-table { min-width: 1160px; }
@@ -943,12 +968,27 @@ footer p { margin: 0; }
 .ledger-table.merged { min-width: 1280px; }
 .ledger-table.merged th:nth-child(7) { width: 160px; }
 .combined-balance { color: var(--muted); }
+/* **A day's heading row, and it is a `<th scope="colgroup">` rather than a styled `<td>`.** The
+   rows under it are that day's, so the cell genuinely heads a group of rows and a screen reader
+   should be told so; `colgroup` is what says "this heads the columns beneath me" for the span of
+   rows that follows. The figures beside the date are the same `summarizeRows` the strip above the
+   table uses, so an excluded row is absent from both or from neither. */
+.ledger-table tr.day-head th {
+  padding: 16px 12px 9px; text-align: left; border-top: 1px solid var(--navy);
+  background: var(--mist); font: 500 11px/1.4 var(--font-data);
+  text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+.ledger-table tr.day-head:first-child th { border-top: 0; }
+.day-head-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 16px; }
+.day-head-date { color: var(--navy); font-size: 12px; letter-spacing: .04em; }
+.day-head-line b { font-weight: 500; font-variant-numeric: tabular-nums; }
 .ledger-controls .secondary-button { height: 47px; }
 /* Spans every column the grid currently has, at any width — same technique as
    `.ledger-controls > button` two rules below for the tablet breakpoint, generalised with `-1`
    rather than a width-specific column count so it does not need its own entry at each breakpoint. */
 .ledger-range-warning { grid-column: 1 / -1; margin: 0; }
-.ledger-strip { grid-template-columns: repeat(4, 1fr); }
+/* Five since 2026-09-01: Rows, Deposits, Withdrawals, Net movement, Balance. */
+.ledger-strip { grid-template-columns: repeat(5, 1fr); }
 .ledger-empty { margin: 26px 0 0; padding: 22px; color: var(--muted); border: 1px solid var(--line); background: var(--mist); }
 .ledger-status { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .ledger-status b { color: var(--navy); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .07em; }
@@ -1074,8 +1114,14 @@ footer p { margin: 0; }
   .ledger-controls { margin-left: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .ledger-controls > button { grid-column: 1 / -1; }
   .statement-strip { grid-template-columns: repeat(3, 1fr); }
+  /* Two months across rather than three: at this width three columns put a 44px day cell below
+     the tap standard D-168 set, and a calendar you cannot press is not a calendar. */
+  .cal-months { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ledger-strip { grid-template-columns: repeat(2, 1fr); }
-  .ledger-strip div:nth-child(3) { border-left: 0; }
+  /* `odd` rather than the bare `nth-child(3)` this was: with four boxes only the third began a
+     row, and there are five now, so the rule has to name the position rather than the box. */
+  .ledger-strip div:nth-child(odd) { border-left: 0; }
+  .ledger-strip div:nth-child(n+3) { border-top: 1px solid var(--line); }
   .statement-strip div:nth-child(4) { border-left: 0; border-top: 1px solid var(--line); }
   .statement-strip div:nth-child(n+4) { border-top: 1px solid var(--line); }
   .backup-band { grid-template-columns: 1fr; gap: 24px; }
@@ -1190,6 +1236,14 @@ footer p { margin: 0; }
   /* One column at phone width: two 175px tracks side by side is a select showing about
      eighteen characters of an account label, which is not a choice anyone can make. */
   .ledger-controls { grid-template-columns: minmax(0, 1fr); }
+  /* **The two-track span has to go when there is only one track, and this is not cosmetic.**
+     `grid-column: span 2` inside a one-column grid does not clamp - it creates an *implicit*
+     second column, which nothing sizes, so every control that lands in it renders at zero width on
+     top of its neighbour. Measured at 390px: the Reload button ran off the left edge and the Order
+     and Status labels printed over each other as "ORDSTATUS". Caught by looking at the page, not
+     by any assertion - no rule here overflows the document, so the phone audit stayed green while
+     the control bar was unreadable. */
+  .ledger-controls > .ledger-filter { grid-column: auto; }
   .slip-fields { grid-template-columns: 1fr; }
   .batch-fix { grid-template-columns: 1fr; }
   .slip-controls { flex-direction: column; align-items: stretch; }
@@ -1237,6 +1291,13 @@ footer p { margin: 0; }
      tables. `border-bottom` goes, having been the thing standing in for separation. */
   tbody tr { display: grid; grid-template-columns: 1fr 1fr; min-height: 145px; margin-bottom: 10px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); box-shadow: 0 0 0 1px var(--frame-inner), 0 1px 0 1px color-mix(in srgb, var(--frame-outer) 22%, transparent); }
   tbody tr:last-child { margin-bottom: 0; }
+  /* **A day heading is not one of the cards.** The stacked mode turns every `<tr>` into a bordered
+     145px card, which is right for a row and wrong for the line that heads a group of them - it
+     would render as an empty card carrying one sentence. Back to a plain block, and it keeps the
+     rule above it because that rule is now the only thing parting one day from the next. */
+  tr.day-head { display: block; min-height: 0; margin: 18px 0 8px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+  tr.day-head:first-child { margin-top: 0; }
+  .ledger-table tr.day-head th { display: block; padding: 8px 2px; border-top: 1px solid var(--navy); background: none; }
   td { display: block; height: auto; min-width: 0; padding: 5px 8px; border: 0; text-align: left !important; white-space: normal !important; }
   td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--muted); font: 500 9px/1 var(--font-data); text-transform: uppercase; letter-spacing: .06em; }
   td:nth-child(2), td:nth-child(3), td:last-child { grid-column: 1 / -1; }
@@ -1302,6 +1363,12 @@ footer p { margin: 0; }
 .window-presets .chip.current { color: var(--paper-strong); border-color: var(--blue); background: var(--blue); }
 /* The label is the tap target, which is why the 24px checkbox inside it is not raised (D-168). */
 .window-custom-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 4px; font-size: 13px; font-weight: 600; cursor: pointer; }
+/* **A select rather than a twelfth chip.** The presets are rolling questions with a fixed count;
+   the years are a list that grows by one every January, and a row of chips that grows without
+   bound is how a control bar becomes unreadable. 44px on D-168's tap standard, like every other
+   control in this picker. */
+.window-year { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 13px; font-weight: 600; }
+.window-year select { min-height: 44px; padding: 8px 10px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-size: 13px; font-weight: 500; min-width: 0; max-width: 100%; }
 .window-custom { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-top: 10px; }
 .window-custom label { display: grid; gap: 4px; }
 .window-custom label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
@@ -1354,8 +1421,21 @@ footer p { margin: 0; }
    308px, inside even a 375px viewport with room to spare, so this needed no phone-width fix the
    way the account select did.
 */
-.cal-months { display: flex; flex-direction: column; gap: 20px; margin-top: 4px; }
-.cal-month h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--navy); }
+/* **Three columns, not one.** A year is twelve months and a single column made it a 4,000px
+   scroll in which no two months could be compared without remembering the first one. Three
+   across, four down, is a year on one screen. `align-items: start` so a month does not stretch to
+   its neighbour's height, and `minmax(0, 1fr)` so a column can size below its content the way
+   every other track in this file has to (D-138's family). */
+.cal-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 22px 26px; margin-top: 4px; }
+/* **The month's own readout line, and its height is reserved whether or not it is filled.**
+   Without the reservation, a readout appearing on hover grows this block, which pushes that
+   month's grid down, which moves the cell out from under the pointer - a `mouseleave` that
+   clears the readout, shrinks the block and puts the cell back, forever. The flicker is the
+   reason for the `min-height`, not the tidiness. */
+.cal-month-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-height: 36px; margin: 0 0 6px; }
+.cal-month h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--navy); }
+.cal-month-readout { color: var(--muted); font: 400 11px/1.45 var(--font-data); font-variant-numeric: tabular-nums; }
+.cal-month-readout strong { color: var(--navy); font-weight: 600; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; max-width: 400px; }
 .cal-day { position: relative; display: flex; flex-direction: column; min-height: 44px; border-radius: 4px; overflow: hidden; text-decoration: none; }
 .cal-day-blank { visibility: hidden; }
@@ -1370,4 +1450,5 @@ footer p { margin: 0; }
 .cal-figure figcaption { min-height: 18px; }
 @media (max-width: 700px) {
   .cal-grid { max-width: 100%; }
+  .cal-months { grid-template-columns: minmax(0, 1fr); }
 }

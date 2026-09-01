@@ -6,7 +6,7 @@ import { type CardMatches } from "@/lib/notification-card-reconcile";
 import { type LedgerTotals, type SlipMatches } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
 import { type CapturedSlip } from "@/lib/slips";
-import { formatDate, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, type LedgerBalance, type LedgerModes } from "@/app/ledger-shared";
 import { LedgerNote } from "@/app/ledger-note";
 
 /**
@@ -26,6 +26,7 @@ export function LedgerSummary({
   offeredCount,
   offeredToCardCount,
   totals,
+  balance,
   slipCount,
   cardCount,
   matches,
@@ -44,6 +45,8 @@ export function LedgerSummary({
   /** How many rows are on offer for the card. */
   offeredToCardCount: number;
   totals: LedgerTotals;
+  /** The balance the window closes on, or null when nothing in scope carries one. */
+  balance: LedgerBalance | null;
   slipCount: number;
   cardCount: number;
   matches: SlipMatches;
@@ -124,6 +127,34 @@ export function LedgerSummary({
         <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}</dd></div>
         <div><dt>Withdrawals</dt><dd className={BigInt(totals.withdrawals) < 0n ? "negative" : ""}>{formatThb(totals.withdrawals)}</dd></div>
         <div><dt>Net movement</dt><dd className={BigInt(totals.net) > 0n ? "positive" : BigInt(totals.net) < 0n ? "negative" : ""}>{formatThb(totals.net)}</dd></div>
+        {/* **A balance, and it is uncoloured on purpose.** The three figures to its left are
+            movements, where a sign is the finding; a balance is a position, and painting a healthy
+            account green would be this strip's own opinion rather than the ledger's.
+
+            **What it is a balance *of* travels with it rather than being assumed.** It is the
+            newest row in scope, so it follows the Account select and the date window - which is
+            what was asked for: narrow to March and this reads the balance March closed on, which
+            is why it says "at" and a date rather than calling itself current.
+
+            It does **not** follow the Status select or the search box, and that is a rule rather
+            than an omission: those two narrow which rows are *displayed*, and a balance carried
+            only through the rows a search happened to match is not a balance of anything. The
+            same distinction already governs the "scope" memo in app/transactions-view.tsx, whose
+            own comment says a running total of whatever a search matched would not be a balance.
+
+            An em dash where nothing in scope is a confirmed row - a window holding only slips and
+            cash has movements but no printed balance, and no figure is the honest answer. */}
+        <div>
+          <dt>Balance</dt>
+          <dd>
+            {balance === null
+              ? <span aria-label="No balance in this window">&mdash;</span>
+              : formatThb(balance.minor)}
+            {balance !== null
+              ? <small> · at {formatDate(balance.date)}{balance.combined ? " · all accounts" : ""}</small>
+              : null}
+          </dd>
+        </div>
       </dl>
 
       {/* **The counts stay; the rule behind them folds** (PLAN task 42). Each of these lines was a

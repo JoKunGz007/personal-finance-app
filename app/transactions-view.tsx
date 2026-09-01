@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ACCOUNT_ID_PATTERN, accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { isUsableRange, rangeFromSearch, type DateRange } from "@/lib/date-range";
 import { isoDateSchema } from "@/lib/dates";
+import { formatThb } from "@/lib/money";
 import {
   cursorAfter,
   ledgerPageSchema,
@@ -44,6 +45,7 @@ import {
 import { cardMatchCandidates } from "@/lib/notification-card-reconcile";
 import {
   compareRows,
+  dayGroups,
   matchCandidates,
   reconcileLedger,
   summarizeRows,
@@ -74,6 +76,8 @@ import { LedgerRetiredCards } from "@/app/ledger-retired-cards";
 import {
   ALL_ACCOUNTS,
   ALL_STATUSES,
+  formatDayHeading,
+  type LedgerBalance,
   type LedgerLayout,
   type LedgerModes,
   type Order,
@@ -205,6 +209,12 @@ export function TransactionsView() {
   const [order, setOrder] = useState<Order>("newest");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>(ALL_STATUSES);
+  // **On by default.** A ledger is read a day at a time far more often than as one undifferentiated
+  // run, and the heading carries that day's own totals - which is the figure the table could not
+  // otherwise give without the reader adding a column up by eye. Not persisted anywhere: it is a
+  // view preference of no consequence, and a cookie for it would be a third thing to keep in step
+  // with the typeface and the colour scheme for no gain.
+  const [groupByDay, setGroupByDay] = useState(true);
   /**
    * The ledger's own date window (migration 024, PLAN task 47) — empty string for an open end, on
    * the same convention `app/statistics-view.tsx` uses.
@@ -654,6 +664,49 @@ export function TransactionsView() {
       net: (deposits + withdrawals).toString()
     };
   }, [visibleRows, ledgerWindow, scopedAccount, status, query]);
+
+  /**
+   * The balance the strip prints, taken from the newest row **in scope** rather than on screen.
+   *
+   * `scope` is the window narrowed by account and nothing else, already ordered newest-first by
+   * `compareTransactions` - so `[0]` is the last row of the window, and its printed balance is what
+   * the window closes on. That is the figure the owner asked for: it follows the account and the
+   * date range, so narrowing to March reads March's closing balance rather than today's.
+   *
+   * **Deliberately blind to Status and the search box**, which is the same line `scope` itself is
+   * drawn on a few lines above: those narrow which rows are displayed, and the balance printed on
+   * whichever row a search last matched is not a balance of anything. `date` travels with the
+   * figure so the strip can say which day it belongs to rather than implying today.
+   *
+   * Null where the scope holds no confirmed row at all - a window of slips and cash has movements
+   * and no printed balance, and the strip shows an em dash rather than inventing one.
+   */
+  const balance = useMemo<LedgerBalance | null>(() => {
+    const newest = scope[0];
+    if (newest === undefined) return null;
+    if (scopedAccount !== null) {
+      return { minor: newest.post_balance_minor, date: newest.source_date, combined: false };
+    }
+    // Every page row carries this (migration 022), but the type covers rows from other populations
+    // too, so an absent figure is a real case rather than an impossible one - and the honest answer
+    // to "what did every account total that day" when the row cannot say is nothing, not this one
+    // account's own balance dressed up as the combined figure.
+    const combined = newest.combined_balance_minor;
+    return combined === undefined ? null : { minor: combined, date: newest.source_date, combined: true };
+  }, [scope, scopedAccount]);
+
+  /**
+   * Where a day's heading row belongs, keyed by the row that opens it.
+   *
+   * **Off while a record is being matched by hand, whatever the control says.** That mode lists one
+   * captured record and the rows it could be - candidates drawn from across the ledger by amount and
+   * bank, not a stretch of it - so a day heading over them would print a total of unrelated rows,
+   * which is the same reason the totals strip disappears entirely in that mode.
+   */
+  const dayHeads = useMemo(
+    () => (groupByDay && !picking && !pickingCard ? dayGroups(visibleRows) : null),
+    [groupByDay, picking, pickingCard, visibleRows]
+  );
 
   const unattributedSlips = useMemo(
     () => reconciled.rows.filter((row) => row.kind === "provisional" && row.account === null).length,
@@ -1158,6 +1211,7 @@ export function TransactionsView() {
         dateFrom={dateFrom}
         dateTo={dateTo}
         rangeUsable={rangeUsable}
+        groupByDay={groupByDay}
         modes={modes}
         onLoad={() => void load()}
         onSelectAccount={setSelected}
@@ -1166,6 +1220,7 @@ export function TransactionsView() {
         onQueryChange={setQuery}
         onDateFromChange={setDateFrom}
         onDateToChange={setDateTo}
+        onGroupByDayChange={setGroupByDay}
       />
 
       {error ? (
@@ -1200,6 +1255,7 @@ export function TransactionsView() {
             offeredCount={offered.size}
             offeredToCardCount={offeredToCard.size}
             totals={totals}
+            balance={balance}
             slipCount={slips.length}
             cardCount={cards.length}
             matches={reconciled.matches}
@@ -1294,8 +1350,51 @@ export function TransactionsView() {
                 </thead>
                 <tbody>
                   {visibleRows.map((row) => {
+                    /**
+                     * The day heading that belongs above this row, when one does.
+                     *
+                     * **Returned in an array beside the row rather than wrapped around it**, which
+                     * is what keeps the four branches below byte-identical to what they were: a
+                     * heading is a sibling `<tr>`, not a container for one, and a `<tbody>` is the
+                     * one place a wrapper element cannot be introduced to hold them together.
+                     * `dayHeads` is null when grouping is off or a match is being chosen by hand,
+                     * so every row answers "no heading" without a second condition here.
+                     */
+                    const head = dayHeads?.get(row.id) ?? null;
+                    const heading = head === null ? null : (
+                      <tr className="day-head" key={`day-${head.date}`}>
+                        {/* `colgroup`, because this cell genuinely heads the rows beneath it for as
+                            far as the next heading - which is what a screen reader needs told, and
+                            what a styled `<td>` would have said nothing about. */}
+                        <th scope="colgroup" colSpan={layout.columns}>
+                          <span className="day-head-line">
+                            <span className="day-head-date">{formatDayHeading(head.date)}</span>
+                            <span>{head.totals.rows} row{head.totals.rows === 1 ? "" : "s"}</span>
+                            {/* **In and out separately, never a net figure**: the owner's own reading
+                                on the calendar (D-179) and the same one here - a day that took 20,000
+                                in and paid 19,500 out is not a 500 day, and a single number is the
+                                only way to fail to say so. Signed and coloured on the strip's rule,
+                                where the sign is printed and the colour only reinforces it.
+
+                                **A direction that did not move is omitted rather than printed as
+                                zero**, which is the one place this differs from the strip above.
+                                The strip is one row of figures read once; this line repeats over
+                                every day on screen, and most days move in one direction only - so
+                                a "+฿0.00" on each of them is a column of noise saying nothing the
+                                absent figure does not already say. Same reasoning the calendar
+                                draws an empty day empty instead of at the bottom of its ramp. */}
+                            {BigInt(head.totals.deposits) !== 0n
+                              ? <b className="positive">+{formatThb(head.totals.deposits)}</b>
+                              : null}
+                            {BigInt(head.totals.withdrawals) !== 0n
+                              ? <b className="negative">{formatThb(head.totals.withdrawals)}</b>
+                              : null}
+                          </span>
+                        </th>
+                      </tr>
+                    );
                     if (row.kind === "cash") {
-                      return (
+                      return [heading, (
                         <LedgerCashRow
                           key={row.entry.id}
                           row={row}
@@ -1307,11 +1406,11 @@ export function TransactionsView() {
                           onCorrectionSaved={storeCashCorrection}
                           onCancelCorrection={stopCorrecting}
                         />
-                      );
+                      )];
                     }
 
                     if (row.kind === "card") {
-                      return (
+                      return [heading, (
                         <LedgerCardRow
                           key={row.card.id}
                           row={row}
@@ -1328,11 +1427,11 @@ export function TransactionsView() {
                           onCorrectionSaved={storeCardCorrection}
                           onCancelCorrection={stopCorrecting}
                         />
-                      );
+                      )];
                     }
 
                     if (row.kind === "provisional") {
-                      return (
+                      return [heading, (
                         <LedgerSlipRow
                           key={row.slip.id}
                           row={row}
@@ -1346,10 +1445,10 @@ export function TransactionsView() {
                           onCorrectionSaved={storeSlipCorrection}
                           onCancelCorrection={stopCorrecting}
                         />
-                      );
+                      )];
                     }
 
-                    return (
+                    return [heading, (
                       <LedgerStatementRow
                         key={row.transaction.id}
                         row={row}
@@ -1367,7 +1466,7 @@ export function TransactionsView() {
                         onDecideCard={decideCard}
                         onSetReporting={setReporting}
                       />
-                    );
+                    )];
                   })}
                 </tbody>
               </table>

@@ -6,6 +6,7 @@ import type { AccountTransaction, LedgerTransaction } from "@/lib/transactions";
 import {
   MATCH_WINDOW_DAYS,
   compareRows,
+  dayGroups,
   matchCandidates,
   proposeSlipMatches,
   reconcileLedger,
@@ -712,5 +713,87 @@ describe("the write contract for a match decision", () => {
     // Same reason the capture contract is strict: a client sending `slipId` in the body
     // believes it is naming the slip, and the route takes that from the path.
     expect(slipMatchRequestSchema.safeParse({ ...request, slipId: "dddddddd-0000-4000-8000-000000000001" }).success).toBe(false);
+  });
+});
+
+describe("breaking the ledger into days", () => {
+  /**
+   * PLAN task 53 - the ledger's day headings, and the figures that make them worth having.
+   *
+   * The map is keyed by the id of the row that *opens* each day, so the table asks one question per
+   * row while rendering in order rather than restructuring the list into an array of arrays and
+   * then having to keep two orderings in step.
+   */
+  function on(date: string, id: string, components: Components) {
+    return row({ id, source_date: date, source_components: components });
+  }
+
+  type Components = AccountTransaction["source_components"];
+  // Annotated rather than inferred, so `currency` is contextually the literal the schema wants
+  // instead of a widened `string`.
+  const OUT_9000: Components = [{ id: "cccccccc-0000-4000-8000-000000000031", kind: "withdrawal", amount_minor: "-9000", currency: "THB" }];
+  const OUT_500: Components = [{ id: "cccccccc-0000-4000-8000-000000000032", kind: "withdrawal", amount_minor: "-500", currency: "THB" }];
+  const IN_20000: Components = [{ id: "cccccccc-0000-4000-8000-000000000033", kind: "deposit", amount_minor: "20000", currency: "THB" }];
+
+  function sortedRows(transactions: AccountTransaction[]): ReconciledRow[] {
+    return [...reconcileLedger(transactions, [], ACCOUNTS).rows].sort(compareRows);
+  }
+
+  it("opens a day at its first row and totals only that day", () => {
+    const rows = sortedRows([
+      on("2026-06-12", "bbbbbbbb-0000-4000-8000-000000000031", OUT_9000),
+      on("2026-06-12", "bbbbbbbb-0000-4000-8000-000000000032", IN_20000),
+      on("2026-06-10", "bbbbbbbb-0000-4000-8000-000000000033", OUT_500)
+    ]);
+    const groups = dayGroups(rows);
+
+    // Two days, so two headings - not three, and not one per row.
+    expect(groups.size).toBe(2);
+    // Newest first, so the run opens on the 12th. The second row of that day carries no heading,
+    // which is the whole point of keying by the opening row rather than by the date.
+    expect(groups.get(rows[0]!.id)?.date).toBe("2026-06-12");
+    expect(groups.has(rows[1]!.id)).toBe(false);
+    expect(groups.get(rows[2]!.id)?.date).toBe("2026-06-10");
+
+    // **In and out separately, never a net figure.** The 12th took 20,000 in and paid 9,000 out;
+    // a single number would call that an 11,000 day and lose both facts the owner asked to see.
+    const twelfth = groups.get(rows[0]!.id)!.totals;
+    expect(twelfth.rows).toBe(2);
+    expect(twelfth.deposits).toBe("20000");
+    expect(twelfth.withdrawals).toBe("-9000");
+    expect(groups.get(rows[2]!.id)!.totals).toMatchObject({ rows: 1, deposits: "0", withdrawals: "-500" });
+  });
+
+  it("leaves an excluded row out of its day's money and still counts it as a row", () => {
+    // Shared with `summarizeRows` rather than summed again here, which is what stops a day's
+    // figures and the strip's from ever disagreeing about `include_in_reporting` (PLAN task 48).
+    const excluded = on("2026-06-12", "bbbbbbbb-0000-4000-8000-000000000034", OUT_9000);
+    excluded.transaction_overlays = [{
+      category_id: null, description: null, counterparty: null, effective_date: null, note: null,
+      include_in_reporting: false, revision: 1, updated_at: "2026-06-13T03:00:00Z"
+    }];
+    const rows = sortedRows([excluded]);
+    const day = dayGroups(rows).get(rows[0]!.id)!;
+    expect(day.totals).toMatchObject({ rows: 1, deposits: "0", withdrawals: "0", net: "0" });
+  });
+
+  it("groups adjacent equals, which is why the caller has to sort first", () => {
+    // The documented contract, asserted rather than assumed. Handed a list the caller has not
+    // ordered, this emits a heading per *run* and not per date - the honest reading of what it was
+    // given. `compareRows` orders by date first, so in the table every row of a day is contiguous
+    // however many pages they arrived on, which is what stops a day split across a page boundary
+    // from growing a second heading.
+    const unsorted = reconcileLedger([
+      on("2026-06-12", "bbbbbbbb-0000-4000-8000-000000000035", OUT_9000),
+      on("2026-06-10", "bbbbbbbb-0000-4000-8000-000000000036", OUT_500),
+      on("2026-06-12", "bbbbbbbb-0000-4000-8000-000000000037", IN_20000)
+    ], [], ACCOUNTS).rows;
+    expect(unsorted.map((entry) => entry.date)).toEqual(["2026-06-12", "2026-06-10", "2026-06-12"]);
+    expect(dayGroups(unsorted).size).toBe(3);
+    expect(dayGroups([...unsorted].sort(compareRows)).size).toBe(2);
+  });
+
+  it("has nothing to say about an empty ledger", () => {
+    expect(dayGroups([]).size).toBe(0);
   });
 });

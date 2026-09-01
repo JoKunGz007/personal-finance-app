@@ -495,6 +495,37 @@ export function compareRows(a: ReconciledRow, b: ReconciledRow): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/**
+ * Where each day begins in an ordered run of rows, and what that day totals.
+ *
+ * Keyed by the **id of the row that opens the day**, so a caller rendering the list in order asks
+ * one question per row - "does a heading belong above this one?" - rather than restructuring the
+ * list into an array of arrays and then having to keep two orderings in step.
+ *
+ * **It relies on the rows already being sorted, and that is not an assumption it could avoid.**
+ * `compareRows` orders by date first, so every row of a day is contiguous however many pages they
+ * arrived on - which is what stops a day split across a page boundary from growing a second
+ * heading. Handed an unsorted list it would emit a heading per run rather than per day, which is
+ * the honest reading of what it was given: it groups adjacent equals, and the ordering is the
+ * caller's to establish.
+ *
+ * The totals come from `summarizeRows`, the same function the strip above the table uses, so a row
+ * excluded by `include_in_reporting` is absent from the day's figures and from the window's or from
+ * neither. A second summation here is exactly how those two would come to disagree.
+ */
+export function dayGroups(rows: readonly ReconciledRow[]): Map<string, { date: string; totals: LedgerTotals }> {
+  const heads = new Map<string, { date: string; totals: LedgerTotals }>();
+  let start = 0;
+  while (start < rows.length) {
+    const head = rows[start]!;
+    let end = start + 1;
+    while (end < rows.length && rows[end]!.date === head.date) end += 1;
+    heads.set(head.id, { date: head.date, totals: summarizeRows(rows.slice(start, end)) });
+    start = end;
+  }
+  return heads;
+}
+
 /** The signed movement of a row, whichever kind it is. */
 export function rowMovementMinor(row: ReconciledRow): string {
   if (row.kind === "confirmed") return movementMinor(row.transaction);

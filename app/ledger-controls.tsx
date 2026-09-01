@@ -30,6 +30,7 @@ export function LedgerControls({
   dateFrom,
   dateTo,
   rangeUsable,
+  groupByDay,
   modes,
   onLoad,
   onSelectAccount,
@@ -37,7 +38,8 @@ export function LedgerControls({
   onStatusChange,
   onQueryChange,
   onDateFromChange,
-  onDateToChange
+  onDateToChange,
+  onGroupByDayChange
 }: {
   busy: boolean;
   /** Whether rows have arrived. The filters are meaningless until they have, so they wait. */
@@ -52,6 +54,8 @@ export function LedgerControls({
   dateTo: string;
   /** Whether the current pair is sendable — false for a transposed range. */
   rangeUsable: boolean;
+  /** Whether the table breaks into a heading row per day. A display switch, not a filter. */
+  groupByDay: boolean;
   modes: LedgerModes;
   onLoad: () => void;
   onSelectAccount: (accountId: string) => void;
@@ -60,6 +64,7 @@ export function LedgerControls({
   onQueryChange: (query: string) => void;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
+  onGroupByDayChange: (grouped: boolean) => void;
 }) {
   const suspended = modes.picking || modes.pickingCard;
 
@@ -153,7 +158,11 @@ export function LedgerControls({
                 <option value="balance-conflict">Balance disagrees</option>
               </select>
             </label>
-            <label className="account-control">
+            {/* **`ledger-filter` spans two of the row's four tracks**, which is a layout fact and
+                so lives in the class rather than in a width here. Until 2026-09-01 the grid sized
+                its tracks for the *first* row's controls and this one inherited them, so the
+                free-text field rendered narrower than either date input beside it. */}
+            <label className="account-control ledger-filter">
               <span>Filter</span>
               <input
                 type="search"
@@ -163,6 +172,24 @@ export function LedgerControls({
                 placeholder="Description, reference, branch…"
                 onChange={(event) => onQueryChange(event.target.value)}
               />
+            </label>
+            {/* **A display switch, on its own row, and deliberately not one of the filters above.**
+                Everything else here narrows which rows exist; this one only decides whether the
+                rows that already exist are broken up by the day they fall on. Mixing it into the
+                run of `<select>`s would read as a seventh way to hide something.
+
+                Not suspended while a match is being chosen — unlike every filter here — because the
+                chooser turns grouping off outright: that mode lists one record and the rows it
+                could be, which is a set of candidates rather than a stretch of the ledger, and day
+                headings over it would total unrelated rows. The control stays live so the setting
+                survives the mode rather than being lost to it. */}
+            <label className="ledger-grouping">
+              <input
+                type="checkbox"
+                checked={groupByDay}
+                onChange={(event) => onGroupByDayChange(event.target.checked)}
+              />
+              <span>Group rows by day, with that day&rsquo;s totals</span>
             </label>
             {!rangeUsable && (
               <p className="field-help ledger-range-warning" role="alert">

@@ -13,7 +13,9 @@ import {
   pickerSearch,
   pickerStateFromSearch,
   wholeWeeks,
+  wholeYearOf,
   windowForPreset,
+  yearWindow,
   windowSearch,
   isUsableWindow,
   localToday,
@@ -119,6 +121,17 @@ export function StatisticsView() {
    * select needs to tell those apart to know whether an id it holds is unknown or merely early.
    */
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
+
+  /**
+   * How far back the year control may offer, learned from the responses rather than assumed.
+   *
+   * **The page opens on All time**, so the first response resolves `window.from` to the ledger's
+   * own first row and this is exact from the first load. It only ever moves earlier, which is what
+   * keeps a later narrow window from shortening the list: choosing "This month" must not make 2025
+   * unreachable. A deep link straight into a narrow window is the one case it starts short, and
+   * `yearOptions` covers it - the current year and any year already selected are always offered.
+   */
+  const [earliestYear, setEarliestYear] = useState<number | null>(null);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -209,6 +222,16 @@ export function StatisticsView() {
         return;
       }
       setLoaded({ search, data: parsed.data });
+      // **Recorded where the response lands, not in an effect watching for it.** The same fact
+      // could be derived by watching `statistics` change, but setting state synchronously in an
+      // effect body is a cascading render this repo's lint refuses - and this is the more honest
+      // place regardless: the earliest date the page has ever been told about is a property of the
+      // responses, so it is learned as one arrives rather than rediscovered from the last one.
+      const first = parsed.data.window.from;
+      if (first !== null) {
+        const year = Number(first.slice(0, 4));
+        setEarliestYear((current) => (current === null || year < current ? year : current));
+      }
       setMessage("");
     })();
     return () => { cancelled = true; };
@@ -216,6 +239,23 @@ export function StatisticsView() {
 
   // Derived, not stored: no second setState, and no way for the flag and the data to disagree.
   const statistics = loaded?.data ?? null;
+
+  /**
+   * The year the picker is currently showing, or null when the window is not exactly one.
+   *
+   * **Read back out of the custom range rather than stored beside it.** A year *is* a custom range
+   * (`yearWindow`), so a separate `year` state would be a second copy of the same fact, free to
+   * disagree with it the moment either date input is touched by hand - and the date inputs are
+   * right there, visible, the moment a year is chosen.
+   */
+  const selectedYear = custom ? wholeYearOf(customFrom, customTo) : null;
+  const currentYear = Number(today.slice(0, 4));
+  const yearOptions = useMemo(() => {
+    const floor = Math.min(earliestYear ?? currentYear, selectedYear ?? currentYear, currentYear);
+    const years: number[] = [];
+    for (let year = currentYear; year >= floor; year -= 1) years.push(year);
+    return years;
+  }, [earliestYear, selectedYear, currentYear]);
   // **Gated on `usable`, because a refused range is not a request in flight.** Without it a
   // transposed custom range says "updating…" directly above an alert saying nothing was requested.
   const stale = loaded !== null && loaded.search !== search && usable;
@@ -248,6 +288,29 @@ export function StatisticsView() {
         <label className="window-custom-toggle">
           <input type="checkbox" checked={custom} onChange={(event) => setCustom(event.target.checked)} />
           <span>Custom</span>
+        </label>
+        {/* **A whole year, and it sets a custom range rather than a preset.** Twelve months in
+            three columns is the calendar's best reading, and there was no way to ask for exactly
+            one year: "This year" stops at today and "All time" is everything. A year is two dates
+            that will never move, which is the custom shape and not the preset one - so choosing
+            one ticks Custom and fills the two inputs below, where the owner can see precisely what
+            was asked for. Clearing it unticks Custom and hands the window back to whichever chip
+            was last pressed, which is what unticking Custom by hand already does. */}
+        <label className="window-year">
+          <span className="sr-only">Year</span>
+          <select
+            value={selectedYear === null ? "" : String(selectedYear)}
+            onChange={(event) => {
+              if (event.target.value === "") { setCustom(false); return; }
+              const range = yearWindow(Number(event.target.value));
+              setCustomFrom(range.from);
+              setCustomTo(range.to);
+              setCustom(true);
+            }}
+          >
+            <option value="">Year…</option>
+            {yearOptions.map((year) => <option key={year} value={String(year)}>{year}</option>)}
+          </select>
         </label>
       </div>
       {custom && (

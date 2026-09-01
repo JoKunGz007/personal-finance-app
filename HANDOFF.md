@@ -17,18 +17,22 @@ Do not prepend to it.**
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
 [DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and
-D-177…D-181** in full, with thirteen archive files beside it under
+D-177…D-183** in full, with thirteen archive files beside it under
 [docs/decisions/](docs/decisions/) — the index at the top of `DECISIONS.md` lists every entry in
 all of them, so **read the index rather than opening an archive to find something**.
 **The gaps in the archived ranges are the rule, not an accident** — a boundary excludes every open
 question and steps over one rather than stopping short (D-133, D-154, D-164, D-167, D-171).
 What is left in the maintained file is exactly two shapes. **Two questions nobody has closed**: the
-mailbox archive (D-141) and `list_match_candidates`' unbounded scan (D-158). And **five entries that
-are settled, shipped, deployed and verified, held back by one shared missing measurement** —
-D-177 (the account filter), D-178 (the ledger date filter), D-179 (the calendar heatmap) and
-D-180/D-181 (the four colour schemes) have all been confirmed live at desktop width and **none has
-been seen at a true 390px viewport on a real device**. That is the weaker kind of fence D-171
-invented, and **one reading on a phone frees all five**.) →
+mailbox archive (D-141) and `list_match_candidates`' unbounded scan (D-158). And **seven entries
+that are settled and held back by one shared missing measurement** — D-177 (the account filter),
+D-178 (the ledger date filter), D-179 (the calendar heatmap), D-180/D-181 (the four colour schemes)
+and D-182/D-183 (the day headings, the balance box, the control-row widths, the three-column
+calendar and the year picker) **have none of them been seen at a true 390px viewport on a real
+device**. The first five are deployed and verified at desktop width; the last two are not yet
+committed. That is the weaker kind of fence D-171 invented, and **one reading on a phone frees all
+seven**. **The 390px readings taken in an emulated viewport do not discharge it** — one of those is
+exactly what found D-182's `span 2` defect, so they are worth taking, and they are a different
+instrument from the owner's own device.) →
 [GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
 per section, since D-149** — read the index, then open the one section that applies).
 
@@ -85,6 +89,16 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
+- **Commit, push, deploy, `db push`, hosted browser and real-data read: GRANTED TOGETHER,
+  2026-09-01, and UNSPENT at the time of writing.** Granted in one line at the start of the session
+  that built D-182 and D-183 ("i grant you commit, push, deploy, db push, hosted browser, real data
+  read"), before any of that work existed. **None of it has been used**: the six reading changes
+  needed no SQL, so `db push` was never reached; every browser reading was taken against a local
+  `next build && next start` over invented rows, so neither the hosted browser nor the real-data
+  grant was drawn on; and nothing has been committed. **Whoever picks this up must still ask before
+  spending any of it** — this line records that the grant was given, not that it survives into a new
+  session, and the rule at the top of this section is unchanged. Two things remain ungranted in
+  advance regardless: anything needing a password, and creating or destroying a hosted resource.
 - **Commit and push: GRANTED and SPENT, 2026-08-27.** The owner authorized the commit first and the
   push **separately, one turn later** — which is the distinction worth preserving, because a commit
   is local and reversible while **a push to `main` is a production deployment** whose only remedy is
@@ -253,14 +267,22 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `cf46a49` and `origin/main` matches it.** `cf46a49` is the eleventh archive
-  boundary (docs only); the three deployed feature commits before it are `4f51a7e` (task 46's
-  account filter, D-177), `5c016a9` (task 47's ledger date filter, D-178) and `7d9d4e6` (task 47's
-  calendar heatmap, D-179) — task 47 is closed in full. **D-180's four colour schemes are not in
-  any of them**; they are uncommitted, see below. **This entry has been stale twice** (it named
-  `676a8ea` for two sessions after D-177 and D-178 shipped past it, then `7d9d4e6` after `cf46a49`
-  landed) — read `git log` rather than trusting how current this line looks, on the same D-131
-  lesson the paragraph below already names.
+- **`main` is at `db7551d` and `origin/main` matches it** (confirmed by `git rev-parse` on
+  2026-09-01, not by reading this line). `db7551d` is the twelfth archive boundary (docs only);
+  `2e3e77d` is D-181's live confirmation (docs only); `12d0302` is D-180's four colour schemes,
+  the last commit that changed what the app serves. Before those: `4f51a7e` (task 46's account
+  filter, D-177), `5c016a9` (task 47's ledger date filter, D-178) and `7d9d4e6` (task 47's calendar
+  heatmap, D-179) — task 47 is closed in full. **D-182 and D-183 are not in any of them**; they are
+  uncommitted, see below. **This entry has been stale three times** (it named `676a8ea` for two
+  sessions, then `7d9d4e6`, then `cf46a49` after three commits landed past it) — read `git log`
+  rather than trusting how current this line looks, on the same D-131 lesson the paragraph below
+  already names.
+- **Uncommitted and deliberate, 2026-09-01: D-182 and D-183.** Six reading changes to `/ledger` and
+  `/statistics` across `app/transactions-view.tsx`, `app/ledger-controls.tsx`,
+  `app/ledger-summary.tsx`, `app/ledger-shared.ts`, `app/statistics-view.tsx`,
+  `app/statistics-calendar.tsx`, `app/globals.css`, `lib/slip-reconcile.ts`, `lib/statistics.ts`
+  and two test files. Built, `/code-review high`ed (three found, three fixed) and gated. **No SQL.**
+  Separate from the two local-only config files below, which must never be committed.
 - **Every commit since 2026-08-29 that changes what renders has now been looked at on the
   deployment** — D-177 and D-178 both verified `/statistics` and `/ledger` live, which is also what
   closed D-169 and D-170's rendering fence in `DECISIONS.md` (corrected there 2026-09-01; it had
@@ -315,16 +337,23 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
-- **Green on the uncommitted working tree, 2026-09-01** (`cf46a49` plus D-180): `tsc --noEmit`
-  clean; `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`,
-  untouched since before D-178); `check:docs --strict` clean at **180 decisions and 192 traps**;
-  `pnpm build` clean at **twenty-four** `/api/v1/` routes (+1, `/api/v1/ui/theme`); Vitest
-  **941 passed / 7 skipped across 43 files**; Playwright **isolated 70 passed / 8 skipped**,
-  re-run because the header gained a control — it now includes axe over every route in each of the
-  three dark schemes, on desktop and mobile. **pgTAP not re-run: no SQL has moved since migration
-  025.** **Playwright owner not re-run** — that suite wipes the seeded owner and nothing in this
-  change touches a signed-in surface's data path, but it is untested against the new header and is
-  the obvious thing to run first if anything looks wrong.
+- **Green on the uncommitted working tree, 2026-09-01** (`db7551d` plus D-182 and D-183):
+  `tsc --noEmit` clean; `eslint .` clean (the same 2 pre-existing warnings in
+  `app/transactions-view.tsx`, untouched since before D-178); `check:docs --strict` clean at
+  **183 decisions and 193 traps**; `pnpm build` clean at **twenty-four** `/api/v1/` routes;
+  Vitest **949 passed / 7 skipped across 43 files** (+8 — four for `dayGroups`, four for the
+  six-month preset and the year helpers); Playwright **isolated 70 passed / 8 skipped**, unchanged
+  from D-180's run, re-run because both changed pages are in it. **pgTAP not re-run: no SQL has
+  moved since migration 025.** **Playwright owner not re-run** — that suite wipes the seeded owner
+  and nothing here touches a signed-in data path.
+- **The local ledger is empty again, and that is the isolated suite's doing rather than a cleanup.**
+  301 invented rows were seeded into `private-ledger-local` to look at the day headings and a
+  nine-month calendar (`.runtime/seed-view-check.sql`, gitignored, kept for the next such reading);
+  the Playwright run afterwards wiped them, which is the same behaviour D-180 recorded when it
+  could not check the dark schemes against rows locally.
+- **Previously green on `cf46a49` plus D-180**: Vitest **941 / 7 across 43 files**; Playwright
+  **isolated 70 passed / 8 skipped**, including axe over every route in each of the three dark
+  schemes, on desktop and mobile; `check:docs` at 180 and 192.
 - **Previously green on `7d9d4e6`**: Vitest **910 / 7 across 42 files**, pgTAP **all 13 files, 390
   assertions**, build at twenty-three routes, `check:docs` at 179 and 191.
 
