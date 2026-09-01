@@ -266,10 +266,14 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `23bce9d` and `origin/main` matches it** (confirmed by `git rev-parse` on
-  2026-09-01, not by reading this line). `23bce9d` is D-182 and D-183 — the six reading changes to
-  `/ledger` and `/statistics` — and it is the last commit that changed what the app serves.
-  Before it: `db7551d` (the twelfth archive boundary, docs only), `2e3e77d` (D-181's live
+- **`main` is at `63d2080` and `origin/main` matches it** (confirmed by `git rev-parse` on
+  2026-09-01, not by reading this line). `63d2080` is D-184, the sync recording that the commit
+  below deployed — documentation only, and it is one more instance of the entry that **cannot
+  record its own hash**, which is why this line has been stale four times and why `git log` is the
+  authority rather than this sentence. `23bce9d` beneath it is D-182 and D-183 — the six reading
+  changes to `/ledger` and `/statistics` — and it is the last commit that changed what the app
+  serves.
+  Before them: `db7551d` (the twelfth archive boundary, docs only), `2e3e77d` (D-181's live
   confirmation, docs only), `12d0302` (D-180's four colour schemes), `4f51a7e` (task 46's account
   filter, D-177), `5c016a9` (task 47's ledger date filter, D-178) and `7d9d4e6` (task 47's calendar
   heatmap, D-179) — task 47 is closed in full. **This entry has been stale three times** (it named
