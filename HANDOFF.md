@@ -16,27 +16,19 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158, D-161, D-169 and D-170** in full,
-with D-001…D-059 in [docs/decisions/ARCHIVE-D-001-D-059.md](docs/decisions/ARCHIVE-D-001-D-059.md),
-D-060…D-113 in [docs/decisions/ARCHIVE-D-060-D-113.md](docs/decisions/ARCHIVE-D-060-D-113.md),
-D-114…D-119 in [docs/decisions/ARCHIVE-D-114-D-119.md](docs/decisions/ARCHIVE-D-114-D-119.md),
-D-120…D-129 in [docs/decisions/ARCHIVE-D-120-D-129.md](docs/decisions/ARCHIVE-D-120-D-129.md),
-D-130…D-133 in [docs/decisions/ARCHIVE-D-130-D-133.md](docs/decisions/ARCHIVE-D-130-D-133.md),
-D-134…D-140 in [docs/decisions/ARCHIVE-D-134-D-140.md](docs/decisions/ARCHIVE-D-134-D-140.md),
-D-142…D-152 in [docs/decisions/ARCHIVE-D-142-D-152.md](docs/decisions/ARCHIVE-D-142-D-152.md),
-D-154…D-156 in [docs/decisions/ARCHIVE-D-154-D-156.md](docs/decisions/ARCHIVE-D-154-D-156.md),
-D-157…D-163 **without D-158 and D-161** in [docs/decisions/ARCHIVE-D-157-D-163.md](docs/decisions/ARCHIVE-D-157-D-163.md) and
-D-153 with D-164…D-168 in [docs/decisions/ARCHIVE-D-153-D-168.md](docs/decisions/ARCHIVE-D-153-D-168.md);
-**the gaps are the rule, not an accident** — a boundary excludes every open question and steps
-over one rather than stopping short (D-133, D-154, D-164, D-167, D-171). What is left in the maintained file
-is two questions nobody has closed — the mailbox archive (D-141) and `list_match_candidates`'
-unbounded scan (D-158) — plus one **closed for good on 2026-08-31**: the statistics account
-filter (D-161), whose control is built, reviewed, committed, pushed and deployed (D-177), a
-future boundary free to move it, none taken yet — plus **D-169 and
-D-170, which are
-settled arguments held back only because nobody has looked at what they render on the deployment**
-(D-171, and that fence expires the moment either page is seen); the index at the top of
-`DECISIONS.md` covers all eleven) →
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and
+D-177…D-181** in full, with thirteen archive files beside it under
+[docs/decisions/](docs/decisions/) — the index at the top of `DECISIONS.md` lists every entry in
+all of them, so **read the index rather than opening an archive to find something**.
+**The gaps in the archived ranges are the rule, not an accident** — a boundary excludes every open
+question and steps over one rather than stopping short (D-133, D-154, D-164, D-167, D-171).
+What is left in the maintained file is exactly two shapes. **Two questions nobody has closed**: the
+mailbox archive (D-141) and `list_match_candidates`' unbounded scan (D-158). And **five entries that
+are settled, shipped, deployed and verified, held back by one shared missing measurement** —
+D-177 (the account filter), D-178 (the ledger date filter), D-179 (the calendar heatmap) and
+D-180/D-181 (the four colour schemes) have all been confirmed live at desktop width and **none has
+been seen at a true 390px viewport on a real device**. That is the weaker kind of fence D-171
+invented, and **one reading on a phone frees all five**.) →
 [GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
 per section, since D-149** — read the index, then open the one section that applies).
 
@@ -281,13 +273,14 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   measured only in the unit suite. **The larger half of (b) is discharged**: D-181 read 297 real
   rows in Night Town and confirmed the status chips, the verified rail and the calendar on their
   real surfaces. Phone width is now the single reading that three entries are all waiting on.
-- **The eleventh archive boundary is taken, `DECISIONS.md` at 83%.** D-161, D-169 and D-170 moved to
-  [`docs/decisions/ARCHIVE-D-161-D-170.md`](docs/decisions/ARCHIVE-D-161-D-170.md) on 2026-09-01,
-  bought by the same two things this file already recorded: D-161's fence closing (D-177) and
-  D-169/D-170's rendering fence expiring the same day, both sitting unmoved for a session because
-  nobody had re-read the header. `check:docs --strict` clean at **179 decisions and 191 traps**
-  after the move — no id lost, no gap opened. `docs/gotchas/app.md` at 79% is the next file to
-  watch.
+- **The twelfth archive boundary is taken, `DECISIONS.md` at 74%.** D-171 … D-176 moved to
+  [`docs/decisions/ARCHIVE-D-171-D-176.md`](docs/decisions/ARCHIVE-D-171-D-176.md) on 2026-09-01,
+  the same day as the eleventh — the file had gone **83% → 95% in one session**, because D-180 and
+  D-181 are 9.3 KB and 4.2 KB between them. **The first contiguous boundary in five**: both open
+  questions sit below D-171, so nothing had to be stepped over. `check:docs --strict` clean at
+  **181 decisions and 192 traps** after the move — no id lost, no gap opened.
+  **`docs/gotchas/app.md` at 79% is now the file to watch**, and it is the one nobody has split
+  since D-158.
 - **`eslint.config.mjs` and `playwright.config.ts` are the two deliberately local-only files and
   must never be committed.** That is the durable fact; **what else the tree holds changes by the
   hour, so read `git status --short` rather than any sentence here** and stage explicitly, never
@@ -296,10 +289,6 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   D-181, PLAN task 52), and confirmed against the real hosted ledger in the owner's own signed-in
   session. **No SQL moved, so nothing needed `db push`** — the broad grant this session opened with
   was spent on commit, push, deploy and the real-ledger read only.
-- **`DECISIONS.md` is at 95%** (measured, not estimated — the first guess written here said 93%),
-  up from 83% this morning: D-180 and D-181 are both long. **A twelfth
-  boundary is the next housekeeping job** and the header records what fences the newest entries:
-  D-180 supersedes D-137, which is archived, so it must stay findable from the maintained file.
 
 ### Where the database is
 
