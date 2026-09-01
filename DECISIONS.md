@@ -325,6 +325,37 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-182** — The ledger reads a day at a time, the strip carries a balance, and the control row stops sizing one row's tracks for another
 - **D-183** — The calendar reads a year at a time, three across, and every month answers for its own days
 - **D-184** — D-182 and D-183 deploy, and both are confirmed against the real ledger
+- **D-185** — D-182's day heading declared a band and a rule that both painted nothing, and the fix makes 2px load-bearing
+
+## D-185 — D-182's day heading declared a band and a rule that both painted nothing, and the fix makes 2px load-bearing
+
+- Date: 2026-09-01
+- Status: **Built, reviewed, gated, committed as `0f70c62`, pushed and deployed.** Confirmed in the deployed stylesheet, which now serves `border-top:2px solid var(--navy);background:var(--paper-strong)`. `app/globals.css` and `tests/ui-theme.test.ts` (+1). No SQL, no route, no contract change; every project stays on migration 025.
+- Context: the owner looked at the deployed `/ledger` and said the separation between days was still hard to spot. He was describing a preference; what he had actually found was two defects, and neither is visible by reading the CSS.
+
+### Both separators the rule declared were being discarded, each for its own reason
+
+**The band was the ground.** `tr.day-head th` set `background: var(--mist)`. But `.ledger-band` paints no surface of its own, so the ledger table sits directly on `html` — which `globals.css` also paints `var(--mist)`. Measured in the running app under Night, the heading's computed background and the document's were both `rgb(30, 36, 64)`. **The band has never been visible in any scheme since D-182 shipped it**, and no screenshot review would catch it, because there is nothing to see rather than something wrong to see.
+
+**The rule lost a `border-collapse` tie.** The heading's `border-top: 1px solid var(--navy)` meets the preceding row's `td { border-bottom: 1px solid var(--line) }`, and the table is `border-collapse: collapse`. Equal width and equal style, so the tie breaks on document order and the cell higher up wins — the bright `--navy` line is thrown away and the dull `--line` one paints in its place. Distinguishing test, run in the browser rather than reasoned about: forced to red at 1px the border does not appear; at 3px it does, because width beats order.
+
+So the only separation actually reaching the eye was 16px of padding and a slightly smaller uppercase face, competing against an identical `--line` rule beneath every row of the day.
+
+### What was chosen, and why the number matters
+
+Four treatments were rendered on the real markup in all four schemes before the owner picked: a band, whitespace, a whole-day zebra, and a sticky heading. **He chose the band**, which is also the smallest change and the one the existing CSS was already trying to be.
+
+`--paper-strong` is the band, and it needed no new contrast work: `tests/ui-theme.test.ts` already measures "a panel lifting off the ground" as `--paper-strong` against `--mist` at a 1.04 floor in every scheme, so naming the right token *is* the assertion and the ratio is somebody else's test. **2px is load-bearing rather than cosmetic** — it is what wins the collapse. Dropping it to 1px restores the bug with no visible edit and no failing check, which is exactly why it is pinned.
+
+**The ≤700px block is deliberately untouched.** There the heading is `display: block`, so no collapse happens and 1px on the ground paints as written. Nothing changes below that breakpoint — which also means this fix does **not** address the day boundary at phone width, and the owed phone reading still owes that.
+
+### The guard, and the review finding against it
+
+`tests/ui-theme.test.ts` gains one test, red-proved against the pre-fix declaration rather than assumed to work. `/code-review high` found one real defect in its first draft: it selected the rule with `String.match`, which returns the first match in file order, and **two rules carry this selector** — the desktop one and the ≤700px restatement. A mobile-first reshuffle of `globals.css` would have silently moved the assertion onto the phone rule. It now selects by content: the phone rule is the one declaring `display: block`, and this is the one that is not.
+
+### Consequence worth keeping
+
+**A token that resolves to the surface behind it is a live class of defect this repo cannot currently see.** `--mist` on a `--mist` ground is invisible in review, invisible in a screenshot, and invisible to the contrast floors, which only measure pairs somebody thought to list. The trap is recorded in `docs/gotchas/appearance.md`; a general guard is not attempted here.
 
 ## D-182 — The ledger reads a day at a time, the strip carries a balance, and the control row stops sizing one row's tracks for another
 

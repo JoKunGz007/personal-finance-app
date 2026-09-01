@@ -17,19 +17,21 @@ Do not prepend to it.**
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
 [DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and
-D-177…D-183** in full, with thirteen archive files beside it under
+D-177…D-185** in full, with thirteen archive files beside it under
 [docs/decisions/](docs/decisions/) — the index at the top of `DECISIONS.md` lists every entry in
 all of them, so **read the index rather than opening an archive to find something**.
 **The gaps in the archived ranges are the rule, not an accident** — a boundary excludes every open
 question and steps over one rather than stopping short (D-133, D-154, D-164, D-167, D-171).
 What is left in the maintained file is exactly two shapes. **Two questions nobody has closed**: the
-mailbox archive (D-141) and `list_match_candidates`' unbounded scan (D-158). And **eight entries
+mailbox archive (D-141) and `list_match_candidates`' unbounded scan (D-158). And **nine entries
 that are settled, shipped, deployed and verified at desktop width, held back by one shared missing
 measurement** — D-177 (the account filter), D-178 (the ledger date filter), D-179 (the calendar
-heatmap), D-180/D-181 (the four colour schemes) and D-182/D-183/D-184 (the day headings, the
-balance box, the control-row widths, the three-column calendar and the year picker) **have none of
-them been seen at a true 390px viewport on a real device**. That is the weaker kind of fence D-171
-invented, and **one reading on a phone frees all eight**. **The 390px readings taken in an emulated
+heatmap), D-180/D-181 (the four colour schemes), D-182/D-183/D-184 (the day headings, the
+balance box, the control-row widths, the three-column calendar and the year picker) and D-185 (the
+day heading's band and rule, which fixes desktop and **deliberately changes nothing below 700px**,
+so it adds to this fence rather than discharging any of it) **have none of them been seen at a true
+390px viewport on a real device**. That is the weaker kind of fence D-171
+invented, and **one reading on a phone frees all nine**. **The 390px readings taken in an emulated
 viewport do not discharge it** — one of those is exactly what found D-182's `span 2` defect, so
 they are worth taking, and they are a different instrument from the owner's own device.) →
 [GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
@@ -88,8 +90,19 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
+- **Commit, push, deploy, `db push`, hosted browser and real-data read: GRANTED AGAIN and PARTLY
+  SPENT, 2026-09-01 (the D-185 session).** The session opened with **nothing inherited** and the
+  owner re-granted all six mid-session, in one line, after being told what was owed
+  ("i grant you all of the mentioned action above"). **Spent on `0f70c62`**: one commit, one push to
+  `main` — a production deployment — plus the docs commit recording it. **`db push` was never
+  reached** (no SQL moved; every project stays on migration 025). **The hosted browser and the
+  real-data read were never used**: the whole of D-185 was measured against invented local rows, and
+  the deployment was confirmed by fetching the live stylesheet rather than by opening the signed-in
+  app. The owner did paste one screenshot of his real ledger into chat, which is what raised the
+  question — nothing from it was copied into a fixture, a doc, a commit or this file. **None of this
+  survives into a new session — ask again.**
 - **Commit, push, deploy, `db push`, hosted browser and real-data read: GRANTED TOGETHER and
-  SPENT, 2026-09-01.** Granted in one line at the start of the session that built D-182 and D-183
+  SPENT, 2026-09-01 (the D-182/D-183 session).** Granted in one line at the start of the session that built D-182 and D-183
   ("i grant you commit, push, deploy, db push, hosted browser, real data read"), before any of that
   work existed. **Spent on `23bce9d`**: one commit, one push to `main` — which is a production
   deployment — and one read-only pass over the real hosted ledger in the owner's own signed-in
@@ -266,13 +279,13 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `63d2080` and `origin/main` matches it** (confirmed by `git rev-parse` on
-  2026-09-01, not by reading this line). `63d2080` is D-184, the sync recording that the commit
-  below deployed — documentation only, and it is one more instance of the entry that **cannot
-  record its own hash**, which is why this line has been stale four times and why `git log` is the
-  authority rather than this sentence. `23bce9d` beneath it is D-182 and D-183 — the six reading
-  changes to `/ledger` and `/statistics` — and it is the last commit that changed what the app
-  serves.
+- **`main` is at `0f70c62` plus the docs commit that carries this edit, and `origin/main` matches**
+  (confirmed by `git rev-parse` on 2026-09-01, not by reading this line). `0f70c62` is D-185 — the
+  day heading's band and rule — and it is the last commit that changed what the app serves. The
+  docs commit above it **cannot record its own hash**, which is why this line has been stale four
+  times and why `git log` is the authority rather than this sentence. `23bce9d` beneath them is
+  D-182 and D-183, the six reading changes to `/ledger` and `/statistics`; `63d2080` is D-184, the
+  sync recording that they deployed.
   Before them: `db7551d` (the twelfth archive boundary, docs only), `2e3e77d` (D-181's live
   confirmation, docs only), `12d0302` (D-180's four colour schemes), `4f51a7e` (task 46's account
   filter, D-177), `5c016a9` (task 47's ledger date filter, D-178) and `7d9d4e6` (task 47's calendar
