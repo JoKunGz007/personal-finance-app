@@ -973,9 +973,23 @@ footer p { margin: 0; }
    should be told so; `colgroup` is what says "this heads the columns beneath me" for the span of
    rows that follows. The figures beside the date are the same `summarizeRows` the strip above the
    table uses, so an excluded row is absent from both or from neither. */
+/* **Both of this row's separators used to paint nothing, and each failed for its own reason.**
+   The background was `var(--mist)` against a table that sits straight on `html` — also
+   `var(--mist)`, since `.ledger-band` paints no surface of its own — so the band was the ground's
+   exact colour in every scheme (`rgb(30, 36, 64)` against `rgb(30, 36, 64)` in Night). And the
+   rule was `1px solid var(--navy)` meeting the preceding row's `td` `border-bottom: 1px solid
+   var(--line)` under `border-collapse: collapse`: equal width and equal style, so the cell higher
+   up wins the tie and the bright line is discarded. Verified in the running app rather than
+   inferred — forced red at 1px it does not appear, at 3px it does.
+
+   So `--paper-strong` gives the band a surface that is genuinely not the ground, and **2px is
+   load-bearing rather than cosmetic**: it is what wins the collapse. Dropping it back to 1px
+   silently restores the bug with no visible edit. The phone breakpoint below keeps 1px and
+   `background: none` on purpose — there the row is `display: block`, so no collapse happens and
+   the border paints as written. */
 .ledger-table tr.day-head th {
-  padding: 16px 12px 9px; text-align: left; border-top: 1px solid var(--navy);
-  background: var(--mist); font: 500 11px/1.4 var(--font-data);
+  padding: 14px 12px 12px; text-align: left; border-top: 2px solid var(--navy);
+  background: var(--paper-strong); font: 500 11px/1.4 var(--font-data);
   text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
 }
 .ledger-table tr.day-head:first-child th { border-top: 0; }

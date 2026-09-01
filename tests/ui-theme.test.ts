@@ -392,6 +392,39 @@ describe("what app/globals.css actually declares", () => {
       .filter((literal) => literal !== "#fff");
     expect(offenders, "promote these to tokens in all four blocks").toEqual([]);
   });
+
+  it("gives the ledger's day heading a surface that is not the ground, and a rule that survives collapse", () => {
+    // **Both halves of this rule silently painted nothing until 2026-09-01, each for its own
+    // reason, and neither failure is visible in the source.**
+    //
+    // The background was `var(--mist)`. `.ledger-band` paints no surface, so the table sits
+    // straight on `html` — which is *also* `var(--mist)`. The band was the ground's exact colour
+    // in all four schemes. The contrast floor at "a panel lifting off the ground" already measures
+    // `--paper-strong` against `--mist`, so naming the right token here is the whole assertion:
+    // the ratio is somebody else's test.
+    //
+    // The rule was `1px`, meeting the preceding row's `td { border-bottom: 1px solid var(--line) }`
+    // under `border-collapse: collapse`. Equal width and equal style, so the cell higher up wins
+    // the tie and the brighter line is discarded. **Anything ≥ 2px wins on width instead**, which
+    // is why the number is load-bearing rather than cosmetic — dropping it back to 1px restores the
+    // bug with no visible edit, and that is exactly what this pins.
+    //
+    // Scoped to the desktop rule on purpose. The ≤700px block restates this heading as
+    // `display: block` with a 1px border and no background; there no collapse happens, so 1px
+    // paints as written and the ground is the right surface for it.
+    // **Selected by content, not by file order.** Two rules carry this selector — this one and the
+    // ≤700px restatement — so `match` without `g` would pin whichever happens to sit higher in the
+    // file, and a mobile-first reshuffle would silently move this assertion onto the phone rule.
+    // The phone rule is the one that sets `display: block`; this is the one that does not.
+    const rules = [...CSS_CODE.matchAll(/\.ledger-table tr\.day-head th \{([^}]*)\}/gu)]
+      .map((m) => m[1] ?? "");
+    const rule = rules.find((body) => !body.includes("display: block"));
+    expect(rule, "the ledger day heading rule is gone or has been renamed").toBeTruthy();
+    expect(rule, "the day heading's band must not be the ground it sits on").toContain("var(--paper-strong)");
+    expect(rule, "the day heading must not repaint the ground as its band").not.toContain("var(--mist)");
+    const width = Number(rule?.match(/border-top:\s*(\d+)px/u)?.[1]);
+    expect(width, "border-top must be ≥2px or border-collapse discards it").toBeGreaterThanOrEqual(2);
+  });
 });
 
 describe("what every scheme measures", () => {
