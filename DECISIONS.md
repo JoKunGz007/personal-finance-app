@@ -324,6 +324,7 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-181** — D-180 deploys, and the dark schemes are confirmed against the real ledger
 - **D-182** — The ledger reads a day at a time, the strip carries a balance, and the control row stops sizing one row's tracks for another
 - **D-183** — The calendar reads a year at a time, three across, and every month answers for its own days
+- **D-184** — D-182 and D-183 deploy, and both are confirmed against the real ledger
 
 ## D-182 — The ledger reads a day at a time, the strip carries a balance, and the control row stops sizing one row's tracks for another
 
@@ -398,6 +399,30 @@ The hovered day's figures stood in the figure's single `figcaption`. With twelve
 ### Gate
 
 `tsc` clean; `eslint .` clean; `check:docs --strict` clean; `pnpm build` clean at 24 routes; Vitest **949 passed / 7 skipped across 43 files**. Verified in a real browser against `next build && next start` over an invented nine-month ledger: three columns of 409px with no document overflow, twelve months in four rows when a year is chosen, the year round-tripping through the URL and back into the select on reload, the readout rendering beside its own month's heading, and one column with 44px cells at 390px. No real financial data was read or reproduced.
+## D-184 — D-182 and D-183 deploy, and both are confirmed against the real ledger
+
+- Date: 2026-09-01
+- Status: **Committed as `23bce9d`, pushed to `origin/main`, deployed, and confirmed against the owner's real hosted ledger.** Documentation only beyond that commit; no code changed after the verification. Supersedes the "not committed, not pushed, not deployed" status lines D-182 and D-183 carry, which are left standing because this file is append-only.
+- Context: D-182 and D-183 were built, reviewed and gated but every reading had been taken against a local build over invented rows. The owner had granted commit, push, deploy, `db push`, hosted-browser and real-data read together at the start of the session. This entry is the reading that discharges the gap, and it is deliberately short.
+
+### What the deployment confirmed
+
+Read in the owner's own signed-in browser session at 1699px, on the real hosted ledger. **No figure below is money** — every one is a count, a width or a label, per D-049.
+
+- **`/ledger`**: **122 day headings over 297 real rows**, the strip carrying **five** boxes ending in **Balance**, the balance printing an `at <date>` qualifier rather than claiming to be current, and the grouping toggle at **44px**.
+- **The heading shape is right on real data**: a Sunday with two rows renders `SUN, ## AUG #### · # ROWS · −#` — the out direction alone, because that day had no deposits and a zero direction is omitted rather than printed. That is the behaviour the local reading showed and the first time it has been seen against rows the owner did not invent.
+- **The control row is fixed on the real page, measured rather than eyeballed**: Account, From, To, Order and Status all at **293px**, Filter at **600px**, Reload at its own **95px**. Before this change From measured in a 140–170px track and To in a 200px–1fr one. `documentElement.scrollWidth` 1684 against a 1699 viewport — no sideways pan.
+- **`/statistics`**: the calendar lays out **three columns of 442px** over the ledger's **fourteen real months** and **424 live cells** — the same cell count D-181 read, which is the incidental cross-check that this change moved the layout and not the data. The preset row carries **Last 6 months**.
+- **The year select offers exactly 2026 and 2025**, learned from the real response's own `window.from` rather than from a guess, and choosing 2025 resolves to **twelve months in three columns**, ticks Custom, fills the two date inputs with `2025-01-01`/`2025-12-31`, and round-trips into the address bar — with the select still reading 2025 afterwards, which is `wholeYearOf` doing its only job.
+- **The readout renders beside its own month's heading** with the day in bold, and the sentence `/code-review high` flagged as a permanent duplicate now appears **once** in the calendar section rather than twice.
+
+### Nothing new was found, and that is the finding worth recording
+
+D-181's live reading corrected the work it verified — a backdrop that brightened the page, a test measuring a surface the app never paints. This one corrected nothing: every structural fact matched what the local build over invented rows had already shown. **The local reading was therefore load-bearing rather than ceremonial**, which is the argument for seeding invented rows into `private-ledger-local` before asking to deploy rather than after — the `span 2` defect that broke the control bar at 390px was found that way, and it would otherwise have shipped.
+
+### Still owed, and unchanged
+
+**A phone-width reading on a real device.** The 390px readings behind D-182 were an emulated viewport in a browser pane; the hosted app has not been seen on the owner's own phone, and neither have D-177 … D-181. Seven entries now sit behind that one measurement, which is the owner's to take.
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
 - Date: 2026-08-23
