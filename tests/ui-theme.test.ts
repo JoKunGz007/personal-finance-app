@@ -425,6 +425,48 @@ describe("what app/globals.css actually declares", () => {
     const width = Number(rule?.match(/border-top:\s*(\d+)px/u)?.[1]);
     expect(width, "border-top must be ≥2px or border-collapse discards it").toBeGreaterThanOrEqual(2);
   });
+
+  it("only unsticks the ledger's horizontal scroller where the table already fits", () => {
+    // **`position: sticky` on the day heading is inert unless `.table-scroll` stops being a scroll
+    // container**, because `overflow-x: auto` drags the other axis to `auto` with it and that
+    // container — which has no height of its own and so never scrolls vertically — becomes the
+    // sticky scrollport. Measured on the deployment: sticky alone moved the heading the full 500px
+    // of a 500px scroll.
+    //
+    // **But removing it below the width the table fits in makes the whole page scroll sideways**,
+    // which is the one thing `.table-scroll` exists to prevent and which the phone audit forbids
+    // outright. So the pairing is the invariant: `overflow: visible` and `position: sticky` must
+    // live in the same width-gated block, at a floor at or above the measured threshold.
+    //
+    // The threshold was read off the real ledger, not derived — the shell's gutter scales with the
+    // viewport, and the arithmetic that assumed it fixed was wrong by 200px. The page still
+    // overflows at 1320px and no longer does at 1360px; the floor asserted here is 1400px.
+    const block = CSS_CODE.match(/@media \(min-width:\s*(\d+)px\)\s*\{([\s\S]*?)\n\}/gu)
+      ?.map((b) => ({
+        floor: Number(b.match(/min-width:\s*(\d+)px/u)?.[1]),
+        body: b
+      }))
+      .find((b) => b.body.includes(".table-scroll") && b.body.includes("overflow: visible"));
+    expect(block, "the ledger's sticky day heading block is gone or has been renamed").toBeTruthy();
+    expect(block?.floor, "unsticking the scroller below ~1360px scrolls the page sideways")
+      .toBeGreaterThanOrEqual(1400);
+    expect(block?.body, "overflow: visible without sticky leaves the change pointless")
+      .toContain("position: sticky");
+    // The collapsed border does not travel with a pinned cell, so the rule has to be redrawn on the
+    // cell itself. Losing this shadow means the pinned heading arrives with no rule above it.
+    expect(block?.body, "the pinned heading needs its rule redrawn as an inset shadow")
+      .toContain("inset 0 2px 0 var(--navy)");
+    // **Scope, which the first draft of this test did not pin.** Five other surfaces share
+    // `.table-scroll` — the slips list, the import review and three statistics tables — and an
+    // unscoped rule takes the scroller off all of them to give the ledger a sticky heading. They
+    // all sit under 1280px so it would look fine today and bite the first wider table added later.
+    expect(block?.body, "unstick only the scroller that holds the ledger table")
+      .toContain(".table-scroll:has(> .ledger-table)");
+    // The first heading sits under the `thead`'s own border and has never drawn a rule; the inset
+    // shadow would give it one, a pixel below the line already there.
+    expect(block?.body, "the first day heading must not gain a second rule from the shadow")
+      .toMatch(/tr\.day-head:first-child th \{ box-shadow: 0 1px 0 var\(--line\); \}/u);
+  });
 });
 
 describe("what every scheme measures", () => {

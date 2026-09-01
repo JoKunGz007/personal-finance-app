@@ -993,6 +993,50 @@ footer p { margin: 0; }
   text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
 }
 .ledger-table tr.day-head:first-child th { border-top: 0; }
+/* **The day heading follows you down its own day, but only where the table already fits.**
+   Asked for by the owner after reading D-185's band on the deployment.
+
+   **`position: sticky` alone does nothing here, and the reason is `.table-scroll`.** That element
+   carries `overflow-x: auto` so the 1280px table can be reached on a narrow screen — and CSS turns
+   the other axis into `auto` with it, so it becomes a scroll container and therefore the sticky
+   scrollport. It has no height of its own, so it never scrolls vertically, so a sticky heading
+   inside it has nowhere to stick. Measured on the deployment: with sticky applied and nothing else,
+   scrolling 500px moved the heading the full 500px. `overflow-y: clip` does not rescue it either —
+   paired with `overflow-x: auto` it computes to `hidden`, which is still a scroll container.
+
+   So the scroller has to go, and it may only go where the table does not need it. **The threshold
+   was measured rather than derived**, because the shell's gutter scales with the viewport and the
+   arithmetic got it wrong: on the real ledger the page stops overflowing between **1320px** (still
+   overflows) and **1360px** (does not). 1400px clears that with margin and is verified directly at
+   1400, 1420, 1440 and 1688. Below it nothing changes — scroller intact, heading in flow.
+
+   **`border-top-color: transparent` is not a tidy-up.** A collapsed border belongs to the table
+   rather than the cell, so it stays at the row's original position and scrolls away while the
+   pinned cell moves — the heading arrives at the top of the screen with no rule above it. The
+   `inset` shadow redraws that rule on the cell itself, where it travels with the pin; the border
+   keeps its 2px of layout so nothing shifts, and dropping its colour is what stops the in-flow
+   headings drawing the line twice. The outer shadow gives the pinned heading a bottom edge against
+   the rows sliding under it. Verified in an isolated repro at `.runtime/`, pinned and in flow. */
+@media (min-width: 1400px) {
+  /* **Scoped to the scroller that actually holds the ledger**, rather than every `.table-scroll` on
+     the site. Five other surfaces share that class — the slips list, the import review and three
+     statistics tables — and none of them wants a sticky heading, so none of them should have its
+     scroller taken away to get one. They all sit under 1280px and would survive it today, which is
+     exactly why an unscoped rule would look fine and then bite the first table that does not.
+     `:has()` failing on an old engine drops the whole block, which leaves the heading in flow and
+     the scroller intact — the pre-sticky behaviour, not a broken page. */
+  .table-scroll:has(> .ledger-table) { overflow: visible; }
+  .ledger-table tr.day-head th {
+    position: sticky; top: 0; z-index: 3;
+    border-top-color: transparent;
+    box-shadow: inset 0 2px 0 var(--navy), 0 1px 0 var(--line);
+  }
+  /* **The first heading has never drawn a rule and must not start now.** It sits directly under the
+     `thead`, whose own bottom border is already the line there — which is what the `border-top: 0`
+     above it is for. The inset shadow does not know that, so without this it would paint a second
+     line one pixel below the first. Bottom edge only. */
+  .ledger-table tr.day-head:first-child th { box-shadow: 0 1px 0 var(--line); }
+}
 .day-head-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 16px; }
 .day-head-date { color: var(--navy); font-size: 12px; letter-spacing: .04em; }
 .day-head-line b { font-weight: 500; font-variant-numeric: tabular-nums; }
