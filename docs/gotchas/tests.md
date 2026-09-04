@@ -281,3 +281,17 @@ the top of `GOTCHAS.md`.
 - Cause: the font picker's help paragraph is rendered **unconditionally and empty** on every route, because it is an `aria-live` region and has to be in the accessibility tree *before* it has news or the announcement is missed (D-153). It sits in the header, above every page's own content, so `page.locator("p.field-help").first()` is that blank node on every route in the app.
 - Avoid: locate the sentence by what it says — `getByText(/…/)` — or scope to the landmark the spec is about. This generalises: **any deliberately-empty live region is a positional trap for every selector that counts or indexes by class**, and this app has more than one of them by design.
 - Verify: 2026-08-29. The window picker spec read `""` from `p.field-help` first while the window line rendered correctly a few nodes below it; a text locator passed (D-170).
+
+## An audit that measures one axis is silent on the other, and it will report clean for months
+
+- Symptom: a committed layout audit runs on exactly the right page at exactly the right width, passes every run, and a plainly visible defect on that page ships anyway and stays shipped.
+- Cause: the audit's question is narrower than its name. A phone audit asking whether elements escape their container *horizontally* cannot see an element escaping *downwards* — a defect on the vertical axis is not a failure it is able to produce. The check is not broken and never goes red; it is answering a different question from the one its title implies, which is why nobody rereads it.
+- Avoid: when an instrument passes and a human reports a defect it should have caught, ask what the instrument actually measures before doubting the sighting. Put the axis in the assertion's name. Prefer asserting the **cause** alongside the symptom: a structural assertion ("this cell fills its row") does not depend on content, where a symptom assertion can clear by a few pixels on a thin fixture and go green.
+- Verify: 2026-09-04. `tests/e2e/owner-phone-audit.spec.ts` had measured `/ledger` at exactly 390px since D-168 and passed every run, while the day heading overflowed onto the card beneath it on 117 of 122 headings (D-187).
+
+## A simulated fixture is not the fixture, and only a red-proof settles whether an assertion bites
+
+- Symptom: you decide whether a new assertion would fail against the unfixed code by reproducing the fixture's conditions somewhere convenient — substituting its values into a live page, or working the arithmetic through by hand — conclude it would not, and write that conclusion into a comment as though it were measured.
+- Cause: the simulation carries the surrounding page's state rather than the fixture's. Fonts, wrapping, container widths and the seeded data's real shape all differ, and layout is exactly the domain where a few pixels flip the answer. The conclusion is then doubly harmful: wrong, and wearing the confidence of a measurement.
+- Avoid: run the assertion against the unfixed code. It costs one run. Never write "this does not red-prove" on the strength of a simulation — either red-proof it, or say plainly that it is unproven and why.
+- Verify: 2026-09-04. A live-DOM substitution of the fixture's heading text predicted it would clear by 14.8px and therefore could not red-prove; the real run showed 85 of 102 headings spilling by 3px. The comment asserting otherwise was written, and corrected before it shipped (D-187).

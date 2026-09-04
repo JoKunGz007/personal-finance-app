@@ -16,25 +16,23 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and
-D-177…D-186** in full, with thirteen archive files beside it under
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158, D-179,
+D-180, D-181, D-183, D-184 and D-187** in full, with fourteen archive files beside it under
 [docs/decisions/](docs/decisions/) — the index at the top of `DECISIONS.md` lists every entry in
 all of them, so **read the index rather than opening an archive to find something**.
 **The gaps in the archived ranges are the rule, not an accident** — a boundary excludes every open
-question and steps over one rather than stopping short (D-133, D-154, D-164, D-167, D-171).
-What is left in the maintained file is exactly two shapes. **Two questions nobody has closed**: the
-mailbox archive (D-141) and `list_match_candidates`' unbounded scan (D-158). And **ten entries
-that are settled, shipped, deployed and verified at desktop width, held back by one shared missing
-measurement** — D-177 (the account filter), D-178 (the ledger date filter), D-179 (the calendar
-heatmap), D-180/D-181 (the four colour schemes), D-182/D-183/D-184 (the day headings, the
-balance box, the control-row widths, the three-column calendar and the year picker) and D-185/D-186 (the day
-heading's band and rule, and its sticky behaviour — both fix desktop and **deliberately change
-nothing below 1400px, let alone below 700px**, so they add to this fence rather than discharging
-any of it) **have none of them been seen at a true
-390px viewport on a real device**. That is the weaker kind of fence D-171
-invented, and **one reading on a phone frees all ten**. **The 390px readings taken in an emulated
-viewport do not discharge it** — one of those is exactly what found D-182's `span 2` defect, so
-they are worth taking, and they are a different instrument from the owner's own device.) →
+question and steps over one rather than stopping short (D-133, D-154, D-164, D-167, D-171, D-187).
+What is left in the maintained file is three shapes. **Two questions nobody has closed**: the
+mailbox archive (D-141) and `list_match_candidates`' unbounded scan (D-158). **Four entries behind a
+phone reading that only half happened**: D-179 (the calendar heatmap), D-180/D-181 (the four colour
+schemes) and D-183 (the year view) — the reading of 2026-09-04 covered `/ledger`, `/calendar` was
+never in the capture, and the schemes were seen only in the one the owner had on; D-184 stays with
+them because it answers for D-183 as well as for D-182. And **D-187, which is that reading**: it
+found the day heading painting over the card below it on 117 of 122 headings, fixed it and deployed
+the fix. **The thirteenth boundary moved D-177, D-178, D-182, D-185 and D-186** on the strength of
+it, taking the file from 99% to 74%. **A 390px reading in an emulated viewport still does not
+discharge the rest** — it catches layout, and it is a different instrument from the owner's own
+device, which is where colour, thumb reach and Safari's collapsing URL bar live.) →
 [GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
 per section, since D-149** — read the index, then open the one section that applies).
 
@@ -285,10 +283,11 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `9e8b75c` plus the docs commit that carries this edit, and `origin/main` matches**
-  (confirmed by `git rev-parse` on 2026-09-01, not by reading this line). `9e8b75c` is D-186 — the sticky
-  day heading — and it is the last commit that changed what the app serves; `0f70c62` beneath it
-  is D-185, the band and the 2px rule. The
+- **`main` is at `b10fadd` plus the docs commit that carries this edit, and `origin/main` matches**
+  (confirmed by `git rev-parse` on 2026-09-04, not by reading this line). `b10fadd` is D-187 — the
+  phone day heading's missing `width`/`height` resets, and the two assertions added to the 390px
+  audit — and it is the last commit that changed what the app serves. `9e8b75c` beneath it is D-186,
+  the sticky day heading; `0f70c62` is D-185, the band and the 2px rule. The
   docs commit above it **cannot record its own hash**, which is why this line has been stale four
   times and why `git log` is the authority rather than this sentence. `23bce9d` beneath them is
   D-182 and D-183, the six reading changes to `/ledger` and `/statistics`; `63d2080` is D-184, the
@@ -359,7 +358,18 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
-- **Green on the uncommitted working tree, 2026-09-01** (`db7551d` plus D-182 and D-183):
+- **Green on `b10fadd`'s content, 2026-09-04, and this is the fullest run in several sessions**:
+  `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`, untouched);
+  `tsc --noEmit` clean; `check:docs --strict` clean at **187 decisions and 200 traps**;
+  Vitest **951 passed / 7 skipped across 43 files**; `pnpm build` clean at **twenty-four**
+  `/api/v1/` routes; Playwright **isolated 70 passed / 8 skipped** and **owner 21 passed**.
+  **The owner suite was re-run this time rather than skipped**, because D-187's new assertions live
+  in it — which is also why the seeded owner was wiped and reseeded twice, once for the red-proof.
+  **pgTAP not re-run: no SQL has moved since migration 025.**
+- **Both of D-187's new assertions red-prove individually**, each against the unfixed CSS: the spill
+  check on **85 of 102** seeded headings by 3px, the structural check on **102 of 102** by 243px.
+  The second was added precisely because the first clears by so little on this fixture.
+- **Previously green on the uncommitted working tree, 2026-09-01** (`db7551d` plus D-182 and D-183):
   `tsc --noEmit` clean; `eslint .` clean (the same 2 pre-existing warnings in
   `app/transactions-view.tsx`, untouched since before D-178); `check:docs --strict` clean at
   **183 decisions and 193 traps**; `pnpm build` clean at **twenty-four** `/api/v1/` routes;
