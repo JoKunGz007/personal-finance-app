@@ -186,11 +186,24 @@ export function BalanceChart({ points }: { points: readonly DailyBalance[] }) {
         {/* Hit targets are wider than the marks, which is what makes a 300-point line hoverable.
             `pointerEvents` on a transparent rect rather than on the path: a 2px stroke is not a
             target anyone can hit on a phone. */}
-        {series.map((p, i) => (
-          <rect key={p.date} x={x(p.time) - plotWidth / series.length / 2} y={pad.top}
-                width={Math.max(2, plotWidth / series.length)} height={plotHeight}
-                fill="transparent" onMouseEnter={() => setHover(i)} />
-        ))}
+        {/* **Clamped to the plot, because a band centred on a point runs off the end at both ends.**
+            The first and last points sit exactly on the plot's edges, so half of their band lies
+            outside it — harmless while a window holds hundreds of days and the band is 2px, and not
+            harmless once it is wide. A twelve-day window makes the band 61 units against a right
+            padding of 18, so the last one left the `viewBox` by 12.7 units and the root `<svg>`
+            clipped it: nothing painted wrong, but that point's own hit target was the part that got
+            cut. Clamping fixes the target and stops the geometry claiming room the chart lacks.
+            Found by the phone audit once its fixture was reseeded to twelve days (D-187). */}
+        {series.map((p, i) => {
+          const band = Math.max(2, plotWidth / series.length);
+          const left = Math.max(pad.left, x(p.time) - band / 2);
+          const right = Math.min(pad.left + plotWidth, x(p.time) + band / 2);
+          return (
+            <rect key={p.date} x={left} y={pad.top}
+                  width={Math.max(2, right - left)} height={plotHeight}
+                  fill="transparent" onMouseEnter={() => setHover(i)} />
+          );
+        })}
       </svg>
       {/* Not `aria-live`: the hover layer is three hundred adjacent hit targets, so dragging a pointer
           across the chart queued an announcement per point crossed. The `<desc>` above is what makes

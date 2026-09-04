@@ -35,6 +35,34 @@ const ACCOUNT = "11111111-2222-4333-8444-555555555555";
  */
 const SEEDED_ROWS = 120;
 
+/**
+ * **Rows per day, and why the fixture stopped putting each row on its own date.**
+ *
+ * Until 2026-09-04 this seed wrote `date '2026-01-01' + g`, so every day held exactly one row and
+ * every day heading read a short date, "1 row" and a two-figure total. **A day with one row in it is
+ * not a day**, and the difference was not cosmetic: D-187's spill cleared the unfixed CSS by **3px**
+ * on that fixture where the real ledger overflowed by **39.4px**, because a shorter heading wraps
+ * one line fewer. A guard that red-proves by three pixels is one content change away from proving
+ * nothing.
+ *
+ * **Ten is the busy end rather than the average, and it is chosen deliberately.** The owner's ledger
+ * runs about four rows a day (1,660 rows over the 424 days its statistics page reports); the day his
+ * phone capture happened to show held ten. A fixture exists to make a defect visible, so it is sized
+ * for the day that shows one — but the figure is the ninetieth percentile, not the mean, and saying
+ * otherwise is how a "measured" number gets quoted for years.
+ *
+ * **The printed-balance chain still has to reconcile, which is what constrains the change.** Rows
+ * carry `500000 - g * 1000` as the printed balance and a flat `-1000` movement, so each row's
+ * movement must be the difference between its printed balance and the previous row's *in the order
+ * the ledger reads them*. Ten rows sharing a date at a single `09:15` would leave that order
+ * ambiguous, so each row within a day is stepped seven minutes later. Ordering by (date, time) then
+ * matches ascending `g` exactly as it did when the date alone carried it.
+ *
+ * 120 rows over 12 days still crosses the 100-row page boundary, which is what keeps `Load older
+ * rows` on screen (D-168).
+ */
+const ROWS_PER_DAY = 10;
+
 const ROUTES = ["/ledger", "/statistics", "/import", "/slips", "/recovery"] as const;
 
 /** This repository's phone standard (D-168), and the width D-139 scopes it to. */
@@ -72,8 +100,9 @@ function seedRows(owner: string): void {
          effective_date, transaction_label, description, reference, branch, post_balance_minor, currency)
       select '${owner}', '${ACCOUNT}', 'fingerprint-v1',
              md5('audit-' || g) || md5('salt-' || g),
-             date '2026-01-01' + g, time '09:15',
-             date '2026-01-01' + g, 'Transfer',
+             date '2026-01-01' + ((g - 1) / ${ROWS_PER_DAY} + 1),
+             time '09:15' + (((g - 1) % ${ROWS_PER_DAY}) * interval '7 minutes'),
+             date '2026-01-01' + ((g - 1) / ${ROWS_PER_DAY} + 1), 'Transfer',
              'Synthetic audit row ' || g, 'AUDITREF' || g, 'Synthetic branch',
              500000 - g * 1000, 'THB'
       from generate_series(1, ${SEEDED_ROWS}) g
@@ -227,9 +256,10 @@ test.describe("the app at phone width", () => {
           // own 390px capture, then measured on the deployed build: 117 of 122 headings, the worst
           // by 39.4px.
           //
-          // The instrument check first, in this file's own tradition (D-138): one row per seeded
-          // day means a heading above every card, and a run that finds none is measuring a page
-          // where grouping never rendered rather than a page that is correct.
+          // The instrument check first, in this file's own tradition (D-138): the seed writes ten
+          // rows to each of twelve days, so a heading stands above every group of cards, and a run
+          // that finds none is measuring a page where grouping never rendered rather than a page
+          // that is correct.
           await expect(page.locator("tr.day-head"),
             "no day headings rendered — a clean check here would prove nothing")
             .not.toHaveCount(0);
@@ -251,21 +281,23 @@ test.describe("the app at phone width", () => {
             }));
 
           // **The spill itself, which is what the owner saw.** Red-proved against the unfixed CSS
-          // on this fixture at 85 headings of 102, each by 3px — a thin margin next to the real
-          // ledger's 39.4px, because one seeded row per day gives a shorter heading that wraps to
-          // one line fewer. Thin is still red, but it is thin by luck rather than by design: a
-          // fixture whose days each held ten rows would exercise this the way the real ledger does.
-          // That margin is why the structural check below is here rather than being redundant.
+          // on **12 headings of 12, by 20–21px** — against the real ledger's 39.4px, which is the
+          // right order of magnitude and is the reason `ROWS_PER_DAY` exists. The first fixture put
+          // one row on each of 120 days and red-proved on 85 of 102 by **3px**; a guard whose
+          // margin is three pixels is one content change from proving nothing, and it was written
+          // that way because nobody had run it against a realistic day.
           const spilling = headings.filter((h) => h.spill > 0.5);
           expect(spilling.map((h) => `#${h.i} by ${Math.round(h.spill)}px`),
             "day headings spilling below their own row onto the card beneath").toEqual([]);
 
           // **The cause, asserted directly.** The heading cell must fill its row rather than keep a
-          // desktop column's 115px. Both checks red-proved against the unfixed CSS, so this is not
+          // desktop column's 115px. Both checks red-prove against the unfixed CSS, so this is not
           // the only one that bites — but it is the unconditional one: it does not care how long
-          // the heading's text is, and it fired on every heading (102 of 102, 358 − 115 = 243px)
-          // where the spill above fired on 85 and only by 3px. `< 0` catches the missing-cell
-          // sentinel above, so a heading that stops being a `<th>` fails here rather than passing.
+          // the heading's text is, and it fires on every heading at 358 − 115 = 243px whatever the
+          // fixture holds. That independence is what made it worth adding while the spill check
+          // still cleared by three pixels, and it is still worth keeping now that it clears by
+          // twenty. `< 0` catches the missing-cell sentinel above, so a heading that stops being a
+          // `<th>` fails here rather than passing.
           const pinched = headings.filter((h) => h.pinched > 1 || h.pinched < 0);
           expect(pinched.map((h) => `#${h.i} by ${Math.round(h.pinched)}px`),
             "day heading cells narrower than their own row — a desktop column width survived the stacked mode")

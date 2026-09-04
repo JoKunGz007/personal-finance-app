@@ -74,3 +74,10 @@ public/zxing_reader.wasm
 # the slip reader now calls Google Cloud Vision through this app's own route, so there is no
 # core, worker or Thai language data to copy. Do not re-add the ignore without re-adding the
 # engine — an ignore for something absent is how a rule quietly stops meaning anything.
+
+# Phone captures of the real ledger, dropped here by the owner for an agent to measure
+# (D-049, D-187). They are real financial data in image form: readable by an agent that has
+# been granted it, and never a fixture, a screenshot in a commit, or a quotation in a
+# continuity doc. Ignored rather than trusted to habit, because everything else in this
+# directory is committable and `git add .` would not ask.
+phone_screenshots/
