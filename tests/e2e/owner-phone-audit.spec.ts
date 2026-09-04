@@ -216,6 +216,60 @@ test.describe("the app at phone width", () => {
           await expect(page.getByRole("button", { name: "Load older rows" }),
             `${SEEDED_ROWS} rows were seeded past the ${100}-row page, so the control D-168 found only on the real ledger must be on screen`)
             .toBeVisible();
+
+          // **A day heading that spills onto the card below it — the defect every check above
+          // walks straight past.** `measure()` asks only whether an element escapes its container
+          // *horizontally*, so a heading escaping *downwards* was outside the instrument's question
+          // entirely. `.ledger-table th:nth-child(1)` sizes a desktop column and sits outside every
+          // media query, so it went on pinning the `colspan=7` heading cell to 115px at phone
+          // width; the cell's height would not grow either. Its three parts wrapped to four lines
+          // and the day total painted over the first transaction card. Found by reading the owner's
+          // own 390px capture, then measured on the deployed build: 117 of 122 headings, the worst
+          // by 39.4px.
+          //
+          // The instrument check first, in this file's own tradition (D-138): one row per seeded
+          // day means a heading above every card, and a run that finds none is measuring a page
+          // where grouping never rendered rather than a page that is correct.
+          await expect(page.locator("tr.day-head"),
+            "no day headings rendered — a clean check here would prove nothing")
+            .not.toHaveCount(0);
+
+          const headings = await page.evaluate(() =>
+            Array.from(document.querySelectorAll("tr.day-head")).flatMap((head, i) => {
+              const line = head.querySelector(".day-head-line");
+              if (line === null) return [];
+              const cell = head.getBoundingClientRect();
+              const inner = line.getBoundingClientRect();
+              // No `?? cell` fallback: substituting the row's own rect for a missing cell would
+              // compute `pinched` as exactly 0 and pass, so a refactor that stopped rendering a
+              // `<th>` would retire this check silently rather than failing it. `-1` is the
+              // sentinel for that, and the filter below treats it as a failure and not a pass.
+              const th = head.querySelector("th")?.getBoundingClientRect() ?? null;
+              // Indices and pixels rather than text: a failure message is read in CI output, and
+              // this one has no business carrying a ledger's dates or totals into it.
+              return [{ i, spill: inner.bottom - cell.bottom, pinched: th === null ? -1 : cell.width - th.width }];
+            }));
+
+          // **The spill itself, which is what the owner saw.** Red-proved against the unfixed CSS
+          // on this fixture at 85 headings of 102, each by 3px — a thin margin next to the real
+          // ledger's 39.4px, because one seeded row per day gives a shorter heading that wraps to
+          // one line fewer. Thin is still red, but it is thin by luck rather than by design: a
+          // fixture whose days each held ten rows would exercise this the way the real ledger does.
+          // That margin is why the structural check below is here rather than being redundant.
+          const spilling = headings.filter((h) => h.spill > 0.5);
+          expect(spilling.map((h) => `#${h.i} by ${Math.round(h.spill)}px`),
+            "day headings spilling below their own row onto the card beneath").toEqual([]);
+
+          // **The cause, asserted directly.** The heading cell must fill its row rather than keep a
+          // desktop column's 115px. Both checks red-proved against the unfixed CSS, so this is not
+          // the only one that bites — but it is the unconditional one: it does not care how long
+          // the heading's text is, and it fired on every heading (102 of 102, 358 − 115 = 243px)
+          // where the spill above fired on 85 and only by 3px. `< 0` catches the missing-cell
+          // sentinel above, so a heading that stops being a `<th>` fails here rather than passing.
+          const pinched = headings.filter((h) => h.pinched > 1 || h.pinched < 0);
+          expect(pinched.map((h) => `#${h.i} by ${Math.round(h.pinched)}px`),
+            "day heading cells narrower than their own row — a desktop column width survived the stacked mode")
+            .toEqual([]);
         }
         if (route === "/statistics") {
           // Four tables and two inline charts, none of which exist until the RPC answers.

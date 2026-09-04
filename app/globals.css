@@ -1355,7 +1355,32 @@ footer p { margin: 0; }
      rule above it because that rule is now the only thing parting one day from the next. */
   tr.day-head { display: block; min-height: 0; margin: 18px 0 8px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
   tr.day-head:first-child { margin-top: 0; }
-  .ledger-table tr.day-head th { display: block; padding: 8px 2px; border-top: 1px solid var(--navy); background: none; }
+  /* **`display: block` releases neither the desktop column width nor the table's height, and this
+     heading kept both.** The `td` rule directly below resets `width`'s counterpart `min-width` and
+     `height` for exactly this reason; the heading cell was never given the same treatment, and it
+     is the one cell in `tbody` that is a `<th>`.
+
+     **The width is what made it wrap.** The day heading is a `colspan=7` `<th>` and therefore its
+     row's *first* child, so `.ledger-table th:nth-child(1) { width: 115px }` — which sits outside
+     every media query because it sizes a column — went on pinning it to 115px here. In 111px of
+     usable space the heading's three parts wrapped to three or four lines.
+
+     **The height is what made the wrap land on the card.** The cell's used height stayed 58px no
+     matter what it contained — measured at 58px against a 70.4px child, and still 58px after the
+     width was freed. So the overflow was never clipped or absorbed; the day total simply painted
+     over the first transaction card, 8px below (`tr.day-head`'s own bottom margin).
+
+     **Measured on the deployed build at 390px.** As shipped: 117 of 122 headings overflowed their
+     own box, the worst by 39.4px. `width: auto` alone takes the cell to 358px and the heading to a
+     single 16.8px line — enough today, but it only removes the trigger, since forcing a wrap back
+     put the spill straight back at +3.6px. With `height: auto` as well the box tracks its content:
+     33.5px for one line, 70.3px for a forced three, and no spill in either. `auto` rather than
+     `100%` for the width because the cell is `border-box` and carries horizontal padding.
+
+     A wrap is reachable without any code change — larger iOS text, a longer localised date, a
+     fourth part in `.day-head-line` — which is why both halves are here and not just the one that
+     makes today's ledger correct. */
+  .ledger-table tr.day-head th { display: block; width: auto; height: auto; padding: 8px 2px; border-top: 1px solid var(--navy); background: none; }
   td { display: block; height: auto; min-width: 0; padding: 5px 8px; border: 0; text-align: left !important; white-space: normal !important; }
   td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--muted); font: 500 9px/1 var(--font-data); text-transform: uppercase; letter-spacing: .06em; }
   td:nth-child(2), td:nth-child(3), td:last-child { grid-column: 1 / -1; }
