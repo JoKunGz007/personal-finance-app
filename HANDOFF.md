@@ -365,6 +365,12 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 - **Green on `b6bcf92`'s content, 2026-09-04**: the same run as below, re-run in full after the
   fixture reseed and the chart clamp, at **188 decisions and 202 traps**. The reseed is the reason
   the owner suite matters here — it is the only suite that exercises the new fixture.
+- **The chart clamp is confirmed on the deployed build**, 390px, owner's signed-in session, on a
+  **seven-day** custom window (`?custom=1&from=…&to=…`): seven hover bands, nothing escaping either
+  chart, no sideways pan. **Choose the window deliberately when re-checking this** — the escape only
+  exists while the half-band exceeds the 18-unit right padding, which needs fewer than about twenty
+  points. At seven the pre-fix geometry would have escaped by 34.6 units (15.1px); at twenty-one it
+  would not have escaped at all, so a pass at that width is not evidence of anything.
 - **Green on `b10fadd`'s content, 2026-09-04, and this is the fullest run in several sessions**:
   `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`, untouched);
   `tsc --noEmit` clean; `check:docs --strict` clean at **187 decisions and 200 traps**;
