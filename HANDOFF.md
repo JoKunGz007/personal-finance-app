@@ -22,17 +22,19 @@ D-180, D-181, D-183, D-184 and D-187** in full, with fourteen archive files besi
 all of them, so **read the index rather than opening an archive to find something**.
 **The gaps in the archived ranges are the rule, not an accident** — a boundary excludes every open
 question and steps over one rather than stopping short (D-133, D-154, D-164, D-167, D-171, D-187).
-What is left in the maintained file is three shapes. **Two questions nobody has closed**: the
-mailbox archive (D-141) and `list_match_candidates`' unbounded scan (D-158). **Four entries behind a
-phone reading that only half happened**: D-179 (the calendar heatmap), D-180/D-181 (the four colour
-schemes) and D-183 (the year view) — the reading of 2026-09-04 covered `/ledger`, `/calendar` was
-never in the capture, and the schemes were seen only in the one the owner had on; D-184 stays with
-them because it answers for D-183 as well as for D-182. And **D-187, which is that reading**: it
-found the day heading painting over the card below it on 117 of 122 headings, fixed it and deployed
-the fix. **The thirteenth boundary moved D-177, D-178, D-182, D-185 and D-186** on the strength of
-it, taking the file from 99% to 74%. **A 390px reading in an emulated viewport still does not
-discharge the rest** — it catches layout, and it is a different instrument from the owner's own
-device, which is where colour, thumb reach and Safari's collapsing URL bar live.) →
+What is left in the maintained file is **two open questions and six entries with nothing fencing
+them**. The questions are the mailbox archive (D-141) and `list_match_candidates`' unbounded scan
+(D-158); nothing else here is unanswered. **The phone fence is fully discharged as of 2026-09-04.**
+D-187 is the reading — it found the day heading painting over the card below it on 117 of 122
+headings, fixed it and deployed the fix — and **the thirteenth boundary moved D-177, D-178, D-182,
+D-185 and D-186** on the strength of it, taking the file from 99% to 74%. D-188 closed the rest the
+same day: `/statistics` carries the spending calendar, so **D-179 and D-183 were in the owner's
+captures after all** and both are correct at 390px, which frees D-184 with them; **D-180 and D-181
+are closed by the owner's decision** to leave the four schemes unphotographed, since they are barely
+different between his desktop and his phone. That is a weaker close than a measurement and is
+recorded as one. **So the fourteenth boundary is unfenced and available whenever the budget wants
+it** — at 78% it does not yet, and this log's rule is that a boundary sits where an argument ends
+rather than where a number is round.) →
 [GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
 per section, since D-149** — read the index, then open the one section that applies).
 
@@ -283,10 +285,12 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `b10fadd` plus the docs commit that carries this edit, and `origin/main` matches**
-  (confirmed by `git rev-parse` on 2026-09-04, not by reading this line). `b10fadd` is D-187 — the
-  phone day heading's missing `width`/`height` resets, and the two assertions added to the 390px
-  audit — and it is the last commit that changed what the app serves. `9e8b75c` beneath it is D-186,
+- **`main` is at `b6bcf92` plus the docs commit that carries this edit, and `origin/main` matches**
+  (confirmed by `git rev-parse` on 2026-09-04, not by reading this line). `b6bcf92` is D-188 — the
+  audit's reseeded fixture, the balance chart's clamped hit targets, and the ignore for
+  `phone_screenshots/` — and it is the last commit that changed what the app serves. `d490b34`
+  beneath it is D-187's documentation and the thirteenth archive boundary; `b10fadd` is D-187
+  itself, the phone day heading's missing `width`/`height` resets. `9e8b75c` is D-186,
   the sticky day heading; `0f70c62` is D-185, the band and the 2px rule. The
   docs commit above it **cannot record its own hash**, which is why this line has been stale four
   times and why `git log` is the authority rather than this sentence. `23bce9d` beneath them is
@@ -358,6 +362,9 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on `b6bcf92`'s content, 2026-09-04**: the same run as below, re-run in full after the
+  fixture reseed and the chart clamp, at **188 decisions and 202 traps**. The reseed is the reason
+  the owner suite matters here — it is the only suite that exercises the new fixture.
 - **Green on `b10fadd`'s content, 2026-09-04, and this is the fullest run in several sessions**:
   `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`, untouched);
   `tsc --noEmit` clean; `check:docs --strict` clean at **187 decisions and 200 traps**;

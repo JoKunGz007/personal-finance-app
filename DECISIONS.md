@@ -344,6 +344,37 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-185** — D-182's day heading declared a band and a rule that both painted nothing, and the fix makes 2px load-bearing
 - **D-186** — The day heading sticks, and the reason it could not was the horizontal scroller rather than the heading
 - **D-187** — The phone's day heading kept a desktop column's width, and the audit's question had no vertical half
+- **D-188** — A fixture with one row a day was not a ledger, and fixing that failed the audit on a second page
+
+## D-188 — A fixture with one row a day was not a ledger, and fixing that failed the audit on a second page
+
+- Date: 2026-09-04
+- Status: **Built, reviewed, gated, committed as `b6bcf92`, pushed and deployed.** `tests/e2e/owner-phone-audit.spec.ts`, `app/statistics-charts.tsx` and `.gitignore`. No SQL, no route, no contract change.
+- Context: D-187 shipped a guard that red-proved by 3px where the real ledger overflowed by 39.4px, and said so in its own comment. This closes that.
+
+### A day with one row in it is not a day
+
+The audit seeded `date '2026-01-01' + g`, one row per date across 120 dates, so every day heading read a short date, "1 row" and a two-figure total — one wrapped line fewer than the real thing. **Ten rows across each of twelve days** now, which red-proves at **20–21px on 12 headings of 12** against the previous 3px on 85 of 102.
+
+**The printed-balance chain is what constrained the change.** Rows carry `500000 - g * 1000` as the printed balance against a flat `-1000` movement, so each movement must equal the difference between two printed balances *in the order the ledger reads them*. Ten rows sharing one `09:15` leaves that order ambiguous, so each row within a day steps seven minutes later and `(date, time)` still matches ascending `g`. 120 rows over 12 days still crosses the 100-row page, so `Load older rows` stays on screen (D-168).
+
+**Ten is the busy end, not the average, and the comment says so.** The owner's ledger runs about four rows a day — 1,660 rows over the 424 days its own statistics page reports — and ten was the count on the one day his capture happened to show. `/code-review high` caught the first draft calling ten the average, which is the D-187 trap repeating itself inside the fix for D-187.
+
+### A representative fixture failed a page nobody was looking at
+
+Reseeding immediately turned `/statistics` red, which is the entire point of one. The balance chart's hover hit targets are centred on their points, so the first and last extend half a band beyond the plot. At 300 days that half-band is a pixel; at twelve it is 31 units, and the last one left the `viewBox` by 12.7 — about 6px on screen. **The root `<svg>` clipped it, so nothing ever painted wrong; what got cut was that point's own hit target.** Both ends are clamped to the plot now.
+
+**PLAN task 46 predicted a defect of this shape, in this chart, at a narrow window, and left it for whoever created the data shape that shows it.** That turned out to be a fixture change rather than a feature — which is the argument for representative fixtures stated better than any of these entries could state it.
+
+### What the owner's captures settled, and what he decided instead
+
+Five captures of `/ledger`, `/statistics`, `/import`, `/slips` and `/recovery` at 390px. **`/statistics` carries the spending calendar, so D-179's heatmap and D-183's year view were in the reading after all** — there is no `/calendar` route, and an earlier ask for one in this session was wrong. Both render correctly: months stack one per row rather than three across, both ramps read, day cells clear the 44px standard, nothing overflows. **`Load older rows` was seen at the foot of a real phone ledger for the first time**, which the PDF capture could not show because Safari caps a full-page export at 14400pt.
+
+**D-180 and D-181's fence is closed by the owner's decision rather than by a reading**: asked whether he wanted the four schemes photographed, he said to leave it, because they are barely different between his desktop and his phone. *A question is closed when it stops being asked* — here the owner stopped asking it, which is a weaker close than a measurement and is recorded as such rather than dressed up as one. **All four entries the thirteenth boundary held back are now free**; the fourteenth is available whenever the budget wants it, and at 74% it does not yet.
+
+### The captures live in the repository and are one `git add .` from being committed
+
+`phone_screenshots/` is where the owner drops them. It was not ignored, and everything else in that directory is committable, so nothing would have asked. Now ignored (D-049). **An agent may read them under a granted real-data read; nothing in them may become a fixture, a commit, or a quotation in these documents** — every figure quoted here is a count, a width or a percentage.
 
 ## D-187 — The phone's day heading kept a desktop column's width, and the audit's question had no vertical half
 
