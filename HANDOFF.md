@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-01.
+Last updated: 2026-09-07.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -91,6 +91,28 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
 - **Real-PDF smoke tests: conditions unchanged since 2026-07-25.** The owner types the document
   password interactively; nothing is logged, retained or committed. Requires the owner present, so
   it cannot run unattended.
+- **Commit, push, deploy, `verify`, `code-review`, Docker, local and hosted Supabase, hosted browser
+  and real-data read: GRANTED IN TWO PARTS and HEAVILY SPENT, 2026-09-04 (the D-187/D-188 session).**
+  The session opened with **nothing inherited**, stated explicitly in the opening prompt. The owner
+  first granted the real-data read by **opening the hosted app in the agent's browser himself** and
+  saying so, then granted the rest in one line ("i grant you access to commit, push, deploy, verify,
+  code-review, access my docker, local supabase, hosted supabase"). **Spent on six commits and six
+  pushes** — `b10fadd`, `d490b34`, `b6bcf92`, `36d7188`, `04d772e`, `9976f7a` — **each push to `main`
+  a production deployment**, two of them changing what the app serves. **`db push` was never reached**
+  (no SQL moved; every project stays on migration 025) and **hosted Supabase was never touched
+  directly** — only through the app in a browser. **Docker and `private-ledger-local` were used
+  properly**: the owner Playwright suite ran four times, which wipes and reseeds the seeded owner
+  each time, including twice deliberately against reverted source to red-prove new assertions.
+  **The hosted browser and the real-data read were both used extensively**, always read-only: the
+  day heading's 117-of-122 spill was measured on the owner's own signed-in ledger, both fixes were
+  confirmed there after deploying, and the chart clamp was verified on a seven-day custom window.
+  No control was pressed, nothing was written, and every injected probe style was removed and the
+  measurement re-taken to prove the revert. **The owner also handed over real financial data as
+  images** — an iOS Safari PDF capture of `/ledger`, then five phone screenshots dropped into
+  `phone_screenshots/`. That directory **was not gitignored and now is**; the captures were one
+  `git add .` from a commit. **Nothing observed anywhere reached a fixture, a doc, a commit or this
+  file** — every figure recorded across D-187, D-188 and this file is a count, a width or a
+  percentage. **None of this survives into a new session — ask again.**
 - **Commit, push, deploy, `db push`, hosted browser and real-data read: GRANTED AGAIN and PARTLY
   SPENT, 2026-09-01 (the D-185 session).** The session opened with **nothing inherited** and the
   owner re-granted all six mid-session, in one line, after being told what was owed
@@ -285,15 +307,19 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `b6bcf92` plus the docs commit that carries this edit, and `origin/main` matches**
-  (confirmed by `git rev-parse` on 2026-09-04, not by reading this line). `b6bcf92` is D-188 — the
+- **`main` is at `9976f7a` and `origin/main` matches** (confirmed by `git rev-parse` on 2026-09-07,
+  not by reading this line). **The last three commits are documentation only**, so the last commit
+  that changed what the app serves is still `b6bcf92`: `9976f7a` retired task 13's blocker, which
+  had outlived by eighteen days the OCR engine it named; `04d772e` recorded the chart clamp's
+  confirmation on the deployed build; `36d7188` is D-188's own documentation. `b6bcf92` is D-188 — the
   audit's reseeded fixture, the balance chart's clamped hit targets, and the ignore for
   `phone_screenshots/` — and it is the last commit that changed what the app serves. `d490b34`
   beneath it is D-187's documentation and the thirteenth archive boundary; `b10fadd` is D-187
   itself, the phone day heading's missing `width`/`height` resets. `9e8b75c` is D-186,
   the sticky day heading; `0f70c62` is D-185, the band and the 2px rule. The
-  docs commit above it **cannot record its own hash**, which is why this line has been stale four
-  times and why `git log` is the authority rather than this sentence. `23bce9d` beneath them is
+  docs commit carrying this edit **cannot record its own hash**, which is why this line has been
+  stale five times — the fifth caught on 2026-09-07, when it still named one docs commit and three
+  had landed — and why `git log` is the authority rather than this sentence. `23bce9d` beneath them is
   D-182 and D-183, the six reading changes to `/ledger` and `/statistics`; `63d2080` is D-184, the
   sync recording that they deployed.
   Before them: `db7551d` (the twelfth archive boundary, docs only), `2e3e77d` (D-181's live
