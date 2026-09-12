@@ -345,6 +345,31 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-186** — The day heading sticks, and the reason it could not was the horizontal scroller rather than the heading
 - **D-187** — The phone's day heading kept a desktop column's width, and the audit's question had no vertical half
 - **D-188** — A fixture with one row a day was not a ledger, and fixing that failed the audit on a second page
+- **D-189** — A repeat mailbox sync re-offered files it had already fetched, and closing that reopened the scan D-145 had capped
+
+## D-189 — A repeat mailbox sync re-offered files it had already fetched, and closing that reopened the scan D-145 had capped
+
+- Date: 2026-09-12
+- Status: **Built, reviewed and fixed, committed as `7eb2b93`.** `lib/statement-sync.ts`, `lib/server/statement-mailbox.ts`, `lib/server/statement-mailbox-session.ts`, `app/api/v1/imports/mailbox/attachment/route.ts`, `tests/statement-mailbox.test.ts` (+5). No SQL, no new route, no contract change.
+- Context: the owner noticed the hosted Sync button (D-145) re-listed every matching statement on each pass, so a repeat sync re-downloaded files already fetched through it. D-145 had explicitly declined a watermark for this on the grounds that inventing server-side state for a button pressed by hand was not worth it, and D-144's local fetcher had separately decided to leave the mail untouched **because it believed the dedicated mailbox also lived in the owner's main mail** — flagging a message there would have flagged it in his main inbox too. The owner confirmed this session that the statement mailbox is in fact a fully separate account, which is what made the option below available.
+
+### The decision
+
+**Mark each fetched attachment with a custom IMAP keyword on the mailbox itself, and leave it out of the next manifest.** `fetchedFlag(part)` in `lib/server/statement-mailbox.ts` folds a part path's dots into dashes to make a legal keyword (`PLFetched-1-2`), and `unfetchedParts` filters a message's PDF parts against its own flags before they reach the page. `markFetched`, called from `attachment/route.ts` only once a download stream completes — never on a cancelled one, so an abandoned download is offered again — sets it via `imapflow`'s `messageFlagsAdd`. **Per-part rather than per-message**, because a statement mail routinely carries two PDFs (D-144) and downloading one must not hide the sibling that has not been fetched yet.
+
+**This reverses D-144's retention call for the hosted route only, not for the local script.** The script still owns the folder it writes to and dedupes by checking whether a same-named file already exists there — it has no need to mark anything on the server and stays untouched. The route has no folder, so it now asks the mailbox what it has already been told to keep.
+
+**Client-side (browser `localStorage`) and a new server-side ledger table were both considered and rejected.** `localStorage` resets on cleared site data or a different browser/device; a fetched-log table is exactly the persisted watermark D-145 argued against, and needs a migration for a fact the mailbox can already hold itself. The IMAP flag needs neither — it lives where the bytes already are, on infrastructure only the owner's IMAP client, if any, ever reads.
+
+### What `/code-review high` found, and it was a real regression
+
+**Skipping already-fetched messages removed the only practical bound on how many messages `findAttachments` examines**, reopening the exact failure D-145's own review had closed. Before dedup, `found.length >= MAX_SYNC_ATTACHMENTS` also bounded iterations in practice, because almost every matching message contributed at least one attachment. After dedup, a message whose only PDFs are already fetched contributes zero and the loop does not stop for it — so once a mailbox has been synced long enough that most old mail carries the flag, a wide window (`?all=1` most of all) can walk the entire search result, one IMAP round trip per message, without ever finding forty *new* attachments. That is "thousands of sequential fetches inside one request, ending as a gateway timeout with no sentence in it" — D-145's own description of the failure its cap was built to prevent, reached by a different road. `MAX_SYNC_MESSAGES_SCANNED` (200) in `lib/statement-sync.ts` caps messages examined independently of attachments found, and `findAttachments` stops at either cap. **`/security-review` ran the same session and found nothing**: the new IMAP write only ever targets a `uid`/`part` pair `verifyAttachment` has already re-validated as a real PDF part from a configured sender, so it adds no forgery surface.
+
+### Consequences
+
+**Not proved against the real mailbox this session** — no IMAP connection has been made yet under this change; it needs the credential in Vercel, which is already configured (the deployed Sync button is in active use per the owner's own screenshot). **Owed**: a live pass confirming a second sync of the same window omits what the first one downloaded, and that a message with two PDFs still offers the second after the first is fetched alone.
+
+- Evidence: Vitest **56 tests** across `tests/statement-mailbox.test.ts` (+5, `fetchedFlag`/`unfetchedParts`) and `tests/statement-sync.test.ts`, all passing; full unit suite **876 passed / 92 skipped across 41 files** (skips are the database-backed suites, `private-ledger-local` not running), `tsc --noEmit` clean, `eslint` clean on the changed files. pgTAP not run — no SQL moved. D-145 (the button and manifest this changes), D-144 (the retention call this reverses only for the route), D-141 (the design both build on).
 
 ## D-188 — A fixture with one row a day was not a ledger, and fixing that failed the audit on a second page
 

@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-07.
+Last updated: 2026-09-12.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -72,6 +72,18 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
+- **Real-data read (hosted browser), commit, push, `/code-review`, `/security-review`: GRANTED and
+  SPENT, 2026-09-12 (the D-189 session).** The session opened with **nothing inherited**. The owner
+  opened the hosted app's `/import` page in the agent's browser himself and described the mailbox
+  sync re-fetching problem; real-data read followed from that plus a later explicit line ("i allow
+  you to read real data from the hosted web..., to commit, to push"), and `/code-review` and
+  `/security-review` were separately invited ("feel free to do... if needed"). **Spent on one commit,
+  `7eb2b93`, pushed to `main` — a production deployment.** `/code-review high` ran before the push and
+  found one real defect (the scanned-messages regression, fixed before commit); `/security-review` ran
+  and found nothing. **The owner also confirmed a fact this fix depended on**: the dedicated statement
+  mailbox is a fully separate account, not an alias inside his main mail — reversing the premise
+  D-144's retention call was made under, for this route only. **db push was never reached** (no SQL
+  moved). **None of this survives into a new session — ask again.**
 - **Importing a real statement: never standing, ask every time.** All fifteen statements are in; the
   next import is a new statement and needs a new ask. The first one silently turned `pnpm test` into
   a destructive command and the fix took a whole second project (D-048) — assume the next creates a
@@ -307,9 +319,10 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `9976f7a` and `origin/main` matches** (confirmed by `git rev-parse` on 2026-09-07,
-  not by reading this line). **The last three commits are documentation only**, so the last commit
-  that changed what the app serves is still `b6bcf92`: `9976f7a` retired task 13's blocker, which
+- **`main` is at `7eb2b93` and `origin/main` matches** (pushed and confirmed by this same session,
+  2026-09-12). `7eb2b93` is D-189 — the mailbox sync dedup fix and its `MAX_SYNC_MESSAGES_SCANNED`
+  regression fix — and it is the last commit that changed what the app serves. Before it: `9976f7a`
+  retired task 13's blocker, which
   had outlived by eighteen days the OCR engine it named; `04d772e` recorded the chart clamp's
   confirmation on the deployed build; `36d7188` is D-188's own documentation. `b6bcf92` is D-188 — the
   audit's reseeded fixture, the balance chart's clamped hit targets, and the ignore for
@@ -332,8 +345,11 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 - **Everything that changes what renders has been looked at on the deployment**, most recently
   `23bce9d` (D-184): the day headings, the Balance box and the control-row widths on `/ledger`, and
   the three-column calendar, the year select and the per-month readout on `/statistics`, all read
-  against the real hosted ledger. **The uncommitted work at the time of writing is only the two
-  local-only config files below**, which must never be committed.
+  against the real hosted ledger. **The tree carries more than the two local-only config files as of
+  2026-09-12** — a categories feature (`app/categories*`, `lib/categories.ts`, `tests/categories.test.ts`)
+  and edits to several other tracked files sat uncommitted when the D-189 session opened and were left
+  alone, since they predate it and were not this session's to commit. Read `git status --short` rather
+  than trusting a count here.
 - **Every commit since 2026-08-29 that changes what renders has now been looked at on the
   deployment** — D-177 and D-178 both verified `/statistics` and `/ledger` live, which is also what
   closed D-169 and D-170's rendering fence in `DECISIONS.md` (corrected there 2026-09-01; it had
@@ -388,6 +404,11 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on `7eb2b93`'s content, 2026-09-12**: `tsc --noEmit` clean, `eslint` clean on the changed
+  files, `check:docs --strict` clean at **189 decisions and 202 traps**, Vitest **876 passed / 92
+  skipped across 41 files** — skips are the database-backed suites, `private-ledger-local` was not
+  running this session, so **pgTAP and the Playwright suites were not run**. Scoped to the mailbox
+  files only; nothing else in the tree was touched or gated.
 - **Green on `b6bcf92`'s content, 2026-09-04**: the same run as below, re-run in full after the
   fixture reseed and the chart clamp, at **188 decisions and 202 traps**. The reseed is the reason
   the owner suite matters here — it is the only suite that exercises the new fixture.
@@ -445,7 +466,9 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 - **The statement mailbox credentials are the owner's alone**: a dedicated Gmail with 2FA and an
   IMAP app password in his password manager. `statement-mailbox.json` is gitignored, holds no
   secret, but **names an address — do not quote it into any document or commit**. The app password
-  is read from stdin only.
+  is read from stdin only. **Confirmed a fully separate account, 2026-09-12** (D-189) — not an alias
+  or forward reaching the owner's main mail, which is what made marking messages there (the hosted
+  route now flags each fetched attachment) safe to build.
 - **No app server is running.** Both browser suites start and stop their own, on ports 3100 and
   3200; the throwaway configs under `.runtime/` use their own ports and `reuseExistingServer: false`,
   because a server someone left running is silently reused and the suite then tests a stale build.
