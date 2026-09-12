@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-12 (second update this date — the categories commit and the import-duplication discovery).
+Last updated: 2026-09-12 (third update this date — the categories commit, an import-duplication scare that turned out not to be one, and its fix).
 
-**Read this first: confirming a real statement import currently doubles every row (D-191, open, undiagnosed).** Discovered and isolated this date, reproduces on a freshly reset database with no relation to the categories commit below. Do not confirm a real statement import until this is root-caused — a duplicated real import is a financial-record correctness problem, not merely a test failure. Nothing was imported for real while diagnosing it; the reproduction used only the synthetic fixture `tests/e2e/owner-session.spec.ts` already builds.
+**D-191 is resolved.** What first looked like statement imports being duplicated in the ledger was a stale Playwright locator counting the day-heading rows (D-182, shipped 2026-09-01, working correctly and verified on the deployment since) as if they were transaction data. The database, the RPC and the route were correct throughout — verified directly against the trace, a live `psql` poll and the API's own response, all showing exactly 4 rows for a 4-row import. Fixed in `tests/e2e/owner-session.spec.ts` (`38ed7d4`); full owner suite now 34/34. Nothing was imported for real at any point in this investigation — every reproduction used the synthetic fixture the spec already builds. Full account: `DECISIONS.md` D-191.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -83,8 +83,9 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   `/security-review` ran and found nothing. **No real-data read, no hosted browser, and no `db push`
   were part of this grant or exercised by it** — unlike the D-189 grant below, this session never
   opened the hosted app and never needed to, since nothing in D-190 touches real financial data.
-  Discovered mid-session and **not covered by this grant**: D-191, a pre-existing import-duplication
-  defect, isolated but left unfixed and unauthorized to touch further this session. **None of this
+  Discovered mid-session: D-191, an apparent import-duplication defect that on measurement turned
+  out to be a stale test locator, not a data bug — the owner asked for it to be fixed once
+  understood, and that fix (`38ed7d4`) is covered by this same commit/push grant. **None of this
   survives into a new session — ask again.**
 - **Real-data read (hosted browser), commit, push, `/code-review`, `/security-review`: GRANTED and
   SPENT, 2026-09-12 (the D-189 session).** The session opened with **nothing inherited**. The owner
@@ -341,9 +342,11 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `acb853e` and `origin/main` matches** (pushed and confirmed by this same session,
-  2026-09-12). `acb853e` is D-190 — category CRUD and the per-transaction category/note editor,
-  PLAN task 25's manual half — and it is the last commit that changed what the app serves.
+- **`main` is at `38ed7d4` and `origin/main` matches** (pushed and confirmed by this same session,
+  2026-09-12). `38ed7d4` is D-191's fix — a test-only change to `tests/e2e/owner-session.spec.ts`,
+  not a change to what the app serves. `8007b9a` beneath it is this session's continuity-docs sync.
+  `acb853e` is D-190 — category CRUD and the per-transaction category/note editor, PLAN task 25's
+  manual half — and it is the last commit that changed what the app serves.
   `405d267` beneath it is D-189's second half — moving the fetched flag from download-time to
   confirm-time — and it is the last commit that changed what the app serves. `7eb2b93` beneath it is
   D-189's first half: the dedup fix and its `MAX_SYNC_MESSAGES_SCANNED` regression fix, live-verified
@@ -431,17 +434,23 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
-- **Green on `acb853e`'s content, 2026-09-12, against a freshly `supabase db reset` local database**:
-  `eslint .` clean (the same 2 pre-existing warnings), `tsc --noEmit` clean, `check:docs --strict`
-  clean, Vitest **962 passed / 7 skipped across 44 files**, pgTAP **all 13 files, 390 assertions**,
-  `pnpm build` clean at the same route count, Playwright isolated **70 passed / 8 skipped** including
-  axe on `/categories` in all four colour schemes, desktop and mobile. **Playwright owner is not
-  counted as evidence for this commit**: it fails on D-191, reproduced to be unrelated to this code
-  (see the live hazard below and D-191's own entry). **This session ran several database-backed
-  suites concurrently before settling on this sequential run**, which collided on the shared seeded
-  owner and produced spurious failures in both Vitest and the owner Playwright suite — discarded,
-  not counted, and not evidence of anything about this code. The fix was a fresh `supabase db reset`
-  and running each suite alone.
+- **Green on `38ed7d4`'s content (D-191's fix), 2026-09-12, against a freshly `supabase db reset`
+  local database**: `eslint .` clean, and the full owner Playwright suite — **34 passed, 0 failed,
+  0 skipped**. This is the first clean owner-suite run recorded in this file since D-187/D-188 on
+  2026-09-04; every session in between either had no Docker or, this one, hit D-191 before fixing it.
+- **Green on `acb853e`'s content (D-190), 2026-09-12, against a freshly `supabase db reset` local
+  database**: `eslint .` clean (the same 2 pre-existing warnings), `tsc --noEmit` clean,
+  `check:docs --strict` clean, Vitest **962 passed / 7 skipped across 44 files**, pgTAP **all 13
+  files, 390 assertions**, `pnpm build` clean at the same route count, Playwright isolated
+  **70 passed / 8 skipped** including axe on `/categories` in all four colour schemes, desktop and
+  mobile. Playwright owner was not counted as evidence at the time this ran — it hit D-191, which
+  read at first as a real defect and turned out to be a stale test locator (see D-191 above and its
+  full entry in `DECISIONS.md`); the fixed suite has since been confirmed 34/34 clean, and nothing
+  about the fix touches D-190's own files. **This session also ran several database-backed suites
+  concurrently before settling on this sequential run**, which collided on the shared seeded owner
+  and produced spurious failures in both Vitest and the owner Playwright suite — discarded, not
+  counted, and not evidence of anything about either commit. The fix was a fresh `supabase db reset`
+  and running each suite alone, which `docs/gotchas/tests.md` now records as its own trap.
 - **Green on `405d267`'s content, 2026-09-12**: `tsc --noEmit` clean, `eslint` clean, `pnpm build`
   clean at the same route count (the attachment route now answers `GET` and `POST`), Vitest **877
   passed / 92 skipped across 41 files**, `check:docs --strict` clean at **189 decisions and 202
@@ -522,16 +531,13 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ## Live hazards on this machine
 
-- **OPEN, discovered 2026-09-12 (D-191). Confirming a statement import lands every row twice.**
-  `tests/e2e/owner-session.spec.ts`'s `reads a confirmed import back` imports a 4-row synthetic
-  statement and finds 8 rows after "Confirm import," with no refusal shown — the confirm believes
-  it succeeded once. Reproduced against a freshly reset local database on `main` at `5d8ba83`, via a
-  throwaway `git worktree`, with no categories code present — ruling out D-190 and ruling out the
-  concurrent-suite collision this session separately hit and resolved (see the gate note above).
-  **Not yet root-caused**: unknown whether the client fires the confirm request twice or
-  `confirm_import` inserts twice server-side for one call. **Do not confirm a real statement import
-  until this is understood** — a doubled real import is a ledger-correctness defect, not a test
-  artifact. The owner Playwright suite has not had a clean run since D-187/D-188 on 2026-09-04.
+- **CLOSED 2026-09-12, same session (D-191).** `tests/e2e/owner-session.spec.ts` briefly looked like
+  it had caught a real duplicate-import defect (8 `tbody tr` for a 4-row import). Measured directly
+  against the trace, a live `psql` poll and the API's own response: the database and API held exactly
+  4 rows throughout, every time. The extra `<tr>`s were day-heading rows (D-182, working as designed
+  since 2026-09-01) that this spec's locators were never updated to exclude. Fixed by excluding
+  `.day-head` from all 23 occurrences (`38ed7d4`); full owner suite now 34/34. Kept here briefly as
+  the record of what the scare actually was — full account in `DECISIONS.md` D-191.
 - **CLOSED 2026-08-29, on the owner's instruction, and restated because the file is never
   committed.** The local-only `playwright.config.ts` now pins **all three** `STATEMENT_MAILBOX_*`
   variables empty. It had pinned `GOOGLE_VISION_KEY` on the stated grounds that nothing in a

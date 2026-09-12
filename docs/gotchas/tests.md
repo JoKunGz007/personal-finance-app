@@ -111,7 +111,14 @@ the top of `GOTCHAS.md`.
 - Symptom: `pnpm test` and the owner Playwright suite, launched around the same time against the same running `private-ledger-local`, both fail — Vitest trips `assertOnlyDisposableLedgerData`'s guard over accounts neither suite claims, and the owner suite's own row-count assertions read stale-plus-fresh totals (e.g. expecting 5 rows and finding 9). Neither failure names the other suite as the cause.
 - Cause: every database-backed suite (Vitest's non-skipped tests, pgTAP, both Playwright configs) shares one `private-ledger-local` project and, for anything signed in, one seeded owner. The documented validation order (`docs/LOCAL_DEV.md`) runs them one at a time for exactly this reason; starting two as parallel background processes lets one suite's mid-run state (an account, a batch of imported rows) be read or wiped by the other.
 - Avoid: never launch two database-backed suites concurrently, including across separate background shell invocations in the same session. If a run must be backgrounded, wait for it to finish before starting the next one that touches the database.
-- Verify: `pnpm supabase:reset`, then run each suite alone in the documented order; each should reproduce its own last-known-clean baseline (Vitest 962/7 skipped, pgTAP 390 assertions, Playwright isolated 70/8 skipped, as confirmed 2026-09-12). **The owner suite does not currently confirm this way** — it fails on D-191, an unrelated, pre-existing defect reproduced independently of this collision (see `HANDOFF.md`'s live hazards and `DECISIONS.md` D-191). Dated 2026-09-12, from the session that hit this while gating D-190.
+- Verify: `pnpm supabase:reset`, then run each suite alone in the documented order; each should reproduce its own last-known-clean baseline (Vitest 962/7 skipped, pgTAP 390 assertions, Playwright isolated 70/8 skipped, Playwright owner 34/0, all as confirmed 2026-09-12 post-D-191). Dated 2026-09-12, from the session that hit this while gating D-190.
+
+## A ledger row-count locator written before day headings counts them as data rows
+
+- Symptom: `ledger.locator("tbody tr")` reports roughly double the expected count on any fixture whose rows span more than one calendar date — e.g. 8 for a 4-row import, one `<tr>` too many per distinct date.
+- Cause: `app/transactions-view.tsx` renders one `<tr className="day-head">` per distinct date whenever `groupByDay` is true, which it is by default (D-182, 2026-09-01). A bare `tbody tr` locator written before that shipped, or copied from a spec that predates it, counts headings as if they were transactions.
+- Avoid: locate ledger data rows as `tbody tr:not(.day-head)`, never a bare `tbody tr`, on any page where day grouping can be on.
+- Verify: a fixture with rows on a single date will pass a bare locator by accident (one heading, easy to miss); a fixture with rows on several dates fails it reliably. Dated 2026-09-12 (D-191) — all 23 occurrences in `tests/e2e/owner-session.spec.ts` were wrong for eleven days before anyone ran the suite that would have caught it.
 
 ## `pnpm test` deletes every row the owner has, not just the test's own
 
