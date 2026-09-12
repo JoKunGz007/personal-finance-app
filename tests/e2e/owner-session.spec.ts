@@ -445,7 +445,7 @@ test("reads a confirmed import back, and switches between merged and per-account
   await ledgerLoaded(ledger);
   await expect(ledger.getByRole("button", { name: "Load transactions" })).toHaveCount(0);
 
-  const rows = ledger.locator("tbody tr");
+  const rows = ledger.locator("tbody tr:not(.day-head)");
   await expect(rows).toHaveCount(4, { timeout: 30_000 });
   await expect(ledger.getByText("Imported accounts: 1 of")).toBeVisible();
 
@@ -504,7 +504,7 @@ test("pages the ledger, and the totals keep speaking for the whole of it", async
   await ledgerLoaded(ledger);
 
   // One page, not the ledger. Before this task the same arrival fetched all 105.
-  const rows = ledger.locator("tbody tr");
+  const rows = ledger.locator("tbody tr:not(.day-head)");
   await expect(rows).toHaveCount(100, { timeout: 30_000 });
   await expect(ledger.getByText("Showing 100 of 105 confirmed rows")).toBeVisible();
 
@@ -589,12 +589,12 @@ test("takes a row out of reporting and back, without touching what the owner typ
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
   await ledgerLoaded(ledger);
-  await expect(ledger.locator("tbody tr")).toHaveCount(2, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(2, { timeout: 30_000 });
 
   // Found by its **movement**, which comes off the transaction rather than off the overlay — so
   // the locator still finds the row when the overlay has been wiped, and the erasure then fails on
   // an assertion that names the field instead of on a locator that quietly matches nothing.
-  const target = ledger.locator("tbody tr").filter({ hasText: "+฿500.00" });
+  const target = ledger.locator("tbody tr:not(.day-head)").filter({ hasText: "+฿500.00" });
   await expect(target).toHaveCount(1);
   // The overlay's description is what the cell shows, so this is both a proof that the seeded
   // overlay reached the screen and the *before* half of the erasure assertion below.
@@ -614,7 +614,7 @@ test("takes a row out of reporting and back, without touching what the owner typ
   await expect(totals.getByText("+฿300.00")).toBeVisible();
   await expect(totals.getByText("+฿800.00")).toHaveCount(0);
   // The row count is not filtered, matching the server: it says what the account holds.
-  await expect(ledger.locator("tbody tr")).toHaveCount(2);
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(2);
 
   // **The erasure, on screen.** A write that sent the rest as null would have cleared the
   // description, and this cell would fall back to the statement's own words. Asserted before the
@@ -648,7 +648,7 @@ test("orders both ways and derives the all-accounts balance from every account",
   const ledger = page.locator("section.ledger-band");
   await ledgerLoaded(ledger);
 
-  const rows = ledger.locator("tbody tr");
+  const rows = ledger.locator("tbody tr:not(.day-head)");
   await expect(rows).toHaveCount(7, { timeout: 30_000 });
   await expect(ledger.getByText("Imported accounts: 2 of")).toBeVisible();
 
@@ -766,7 +766,7 @@ test("captures a slip from its QR and stores it as a provisional entry", async (
   await bench.getByLabel("Amount (THB)").fill("500.00");
   await bench.getByLabel("Date", { exact: true }).fill("2026-01-09");
   await bench.getByRole("button", { name: "Capture slip" }).click();
-  await expect(captured.locator("tbody tr")).toHaveCount(2, { timeout: 15_000 });
+  await expect(captured.locator("tbody tr:not(.day-head)")).toHaveCount(2, { timeout: 15_000 });
 });
 
 test("reads a slip from each supported bank, not just the one layout", async ({ page }) => {
@@ -996,7 +996,7 @@ test("collapses a slip onto the statement row it matches, and counts the payment
 
   // Four rows, not five: the pair is one payment. This is the assertion that would fail if
   // matching regressed to showing both records.
-  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(4, { timeout: 30_000 });
   await expect(ledger.locator("tr.provisional-row")).toHaveCount(0);
 
   const verified = ledger.locator("tr.verified-row");
@@ -1040,7 +1040,7 @@ test("keeps a slip with no matching row as its own provisional entry, counted in
   const ledger = page.locator("section.ledger-band");
   await ledgerLoaded(ledger);
 
-  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(5, { timeout: 30_000 });
   const provisional = ledger.locator("tr.provisional-row");
   await expect(provisional).toHaveCount(1);
   await expect(provisional.getByText("Awaiting statement")).toBeVisible();
@@ -1078,14 +1078,14 @@ test("lets the owner overrule a match and put it back, and stores every decision
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
   await ledgerLoaded(ledger);
-  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(4, { timeout: 30_000 });
 
   // The rule paired these two. The owner disagrees, and that is the whole feature.
   await ledger.locator("tr.verified-row").getByRole("button", { name: /^Not this slip/u }).click();
 
   // Five rows again: the pair is two records, the slip is visible rather than absorbed, and
   // the totals count it as money that moved but not yet confirmed.
-  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 15_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(5, { timeout: 15_000 });
   await expect(ledger.locator("tr.verified-row")).toHaveCount(0);
   const provisional = ledger.locator("tr.provisional-row");
   await expect(provisional).toHaveCount(1);
@@ -1119,7 +1119,7 @@ test("lets the owner overrule a match and put it back, and stores every decision
   await expect(ledger.getByRole("button", { name: "Cancel" })).toBeFocused();
   // Two rows on screen: the slip, and the one row of that amount. The totals are gone, because
   // a subtotal of a slip and its candidates is not a figure about anything.
-  await expect(ledger.locator("tbody tr")).toHaveCount(2);
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(2);
   await expect(ledger.locator(".ledger-strip")).toHaveCount(0);
   // The filters cannot be used to hide the answer while the question is being asked.
   await expect(ledger.getByLabel("Status")).toBeDisabled();
@@ -1129,7 +1129,7 @@ test("lets the owner overrule a match and put it back, and stores every decision
   // name carries the time and balance that distinguish this one.
   await ledger.locator("tr:not(.provisional-row)").getByRole("button", { name: /^This is it/u }).click();
 
-  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 15_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(4, { timeout: 15_000 });
   const verified = ledger.locator("tr.verified-row");
   await expect(verified).toHaveCount(1);
   await expect(verified.getByText("Your match")).toBeVisible();
@@ -1160,7 +1160,7 @@ test("says a statement row is already another slip's before letting this one tak
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
   await ledgerLoaded(ledger);
-  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(5, { timeout: 30_000 });
   await expect(ledger.locator("tr.verified-row")).toHaveCount(1);
 
   await ledger.locator("tr.provisional-row").getByRole("button", { name: /Choose a statement row/u }).click();
@@ -1175,7 +1175,7 @@ test("says a statement row is already another slip's before letting this one tak
 
   // The swap happened and is visible from both sides: the row is now the owner's match, and the
   // slip that lost it is back as its own provisional row rather than gone.
-  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 15_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(5, { timeout: 15_000 });
   await expect(ledger.locator("tr.verified-row").getByText("Your match")).toBeVisible();
   await expect(ledger.locator("tr.provisional-row").getByText("Browser synthetic payee")).toBeVisible();
 
@@ -1250,7 +1250,7 @@ test("matches a slip only after the amount is corrected to the one the statement
   await ledgerLoaded(ledger);
 
   // Five rows: nothing carries 505.00, so the slip is its own row.
-  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(5, { timeout: 30_000 });
   const provisional = ledger.locator("tr.provisional-row");
   await expect(provisional).toHaveCount(1);
 
@@ -1261,7 +1261,7 @@ test("matches a slip only after the amount is corrected to the one the statement
 
   // Four rows: the corrected figure equals the row's movement to the satang, so the pair
   // collapses and the payment is counted once.
-  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 15_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(4, { timeout: 15_000 });
   await expect(ledger.locator("tr.verified-row")).toHaveCount(1);
 
   // The identity the QR carried is untouched, and the original amount survives beside the
@@ -1327,7 +1327,7 @@ test("collapses a notification card onto its statement row, and the printed bala
   await ledgerLoaded(ledger);
 
   // Four rows, not five: the pair is one payment, exactly as a matched slip is.
-  await expect(ledger.locator("tbody tr")).toHaveCount(4, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(4, { timeout: 30_000 });
   await expect(ledger.locator("tr.card-row")).toHaveCount(0);
 
   const verified = ledger.locator("tr.verified-row");
@@ -1378,7 +1378,7 @@ test("refuses to pair a card whose printed balance contradicts the row that othe
   // Five rows, not four: refusing to pair means the card stays its own row and the statement row
   // stays unclaimed. Both halves are asserted, because a rule that dropped the card instead would
   // also produce four.
-  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(5, { timeout: 30_000 });
   await expect(ledger.locator("tr.verified-row")).toHaveCount(0);
 
   const cardRow = ledger.locator("tr.card-row");
@@ -1414,14 +1414,14 @@ test("retires a card out of the ledger and the totals, and brings it back", asyn
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
   await ledgerLoaded(ledger);
-  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(5, { timeout: 30_000 });
   await expect(ledger.locator("tr.card-row")).toHaveCount(1);
   await expect(ledger.locator(".ledger-strip dd").first()).toContainText("5");
 
   await ledger.getByRole("button", { name: /^Not a payment/u }).click();
 
   // Out of the rows and out of the totals — the whole point of `not-a-payment`.
-  await expect(ledger.locator("tbody tr")).toHaveCount(4);
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(4);
   await expect(ledger.locator("tr.card-row")).toHaveCount(0);
   await expect(ledger.locator(".ledger-strip dd").first()).toHaveText("4");
 
@@ -1460,7 +1460,7 @@ test("lets the owner match a card whose balance disagrees, after saying so in wo
   await page.goto("/ledger");
   const ledger = page.locator("section.ledger-band");
   await ledgerLoaded(ledger);
-  await expect(ledger.locator("tbody tr")).toHaveCount(5, { timeout: 30_000 });
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(5, { timeout: 30_000 });
   await expect(ledger.locator("tr.card-row").getByText("Balance disagrees")).toBeVisible();
 
   await ledger.getByRole("button", { name: /^Choose a statement row for the card/u }).click();
@@ -1471,7 +1471,7 @@ test("lets the owner match a card whose balance disagrees, after saying so in wo
   await ledger.getByRole("button", { name: /^This is it/u }).click();
 
   // The pair collapses and the row says the overrule stands.
-  await expect(ledger.locator("tbody tr")).toHaveCount(4);
+  await expect(ledger.locator("tbody tr:not(.day-head)")).toHaveCount(4);
   await expect(ledger.locator("tr.verified-row").getByText("Verified by card")).toBeVisible();
   await expect(ledger.getByText(/You matched this despite the card and the row printing different balances/u)).toBeVisible();
 
