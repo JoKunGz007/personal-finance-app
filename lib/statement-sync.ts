@@ -27,6 +27,21 @@
 export const MAX_SYNC_ATTACHMENTS = 40;
 
 /**
+ * The most matching messages one sync will examine, independent of how many contribute.
+ *
+ * **Dedup reopened the gateway-timeout failure `MAX_SYNC_ATTACHMENTS` was built to close, by a
+ * different road.** The cap above stops the search once enough *attachments* have been found — and
+ * before a message could be skipped for having nothing new left in it, almost every matching
+ * message contributed at least one, so the two bounds were nearly the same thing in practice. Once
+ * repeat syncs leave most old mail already-fetched, a wide enough window (`?all=1` most of all) can
+ * walk the mailbox's entire history one round trip apiece without ever finding forty *new*
+ * attachments — which is exactly the "thousands of sequential fetches inside one request" failure
+ * the attachment cap exists to prevent, just no longer prevented by it. This is a second, independent
+ * brake on the same failure, tripped by messages examined rather than by attachments returned.
+ */
+export const MAX_SYNC_MESSAGES_SCANNED = 200;
+
+/**
  * The largest single attachment the route will download.
  *
  * **A memory bound, not a policy about statements.** A real statement is a few hundred kilobytes;

@@ -94,6 +94,34 @@ export function collectPdfParts(root: MessagePart | undefined, uid: number): Sta
 }
 
 /**
+ * The custom IMAP keyword recorded on a message once one of its PDF parts has been downloaded
+ * through the hosted route.
+ *
+ * **Per-part, not per-message.** One statement mail routinely carries two PDFs — a statement mail
+ * from Kasikorn sent two months in one message, measured against the owner's own accounts — and
+ * downloading one must not hide the other from the next sync. A dot in a part path (`1.2`) is not
+ * a legal IMAP keyword character, so it is folded into a dash before being used as one.
+ */
+export function fetchedFlag(part: string): string {
+  return `PLFetched-${part.replace(/\./gu, "-")}`;
+}
+
+/**
+ * The PDF parts of one message the hosted route has not already downloaded, by its own flags.
+ *
+ * **This is what makes a repeat sync stop re-offering the same file.** The local script dedupes by
+ * checking whether it already wrote a same-named file to the folder it owns; a route has no folder,
+ * so it asks the mailbox itself what it has already been told to keep, via a keyword only this app
+ * sets (`fetchedFlag`).
+ */
+export function unfetchedParts(
+  parts: readonly StatementAttachment[],
+  flags: ReadonlySet<string>
+): StatementAttachment[] {
+  return parts.filter((item) => !flags.has(fetchedFlag(item.part)));
+}
+
+/**
  * A filename safe to write, derived from one the mail supplied.
  *
  * **An attachment filename is attacker-controlled input and must never reach a path unfiltered.**

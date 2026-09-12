@@ -26,13 +26,19 @@
 // **`statement-mailbox.json` is not read here.** It is gitignored, so it does not exist in a
 // deployment; the same two facts it carries come from the environment instead.
 //
-// **The mail is left untouched.** Nothing here marks as read, moves, flags or deletes anything —
-// the same decision the script made, on the owner's grounds that the files also live in his main
-// mail.
+// **Nothing here moves or deletes anything, and this mailbox is dedicated — nothing else reads it.**
+// The one exception is a keyword flag: once a PDF part has been downloaded through this route, the
+// message is marked with `fetchedFlag(part)` so the next sync does not list it again (confirmed
+// 2026-09-12 that flagging here is safe precisely because this account carries nothing else).
+// The local script makes the opposite call and stays untouched — it owns the folder it writes to
+// and dedupes by checking whether a same-named file is already there, so it has no need to mark
+// anything on the server.
 
 import { ImapFlow, type SearchObject } from "imapflow";
-import { collectPdfParts, safeFileName, senderSearch } from "@/lib/server/statement-mailbox";
-import { attachmentId, parseSenders, MAX_SYNC_ATTACHMENTS, type SyncAttachment } from "@/lib/statement-sync";
+import { collectPdfParts, fetchedFlag, safeFileName, senderSearch, unfetchedParts } from "@/lib/server/statement-mailbox";
+import {
+  attachmentId, parseSenders, MAX_SYNC_ATTACHMENTS, MAX_SYNC_MESSAGES_SCANNED, type SyncAttachment
+} from "@/lib/statement-sync";
 
 const HOST = "imap.gmail.com";
 const PORT = 993;
@@ -150,6 +156,13 @@ export async function openMailbox(config: MailboxConfig): Promise<MailboxSession
  * more than one and not all of them are statements, measured against the owner's three banks
  * (D-144). `readStatement` refuses a non-statement outright and it lands in the import worklist
  * saying so, which is the right place for that judgement and not here.
+ *
+ * **A part already downloaded through this route is left out**, per-part via `unfetchedParts` —
+ * so a message is skipped entirely once every PDF in it has been fetched, but a sibling PDF still
+ * waiting is still offered. **That is also why messages examined is capped separately from
+ * attachments found** (`MAX_SYNC_MESSAGES_SCANNED`): once most old mail is already-fetched, a wide
+ * window can walk the whole search result without ever finding forty new attachments, and the
+ * attachment cap alone would never stop it.
  */
 export async function findAttachments(
   client: ImapFlow,
@@ -167,26 +180,31 @@ export async function findAttachments(
 
   const found: SyncAttachment[] = [];
   let messages = 0;
+  let scanned = 0;
   let truncated = false;
   for (const uid of ordered) {
-    // **Stop at the cap here, not after the loop.** Every iteration is one IMAP round trip, and
+    // **Stop at either cap here, not after the loop.** Every iteration is one IMAP round trip, and
     // the page offers "everything the senders ever sent" — so a mailbox holding years of bank mail
     // would issue thousands of sequential fetches inside one request, and end as a gateway timeout
     // with no sentence in it. That is the failure the bounded socket timeouts were added to avoid,
     // reached by a different road. `ordered` is newest-first, so the ones kept are the ones the
-    // owner is most likely to be waiting for.
-    if (found.length >= MAX_SYNC_ATTACHMENTS) {
+    // owner is most likely to be waiting for. **The scanned cap is what still catches this once
+    // dedup means most old messages contribute nothing** — the attachment cap alone cannot, because
+    // it only counts what a message adds, not that it was looked at.
+    if (found.length >= MAX_SYNC_ATTACHMENTS || scanned >= MAX_SYNC_MESSAGES_SCANNED) {
       // There is more mail and we are deliberately not looking at it. The page is told so; it is
       // not told how much, because counting would be the scan this break exists to avoid.
       truncated = true;
       break;
     }
-    const message = await client.fetchOne(uid, { bodyStructure: true }, { uid: true });
+    scanned += 1;
+    const message = await client.fetchOne(uid, { bodyStructure: true, flags: true }, { uid: true });
     if (!message || !message.bodyStructure) continue;
-    const parts = collectPdfParts(message.bodyStructure, uid);
+    const parts = unfetchedParts(collectPdfParts(message.bodyStructure, uid), message.flags ?? new Set());
     // Counted only when the message actually contributed. Incrementing for every message with a
     // body structure produced "2 PDF(s) across 60 message(s)" on a mailbox where 58 of them were
-    // ordinary mail — a sentence that reads like 58 statements went missing.
+    // ordinary mail — a sentence that reads like 58 statements went missing. A message whose only
+    // PDFs were already fetched contributes nothing new either, for the same reason.
     if (parts.length === 0) continue;
     messages += 1;
     for (const attachment of parts) {
@@ -239,4 +257,17 @@ export async function verifyAttachment(
     name: safeFileName(match.declaredName, `statement-uid-${uid}-part-${match.part}.pdf`),
     sizeBytes: match.sizeBytes
   };
+}
+
+/**
+ * Records that one attachment has been downloaded, so the next listing leaves it out.
+ *
+ * **Best-effort and never allowed to fail the download it follows.** The bytes already reached the
+ * browser by the time this runs; a mailbox that rejects the flag call (a transient IMAP error, a
+ * server that limits custom keywords) should not turn a successful download into a failed one — the
+ * cost of a missed flag is only that one file gets offered again next sync, which is exactly the
+ * status quo this feature improves on rather than a regression from it.
+ */
+export async function markFetched(client: ImapFlow, uid: number, part: string): Promise<void> {
+  await client.messageFlagsAdd(uid, [fetchedFlag(part)], { uid: true }).catch(() => {});
 }

@@ -1,5 +1,5 @@
 import { contentDisposition, isSafePartPath, parseUid, MAX_ATTACHMENT_BYTES } from "@/lib/statement-sync";
-import { mailboxConfig, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
+import { mailboxConfig, markFetched, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
 import { routeError, strongOwnerClient } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
@@ -102,6 +102,9 @@ export async function GET(request: Request) {
           const next = await chunks.next();
           if (next.done) {
             controller.close();
+            // Only on a completed download, never on a cancelled one — `cancel()` below releases
+            // the mailbox without this call, so an abandoned download is offered again next sync.
+            await markFetched(session.client, uid, part);
             await session.release();
             return;
           }
