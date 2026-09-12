@@ -33,6 +33,7 @@ test("reaches every route from the header, without a signed-in owner", async ({ 
     ["Statistics", "/statistics", "Statistics"],
     ["Import", "/import", "Open a statement locally"],
     ["Slips", "/slips", "Capture a transfer slip"],
+    ["Categories", "/categories", "Categories"],
     ["Recovery", "/recovery", "Back up and restore the ledger"],
     ["Ledger", "/ledger", "Transactions"]
   ] as const) {
@@ -149,7 +150,7 @@ test("every route has no automatically detectable accessibility violations", asy
   // Routing multiplied the surfaces an audit has to cover: three of these four never
   // rendered without the import bench above them before, and the shared header is now on
   // all of them.
-  for (const path of ["/ledger", "/import", "/slips", "/recovery"]) {
+  for (const path of ["/ledger", "/import", "/slips", "/categories", "/recovery"]) {
     await page.goto(path);
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations, `accessibility violations on ${path}`).toEqual([]);

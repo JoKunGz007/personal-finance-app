@@ -63,7 +63,7 @@ const SEEDED_ROWS = 120;
  */
 const ROWS_PER_DAY = 10;
 
-const ROUTES = ["/ledger", "/statistics", "/import", "/slips", "/recovery"] as const;
+const ROUTES = ["/ledger", "/statistics", "/import", "/slips", "/categories", "/recovery"] as const;
 
 /** This repository's phone standard (D-168), and the width D-139 scopes it to. */
 const MIN_TAP_PX = 44;

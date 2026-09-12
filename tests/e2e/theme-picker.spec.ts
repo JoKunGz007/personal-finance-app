@@ -206,7 +206,7 @@ for (const theme of DARK_THEMES) {
   test(`has no detectable accessibility violations in ${theme}`, async ({ page }) => {
     await page.goto("/ledger");
     await pick(page, theme);
-    for (const path of ["/ledger", "/import", "/slips", "/statistics", "/recovery"]) {
+    for (const path of ["/ledger", "/import", "/slips", "/statistics", "/categories", "/recovery"]) {
       await page.goto(path);
       const results = await new AxeBuilder({ page }).analyze();
       expect(results.violations, `accessibility violations on ${path} in ${theme}`).toEqual([]);

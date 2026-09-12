@@ -21,6 +21,7 @@ const ROUTES = [
   { href: "/statistics", label: "Statistics" },
   { href: "/import", label: "Import" },
   { href: "/slips", label: "Slips" },
+  { href: "/categories", label: "Categories" },
   { href: "/recovery", label: "Recovery" }
 ] as const;
 

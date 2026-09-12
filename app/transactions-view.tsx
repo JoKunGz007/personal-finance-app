@@ -17,8 +17,10 @@ import {
   matchesSlipQuery,
   overlayWriteBody,
   overlayWriteResponseSchema,
-  type AccountTransaction
+  type AccountTransaction,
+  type TransactionOverlay
 } from "@/lib/transactions";
+import { categoryListSchema, type Category } from "@/lib/categories";
 import {
   deeperPages,
   emptyWindow,
@@ -178,6 +180,22 @@ export function TransactionsView() {
   // than a third writer of `decisionError`, which already cannot say which decision it is about.
   const [settingReporting, setSettingReporting] = useState<string | null>(null);
   const [reportingError, setReportingError] = useState<string | null>(null);
+  /**
+   * Every category the owner has, archived included, fetched once here rather than by every row
+   * or every open editor (PLAN task 25 part 2). Empty rather than null before the first load
+   * resolves: a row's chip and the editor's picker both read this directly, and treating "not
+   * loaded yet" as "there are none" is the right default for a set that starts this fetch after
+   * the ledger's own rows are already on screen.
+   */
+  const [categories, setCategories] = useState<Category[]>([]);
+  // The category/note write's own error line, on the same convention as `reportingError` and
+  // `correctionError` — cleared by `toggleCorrecting`, so a stale refusal from a previous panel
+  // is never read as belonging to the one just opened.
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  // Whether the open category panel's own write is in flight — lifted out of
+  // `OverlayCategoryForm`'s local `busy` state so the row's own toggle can disable itself while
+  // its request is pending, the same way `settingReporting` disables the reporting control.
+  const [categorySaving, setCategorySaving] = useState(false);
   // The slip currently being matched by hand, if any. While this is set the table shows that
   // slip and the rows it could be, and nothing else (D-069).
   const [matching, setMatching] = useState<string | null>(null);
@@ -892,6 +910,18 @@ export function TransactionsView() {
         setCardDecisions(cardsResult.data.decisions);
       } else setCardsError(cardsResult.why);
 
+      // Categories, on the same fail-soft terms: a row's chip and the editor's picker both read
+      // this, but neither is the confirmed ledger itself, so an outage here must not hide it.
+      // Left at whatever it already held on a failure — usually empty, on the first load — rather
+      // than surfacing a banner for a list nothing above the table depends on.
+      setCategories([]);
+      const categoriesResult = await ledgerRequest("/api/v1/categories", categoryListSchema, {
+        fallback: "Categories could not be loaded.",
+        offContract: "The categories response did not match its contract, so none are shown."
+      });
+      if (superseded()) return;
+      if (categoriesResult.ok) setCategories(categoriesResult.data.categories);
+
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
       setCandidates(candidateResult.data.candidates);
@@ -1149,7 +1179,25 @@ export function TransactionsView() {
    */
   function toggleCorrecting(recordId: string) {
     setCorrectionError(null);
+    setCategoryError(null);
+    setCategorySaving(false);
     setCorrecting((current) => current === recordId ? null : recordId);
+  }
+
+  /**
+   * A category/note write, folded back the same way `setReporting` folds its own (PLAN task 25
+   * part 2). This write never changes `include_in_reporting` — `overlayWriteBody` carries the
+   * flag's current value forward untouched — so `withOverlay`'s `was !== overlay.include_in_reporting`
+   * guard makes this a pure swap and the totals strip is untouched by it.
+   *
+   * **Closes only its own panel.** `setCorrecting` uses a functional updater compared against
+   * `transactionId` rather than a bare `setCorrecting(null)`, because closing unconditionally would
+   * let a slow save for one row clobber whichever *other* row's panel the owner has since opened.
+   */
+  function saveCategoryOverlay(transactionId: string, overlay: TransactionOverlay) {
+    setLedgerWindow((current) => current === null ? current : withOverlay(current, transactionId, overlay));
+    setCategoryError(null);
+    setCorrecting((current) => current === transactionId ? null : current);
   }
 
   function stopCorrecting() {
@@ -1305,6 +1353,16 @@ export function TransactionsView() {
             </div>
           ) : null}
 
+          {/* Its own line, on the same convention as the two above: a refused category write is
+              usually a stale revision from a second tab, and a shared line cannot say which
+              attempt it belongs to. */}
+          {categoryError ? (
+            <div className="warning error" role="alert">
+              <strong>Category</strong>
+              <span>{categoryError}</span>
+            </div>
+          ) : null}
+
           {!picking &&!showCombined && unattributedSlips > 0 ? (
             <p className="ledger-status">
               {unattributedSlips} slip{unattributedSlips === 1 ? " is" : "s are"} hidden while one account is selected: you hold more than one account at that bank, and a slip&rsquo;s QR names the bank without saying which account the money moved through.
@@ -1455,6 +1513,7 @@ export function TransactionsView() {
                         layout={layout}
                         modes={modes}
                         account={accountsById.get(row.transaction.account_id)}
+                        categories={categories}
                         combinedBalance={row.transaction.combined_balance_minor ?? null}
                         matchingCardRecord={matchingCardRecord}
                         slipCorrected={row.slip !== null && slipCorrectionBySlip.has(row.slip.id)}
@@ -1465,6 +1524,11 @@ export function TransactionsView() {
                         onDecideSlip={decide}
                         onDecideCard={decideCard}
                         onSetReporting={setReporting}
+                        onToggleCorrecting={toggleCorrecting}
+                        onCategorySaved={saveCategoryOverlay}
+                        onCategoryError={setCategoryError}
+                        categorySaving={modes.correcting === row.transaction.id && categorySaving}
+                        onCategoryBusyChange={setCategorySaving}
                       />
                     )];
                   })}

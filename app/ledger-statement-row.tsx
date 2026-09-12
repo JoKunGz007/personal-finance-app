@@ -2,11 +2,13 @@
 
 import { Fragment } from "react";
 import { formatThb } from "@/lib/money";
-import { movementMinor, overlayInForce, type AccountTransaction } from "@/lib/transactions";
+import { movementMinor, overlayInForce, type AccountTransaction, type TransactionOverlay } from "@/lib/transactions";
 import { type LedgerAccount } from "@/lib/accounts";
+import { type Category } from "@/lib/categories";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
 import { formatDate, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { OverlayCategoryForm } from "@/app/overlay-category-form";
 
 /**
  * A confirmed statement row, and whichever captured records collapsed onto it.
@@ -26,6 +28,7 @@ export function LedgerStatementRow({
   layout,
   modes,
   account,
+  categories,
   combinedBalance,
   matchingCardRecord,
   slipCorrected,
@@ -35,13 +38,24 @@ export function LedgerStatementRow({
   onToggleCard,
   onDecideSlip,
   onDecideCard,
-  onSetReporting
+  onSetReporting,
+  onToggleCorrecting,
+  onCategorySaved,
+  onCategoryError,
+  categorySaving,
+  onCategoryBusyChange
 }: {
   row: Extract<ReconciledRow, { kind: "confirmed" }>;
   layout: LedgerLayout;
   modes: LedgerModes;
   /** The account this row belongs to, for the all-accounts column. */
   account: LedgerAccount | undefined;
+  /**
+   * Every category this owner has, archived included, fetched once at `transactions-view.tsx`
+   * and threaded through unchanged — this row both resolves its own chip from it and hands it
+   * on to `OverlayCategoryForm` for the picker.
+   */
+  categories: Category[];
   /** The all-accounts running balance at this row, already defaulted to the row's own. */
   combinedBalance: string | null;
   /**
@@ -73,6 +87,25 @@ export function LedgerStatementRow({
    * find — the erasure `overlayWriteBody` exists to make unrepresentable.
    */
   onSetReporting: (transaction: AccountTransaction, includeInReporting: boolean) => void;
+  /**
+   * Opens or closes this row's category editor, keyed by the transaction's own id.
+   *
+   * **This is `app/transactions-view.tsx`'s existing `toggleCorrecting`, reused rather than a
+   * new piece of state** — it already means exactly "the record whose correction form is open, by
+   * its own id, one at a time, table-wide", and a transaction id never collides with a slip's,
+   * a cash entry's or a card's in any comparison the ledger makes. A second, parallel "one thing
+   * open" gate would only be a second invariant to keep in sync with this one, for no product
+   * reason to allow two panels open across row types at once.
+   */
+  onToggleCorrecting: (transactionId: string) => void;
+  /** The saved overlay, folded back into ledger state and closing the panel on success. */
+  onCategorySaved: (transactionId: string, overlay: TransactionOverlay) => void;
+  /** A refused or unreachable category write, reported for the view's own error line. */
+  onCategoryError: (message: string) => void;
+  /** Whether *this* row's own category write is in flight — disables its own toggle so the panel
+   *  cannot be closed (and unmounted) out from under a pending request. */
+  categorySaving: boolean;
+  onCategoryBusyChange: (busy: boolean) => void;
 }) {
   const transaction: AccountTransaction = row.transaction;
   const movement = movementMinor(transaction);
@@ -84,6 +117,13 @@ export function LedgerStatementRow({
   // usually does not say. The slip is read before the card only because it is
   // the record a counterparty gets typed into more often; either will do.
   const counterparty = overlay?.counterparty ?? row.slip?.counterparty ?? row.card?.counterparty ?? null;
+  // Resolved against the **unfiltered** `categories` prop, deliberately — a category archived
+  // after being attached to this row must still be nameable here, or the chip would go blank on
+  // a row nobody changed. `OverlayCategoryForm` is the one that filters archived categories out
+  // of its own picker.
+  const categoryName = overlay?.category_id
+    ? categories.find((category) => category.id === overlay.category_id)?.name ?? null
+    : null;
   const pair = row.slip;
   const cardPair = row.card;
   // Through `overlayInForce` rather than `overlay?.include_in_reporting ?? true` so the default
@@ -102,6 +142,11 @@ export function LedgerStatementRow({
         <td data-label="Description">
           <strong lang="th">{transaction.transaction_label}</strong>
           <span>{overlay?.description ?? transaction.description}</span>
+          {/* Read-only here, same visual language as the counterparty chip immediately below —
+              editing lives in the Status cell's "Edit category" trigger and its disclosure panel,
+              never in this cell. Absent entirely when the row has none, on the same D-064 rule the
+              counterparty chip already follows: a badge that is present on every row says nothing. */}
+          {categoryName ? <span className="category-chip">{categoryName}</span> : null}
           {/* Named by the record it actually came from. Saying "from slip" over a
               counterparty read off a card would attribute it to a record that is
               not on this row, and the two are corrected in different places. */}
@@ -338,6 +383,20 @@ export function LedgerStatementRow({
                   row's height, and the owner's excludable set is around eighteen rows. The chip
                   is the state; what the state *means* is said once behind the Transactions `(i)`,
                   and the Include button's accessible name carries it for a screen reader. */}
+              {/* Stacked under Include/Exclude, independent of it — this session decided against
+                  tying a category to the reporting flag, so choosing one never changes the other.
+                  Same `.secondary-button`, same one-panel-open-at-a-time discipline every other
+                  correction trigger in this table already follows. */}
+              <button
+                type="button"
+                className="secondary-button"
+                aria-expanded={modes.correcting === transaction.id}
+                aria-label={`${modes.correcting === transaction.id ? "Stop editing category" : "Edit category"} — the row dated ${formatDate(row.date)}`}
+                disabled={(modes.correcting !== null && modes.correcting !== transaction.id) || (modes.correcting === transaction.id && categorySaving)}
+                onClick={() => onToggleCorrecting(transaction.id)}
+              >
+                {modes.correcting === transaction.id ? "Stop editing category" : "Edit category"}
+              </button>
             </div>
           )}
         </td>
@@ -367,6 +426,20 @@ export function LedgerStatementRow({
           </td>
         ) : null}
       </tr>
+      {modes.correcting === transaction.id ? (
+        <tr className="correction-row">
+          <td colSpan={columns}>
+            <OverlayCategoryForm
+              transaction={transaction}
+              categories={categories}
+              onSaved={(overlay) => onCategorySaved(transaction.id, overlay)}
+              onError={onCategoryError}
+              onCancel={() => onToggleCorrecting(transaction.id)}
+              onBusyChange={onCategoryBusyChange}
+            />
+          </td>
+        </tr>
+      ) : null}
       {pair && openPair === transaction.id ? (
         <tr className="pair-detail" id={`pair-${transaction.id}`}>
           <td colSpan={columns}>
