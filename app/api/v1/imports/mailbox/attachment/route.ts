@@ -2,6 +2,14 @@ import { contentDisposition, isSafePartPath, parseUid, MAX_ATTACHMENT_BYTES } fr
 import { mailboxConfig, markFetched, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
 import { routeError, strongOwnerClient } from "@/lib/server/supabase";
 
+/** Shared by both handlers: the same `uid`/`part` validation the page's own request was built from. */
+function parseAttachmentParams(request: Request): { uid: number; part: string } | null {
+  const params = new URL(request.url).searchParams;
+  const uid = parseUid(params.get("uid"));
+  const part = params.get("part") ?? "";
+  return uid === null || !isSafePartPath(part) ? null : { uid, part };
+}
+
 export const dynamic = "force-dynamic";
 // Node, not edge: this opens a TLS socket to an IMAP server, which the edge runtime cannot do.
 export const runtime = "nodejs";
@@ -42,6 +50,15 @@ export const runtime = "nodejs";
  * stream's own lifecycle instead — which is why `openMailbox` returns an idempotent `release`:
  * `flush` and `cancel` can both run, and a cancelled download must not become a server error about
  * a mailbox.
+ *
+ * ## Downloading does not mark anything fetched
+ *
+ * A first draft flagged the mailbox message the moment a download completed, which meant a
+ * statement downloaded but never confirmed — the batch cleared, the tab closed, the password never
+ * typed — could not be synced again: the mailbox's own record of "fetched" would say otherwise
+ * while the ledger's said the opposite. `POST` below is the honest place for that record: it fires
+ * once `/api/v1/imports/confirm` has actually succeeded for the artifact this uid/part produced
+ * (D-189), not merely once its bytes reached the browser.
  */
 export async function GET(request: Request) {
   const auth = await strongOwnerClient();
@@ -50,12 +67,9 @@ export async function GET(request: Request) {
   const settings = mailboxConfig();
   if (!settings.ok) return routeError(settings.message, settings.status);
 
-  const params = new URL(request.url).searchParams;
-  const uid = parseUid(params.get("uid"));
-  const part = params.get("part") ?? "";
-  if (uid === null || !isSafePartPath(part)) {
-    return routeError("That is not an attachment this app can ask for.", 422);
-  }
+  const parsed = parseAttachmentParams(request);
+  if (!parsed) return routeError("That is not an attachment this app can ask for.", 422);
+  const { uid, part } = parsed;
 
   let session;
   try {
@@ -102,9 +116,6 @@ export async function GET(request: Request) {
           const next = await chunks.next();
           if (next.done) {
             controller.close();
-            // Only on a completed download, never on a cancelled one — `cancel()` below releases
-            // the mailbox without this call, so an abandoned download is offered again next sync.
-            await markFetched(session.client, uid, part);
             await session.release();
             return;
           }
@@ -141,5 +152,55 @@ export async function GET(request: Request) {
   } catch {
     await session.release();
     return routeError("That attachment could not be downloaded from the mailbox.", 502);
+  }
+}
+
+/**
+ * Records that one attachment has reached the ledger, so the next sync leaves it out.
+ *
+ * **Called once per confirmed statement, from `app/import-bench.tsx` right after
+ * `/api/v1/imports/confirm` succeeds for the artifact this uid/part produced** — never from the
+ * download itself (see the note above `GET`). A statement downloaded and then abandoned before
+ * confirming is offered again next sync, which is the correct answer for something that never
+ * reached the ledger.
+ *
+ * **`uid`/`part` are re-verified here rather than trusted**, the same two questions `GET` asks: is
+ * this uid in the set matching the configured senders, and is this part one of its PDF attachments?
+ * The owner is already authenticated by the time this fires, so a mismatched pair can only mark the
+ * wrong message as fetched on the owner's own mailbox — a minor, self-correcting annoyance rather
+ * than a boundary crossed — but the check costs one more IMAP round trip on a path already paying
+ * for one, and a route that skipped it here while paying for it on `GET` would be an inconsistency
+ * with no argument behind it.
+ */
+export async function POST(request: Request) {
+  const auth = await strongOwnerClient();
+  if (!auth.ok) return routeError(auth.message, auth.status);
+
+  const settings = mailboxConfig();
+  if (!settings.ok) return routeError(settings.message, settings.status);
+
+  const parsed = parseAttachmentParams(request);
+  if (!parsed) return routeError("That is not an attachment this app can ask for.", 422);
+  const { uid, part } = parsed;
+
+  let session;
+  try {
+    session = await openMailbox(settings.config);
+  } catch {
+    return routeError(
+      "The statement mailbox could not be opened. Check that the app password is current and that IMAP is enabled for that account.",
+      502
+    );
+  }
+
+  try {
+    const attachment = await verifyAttachment(session.client, settings.config.senders, uid, part);
+    if (!attachment) return routeError("No statement attachment was found there.", 404);
+    await markFetched(session.client, uid, part);
+    return Response.json({ ok: true });
+  } catch {
+    return routeError("Could not be recorded on the mailbox.", 502);
+  } finally {
+    await session.release();
   }
 }

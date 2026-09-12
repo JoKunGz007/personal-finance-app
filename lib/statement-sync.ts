@@ -130,10 +130,33 @@ export function attachmentId(uid: number, part: string): string {
   return `${uid}.${part}`;
 }
 
-/** Where the page fetches one attachment's bytes from. Same-origin, so the CSP is untouched. */
+/**
+ * Where the page fetches one attachment's bytes from — `GET` to download, `POST` to acknowledge it
+ * has been confirmed into the ledger (see `MailboxRef` below). Same path both ways, same-origin, so
+ * the CSP is untouched either way.
+ */
 export function attachmentPath(uid: number, part: string): string {
   return `/api/v1/imports/mailbox/attachment?uid=${encodeURIComponent(String(uid))}&part=${encodeURIComponent(part)}`;
 }
+
+/**
+ * Which mailbox attachment a batch entry came from, carried from a sync through to confirmation.
+ *
+ * **Not the same question as `attachmentId`.** That is a lookup key for one sync's own manifest;
+ * this rides on a batch entry across the parse, the bind, the review and the confirm — long after
+ * the manifest that produced it is gone — so it repeats `uid` and `part` as plain fields rather than
+ * a joined id nothing downstream needs to split back apart.
+ */
+export type MailboxRef = {
+  readonly uid: number;
+  readonly part: string;
+};
+
+/** One downloaded attachment, paired with the mailbox coordinates that produced it. */
+export type MailboxFile = {
+  readonly file: File;
+  readonly ref: MailboxRef;
+};
 
 /**
  * The date to hand IMAP's `since`, from the page's query.

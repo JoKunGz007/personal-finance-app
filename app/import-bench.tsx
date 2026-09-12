@@ -17,6 +17,7 @@ import {
 } from "@/lib/import-flow";
 import { ledgerRequest } from "@/lib/wire";
 import { StatementBatch, type BatchHandoff } from "@/app/statement-batch";
+import { attachmentPath, type MailboxRef } from "@/lib/statement-sync";
 import { LedgerNote } from "@/app/ledger-note";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
@@ -64,6 +65,9 @@ export function ImportBench() {
   // report nothing — hiding the one fact the owner most needs before confirming (D-055).
   const [assemblyWarnings, setAssemblyWarnings] = useState<readonly ReconciliationWarning[]>([]);
   const [extracted, setExtracted] = useState<Extracted | null>(null);
+  // Set only from a mailbox-sourced batch entry (D-189); null for a chosen file or a synthetic
+  // statement, both of which never call the mailbox and have nothing to report back to it.
+  const [mailboxRef, setMailboxRef] = useState<MailboxRef | null>(null);
   const [artifactDigest, setArtifactDigest] = useState("");
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
   const [chosenAccountId, setChosenAccountId] = useState("");
@@ -191,6 +195,7 @@ export function ImportBench() {
     setWorklist(null);
     setStatement(null);
     setExtracted(null);
+    setMailboxRef(null);
     setBoundAccount(null);
     setBindingError(null);
     setAssemblyWarnings([]);
@@ -226,6 +231,7 @@ export function ImportBench() {
       return;
     }
     setExtracted(null);
+    setMailboxRef(null);
     setBoundAccount(null);
     setBindingError(null);
     setWorklist(null);
@@ -260,6 +266,7 @@ export function ImportBench() {
         setValueLabels(reply.valueLabels ?? []);
         setStructure([]);
         setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
+        setMailboxRef(null);
         setStatement(null);
         setAssemblyWarnings([]);
         setBoundAccount(null);
@@ -315,6 +322,7 @@ export function ImportBench() {
     // this one reads as though this one had already been confirmed.
     setArtifactDigest(handoff.artifactDigest);
     setExtracted({ frame: handoff.frame, rows: handoff.rows, pageCount: handoff.pageCount });
+    setMailboxRef(handoff.mailboxRef);
     setStatement(null);
     setAssemblyWarnings([]);
     setBoundAccount(null);
@@ -517,6 +525,14 @@ export function ImportBench() {
     }
     setStage("confirmed");
     setConfirmedDigests((current) => current.includes(artifactDigest) ? current : [...current, artifactDigest]);
+    // **Reported to the mailbox only now that the statement has actually reached the ledger**, not
+    // when its bytes were downloaded (D-189) — a statement fetched and then abandoned before
+    // confirming stays eligible for the next sync. Fire-and-forget: the confirmation the owner is
+    // looking at already succeeded, and the cost of this call failing is only that one statement is
+    // offered again next sync, which is the status quo for every statement never confirmed at all.
+    if (mailboxRef) {
+      void fetch(attachmentPath(mailboxRef.uid, mailboxRef.part), { method: "POST", cache: "no-store" }).catch(() => {});
+    }
     // **One transition, so the binding banner cannot outlive the confirmation.** `confirmed`
     // returns null unchanged off the worklist, and `bannerFor` returns null on a confirmed phase —
     // so the worklist's own banner takes over and this one goes, without either being cleared by

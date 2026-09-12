@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   attachmentPath, describeManifest,
-  type SyncAttachment, type SyncManifest
+  type MailboxFile, type SyncAttachment, type SyncManifest
 } from "@/lib/statement-sync";
 
 /** The list endpoint. A constant so there is one place the path is written. */
@@ -27,9 +27,10 @@ type Phase = { readonly kind: "idle" } | { readonly kind: "listing" } | { readon
  * **`app/statement-batch.tsx` is guarded to construct no request of any kind**, because statement
  * import is the only path in this app that reads entirely on the device (D-128, D-129) and opening
  * many at once is exactly where that would erode quietly. That guard is worth keeping literally
- * true, so the one surface that does talk to a server lives here and hands `File` objects across.
- * `tests/privacy.test.ts` now asserts both halves: that the batch still fetches nothing, and that
- * everything this file fetches is same-origin and under `/api/v1/`.
+ * true, so the one surface that does talk to a server lives here and hands `MailboxFile` objects
+ * (a `File` paired with the uid/part that produced it) across. `tests/privacy.test.ts` now asserts
+ * both halves: that the batch still fetches nothing, and that everything this file fetches is
+ * same-origin and under `/api/v1/`.
  *
  * ## What crosses the wire and what does not
  *
@@ -68,7 +69,7 @@ export function StatementSync({ busy, room, onFetched, onWorkingChange }: {
    */
   readonly room: number;
   /** Returns how many were actually taken, which is not always how many were handed over. */
-  readonly onFetched: (files: readonly File[]) => number;
+  readonly onFetched: (files: readonly MailboxFile[]) => number;
   /** Raised while listing or downloading, so the batch can hold its own controls meanwhile. */
   readonly onWorkingChange: (working: boolean) => void;
 }) {
@@ -79,8 +80,12 @@ export function StatementSync({ busy, room, onFetched, onWorkingChange }: {
 
   const working = phase.kind !== "idle";
 
-  /** One attachment's bytes as a `File` the batch can treat exactly like a chosen one. */
-  async function downloadOne(attachment: SyncAttachment): Promise<File> {
+  /**
+   * One attachment's bytes as a `File` the batch can treat exactly like a chosen one, paired with
+   * the uid/part that produced it — carried through so a later confirmation can tell the mailbox
+   * this one has actually reached the ledger (D-189).
+   */
+  async function downloadOne(attachment: SyncAttachment): Promise<MailboxFile> {
     const response = await fetch(attachmentPath(attachment.uid, attachment.part), { cache: "no-store" });
     if (!response.ok) {
       // The route's own sentence when it has one. A non-JSON body means the failure happened
@@ -89,7 +94,10 @@ export function StatementSync({ busy, room, onFetched, onWorkingChange }: {
       throw new Error(typeof detail?.error === "string" ? detail.error : `The server answered ${response.status}.`);
     }
     const bytes = await response.arrayBuffer();
-    return new File([bytes], attachment.name, { type: "application/pdf" });
+    return {
+      file: new File([bytes], attachment.name, { type: "application/pdf" }),
+      ref: { uid: attachment.uid, part: attachment.part }
+    };
   }
 
   /** One place that moves the phase, so the batch is never left holding its controls after a return. */
@@ -148,7 +156,7 @@ export function StatementSync({ busy, room, onFetched, onWorkingChange }: {
     // Sequential, matching the batch's own parse loop and for the same reason: forty concurrent
     // downloads is forty PDFs held at once, and it would make one failure indistinguishable from
     // all of them. A backlog of statements is not latency-sensitive.
-    const files: File[] = [];
+    const files: MailboxFile[] = [];
     const failed: string[] = [];
     settle({ kind: "downloading", done: 0, total: wanted.length });
     for (const [index, attachment] of wanted.entries()) {

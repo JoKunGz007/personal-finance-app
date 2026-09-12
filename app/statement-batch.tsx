@@ -10,6 +10,7 @@ import {
 } from "@/lib/statement-batch";
 import type { StatementFrame } from "@/lib/statement-frame";
 import type { SourceRowCandidate } from "@/lib/statement";
+import type { MailboxFile, MailboxRef } from "@/lib/statement-sync";
 
 /**
  * **A cap on memory and wall time, not on spend.** Bulk slip upload caps at fifty because every
@@ -27,6 +28,8 @@ type BatchFile = {
   readonly fileName: string;
   /** Where the bytes came from, so the worklist can say which ones the owner did not choose. */
   readonly source: "chosen" | "mailbox";
+  /** Set when `source` is `"mailbox"` — where to report the confirmation back to (D-189). */
+  readonly mailboxRef: MailboxRef | null;
   readonly file: File;
   readonly state: FileState;
   /** The PDF's SHA-256, computed before the bytes are transferred to the worker. */
@@ -50,6 +53,8 @@ export type BatchHandoff = {
   readonly frame: StatementFrame;
   readonly rows: SourceRowCandidate[];
   readonly pageCount: number;
+  /** Set when this statement came from the mailbox, so a successful confirm can report it back. */
+  readonly mailboxRef: MailboxRef | null;
 };
 
 /** The blocked verdicts in the owner's words. The enum itself is for code, not for a screen. */
@@ -197,19 +202,20 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
    * SHA-256 and the plan shows it as `duplicate-file`, which is a real check against the bytes;
    * comparing names here would be a weaker check in an earlier place saying the same thing worse.
    */
-  function addFiles(incoming: readonly File[], source: "chosen" | "mailbox"): number {
+  function addFiles(incoming: readonly { file: File; mailboxRef: MailboxRef | null }[]): number {
     if (incoming.length === 0) return 0;
     // Room comes from the ref, not from `files.length`: see `fileCount`. The work stays out of the
     // `setFiles` updater because an updater must be pure — `reactStrictMode` runs it twice — and
     // advancing a counter or setting other state in there is the impurity that exists to expose.
     const room = Math.max(0, MAX_BATCH_FILES - fileCount.current);
     const kept = incoming.slice(0, room);
-    const added: BatchFile[] = kept.map((file) => {
+    const added: BatchFile[] = kept.map(({ file, mailboxRef }) => {
       nextId.current += 1;
       return {
         id: `f${nextId.current}`,
         fileName: file.name,
-        source,
+        source: mailboxRef ? "mailbox" : "chosen",
+        mailboxRef,
         file,
         state: "queued",
         digest: null,
@@ -238,7 +244,7 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
     // Cleared so choosing the *same* file again still fires a change event — without it, a file
     // removed from the batch could not be put back.
     if (fileInput.current) fileInput.current.value = "";
-    addFiles(chosenFiles, "chosen");
+    addFiles(chosenFiles.map((file) => ({ file, mailboxRef: null })));
   }
 
   /**
@@ -414,7 +420,7 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
         // network — which is the opposite of what the cap was for.
         room={Math.max(0, MAX_BATCH_FILES - files.length)}
         onWorkingChange={setSyncing}
-        onFetched={(fetched) => addFiles(fetched, "mailbox")}
+        onFetched={(fetched: readonly MailboxFile[]) => addFiles(fetched.map((item) => ({ file: item.file, mailboxRef: item.ref })))}
       />
 
       <div className="import-controls">
@@ -529,7 +535,8 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
                         label: item.entry.label,
                         frame: source.parsed.frame,
                         rows: source.parsed.rows,
-                        pageCount: source.parsed.pageCount
+                        pageCount: source.parsed.pageCount,
+                        mailboxRef: source.mailboxRef
                       });
                     }}
                   >

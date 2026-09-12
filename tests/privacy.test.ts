@@ -218,6 +218,36 @@ describe("privacy guardrails", () => {
     expect(binder, "binding ends at the review stage").toContain('setStage("review")');
   });
 
+  it("tells the mailbox a statement is fetched only after it is actually confirmed", () => {
+    // D-189: a first draft flagged the mailbox the moment a download completed, which meant a
+    // statement downloaded and then abandoned before confirming could never be synced again. The
+    // report back to the mailbox must fire from inside the confirm success path and nowhere earlier.
+    const ui = readFileSync("app/import-bench.tsx", "utf8");
+    const confirmer = section(ui, "async function confirmBoundImport()");
+    expect(confirmer, "confirmBoundImport must exist for this test to mean anything").toContain("imports/confirm");
+
+    // The report call is gated on the confirm response and on having a mailbox ref at all — a
+    // chosen file or a synthetic statement has neither.
+    const afterRefusalCheck = confirmer.slice(confirmer.indexOf("if (!response.ok)"));
+    expect(afterRefusalCheck, "must exist to mean anything").not.toBe("");
+    expect(afterRefusalCheck).toMatch(/if\s*\(mailboxRef\)/u);
+    expect(afterRefusalCheck).toMatch(/fetch\(attachmentPath\(mailboxRef\.uid, mailboxRef\.part\)/u);
+    expect(afterRefusalCheck).toMatch(/method:\s*"POST"/u);
+
+    // Never sent with a body: nothing about this call may carry the document password, PDF bytes
+    // or statement content — the mailbox is told only that a uid/part it already knows has landed.
+    const callSite = /fetch\(attachmentPath\(mailboxRef\.uid, mailboxRef\.part\)[^)]*\)/u.exec(afterRefusalCheck)?.[0] ?? "";
+    expect(callSite, "the call site must exist for this test to mean anything").not.toBe("");
+    expect(callSite).not.toMatch(/body\s*:/u);
+
+    // Not called from the download route at all — grep the route itself for the same reason
+    // `bindTo` above must never reach `confirmBoundImport`.
+    const attachmentRoute = readFileSync("app/api/v1/imports/mailbox/attachment/route.ts", "utf8");
+    const downloader = topLevel(attachmentRoute, "export async function GET(request: Request) {");
+    expect(downloader, "GET must exist for this test to mean anything").toContain("session.release()");
+    expect(downloader).not.toMatch(/markFetched/u);
+  });
+
   it("never infers a ledger account when many statements are opened at once", () => {
     // Bulk import makes the inference D-017 forbids far more tempting than a single import does:
     // a statement prints a bank code and four digits, `public.accounts` is unique on
