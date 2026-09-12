@@ -77,13 +77,21 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   opened the hosted app's `/import` page in the agent's browser himself and described the mailbox
   sync re-fetching problem; real-data read followed from that plus a later explicit line ("i allow
   you to read real data from the hosted web..., to commit, to push"), and `/code-review` and
-  `/security-review` were separately invited ("feel free to do... if needed"). **Spent on one commit,
-  `7eb2b93`, pushed to `main` — a production deployment.** `/code-review high` ran before the push and
-  found one real defect (the scanned-messages regression, fixed before commit); `/security-review` ran
-  and found nothing. **The owner also confirmed a fact this fix depended on**: the dedicated statement
-  mailbox is a fully separate account, not an alias inside his main mail — reversing the premise
-  D-144's retention call was made under, for this route only. **db push was never reached** (no SQL
-  moved). **None of this survives into a new session — ask again.**
+  `/security-review` were separately invited ("feel free to do... if needed"). **The grant was spent
+  across two rounds of the same feature, not one.** First round: commit `7eb2b93`, pushed, and a
+  live pass against the real mailbox — two real syncs against 14 real PDFs across 10 messages,
+  confirming a repeat sync came back empty. **That live pass is what surfaced a design defect**: the
+  first draft flagged a statement fetched the moment it downloaded, so the 14 real statements it
+  pulled down are staged in the owner's browser batch, unconfirmed, and would silently stop being
+  offered by Sync if the batch is ever cleared before they are imported. **The owner asked for the
+  fix on the spot: flag on confirm instead** — spent on a second commit moving the write to a new
+  `POST` on the same attachment route, fired only after `/api/v1/imports/confirm` succeeds.
+  `/code-review high` ran on both rounds (one real defect the first time — the scanned-messages
+  regression — nothing the second); `/security-review` ran on both and found nothing either time.
+  **The owner also confirmed a fact this fix depended on**: the dedicated statement mailbox is a
+  fully separate account, not an alias inside his main mail — reversing the premise D-144's
+  retention call was made under, for this route only. **db push was never reached** (no SQL moved).
+  **None of this survives into a new session — ask again.**
 - **Importing a real statement: never standing, ask every time.** All fifteen statements are in; the
   next import is a new statement and needs a new ask. The first one silently turned `pnpm test` into
   a destructive command and the fix took a whole second project (D-048) — assume the next creates a
@@ -319,10 +327,11 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `7eb2b93` and `origin/main` matches** (pushed and confirmed by this same session,
-  2026-09-12). `7eb2b93` is D-189 — the mailbox sync dedup fix and its `MAX_SYNC_MESSAGES_SCANNED`
-  regression fix — and it is the last commit that changed what the app serves. Before it: `9976f7a`
-  retired task 13's blocker, which
+- **`main` is at `405d267` and `origin/main` matches** (pushed and confirmed by this same session,
+  2026-09-12). `405d267` is D-189's second half — moving the fetched flag from download-time to
+  confirm-time — and it is the last commit that changed what the app serves. `7eb2b93` beneath it is
+  D-189's first half: the dedup fix and its `MAX_SYNC_MESSAGES_SCANNED` regression fix, live-verified
+  against the real mailbox before the redesign it led to. Before it: `9976f7a` retired task 13's blocker, which
   had outlived by eighteen days the OCR engine it named; `04d772e` recorded the chart clamp's
   confirmation on the deployed build; `36d7188` is D-188's own documentation. `b6bcf92` is D-188 — the
   audit's reseeded fixture, the balance chart's clamped hit targets, and the ignore for
@@ -404,11 +413,12 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
-- **Green on `7eb2b93`'s content, 2026-09-12**: `tsc --noEmit` clean, `eslint` clean on the changed
-  files, `check:docs --strict` clean at **189 decisions and 202 traps**, Vitest **876 passed / 92
-  skipped across 41 files** — skips are the database-backed suites, `private-ledger-local` was not
-  running this session, so **pgTAP and the Playwright suites were not run**. Scoped to the mailbox
-  files only; nothing else in the tree was touched or gated.
+- **Green on `405d267`'s content, 2026-09-12**: `tsc --noEmit` clean, `eslint` clean, `pnpm build`
+  clean at the same route count (the attachment route now answers `GET` and `POST`), Vitest **877
+  passed / 92 skipped across 41 files**, `check:docs --strict` clean at **189 decisions and 202
+  traps** — skips are the database-backed suites, `private-ledger-local` was not running this
+  session, so **pgTAP and the Playwright suites were not run**. Scoped to the mailbox files only;
+  nothing else in the tree was touched or gated.
 - **Green on `b6bcf92`'s content, 2026-09-04**: the same run as below, re-run in full after the
   fixture reseed and the chart clamp, at **188 decisions and 202 traps**. The reseed is the reason
   the owner suite matters here — it is the only suite that exercises the new fixture.
