@@ -1,6 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-12.
+Last updated: 2026-09-12 (second update this date — the categories commit and the import-duplication discovery).
+
+**Read this first: confirming a real statement import currently doubles every row (D-191, open, undiagnosed).** Discovered and isolated this date, reproduces on a freshly reset database with no relation to the categories commit below. Do not confirm a real statement import until this is root-caused — a duplicated real import is a financial-record correctness problem, not merely a test failure. Nothing was imported for real while diagnosing it; the reproduction used only the synthetic fixture `tests/e2e/owner-session.spec.ts` already builds.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -72,6 +74,18 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
+- **Commit, push, `/code-review`, `/security-review`: GRANTED and SPENT, 2026-09-12 (the D-190
+  session, later the same date as D-189 below).** The owner granted all four together after asking
+  what tasks were left; the categories feature (D-190) was already sitting uncommitted in the
+  working tree from an earlier, unrecorded session. Spent on one commit, `acb853e`, and one push to
+  `origin/main` — a production deployment. `/code-review high` ran first and found ten defects,
+  three real ones fixed before the commit ask, matching this file's own D-125 precedent.
+  `/security-review` ran and found nothing. **No real-data read, no hosted browser, and no `db push`
+  were part of this grant or exercised by it** — unlike the D-189 grant below, this session never
+  opened the hosted app and never needed to, since nothing in D-190 touches real financial data.
+  Discovered mid-session and **not covered by this grant**: D-191, a pre-existing import-duplication
+  defect, isolated but left unfixed and unauthorized to touch further this session. **None of this
+  survives into a new session — ask again.**
 - **Real-data read (hosted browser), commit, push, `/code-review`, `/security-review`: GRANTED and
   SPENT, 2026-09-12 (the D-189 session).** The session opened with **nothing inherited**. The owner
   opened the hosted app's `/import` page in the agent's browser himself and described the mailbox
@@ -327,8 +341,10 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `405d267` and `origin/main` matches** (pushed and confirmed by this same session,
-  2026-09-12). `405d267` is D-189's second half — moving the fetched flag from download-time to
+- **`main` is at `acb853e` and `origin/main` matches** (pushed and confirmed by this same session,
+  2026-09-12). `acb853e` is D-190 — category CRUD and the per-transaction category/note editor,
+  PLAN task 25's manual half — and it is the last commit that changed what the app serves.
+  `405d267` beneath it is D-189's second half — moving the fetched flag from download-time to
   confirm-time — and it is the last commit that changed what the app serves. `7eb2b93` beneath it is
   D-189's first half: the dedup fix and its `MAX_SYNC_MESSAGES_SCANNED` regression fix, live-verified
   against the real mailbox before the redesign it led to. Before it: `9976f7a` retired task 13's blocker, which
@@ -354,11 +370,13 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 - **Everything that changes what renders has been looked at on the deployment**, most recently
   `23bce9d` (D-184): the day headings, the Balance box and the control-row widths on `/ledger`, and
   the three-column calendar, the year select and the per-month readout on `/statistics`, all read
-  against the real hosted ledger. **The tree carries more than the two local-only config files as of
-  2026-09-12** — a categories feature (`app/categories*`, `lib/categories.ts`, `tests/categories.test.ts`)
-  and edits to several other tracked files sat uncommitted when the D-189 session opened and were left
-  alone, since they predate it and were not this session's to commit. Read `git status --short` rather
-  than trusting a count here.
+  against the real hosted ledger. **`acb853e` (D-190, categories) has not yet been read on the real
+  deployment** — its gate is green and its own Playwright isolated pass covers `/categories`
+  structurally and for accessibility, but nobody has opened the hosted app and looked at it since
+  push, on the same D-138/D-159 reasoning this file applies to every other rendering change. **The
+  tree carries only the two local-only config files as of 2026-09-12, second update** — the
+  categories feature that sat uncommitted through the D-189 session is now committed and pushed
+  (D-190). Read `git status --short` rather than trusting a count here.
 - **Every commit since 2026-08-29 that changes what renders has now been looked at on the
   deployment** — D-177 and D-178 both verified `/statistics` and `/ledger` live, which is also what
   closed D-169 and D-170's rendering fence in `DECISIONS.md` (corrected there 2026-09-01; it had
@@ -413,6 +431,17 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on `acb853e`'s content, 2026-09-12, against a freshly `supabase db reset` local database**:
+  `eslint .` clean (the same 2 pre-existing warnings), `tsc --noEmit` clean, `check:docs --strict`
+  clean, Vitest **962 passed / 7 skipped across 44 files**, pgTAP **all 13 files, 390 assertions**,
+  `pnpm build` clean at the same route count, Playwright isolated **70 passed / 8 skipped** including
+  axe on `/categories` in all four colour schemes, desktop and mobile. **Playwright owner is not
+  counted as evidence for this commit**: it fails on D-191, reproduced to be unrelated to this code
+  (see the live hazard below and D-191's own entry). **This session ran several database-backed
+  suites concurrently before settling on this sequential run**, which collided on the shared seeded
+  owner and produced spurious failures in both Vitest and the owner Playwright suite — discarded,
+  not counted, and not evidence of anything about this code. The fix was a fresh `supabase db reset`
+  and running each suite alone.
 - **Green on `405d267`'s content, 2026-09-12**: `tsc --noEmit` clean, `eslint` clean, `pnpm build`
   clean at the same route count (the attachment route now answers `GET` and `POST`), Vitest **877
   passed / 92 skipped across 41 files**, `check:docs --strict` clean at **189 decisions and 202
@@ -493,6 +522,16 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ## Live hazards on this machine
 
+- **OPEN, discovered 2026-09-12 (D-191). Confirming a statement import lands every row twice.**
+  `tests/e2e/owner-session.spec.ts`'s `reads a confirmed import back` imports a 4-row synthetic
+  statement and finds 8 rows after "Confirm import," with no refusal shown — the confirm believes
+  it succeeded once. Reproduced against a freshly reset local database on `main` at `5d8ba83`, via a
+  throwaway `git worktree`, with no categories code present — ruling out D-190 and ruling out the
+  concurrent-suite collision this session separately hit and resolved (see the gate note above).
+  **Not yet root-caused**: unknown whether the client fires the confirm request twice or
+  `confirm_import` inserts twice server-side for one call. **Do not confirm a real statement import
+  until this is understood** — a doubled real import is a ledger-correctness defect, not a test
+  artifact. The owner Playwright suite has not had a clean run since D-187/D-188 on 2026-09-04.
 - **CLOSED 2026-08-29, on the owner's instruction, and restated because the file is never
   committed.** The local-only `playwright.config.ts` now pins **all three** `STATEMENT_MAILBOX_*`
   variables empty. It had pinned `GOOGLE_VISION_KEY` on the stated grounds that nothing in a

@@ -169,6 +169,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - An audit that measures one axis is silent on the other, and it will report clean for months
 - A simulated fixture is not the fixture, and only a red-proof settles whether an assertion bites
 - A fixture shaped unlike the data it stands in for makes a guard that red-proves by a hair
+- Two database-backed suites started at once share the same seeded owner and corrupt each other
 
 ### Layout, typography and accessibility
 
@@ -255,7 +256,7 @@ these section headings rather than a third raise. The owner chose the split.
 | Backup, restore and recovery | 10 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |
 | Statement and slip parsing | 17 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
-| Tests, Playwright and the gate | 32 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
+| Tests, Playwright and the gate | 33 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
 | App, auth, routing and accessibility | 41 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
 | Layout, typography and accessibility | 25 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 

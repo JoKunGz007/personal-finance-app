@@ -106,6 +106,13 @@ the top of `GOTCHAS.md`.
 - Avoid: clean up in `afterAll`, not only in `beforeEach` — a run that ends leaves the database as it found it. `resetOwnerImportSurface` takes the account ids to drop.
 - Verify: run the browser suite and then `pnpm test`; both pass in either order. Dated 2026-07-25 from `a49fad3`, the commit that recorded the collision and the `afterAll` cleanup for it.
 
+## Two database-backed suites started at once share the same seeded owner and corrupt each other
+
+- Symptom: `pnpm test` and the owner Playwright suite, launched around the same time against the same running `private-ledger-local`, both fail — Vitest trips `assertOnlyDisposableLedgerData`'s guard over accounts neither suite claims, and the owner suite's own row-count assertions read stale-plus-fresh totals (e.g. expecting 5 rows and finding 9). Neither failure names the other suite as the cause.
+- Cause: every database-backed suite (Vitest's non-skipped tests, pgTAP, both Playwright configs) shares one `private-ledger-local` project and, for anything signed in, one seeded owner. The documented validation order (`docs/LOCAL_DEV.md`) runs them one at a time for exactly this reason; starting two as parallel background processes lets one suite's mid-run state (an account, a batch of imported rows) be read or wiped by the other.
+- Avoid: never launch two database-backed suites concurrently, including across separate background shell invocations in the same session. If a run must be backgrounded, wait for it to finish before starting the next one that touches the database.
+- Verify: `pnpm supabase:reset`, then run each suite alone in the documented order; each should reproduce its own last-known-clean baseline (Vitest 962/7 skipped, pgTAP 390 assertions, Playwright isolated 70/8 skipped, as confirmed 2026-09-12). **The owner suite does not currently confirm this way** — it fails on D-191, an unrelated, pre-existing defect reproduced independently of this collision (see `HANDOFF.md`'s live hazards and `DECISIONS.md` D-191). Dated 2026-09-12, from the session that hit this while gating D-190.
+
 ## `pnpm test` deletes every row the owner has, not just the test's own
 
 - Symptom: a ledger holding a real import is empty after a routine test run, or a suite aborts with "Refusing to wipe the ledger: N account(s) … created by neither the seed nor this suite".
