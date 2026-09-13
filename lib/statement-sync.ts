@@ -75,7 +75,15 @@ export type SyncManifest = {
   readonly messages: number;
   readonly attachments: readonly SyncAttachment[];
   /**
-   * Whether the search stopped at `MAX_SYNC_ATTACHMENTS` with mail still unexamined.
+   * Whether the search stopped with mail still unexamined — at `MAX_SYNC_ATTACHMENTS` PDFs found
+   * **or** at `MAX_SYNC_MESSAGES_SCANNED` messages examined, whichever came first.
+   *
+   * **The second cap is why this can now be true on an empty manifest.** The attachment cap
+   * cannot trip without at least one attachment, so "truncated and empty" used to be
+   * unreachable; the scanned-message cap trips on messages *looked at*, which per-part dedup
+   * makes routine — a mailbox whose newest messages are all already fetched contributes nothing
+   * while still costing the scan. Anything reading this flag must therefore handle the empty
+   * case, which `describeManifest` below did not until it was corrected.
    *
    * **A flag rather than a count, because the count is not knowable without paying for it.** The
    * route stops issuing IMAP round trips once it has enough — reading the rest of the mailbox only
@@ -239,14 +247,32 @@ export function contentDisposition(name: string): string {
  */
 export function describeManifest(manifest: SyncManifest): string {
   const { messages, attachments, truncated, since } = manifest;
+  const window = since === null ? "" : ` since ${since}`;
   if (attachments.length === 0) {
+    // **`truncated` is consulted before this branch, not after it.** Answering "nothing found"
+    // without looking was safe only while the attachment cap was the sole way to set the flag,
+    // since that cap cannot trip with an empty list. The scanned-message cap can: every message
+    // examined was already fetched, so the sync stops early having found nothing new. Reporting
+    // that as an empty mailbox is false, and it is the failure the owner can least recover from
+    // on his own — the search is newest-first and the window control offers no "older than", so
+    // the same wrong sentence would come back on every retry with no way past it.
+    // **It must not say "sync again" here, though the non-empty case below rightly does.** There,
+    // truncation means attachments were found and confirming them flags their parts, so the next
+    // scan skips past and reaches deeper — retrying makes progress. Here nothing was found: the
+    // same newest messages are examined again, all of them already fetched, and the answer is
+    // identical every time. Telling the owner to retry would leave him pressing a button that
+    // cannot change its own outcome.
+    if (truncated) {
+      return `No new statement mail among the ${MAX_SYNC_MESSAGES_SCANNED} newest messages this sync examined${window} — every one had already been fetched. Older mail is beyond what a single sync reaches, so syncing again reports the same thing.`;
+    }
     return since === null
       ? "No statement mail found from the configured senders."
       : `No statement mail since ${since}. Ask for a wider window if one is expected.`;
   }
-  const window = since === null ? "" : ` since ${since}`;
+  // Which cap stopped the search is not recorded, so this names both rather than asserting the
+  // one it used to be able to assume.
   const tail = truncated
-    ? ` The mailbox holds more — a sync stops at ${MAX_SYNC_ATTACHMENTS}, so import these and sync again.`
+    ? ` The mailbox holds more — a sync stops at ${MAX_SYNC_ATTACHMENTS} PDFs or ${MAX_SYNC_MESSAGES_SCANNED} messages, so import these and sync again.`
     : "";
   return `${attachments.length} PDF(s) across ${messages} message(s)${window}.${tail}`;
 }

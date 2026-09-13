@@ -6,6 +6,7 @@ import { type AccountTransaction } from "@/lib/transactions";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CardReviewReason } from "@/lib/notification-card-reconcile";
 import { type NotificationCard, type NotificationCardCorrection } from "@/lib/notification-cards";
+import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
 import { formatDate, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
@@ -28,6 +29,7 @@ export function LedgerCardRow({
   candidates,
   fittingRows,
   reviewReason,
+  categories,
   onChooseRow,
   onNotAPayment,
   onToggleCorrecting,
@@ -37,6 +39,8 @@ export function LedgerCardRow({
   row: Extract<ReconciledRow, { kind: "card" }>;
   layout: LedgerLayout;
   modes: LedgerModes;
+  /** Passed to the correction form, which no longer fetches a list of its own. */
+  categories: readonly Category[];
   /** The card **as first typed**, which is what the correction form edits. */
   original: NotificationCard | undefined;
   /** The correction in force, or null. Its presence is what "Corrected by you" reports. */
@@ -205,6 +209,7 @@ export function LedgerCardRow({
               }}
               endpoint={`/api/v1/notification-cards/${card.id}/correction`}
               title={`Correct what you typed for this ${card.channel} card`}
+              categories={categories}
               onSaved={(saved) => onCorrectionSaved(card.id, saved)}
               onCancel={onCancelCorrection}
             />

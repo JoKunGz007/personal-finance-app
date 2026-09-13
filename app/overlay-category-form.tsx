@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { overlayInForce, overlayWriteBody, overlayWriteResponseSchema, type LedgerTransaction, type TransactionOverlay } from "@/lib/transactions";
-import { type Category } from "@/lib/categories";
+import { pickableCategories, type Category } from "@/lib/categories";
 import { ledgerRequest } from "@/lib/wire";
 
 /**
@@ -51,25 +51,16 @@ export function OverlayCategoryForm({
   const [busy, setBusy] = useState(false);
 
   /**
-   * Active categories only, matching `CorrectionForm`'s own picker — no inline creation here
-   * (this session's decision; creation lives on `/categories` only), so a category has to exist
-   * and not be archived to be *chosen*. The row's already-assigned category can still be archived
-   * without vanishing from the row: `categories` above (not this filtered list) is what the
-   * Description cell's chip reads, and it is never filtered.
-   *
-   * **The row's own already-assigned category rides along even if archived.** Filtering it out
-   * entirely would leave `categoryId` matching no `<option>`, so the browser renders the select as
-   * unselected while the stored value is untouched — the owner, seeing what looks like a blank
-   * picker, might "fix" it by choosing something, which would genuinely erase the assignment on
-   * Save. Keeping it in the list, labelled, keeps what is shown honest about what is stored.
+   * Active categories, plus this row's own assignment even when archived — the reasoning, and why
+   * it is not optional, is in `pickableCategories`. No inline creation here (this session's
+   * decision; creation lives on `/categories` only). The Description cell's chip reads the
+   * unfiltered `categories` above rather than this list, so an archived assignment still renders
+   * on the row itself.
    */
-  const pickable = useMemo(() => {
-    const active = categories.filter((category) => !category.archived);
-    if (inForce.categoryId === null) return active;
-    if (active.some((category) => category.id === inForce.categoryId)) return active;
-    const assigned = categories.find((category) => category.id === inForce.categoryId);
-    return assigned ? [...active, assigned] : active;
-  }, [categories, inForce.categoryId]);
+  const pickable = useMemo(
+    () => pickableCategories(categories, inForce.categoryId),
+    [categories, inForce.categoryId]
+  );
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

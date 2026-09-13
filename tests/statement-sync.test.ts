@@ -171,6 +171,45 @@ describe("the manifest handed to the page", () => {
       .toContain("No statement mail found");
   });
 
+  /**
+   * **Empty *and* truncated, which the scanned-message cap made reachable and nothing tested.**
+   * The attachment cap cannot set `truncated` without at least one attachment, so before
+   * per-part dedup this state could not exist and `describeManifest` answered "nothing found"
+   * without consulting the flag. Once most old mail is already fetched, a sync examines its
+   * whole budget of messages, finds nothing new, and stops early — and the old wording told the
+   * owner his mailbox was empty. He cannot recover from that himself: the search is newest-first
+   * and the window control offers no "older than", so every retry repeats it.
+   */
+  it("does not report an empty mailbox when the scan stopped early with nothing found", () => {
+    const truncated = describeManifest(buildManifest([], 0, null, true));
+    expect(truncated).not.toContain("No statement mail found");
+    expect(truncated).toContain("already been fetched");
+    // And the honest case is still answered plainly rather than being swept into the new wording.
+    expect(describeManifest(buildManifest([], 0, null, false))).toContain("No statement mail found");
+  });
+
+  /**
+   * **The empty truncation must not advise a retry, though the non-empty one should.** With
+   * attachments found, confirming them flags their parts, so the next scan skips past and reaches
+   * deeper — retrying genuinely makes progress. With nothing found, the same newest messages are
+   * re-examined, all already fetched, and the answer cannot change. Advice that cannot work is
+   * worse than none: it leaves the owner pressing a button in a loop.
+   */
+  it("promises a retry only where a retry can actually make progress", () => {
+    expect(describeManifest(buildManifest([], 0, null, true))).toContain("same thing");
+    expect(describeManifest(buildManifest([], 0, null, true))).not.toContain("import these and sync again");
+    expect(describeManifest(buildManifest([attachment(1, "2", "a.pdf")], 1, null, true)))
+      .toContain("import these and sync again");
+  });
+
+  it("does not blame the attachment cap for a truncation the message cap may have caused", () => {
+    // Which cap tripped is not recorded on the manifest, so the sentence names both rather than
+    // asserting the one it could assume while the attachment cap was the only way to get here.
+    const tail = describeManifest(buildManifest([attachment(1, "2", "a.pdf")], 1, null, true));
+    expect(tail).toContain("holds more");
+    expect(tail).toContain("messages");
+  });
+
   it("counts PDFs and messages separately, because one mail carries more than one statement", () => {
     // The shape measured against the owner's three banks on 2026-08-23 (D-144): one sender mailed
     // two months in a single message, another mailed a statement alongside an unrelated document.

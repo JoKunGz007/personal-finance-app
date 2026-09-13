@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import { formatThb } from "@/lib/money";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CashCorrection, type CashEntry } from "@/lib/cash";
+import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
 import { formatDate, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
@@ -22,6 +23,7 @@ export function LedgerCashRow({
   modes,
   original,
   correction,
+  categories,
   onToggleCorrecting,
   onCorrectionSaved,
   onCancelCorrection
@@ -29,6 +31,8 @@ export function LedgerCashRow({
   row: Extract<ReconciledRow, { kind: "cash" }>;
   layout: LedgerLayout;
   modes: LedgerModes;
+  /** Passed to the correction form, which no longer fetches a list of its own. */
+  categories: readonly Category[];
   /**
    * The entry **as first typed**, which is what a correction is measured against and what the
    * form edits. Absent only if the reconciled row outran the list it came from, in which case
@@ -107,6 +111,7 @@ export function LedgerCashRow({
               overlay={correction}
               endpoint={`/api/v1/cash/${entry.id}/correction`}
               title="Correct this cash entry"
+              categories={categories}
               onSaved={(saved) => onCorrectionSaved(entry.id, saved)}
               onCancel={onCancelCorrection}
             />

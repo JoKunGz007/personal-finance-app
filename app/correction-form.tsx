@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { formatThb, parseThb } from "@/lib/money";
 import { applyCorrection, type Correctable, type CorrectionOverlay } from "@/lib/corrections";
+import { pickableCategories, type Category } from "@/lib/categories";
 import { readError } from "@/lib/wire";
-
-type Category = { id: string; name: string; archived: boolean };
 
 /**
  * Correcting what the owner typed — on a slip or on a cash entry (migration 013).
@@ -29,6 +28,7 @@ export function CorrectionForm({
   overlay,
   endpoint,
   title,
+  categories,
   balance,
   onSaved,
   onCancel
@@ -37,6 +37,18 @@ export function CorrectionForm({
   overlay: CorrectionOverlay | null;
   endpoint: string;
   title: string;
+  /**
+   * The category list, owned by the page rather than fetched here.
+   *
+   * **This used to be a `fetch` of its own inside a mount effect**, which bought three defects at
+   * once: a failure was swallowed by a bare `return` so the picker simply stayed empty with
+   * nothing said, the body was asserted to be `Category[]` by a cast instead of parsed by
+   * `categoryListSchema`, and the effect ran per mounted instance — so expanding three correction
+   * panels issued three more requests for a list the ledger already held in state. Two sources of
+   * one list, free to disagree. The page owns it now and passes it down, exactly as it already
+   * did for `OverlayCategoryForm`.
+   */
+  categories: readonly Category[];
   /**
    * The printed balance, for the one record that has one: a notification card (migration 017).
    *
@@ -70,18 +82,17 @@ export function CorrectionForm({
     const magnitude = minor < 0n ? -minor : minor;
     return `${minor < 0n ? "-" : ""}${magnitude / 100n}.${(magnitude % 100n).toString().padStart(2, "0")}`;
   });
-  const [categories, setCategories] = useState<Category[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      const response = await fetch("/api/v1/categories", { headers: { accept: "application/json" } });
-      if (!response.ok) return;
-      const body = await response.json().catch(() => null);
-      if (body && Array.isArray(body.categories)) setCategories(body.categories.filter((c: Category) => !c.archived));
-    })();
-  }, []);
+  // Active categories, plus this record's own assignment even when archived. Keyed off what is
+  // *stored* rather than the in-progress selection, so an archived assignment stays reachable
+  // while the owner looks at the alternatives — see `pickableCategories` for what filtering it
+  // out would cost.
+  const pickable = useMemo(
+    () => pickableCategories(categories, inForce.category_id ?? null),
+    [categories, inForce.category_id]
+  );
 
   const parsedAmount = useMemo(() => {
     if (amount.trim() === "") return { ok: false as const, message: "An amount is required." };
@@ -215,7 +226,7 @@ export function CorrectionForm({
           <span>Category (optional)</span>
           <select value={categoryId} disabled={busy} onChange={(event) => setCategoryId(event.target.value)}>
             <option value="">Uncategorised</option>
-            {categories.map((category) => (
+            {pickable.map((category) => (
               <option key={category.id} value={category.id}>{category.name}</option>
             ))}
           </select>

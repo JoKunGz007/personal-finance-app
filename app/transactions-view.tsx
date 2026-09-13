@@ -914,7 +914,15 @@ export function TransactionsView() {
       // this, but neither is the confirmed ledger itself, so an outage here must not hide it.
       // Left at whatever it already held on a failure — usually empty, on the first load — rather
       // than surfacing a banner for a list nothing above the table depends on.
-      setCategories([]);
+      //
+      // **Not cleared before the fetch, unlike the three loads above, and the difference matters
+      // now that the correction forms read this list instead of fetching their own.** Clearing it
+      // made every reload pass through a moment where `categories` was empty; a correction panel
+      // left open across that moment lost every option from its picker while the row's stored
+      // `category_id` was untouched, which is the blank-picker state `pickableCategories` exists
+      // to prevent. Slips, cash and cards are cleared because a stale row is a wrong row; a stale
+      // category *name* for one paint is not, so this keeps the last good list until the next one
+      // lands. That is also what the paragraph above always claimed it did.
       const categoriesResult = await ledgerRequest("/api/v1/categories", categoryListSchema, {
         fallback: "Categories could not be loaded.",
         offContract: "The categories response did not match its contract, so none are shown."
@@ -1460,6 +1468,7 @@ export function TransactionsView() {
                           modes={modes}
                           original={originalCash.get(row.entry.id)}
                           correction={cashCorrectionByEntry.get(row.entry.id) ?? null}
+                          categories={categories}
                           onToggleCorrecting={toggleCorrecting}
                           onCorrectionSaved={storeCashCorrection}
                           onCancelCorrection={stopCorrecting}
@@ -1479,6 +1488,7 @@ export function TransactionsView() {
                           candidates={candidatesByCard.get(row.card.id) ?? []}
                           fittingRows={reconciled.cardMatches.balanceConflict.get(row.card.id) ?? 0}
                           reviewReason={reconciled.cardMatches.needsReview.get(row.card.id)}
+                          categories={categories}
                           onChooseRow={chooseRowForCard}
                           onNotAPayment={(cardId) => void decideCard(cardId, "not-a-payment", null)}
                           onToggleCorrecting={toggleCorrecting}
@@ -1498,6 +1508,7 @@ export function TransactionsView() {
                           original={originalSlips.get(row.slip.id)}
                           correction={slipCorrectionBySlip.get(row.slip.id) ?? null}
                           candidates={candidatesBySlip.get(row.slip.id) ?? []}
+                          categories={categories}
                           onChooseRow={chooseRowForSlip}
                           onToggleCorrecting={toggleCorrecting}
                           onCorrectionSaved={storeSlipCorrection}

@@ -5,6 +5,7 @@ import { formatThb } from "@/lib/money";
 import { type AccountTransaction } from "@/lib/transactions";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CapturedSlip, type SlipCorrection } from "@/lib/slips";
+import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
 import { formatDate, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
@@ -24,6 +25,7 @@ export function LedgerSlipRow({
   original,
   correction,
   candidates,
+  categories,
   onChooseRow,
   onToggleCorrecting,
   onCorrectionSaved,
@@ -32,6 +34,8 @@ export function LedgerSlipRow({
   row: Extract<ReconciledRow, { kind: "provisional" }>;
   layout: LedgerLayout;
   modes: LedgerModes;
+  /** Passed to the correction form, which no longer fetches a list of its own. */
+  categories: readonly Category[];
   /** The slip **as first typed**, which is what the correction form edits. */
   original: CapturedSlip | undefined;
   /** The correction in force, or null. Its presence is what "Corrected by you" reports. */
@@ -143,6 +147,7 @@ export function LedgerSlipRow({
               overlay={correction}
               endpoint={`/api/v1/slips/${slip.id}/correction`}
               title={`Correct what you typed for this ${slip.bank_code} slip`}
+              categories={categories}
               onSaved={(saved) => onCorrectionSaved(slip.id, saved)}
               onCancel={onCancelCorrection}
             />
