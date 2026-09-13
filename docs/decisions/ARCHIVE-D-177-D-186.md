@@ -1,4 +1,4 @@
-# Private Ledger decision log — archive, D-177 … D-186, without D-179 … D-181, D-183 and D-184
+# Private Ledger decision log — archive, D-177 … D-186
 
 Relocated from `DECISIONS.md` on 2026-09-04, unchanged, because that file reached **116 KB of its
 120,000-byte budget — 99%** (`scripts/check-docs.mjs`, D-130). Append-only still applies — a
@@ -80,6 +80,99 @@ The review also named `lib/date-range.ts` as untested — `windowSchema` now del
 
 - Evidence: isolated the same way D-177 was — `git stash push --keep-index` reduced the tree to exactly the intended commit before every check ran. `tsc --noEmit` clean, `eslint .` clean (2 pre-existing warnings in `app/transactions-view.tsx`, both predating this diff — `load` deliberately omitted from two `useEffect` dependency arrays, per their own comments), `check:docs --strict` clean at 177 decisions and 191 traps, `pnpm build` clean, Vitest **906 passed / 7 skipped across 42 files** (+14 over D-177's baseline: 9 for `lib/date-range.ts`, 5 for `ledgerPageSearch`/`cursorAfter`). **No pgTAP re-run — no SQL moved; migration 024 already carries and tests the bounded RPCs (D-174).** Manually verified in a real browser against `next build && next start` with the guarded dev-session route: a transposed range on `/ledger` shows the refusal sentence and disables Reload; a corrected range fires `GET .../transactions?from=…&to=…` for every account and the applied-window sentence renders; separately, direct requests against both routes confirm the `isUsableRange` refactor is behaviour-preserving — 200 for an ordered range, 400 with the original message for a transposed one, on `/api/v1/statistics` and `/api/v1/accounts/[id]/transactions` alike. **Then confirmed against real confirmed rows on the deployed hosted app**, in the owner's own signed-in browser session: narrowing to a real month across all three real accounts changed the figures correctly, the applied-window sentence stated it, and the transposed-range refusal reproduced identically live. No real account ids, dates or amounts are reproduced in this entry or anywhere else in the repository, per D-049. D-174 (the migration this is built on), D-177 (the sibling half and the review pattern this repeats), D-125 (the review-before-commit practice), D-170 (the `{ search, data }` / `{ ledgerWindow, appliedRange }` pattern), D-159 and D-162 (why a silent narrowing is treated as a defect class rather than a one-off).
 
+## D-179 — The calendar heatmap, PLAN task 47's deferred second half: two ramps not one, sparse not dense, and migration 025
+
+- Date: 2026-08-31
+- Status: **Built, reviewed, isolated-tested, committed as `7d9d4e6`, migration 025 pushed to hosted, code pushed and deployed; confirmed against the owner's real ledger.** New: `app/statistics-calendar.tsx`, `supabase/migrations/202608310025_statistics_daily_movements.sql`, `supabase/tests/013_statistics_daily_movements.sql`. Changed: `app/statistics-view.tsx`, `app/statistics-charts.tsx` (exports `DEPOSIT`/`WITHDRAWAL`, `magnitude` moved to `lib/statistics.ts`), `app/transactions-view.tsx` and `app/ledger-controls.tsx` (`/ledger` now seeds its date range and account filter from the URL on first load, one-way, and its own `AccountSelect` gets `showUnknown`), `lib/accounts.ts` (`ACCOUNT_ID_PATTERN` extracted, shared with `lib/statistics.ts`), `lib/statistics.ts` (`dailyMovementSchema`, `daysInMonth`/`isoWeekdayOf`/`monthsBetween`), `tests/statistics.test.ts`.
+- Context: D-178 closed task 47's plain date filter and left the calendar heatmap "unauthorized, unscoped and unbuilt beyond the paragraph in `PLAN.md`", deferred by the owner on 2026-08-29 pending whether it was still wanted once the filter shipped. Authorized this session, along with commit, push, deploy, `db push` and real-ledger read together in one grant.
+
+### Three open design questions, settled by the owner rather than by the recommendation PLAN.md carried
+
+PLAN.md's own text recommended a single net ramp, `include_in_reporting` honoured "for the same reason" every other total does, and an empty day drawn as an empty cell. The owner kept the second and third and overrode the first: **the cell shows both directions**, income as `DEPOSIT` and spending as `WITHDRAWAL` — the same validated pair `MonthlyChart` already uses — split across the top and bottom half of the cell, because a day of pure income and a day of pure spending are different findings that a net ramp would draw as opposite ends of one scale.
+
+### `dailyMovements` is sparse, and a day absent from it is not the same day as a day present at zero
+
+Migration 025 adds one field to `public.ledger_statistics`, built from `private.reportable_movements` (024) grouped by `source_date` — no new predicate, so it inherits the account filter and `include_in_reporting` for free. A date with no reportable movement — nothing happened, or its only movement was excluded from reporting — gets no row at all rather than a zero-valued one. **This is not the same question `dailyBalances` answers**: the balance series deliberately does not honour the flag, because excluding a row from reporting does not un-move the money; the calendar's own totals do honour it, because it is answering the same "how much was spent" question every other figure on the page answers. pgTAP `013` proves both properties against 011's fixture: an excluded-only day is present in `dailyBalances` and absent from `dailyMovements`, in the same four-day window.
+
+### `/code-review high` ran before the commit ask and found ten defects; nine are fixed, one is recorded
+
+Two were real correctness bugs found by tracing the fixture rather than by inspection: the empty-cell wording said "no confirmed rows" for a day whose only transaction was excluded, contradicting the row `/ledger` would actually show one click away — reworded to "no reportable movement". And `/ledger`'s own `AccountSelect` had no `showUnknown`, so a calendar link carrying `account=` could show "All accounts" selected while the page was genuinely narrowed — the exact defect class D-177 fixed on `/statistics`, reintroduced here because `selected` had never before been reachable from anywhere but the dropdown itself. Also fixed: a hand-rolled query-string builder where `windowSearch` already existed; a third copy of the same BigInt-magnitude helper (now exported once, from `lib/statistics.ts`); zero test coverage for the new hand-rolled calendar-day arithmetic (`isoWeekdayOf`'s Sakamoto's-algorithm table, `daysInMonth`, `monthsBetween` — seven fixed points cross-checked against an independent `Date.UTC(...).getUTCDay()` computation, not against the algorithm itself); a stale hover/focus readout for a keyboard user who tabs out of the grid without the mouse ever leaving it; missing memoization that rebuilt the day-lookup map and rescanned every movement on each cell hovered; and unvalidated date seeding on `/ledger`'s first load, now checked against `isoDateSchema` before being accepted. **Recorded rather than fixed**: the calendar renders one grid per month in the window with no cap, and "All time" is exactly the case that spans the ledger's whole history — confirmed harmless in shape on the real fourteen-month ledger (no crash, no visible break), but the render cost of a much longer history is untested and unbounded.
+
+### `windowSearch` grew a second caller instead of the calendar growing a second encoder
+
+`app/statistics-calendar.tsx`'s day links build `/ledger${windowSearch({ from, to }, accountId)}` — the same range-plus-account encoder the window picker already uses and `tests/statistics.test.ts` already asserts, rather than a second hand-rolled query string that could drift from it. This is also what makes `/ledger`'s new URL-seeding exact: `rangeFromSearch` and the shared `ACCOUNT_ID_PATTERN` read back precisely what `windowSearch` wrote.
+
+### `/ledger` now reads its filters from a URL once, and deliberately does not write them back
+
+Unlike `/statistics`'s picker (D-170, D-172), which round-trips through `history.replaceState` on every change, `/ledger`'s new `dateFrom`/`dateTo`/`selected` seeding is one-way: read on mount, never synced back to the address bar. `/ledger` has never round-tripped any of its filters — Account, Order, Status and Filter are all plain component state — so writing only the two new ones back would have made this control alone inconsistent with its five siblings, not consistent with `/statistics`. Left as a known asymmetry rather than resolved either way, since resolving it is a separate design question the owner has not been asked.
+
+- Evidence: `tsc --noEmit` clean, `eslint .` clean (the same 2 pre-existing warnings D-178 already recorded, unrelated to this diff), `check:docs --strict` clean at 178 decisions and 191 traps, `pnpm build` clean (23 `/api/v1/` routes, unchanged), Vitest **910 passed / 7 skipped across 42 files** (+4 over D-178's baseline, all in the new calendar-arithmetic suite), pgTAP **all 13 files, 390 assertions**, including the new `013_statistics_daily_movements.sql` (12 assertions against 011's fixture). Verified in a real browser against `next build && next start` with the guarded dev-session route and invented local-only data (never committed, never real): cell colour and intensity scale correctly by direction, a day link opens `/ledger` already filtered with no Reload needed and figures matching the calendar exactly, and an account-carrying link correctly pre-selects that account rather than falling back to "All accounts". **Then pushed to hosted and confirmed against the real ledger**: migration 025 applied after a backup verified from the database at sequence 43 / last_exported_sequence 43 (the owner exported a fresh one when the reading found the standing backup four mutations stale — the D-152 gate holding as designed, not a formality), `authenticated`/`anon` grants read back correctly narrow, and the deployed calendar renders all fourteen months of the real ledger's history without error. A real day's click-through was confirmed to match the ledger exactly on row count and both direction totals, in the owner's own signed-in browser session. No real account ids, dates or amounts are reproduced in this entry or anywhere else in the repository, per D-049. **Not verified**: the calendar at phone width — a resize on the real signed-in tab did not propagate to the page's own viewport, so this is an owed reading, on the same terms D-178 already recorded for its two controls. D-178 (the filter this completes), D-177 (the `showUnknown` defect class), D-174/D-176 (migration 024, whose `reportable_movements` this reuses), D-125 (review before the commit ask), D-049 (value-free writing).
+
+## D-180 — Four colour schemes, reversing D-137, and a test that retires the argument against them
+
+- Date: 2026-09-01
+- Status: **Built, reviewed, gated and verified in a real browser locally. Not committed, not pushed, not deployed.** New: `lib/ui-theme.ts`, `app/theme-picker.tsx`, `app/api/v1/ui/theme/route.ts`, `tests/ui-theme.test.ts`, `tests/e2e/theme-picker.spec.ts`. Changed: `app/globals.css` (three dark blocks, nine promoted tokens, `.font-picker` → `.ui-picker`), `app/layout.tsx` (`generateViewport`, `data-theme`), `app/site-header.tsx`, `app/font-picker.tsx`, `app/statistics-charts.tsx`, `app/statistics-calendar.tsx`, `DESIGN.md`.
+- Context: **D-137 dropped the dark scheme** and a later entry withdrew the owner's *"but we'll see"* hedge, recording that he would say so if it changed. He said so, and asked for a Stardew-grounded palette. Three candidates were rendered on the real app surfaces and measured; he chose Night Town and asked that all three stay switchable.
+
+### D-137's argument was right, and the answer to it is a test rather than a promise
+
+D-137 dropped the scheme because *"a second scheme is a second set of contrast facts that nothing here measures"*. That is not a taste objection and enthusiasm does not answer it. `tests/ui-theme.test.ts` does: it parses `app/globals.css`, and for **every** declared scheme asserts 36 contrast pairs, identical token sets, `THEME_GROUNDS` agreement with each block's `--mist`, that no scheme block redeclares a non-colour token, and that no colour literal is written outside a token block. A fourth scheme now costs one CSS block and one array entry — and cannot ship unmeasured.
+
+**The floors were calibrated from the shipped palette, and the calibration found the instrument at fault.** A first pass used textbook numbers — 3:1 for every non-text boundary, 1.1 for a surface lift — and the **light palette failed five of them**: the privacy dot, the backup band's border, the warning's edge and both surface lifts. Light is accepted, deployed and axe-clean, so the floors were wrong rather than the palette; they are now the light scheme's own measured values, rounded down. The claim the test defends is therefore *"at least as good as daylight"*, which this repo can actually defend. The same discipline applied to series separation: a contrast ratio is the wrong instrument for two marks of similar lightness — the shipped pair measures 1.83 against each other — so separation is asserted as distance, not as ratio.
+
+### Three darks rather than one, because the choice was made from the wrong evidence to make it from
+
+Night Town (`#1e2440`) is the owner's pick; Lamplit (`#2b2018`, dark walnut — the game's own furniture) and Cellar (`#1a2110`, `--navy` darkened into a ground) ship alongside it. The decision was made from renderings of **invented** data on a desktop, and the real test is his own ledger on his own phone at night. A palette reachable only by editing CSS and redeploying does not get re-evaluated. All three are held to identical floors, so keeping them costs measurement that is already automated.
+
+### The eleven literal colours the `GOTCHAS.md` inversion trap predicted would fail again
+
+`app/globals.css` carried eleven rules pairing a `var(--…)` surface with a hardcoded `color` — correct in light, unreadable in dark. The trap entry had named exactly this and said the pairings *"are still in this file and will fail again"*. All eleven are now tokens (`--on-action`, `--warn-ink`, `--resync-ink`, `--verified-ink`, `--verified-rail`, `--celadon-dot`, `--backup-edge`), each light value byte-identical to the literal it replaced, so **daylight renders unchanged**. One literal survives deliberately: `#fff` on `.owner-access-qr`, because a QR quiet zone is white at midnight too.
+
+**Worse than the CSS was `app/statistics-charts.tsx`**, whose docstring claimed its five colours *"inherit the app's palette and its one declared colour scheme for free (D-137)"*. They were JS constants and inherited nothing; the claim was unfalsified only because there was one scheme to agree with. On a dark ground its `#283618` ink would have drawn at 1.2:1. They are `var(--…)` strings now, and the same pair feeds D-179's calendar ramps — which mixed a fixed light-scheme green into `var(--paper)` and would have run backwards at the faint end.
+
+### `/code-review high` found the same trap in a subtler form that no contrast floor could catch
+
+`.detail-dialog::backdrop` mixed `var(--navy)` — the **text** colour — at 65%. Not a literal paired with a variable, but a variable used for a role that flips: correct in daylight where the ink is near-black, exactly backwards where it is near-white. Measured, the backdrop went from **19% luminance in daylight to 38% in all three darks** — opening a dialog washed the page *lighter* than the app behind it, glaring in the dark room the scheme exists for. A contrast floor cannot report it because both states have ample contrast; only the *direction* is wrong. Fixed with a `--scrim` token whose light value is `--navy`'s, and guarded by an assertion that the composited backdrop is darker than the ground in every scheme — red-proved, reproducing 38% exactly. The review's second finding was in the test rather than the app: a pair measured the privacy dot against solid `--celadon`, a surface `.privacy-chip` never paints, so it could have passed while the real halo failed. **Recorded rather than fixed**: `public/manifest.webmanifest` stays light-only, so an installed app launched in a dark scheme flashes a cornsilk splash — a manifest is static and cannot read the cookie.
+
+### A second route rather than a second field, on the first route's own reasoning
+
+`app/api/v1/ui/font/route.ts` is `.strict()` and its docstring named `{font, theme}` as the exact shape it refuses, *"because a caller sending both has a broken model of this endpoint and answering it as though the extra key were fine is how a second preference gets half-built"*. That was written before this existed and it was right, so the second preference was built whole: its own closed set, its own cookie, its own route. Both remain httpOnly and server-read, so the ground is correct on first paint and `app/` stays free of client storage APIs — the blanket grep `tests/privacy.test.ts` depends on.
+
+`system` is the default and resolves through `prefers-color-scheme`. Because CSS cannot alias one rule to another and the server never learns the device's preference, Night Town's tokens are written **twice** — once for `[data-theme="night"]`, once inside the media query for `[data-theme="system"]`. The alternative was the blocking inline script the CSP would have to admit, which `lib/ui-font.ts` already refused for the typeface. The duplication is asserted equal token-for-token rather than left to a comment.
+
+### axe had never run in a scheme other than the default, which is how the 2026-08-21 inversions shipped
+
+The `GOTCHAS.md` trap ends: *"Neither browser suite's axe check caught them: they run in the default scheme."* Three white-on-copper pairings shipped behind a fully green accessibility pass for that reason. `tests/e2e/theme-picker.spec.ts` now runs axe over all five routes in each of the three dark schemes, on desktop and mobile — 30 route-scheme passes that did not exist before.
+
+- Evidence: `tsc --noEmit` clean; `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx` D-178 and D-179 already recorded, untouched); `check:docs --strict` clean at 179 decisions and 191 traps **before this entry**; `pnpm build` clean at **24** `/api/v1/` routes (+1, the theme route); Vitest **941 passed / 7 skipped across 43 files** (+31 over D-179's baseline, all in `tests/ui-theme.test.ts`); Playwright isolated **70 passed / 8 skipped** (+32 over the pre-change 38, from `tests/e2e/theme-picker.spec.ts`, desktop and mobile). **No pgTAP re-run — no SQL moved.** Four of the structural guards were **red-proved** rather than trusted: darkening a dark scheme's secondary text, desynchronising the duplicated Night Town block, writing a literal colour back into an ordinary rule, and letting a scheme block redeclare `--radius` each failed in exactly the intended assertion, and the file was restored from a backup and re-run green after each. Verified in a real browser against `next build && next start` with the guarded dev-session route and the local synthetic project: all four schemes paint their declared ground, `color-scheme` reaches the native date input in each, the picker's round trip stores and re-renders, daylight is visually unchanged, and at a 375px viewport both pickers sit behind the Settings disclosure with 44px targets and `document.scrollWidth` equal to the viewport. **Not verified**: rows, status chips, the verified rail and the calendar heatmap in any dark scheme — the local project's ledger is empty, so those surfaces had no data to render, and the deployed app is where they exist. That reading is owed, and it joins the phone-width reading D-178 and D-179 already owe. No real financial data was read or reproduced for this entry (D-049). D-137 (the decision this reverses), D-136 (the palette it keeps), D-163 (mark 3:1 against text 4.5:1), D-157 and D-166 (why the picker notes stay one line), D-156 (the accessible-name defect both pickers avoid), D-125 (review before the commit ask), D-179 (the calendar ramps this repairs).
+
+## D-181 — D-180 deploys, and the dark schemes are confirmed against the real ledger
+
+- Date: 2026-09-01
+- Status: **Committed as `12d0302`, pushed to `origin/main`, deployed, and confirmed against the owner's real hosted ledger.** Documentation only beyond that commit; no code changed after the verification.
+- Context: D-180 was built, reviewed and gated but recorded an explicit owed reading — no dark scheme had been seen against real rows, because the local project's ledger is empty and every surface that carries a promoted token (status chips, the verified rail, the provisional tag, the calendar) renders only with data. The owner had granted commit, push, deploy and real-ledger read at the start of the session. This entry is that reading.
+
+### What the deployment confirmed that no local run could
+
+Measured in the owner's own signed-in browser session, on **297 real rows** in Night Town, against each element's **real composited surface** rather than the idealized one `tests/ui-theme.test.ts` assumes:
+
+- secondary text **7.59:1**, money-in **8.79:1**, the verified chip **7.26:1** — every one above its floor;
+- the verified row rail paints `--verified-rail`, on six rows;
+- the calendar renders **424 cells, 173 income-painted and 359 spending-painted**, both ramps mixing correctly into the dark paper — the surface D-180 repaired, since it had mixed a fixed light-scheme green into `var(--paper)`;
+- the chart's text resolves through `var(--muted)`, which is the direct evidence that the five promoted JS constants now inherit rather than merely claiming to.
+
+**The backdrop fix was confirmed on the live surface, not inferred**: `--scrim` composites to **0.7% luminance against a 1.9% ground**. The pre-fix value on that same real surface was 38%. This is the one finding of the three that a user would have met immediately, and it is the only one that no contrast floor would ever have reported.
+
+### The measurement found one thing the unit suite had assumed and the deployment corrected
+
+The status chips are `<em>` elements, so `td em`'s `background: var(--saffron-wash)` applies to **every** chip including the verified one — a pre-existing choice, not a D-180 change. `tests/ui-theme.test.ts` measures `--verified-ink` against the ground and the panel, neither of which is where that chip actually sits. It clears its floor on the real surface (7.26:1), so nothing is broken, but **the test is measuring a surface the app does not paint for that element** — the same defect class the review already caught once in this suite, surviving in a second place. Recorded rather than fixed: correcting it needs the chip's real stacking read out of the deployment rather than guessed, and that is a change to the test, not to the app.
+
+### What is still owed
+
+**Phone width, shared with D-178 and D-179** — none of the account filter, the date filter, the calendar or any dark scheme has been seen at a true 390px viewport on a real device; a resize on the hosted tab did not propagate the last time it was tried. **The awaiting-slip chip and the resync label** did not appear in the loaded window, so they are measured only in the unit suite. Both are readings rather than work.
+
+- Evidence: `git log` — `12d0302` on `main`, `origin/main` matching. The deployment read back live: `data-theme="system"` resolving to Night Town on a dark-OS browser, the ground at `#1e2440`, `--scrim` present, the picker offering all five values, and **`themeColor` shipping both media-conditioned values** (`#fefae0` for light, `#1e2440` for dark) — the meta that sat stale for a day across two deployments in D-137's own aftermath, now generated per cookie and asserted against `--mist`. Contrast figures above were computed in the page from `getComputedStyle`, against each element's real surface. **No real account ids, dates, amounts or counterparties were read into this entry or any other document**, per D-049; the row count, the cell counts and the ratios are the only figures taken, and all are counts or measurements rather than money. D-180 (the work this deploys), D-179 (the calendar whose ramps it repairs), D-137 (the decision D-180 reverses), D-049 (value-free writing), D-138 and D-159 (why looking at the deployment is treated as a separate gate from a green suite).
+
 ## D-182 — The ledger reads a day at a time, the strip carries a balance, and the control row stops sizing one row's tracks for another
 
 - Date: 2026-09-01
@@ -121,6 +214,62 @@ Four equal `minmax(0, 1fr)` columns now, with the button and the wide field plac
 ### Gate
 
 `tsc` clean; `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`, untouched); `check:docs --strict` clean; `pnpm build` clean at **24** `/api/v1/` routes; Vitest **949 passed / 7 skipped across 43 files** (+8). **pgTAP deliberately not re-run — no SQL has moved since migration 025.** Verified in a real browser against `next build && next start` with **301 invented local rows** seeded for the purpose: 101 day headings over 200 loaded rows, the balance reading the newest row with its date, and the control row correct at 1440px, at 980px and at 390px. No real financial data was read or reproduced.
+
+## D-183 — The calendar reads a year at a time, three across, and every month answers for its own days
+
+- Date: 2026-09-01
+- Status: **Built, reviewed and gated. Not committed, not pushed, not deployed.** `app/statistics-calendar.tsx`, `app/statistics-view.tsx`, `lib/statistics.ts`, `app/globals.css`; `tests/statistics.test.ts` (+4). No SQL and no contract change — `dailyMovements` (migration 025) already carries everything this needed.
+- Context: the owner read D-179's calendar on the deployment and made three observations: the months stack in one column so no two can be compared, there is no way to ask for one particular year, and the hover readout sits in one fixed place far from the day being pointed at. All three are about reading a year rather than about the data.
+
+### Three columns, and the layout is the feature
+
+`.cal-months` was `flex-direction: column`. Twelve months in one column is a four-thousand-pixel scroll in which comparing March with October means remembering March. Three across and four down is a year on one screen — two across at ≤980px, one at ≤700px, because three columns at phone width would put a day cell below the 44px tap standard D-168 set, and a calendar you cannot press is not a calendar.
+
+### A year is a custom range, not a preset, and the difference is the whole design
+
+`WINDOW_PRESETS` gains `last-6-months` — the owner asked for it beside the three-month one, and both depths now read their offset out of one table so an off-by-one cannot land in only one of them.
+
+**A year does not join that list.** Every preset is a *rolling* question: "This month" resolves differently tomorrow, which is why `pickerSearch` encodes presets by name and a link to one keeps meaning what it said. "2025" is two dates that will never move — the custom shape exactly. So the year control sets a custom range through `yearWindow`, and reads its own selected value back out through `wholeYearOf` rather than storing a second copy of a fact the two date inputs already hold. Choosing a year ticks Custom and fills those inputs, where the owner can see precisely what was asked for.
+
+**A `<select>` rather than a twelfth chip**: the presets are a fixed count, the years grow by one every January, and a control bar that grows without bound stops being readable. The list is learned from the responses — the page opens on All time, so the first response's `window.from` is the ledger's own first row — and only ever reaches further back, so choosing "This month" cannot make 2025 unreachable.
+
+**Naming 31 December for the year still running is not clamped, and the first draft of this code claimed it was.** `/code-review high` caught a docstring asserting the RPC clamps the end to the ledger's last row. It does not: choosing the current year resolves to a genuine 365-day window and every average divides by 365 rather than by the days elapsed, so "per day" reads lower here than under the "This year" preset. **That is the intended reading** — a year means the whole year, and the preset beside it is the one that means "so far" — but the comment had it backwards on a money path, which is the kind of thing that is true until someone believes it. The resolved from/to pair and the day count are printed above the figures they divided, which is the same protection the preset labels rest on.
+
+### The readout moved to the month it describes
+
+The hovered day's figures stood in the figure's single `figcaption`. With twelve months in three columns, reading December's figures meant looking up and across to a fixed spot at the top. Each month now carries its own readout line beside its heading.
+
+**Its height is reserved whether or not it is filled, and that is not tidiness.** A readout that grows the heading pushes that month's grid down, which moves the cell out from under the pointer, which fires `mouseleave`, which clears the readout, which shrinks the heading and puts the cell back — forever. The `min-height` is what stops the flicker.
+
+**The month readouts are `aria-hidden` and the live region stayed exactly one element in one place.** Two regions would race to describe one pointer. `/code-review high` also caught that the sentence left behind in the `figcaption` duplicated the `field-help` printed directly above the figure — permanently, where before it was at least replaced on hover — so what remains there is only the half that is true of this figure alone.
+
+### Gate
+
+`tsc` clean; `eslint .` clean; `check:docs --strict` clean; `pnpm build` clean at 24 routes; Vitest **949 passed / 7 skipped across 43 files**. Verified in a real browser against `next build && next start` over an invented nine-month ledger: three columns of 409px with no document overflow, twelve months in four rows when a year is chosen, the year round-tripping through the URL and back into the select on reload, the readout rendering beside its own month's heading, and one column with 44px cells at 390px. No real financial data was read or reproduced.
+## D-184 — D-182 and D-183 deploy, and both are confirmed against the real ledger
+
+- Date: 2026-09-01
+- Status: **Committed as `23bce9d`, pushed to `origin/main`, deployed, and confirmed against the owner's real hosted ledger.** Documentation only beyond that commit; no code changed after the verification. Supersedes the "not committed, not pushed, not deployed" status lines D-182 and D-183 carry, which are left standing because this file is append-only.
+- Context: D-182 and D-183 were built, reviewed and gated but every reading had been taken against a local build over invented rows. The owner had granted commit, push, deploy, `db push`, hosted-browser and real-data read together at the start of the session. This entry is the reading that discharges the gap, and it is deliberately short.
+
+### What the deployment confirmed
+
+Read in the owner's own signed-in browser session at 1699px, on the real hosted ledger. **No figure below is money** — every one is a count, a width or a label, per D-049.
+
+- **`/ledger`**: **122 day headings over 297 real rows**, the strip carrying **five** boxes ending in **Balance**, the balance printing an `at <date>` qualifier rather than claiming to be current, and the grouping toggle at **44px**.
+- **The heading shape is right on real data**: a Sunday with two rows renders `SUN, ## AUG #### · # ROWS · −#` — the out direction alone, because that day had no deposits and a zero direction is omitted rather than printed. That is the behaviour the local reading showed and the first time it has been seen against rows the owner did not invent.
+- **The control row is fixed on the real page, measured rather than eyeballed**: Account, From, To, Order and Status all at **293px**, Filter at **600px**, Reload at its own **95px**. Before this change From measured in a 140–170px track and To in a 200px–1fr one. `documentElement.scrollWidth` 1684 against a 1699 viewport — no sideways pan.
+- **`/statistics`**: the calendar lays out **three columns of 442px** over the ledger's **fourteen real months** and **424 live cells** — the same cell count D-181 read, which is the incidental cross-check that this change moved the layout and not the data. The preset row carries **Last 6 months**.
+- **The year select offers exactly 2026 and 2025**, learned from the real response's own `window.from` rather than from a guess, and choosing 2025 resolves to **twelve months in three columns**, ticks Custom, fills the two date inputs with `2025-01-01`/`2025-12-31`, and round-trips into the address bar — with the select still reading 2025 afterwards, which is `wholeYearOf` doing its only job.
+- **The readout renders beside its own month's heading** with the day in bold, and the sentence `/code-review high` flagged as a permanent duplicate now appears **once** in the calendar section rather than twice.
+
+### Nothing new was found, and that is the finding worth recording
+
+D-181's live reading corrected the work it verified — a backdrop that brightened the page, a test measuring a surface the app never paints. This one corrected nothing: every structural fact matched what the local build over invented rows had already shown. **The local reading was therefore load-bearing rather than ceremonial**, which is the argument for seeding invented rows into `private-ledger-local` before asking to deploy rather than after — the `span 2` defect that broke the control bar at 390px was found that way, and it would otherwise have shipped.
+
+### Still owed, and unchanged
+
+**A phone-width reading on a real device.** The 390px readings behind D-182 were an emulated viewport in a browser pane; the hosted app has not been seen on the owner's own phone, and neither have D-177 … D-181. Seven entries now sit behind that one measurement, which is the owner's to take.
 
 ## D-185 — D-182's day heading declared a band and a rule that both painted nothing, and the fix makes 2px load-bearing
 
@@ -187,4 +336,3 @@ A collapsed border belongs to the table rather than the cell, so it stays at the
 ### Consequence
 
 **This is desktop-only and deliberately so.** Below 1400px, and at the ≤700px block where the heading is `display: block`, nothing changes — so the phone still shows what it showed before D-185. The owed phone reading now covers ten entries.
-

@@ -74,6 +74,22 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
+- **Real-data read (hosted browser), commit, push: GRANTED and SPENT, 2026-09-13 (the D-192
+  session).** Granted in two parts. First the owner opened the hosted app in the agent's browser
+  himself and asked it to check D-190 (categories) on the real deployment — used **read-only**:
+  `/categories` and a real row's "Edit category" panel on `/ledger` opened and Cancelled, nothing
+  saved. Then he asked for two strict codebase reviews, said to apply the fixes they produced, and
+  granted commit and push in the same line, adding that the hosted app was open for verifying the
+  deployment afterwards. **Spent on one commit, `0573a8a`, and one push to `origin/main` — a
+  production deployment** (D-192: the sync's false empty-mailbox sentence, `pickableCategories`,
+  and `CorrectionForm` taking the category list as a prop). `/code-review high` ran on the audit's
+  own diff before the commit ask, per D-125, and **found two real defects of the fix's own making,
+  both fixed before committing**. `/security-review` was not run and was not granted: no
+  authenticated route, credential or confirm/import path moved. **`db push` was never reached** —
+  no SQL moved. The post-deploy read was again read-only, and the one thing it could not reach is
+  recorded rather than glossed: `CorrectionForm` is unreachable on the real ledger right now, so
+  the owner Playwright suite is its evidence. **None of this survives into a new session — ask
+  again.**
 - **Commit, push, `/code-review`, `/security-review`: GRANTED and SPENT, 2026-09-12 (the D-190
   session, later the same date as D-189 below).** The owner granted all four together after asking
   what tasks were left; the categories feature (D-190) was already sitting uncommitted in the
@@ -342,9 +358,12 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `38ed7d4` and `origin/main` matches** (pushed and confirmed by this same session,
-  2026-09-12). `38ed7d4` is D-191's fix — a test-only change to `tests/e2e/owner-session.spec.ts`,
-  not a change to what the app serves. `8007b9a` beneath it is this session's continuity-docs sync.
+- **`main` is at `0573a8a` and `origin/main` matches** (pushed and confirmed 2026-09-13). `0573a8a`
+  is D-192 — the mailbox sync no longer reporting an empty mailbox for a truncated scan, plus
+  `pickableCategories` and `CorrectionForm` taking the category list as a prop — and **it is the
+  last commit that changed what the app serves**. Beneath it, `4d63dc9` and `38ed7d4` are D-191:
+  a test-only change to `tests/e2e/owner-session.spec.ts` and its correction, neither changing
+  what the app serves. `8007b9a` beneath those is the 2026-09-12 continuity-docs sync.
   `acb853e` is D-190 — category CRUD and the per-transaction category/note editor, PLAN task 25's
   manual half — and it is the last commit that changed what the app serves.
   `405d267` beneath it is D-189's second half — moving the fetched flag from download-time to
@@ -373,13 +392,17 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 - **Everything that changes what renders has been looked at on the deployment**, most recently
   `23bce9d` (D-184): the day headings, the Balance box and the control-row widths on `/ledger`, and
   the three-column calendar, the year select and the per-month readout on `/statistics`, all read
-  against the real hosted ledger. **`acb853e` (D-190, categories) has not yet been read on the real
-  deployment** — its gate is green and its own Playwright isolated pass covers `/categories`
-  structurally and for accessibility, but nobody has opened the hosted app and looked at it since
-  push, on the same D-138/D-159 reasoning this file applies to every other rendering change. **The
-  tree carries only the two local-only config files as of 2026-09-12, second update** — the
-  categories feature that sat uncommitted through the D-189 session is now committed and pushed
-  (D-190). Read `git status --short` rather than trusting a count here.
+  against the real hosted ledger. **`acb853e` (D-190, categories) has now been read on the real
+  deployment, 2026-09-13** — the owner opened the hosted app in the agent's browser himself.
+  `/categories` renders the add-category form and the existing category list (one row,
+  `Uncategorised`, with its Archive control) against the real workspace; on `/ledger`, a real row's
+  "Edit category" control opens the "Category and note" panel — select defaulting to the row's
+  actual category, an optional note field, Save/Cancel — and Cancel closed it without writing.
+  Read-only: nothing was saved, no category created or archived, no note written, no real figures
+  reproduced here, per D-049. **The tree carries only the two local-only config files as of
+  2026-09-12, second update** — the categories feature that sat uncommitted through the D-189
+  session is now committed and pushed (D-190). Read `git status --short` rather than trusting a
+  count here.
 - **Every commit since 2026-08-29 that changes what renders has now been looked at on the
   deployment** — D-177 and D-178 both verified `/statistics` and `/ledger` live, which is also what
   closed D-169 and D-170's rendering fence in `DECISIONS.md` (corrected there 2026-09-01; it had
@@ -392,7 +415,18 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   measured only in the unit suite. **The larger half of (b) is discharged**: D-181 read 297 real
   rows in Night Town and confirmed the status chips, the verified rail and the calendar on their
   real surfaces. Phone width is now the single reading that three entries are all waiting on.
-- **The twelfth archive boundary is taken, `DECISIONS.md` at 74%.** D-171 … D-176 moved to
+- **The fourteenth archive boundary is taken and `DECISIONS.md` is at 75%, 2026-09-13** (D-192).
+  **The budget asked for it rather than an argument closing** — the first time in fourteen that the
+  number moved first: D-192's own entry took the file to **119 KB against a 117 KB budget** and
+  `check:docs --strict` failed rather than warned. It **completed**
+  [`docs/decisions/ARCHIVE-D-177-D-186.md`](docs/decisions/ARCHIVE-D-177-D-186.md) instead of
+  opening a fifteenth file, moving the five entries the thirteenth had held back — **D-179, D-180,
+  D-181, D-183 and D-184** — back beside their siblings, so that range is now contiguous and its
+  title no longer names a gap. Nothing still being argued about was cut: D-188 had already freed
+  D-179/D-183/D-184, and the owner's decision closed D-180/D-181. `check:docs --strict` clean at
+  **192 decisions and 204 traps** after the move — no id lost, no gap opened. **What the maintained
+  file now holds is the two open questions (D-141, D-158) and D-187 … D-192.**
+- **Previously, the twelfth archive boundary, `DECISIONS.md` at 74%.** D-171 … D-176 moved to
   [`docs/decisions/ARCHIVE-D-171-D-176.md`](docs/decisions/ARCHIVE-D-171-D-176.md) on 2026-09-01,
   the same day as the eleventh — the file had gone **83% → 95% in one session**, because D-180 and
   D-181 are 9.3 KB and 4.2 KB between them. **The first contiguous boundary in five**: both open
@@ -434,6 +468,13 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on `0573a8a`'s content (D-192), 2026-09-13, against the running local stack**: `tsc`
+  clean, `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`,
+  untouched), `check:docs --strict` clean, Vitest **970 passed / 7 skipped across 44 files** (+8),
+  `pnpm build` clean at the same route count, Playwright **isolated 70 passed / 8 skipped** and
+  **owner 34 passed**. **pgTAP not re-run — no SQL has moved since migration 025.** The truncation
+  fix **red-proves**: reverted to its pre-fix early return, the new assertion fails on the exact
+  false sentence the owner would have read, and the fix was restored from a backup taken first.
 - **Green on `38ed7d4`'s content (D-191's fix), 2026-09-12, against a freshly `supabase db reset`
   local database**: `eslint .` clean, and the full owner Playwright suite — **34 passed, 0 failed,
   0 skipped**. This is the first clean owner-suite run recorded in this file since D-187/D-188 on
