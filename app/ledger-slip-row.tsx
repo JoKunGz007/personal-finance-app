@@ -7,7 +7,7 @@ import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CapturedSlip, type SlipCorrection } from "@/lib/slips";
 import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
-import { formatDate, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
 /**
  * A captured slip that has not collapsed onto a statement row.
@@ -26,10 +26,7 @@ export function LedgerSlipRow({
   correction,
   candidates,
   categories,
-  onChooseRow,
-  onToggleCorrecting,
-  onCorrectionSaved,
-  onCancelCorrection
+  actions
 }: {
   row: Extract<ReconciledRow, { kind: "provisional" }>;
   layout: LedgerLayout;
@@ -42,10 +39,7 @@ export function LedgerSlipRow({
   correction: SlipCorrection | null;
   /** The statement rows this slip may be paired with by hand. Empty means there is nothing to offer. */
   candidates: readonly AccountTransaction[];
-  onChooseRow: (slipId: string) => void;
-  onToggleCorrecting: (slipId: string) => void;
-  onCorrectionSaved: (slipId: string, saved: unknown) => void;
-  onCancelCorrection: () => void;
+  actions: LedgerActions;
 }) {
   const slip = row.slip;
   const amount = BigInt(slip.amount_minor);
@@ -93,7 +87,7 @@ export function LedgerSlipRow({
                 className="secondary-button"
                 aria-label={`Choose a statement row for the slip dated ${formatDate(slip.occurred_on)}`}
                 disabled={modes.deciding !== null || modes.matching !== null}
-                onClick={() => onChooseRow(slip.id)}
+                onClick={() => actions.chooseRowForSlip(slip.id)}
               >
                 Choose a statement row
               </button>
@@ -116,7 +110,7 @@ export function LedgerSlipRow({
                 aria-expanded={modes.correcting === slip.id}
                 aria-label={`Correct what you typed for the slip dated ${formatDate(slip.occurred_on)}`}
                 disabled={modes.picking || (modes.correcting !== null && modes.correcting !== slip.id)}
-                onClick={() => onToggleCorrecting(slip.id)}
+                onClick={() => actions.toggleCorrecting(slip.id)}
               >
                 {modes.correcting === slip.id ? "Stop correcting" : "Correct what you typed"}
               </button>
@@ -148,8 +142,8 @@ export function LedgerSlipRow({
               endpoint={`/api/v1/slips/${slip.id}/correction`}
               title={`Correct what you typed for this ${slip.bank_code} slip`}
               categories={categories}
-              onSaved={(saved) => onCorrectionSaved(slip.id, saved)}
-              onCancel={onCancelCorrection}
+              onSaved={(saved) => actions.storeSlipCorrection(slip.id, saved)}
+              onCancel={actions.stopCorrecting}
             />
           </td>
         </tr>

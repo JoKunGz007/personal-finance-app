@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-12 (third update this date — the categories commit, an import-duplication scare that turned out not to be one, and its fix).
+Last updated: 2026-09-13 (D-193 — D-192's two recorded cleanups built).
 
-**D-191 is resolved.** What first looked like statement imports being duplicated in the ledger was a stale Playwright locator counting the day-heading rows (D-182, shipped 2026-09-01, working correctly and verified on the deployment since) as if they were transaction data. The database, the RPC and the route were correct throughout — verified directly against the trace, a live `psql` poll and the API's own response, all showing exactly 4 rows for a 4-row import. Fixed in `tests/e2e/owner-session.spec.ts` (`38ed7d4`); full owner suite now 34/34. Nothing was imported for real at any point in this investigation — every reproduction used the synthetic fixture the spec already builds. Full account: `DECISIONS.md` D-191.
+**Current headline: D-193.** The ledger's load issues its requests in two waves and the row components take one `LedgerActions` prop. No behaviour change intended and none measured by the gate; not yet read on the deployment. Project state: `PLAN.md`; the reasoning: `DECISIONS.md` D-193.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -74,6 +74,13 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
+- **Real-data read (hosted browser), commit, push: GRANTED AGAIN, 2026-09-13 (the D-193 session).**
+  The session opened on the D-192 handoff, whose own rule was "ask again"; the owner answered in his
+  opening line that every authorization that handoff listed is granted — read as its granted set
+  (real-data read via the hosted browser, commit, push) and nothing it listed as not granted
+  (`db push`, `/security-review`, password-gated deploys, hosted resources). `/code-review high` ran
+  before the commit, per D-125. Read `git log` for what was spent. **None of this survives into a new
+  session — ask again.**
 - **Real-data read (hosted browser), commit, push: GRANTED and SPENT, 2026-09-13 (the D-192
   session).** Granted in two parts. First the owner opened the hosted app in the agent's browser
   himself and asked it to check D-190 (categories) on the real deployment — used **read-only**:
@@ -358,7 +365,9 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **`main` is at `0573a8a` and `origin/main` matches** (pushed and confirmed 2026-09-13). `0573a8a`
+- **As of the D-193 session, read `git log` — this line cannot record the commit that carries it.**
+  D-193's code (the load waves and `LedgerActions`) is the newest change to what the app serves.
+  Previously: **`main` was at `0573a8a` and `origin/main` matched** (pushed and confirmed 2026-09-13). `0573a8a`
   is D-192 — the mailbox sync no longer reporting an empty mailbox for a truncated scan, plus
   `pickableCategories` and `CorrectionForm` taking the category list as a prop — and **it is the
   last commit that changed what the app serves**. Beneath it, `4d63dc9` and `38ed7d4` are D-191:
@@ -425,7 +434,7 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   title no longer names a gap. Nothing still being argued about was cut: D-188 had already freed
   D-179/D-183/D-184, and the owner's decision closed D-180/D-181. `check:docs --strict` clean at
   **192 decisions and 204 traps** after the move — no id lost, no gap opened. **What the maintained
-  file now holds is the two open questions (D-141, D-158) and D-187 … D-192.**
+  file now holds is the two open questions (D-141, D-158) and D-187 … D-193.**
 - **Previously, the twelfth archive boundary, `DECISIONS.md` at 74%.** D-171 … D-176 moved to
   [`docs/decisions/ARCHIVE-D-171-D-176.md`](docs/decisions/ARCHIVE-D-171-D-176.md) on 2026-09-01,
   the same day as the eleventh — the file had gone **83% → 95% in one session**, because D-180 and
@@ -468,6 +477,10 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on D-193's content, 2026-09-13, against the running local stack, run sequentially**:
+  `tsc` clean, `eslint .` clean (the same 2 pre-existing warnings), `check:docs --strict` clean,
+  Vitest **970 passed / 7 skipped across 44 files**, `pnpm build` clean, Playwright **isolated 70
+  passed / 8 skipped** and **owner 34 passed** — identical to D-192's baseline. pgTAP not re-run.
 - **Green on `0573a8a`'s content (D-192), 2026-09-13, against the running local stack**: `tsc`
   clean, `eslint .` clean (the same 2 pre-existing warnings in `app/transactions-view.tsx`,
   untouched), `check:docs --strict` clean, Vitest **970 passed / 7 skipped across 44 files** (+8),

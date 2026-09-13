@@ -8,7 +8,7 @@ import { type CardReviewReason } from "@/lib/notification-card-reconcile";
 import { type NotificationCard, type NotificationCardCorrection } from "@/lib/notification-cards";
 import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
-import { formatDate, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
 /**
  * A captured notification card that has not collapsed onto a statement row (migration 016).
@@ -30,11 +30,7 @@ export function LedgerCardRow({
   fittingRows,
   reviewReason,
   categories,
-  onChooseRow,
-  onNotAPayment,
-  onToggleCorrecting,
-  onCorrectionSaved,
-  onCancelCorrection
+  actions
 }: {
   row: Extract<ReconciledRow, { kind: "card" }>;
   layout: LedgerLayout;
@@ -54,11 +50,7 @@ export function LedgerCardRow({
   fittingRows: number;
   /** Why the surviving candidates were not unique on both sides. Only set when `needs-review`. */
   reviewReason: CardReviewReason | undefined;
-  onChooseRow: (cardId: string) => void;
-  onNotAPayment: (cardId: string) => void;
-  onToggleCorrecting: (cardId: string) => void;
-  onCorrectionSaved: (cardId: string, saved: unknown) => void;
-  onCancelCorrection: () => void;
+  actions: LedgerActions;
 }) {
   const card = row.card;
   const amount = BigInt(card.amount_minor);
@@ -128,7 +120,7 @@ export function LedgerCardRow({
                 className="secondary-button"
                 aria-label={`Choose a statement row for the card dated ${formatDate(card.occurred_on)}`}
                 disabled={modes.decidingCard !== null || modes.matchingCard !== null || modes.matching !== null}
-                onClick={() => onChooseRow(card.id)}
+                onClick={() => actions.chooseRowForCard(card.id)}
               >
                 Choose a statement row
               </button>
@@ -148,7 +140,7 @@ export function LedgerCardRow({
               className="secondary-button"
               aria-label={`Not a payment — retire the card dated ${formatDate(card.occurred_on)} and take it out of the ledger`}
               disabled={modes.decidingCard !== null || modes.pickingCard}
-              onClick={() => onNotAPayment(card.id)}
+              onClick={() => actions.decideCard(card.id, "not-a-payment", null)}
             >
               {modes.decidingCard === card.id ? "Saving…" : "Not a payment"}
             </button>
@@ -161,7 +153,7 @@ export function LedgerCardRow({
                 aria-expanded={modes.correcting === card.id}
                 aria-label={`Correct what you typed for the card dated ${formatDate(card.occurred_on)}`}
                 disabled={modes.pickingCard || modes.picking || (modes.correcting !== null && modes.correcting !== card.id)}
-                onClick={() => onToggleCorrecting(card.id)}
+                onClick={() => actions.toggleCorrecting(card.id)}
               >
                 {modes.correcting === card.id ? "Stop correcting" : "Correct what you typed"}
               </button>
@@ -210,8 +202,8 @@ export function LedgerCardRow({
               endpoint={`/api/v1/notification-cards/${card.id}/correction`}
               title={`Correct what you typed for this ${card.channel} card`}
               categories={categories}
-              onSaved={(saved) => onCorrectionSaved(card.id, saved)}
-              onCancel={onCancelCorrection}
+              onSaved={(saved) => actions.storeCardCorrection(card.id, saved)}
+              onCancel={actions.stopCorrecting}
             />
           </td>
         </tr>

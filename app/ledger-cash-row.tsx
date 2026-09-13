@@ -6,7 +6,7 @@ import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CashCorrection, type CashEntry } from "@/lib/cash";
 import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
-import { formatDate, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
 /**
  * A cash payment's row in the ledger (migration 013).
@@ -24,9 +24,7 @@ export function LedgerCashRow({
   original,
   correction,
   categories,
-  onToggleCorrecting,
-  onCorrectionSaved,
-  onCancelCorrection
+  actions
 }: {
   row: Extract<ReconciledRow, { kind: "cash" }>;
   layout: LedgerLayout;
@@ -41,9 +39,7 @@ export function LedgerCashRow({
   original: CashEntry | undefined;
   /** The correction in force, or null. Its presence is what "Corrected by you" reports. */
   correction: CashCorrection | null;
-  onToggleCorrecting: (entryId: string) => void;
-  onCorrectionSaved: (entryId: string, saved: unknown) => void;
-  onCancelCorrection: () => void;
+  actions: LedgerActions;
 }) {
   const entry = row.entry;
   const amount = BigInt(entry.amount_minor);
@@ -82,7 +78,7 @@ export function LedgerCashRow({
                 aria-expanded={modes.correcting === entry.id}
                 aria-label={`Correct the cash entry dated ${formatDate(entry.occurred_on)}`}
                 disabled={modes.correcting !== null && modes.correcting !== entry.id}
-                onClick={() => onToggleCorrecting(entry.id)}
+                onClick={() => actions.toggleCorrecting(entry.id)}
               >
                 {modes.correcting === entry.id ? "Stop correcting" : "Correct"}
               </button>
@@ -112,8 +108,8 @@ export function LedgerCashRow({
               endpoint={`/api/v1/cash/${entry.id}/correction`}
               title="Correct this cash entry"
               categories={categories}
-              onSaved={(saved) => onCorrectionSaved(entry.id, saved)}
-              onCancel={onCancelCorrection}
+              onSaved={(saved) => actions.storeCashCorrection(entry.id, saved)}
+              onCancel={actions.stopCorrecting}
             />
           </td>
         </tr>

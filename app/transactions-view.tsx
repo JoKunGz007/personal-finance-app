@@ -79,6 +79,7 @@ import {
   ALL_ACCOUNTS,
   ALL_STATUSES,
   formatDayHeading,
+  type LedgerActions,
   type LedgerBalance,
   type LedgerLayout,
   type LedgerModes,
@@ -808,20 +809,61 @@ export function TransactionsView() {
         return;
       }
 
-      // One call per account, and now **one page** per call. The RPC is per-account and there is
-      // no all-accounts one; taking each account's newest page and merging is still exactly right
-      // for the merged view, because any row among the newest N of the union is necessarily among
-      // the newest N of its own account.
-      let next = emptyWindow();
-      for (const account of accountsResult.data.accounts) {
+      // **Every request below is issued now, in one wave, and only the reading stays in order.**
+      // Accounts is the one real dependency — the page requests need its list — and it goes first
+      // for a second reason too: a signed-out arrival stops above with one 401 rather than six.
+      // Past it, nothing any request sends depends on another's answer, so they used to wait on
+      // each other for no reason: nine round trips in series with three accounts.
+      //
+      // **What did not change is the order results are read and committed in**, and that order is
+      // load-bearing: a failed page or candidate set still returns before slips, cash or cards are
+      // touched, the `superseded()` guards still sit before each commit, and each fail-hard or
+      // fail-soft branch still reads exactly as it did. Awaiting an already-started request in the
+      // old sequence reproduces every state transition the serial version made, only sooner.
+      // `ledgerRequest` resolves rather than rejects on every failure, so a request left unawaited by
+      // an early return cannot surface as an unhandled rejection.
+      const pageRequests = accountsResult.data.accounts.map((account) => ({
+        account,
         // The window's own bounds, cursor null for a first page — `ledgerPageSearch` is what
         // `loadMore` below reuses so a deeper page cannot forget them.
-        const result = await ledgerRequest(
+        result: ledgerRequest(
           `/api/v1/accounts/${account.id}/transactions${ledgerPageSearch(range, null)}`, ledgerPageSchema, {
             fallback: `Transactions could not be loaded for ${account.label}.`,
             unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
             offContract: `The transactions response for ${account.label} did not match its contract.`
-          });
+          })
+      }));
+      const candidateRequest = ledgerRequest(
+        "/api/v1/transactions/match-candidates", matchCandidateListSchema, {
+          fallback: "The reconciliation set could not be loaded, so the ledger is not shown.",
+          unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
+          offContract: "The reconciliation set did not match its contract, so the ledger is not shown."
+        });
+      const slipsRequest = ledgerRequest("/api/v1/slips", slipListSchema, {
+        fallback: "Captured slips could not be loaded, so none are shown.",
+        offContract: "The slips response did not match its contract, so none are shown."
+      });
+      const cashRequest = ledgerRequest("/api/v1/cash", cashListSchema, {
+        fallback: "Cash entries could not be loaded, so none are shown.",
+        offContract: "The cash response did not match its contract, so none are shown."
+      });
+      const cardsRequest = ledgerRequest("/api/v1/notification-cards", notificationCardListSchema, {
+        fallback: "Captured notification cards could not be loaded, so none are shown.",
+        offContract: "The notification cards response did not match its contract, so none are shown."
+      });
+      const categoriesRequest = ledgerRequest("/api/v1/categories", categoryListSchema, {
+        fallback: "Categories could not be loaded.",
+        offContract: "The categories response did not match its contract, so none are shown."
+      });
+
+      // One call per account, and now **one page** per call. The RPC is per-account and there is
+      // no all-accounts one; taking each account's newest page and merging is still exactly right
+      // for the merged view, because any row among the newest N of the union is necessarily among
+      // the newest N of its own account. Read in account order, so the first failing account is
+      // still the one reported.
+      let next = emptyWindow();
+      for (const { account, result: pending } of pageRequests) {
+        const result = await pending;
         if (!result.ok) {
           setError(result.why);
           return;
@@ -835,19 +877,14 @@ export function TransactionsView() {
       // and can pair a slip that is genuinely ambiguous, which shows `verified` on a row nobody
       // ever confirmed. A missing answer is recoverable; a confidently wrong one about money is
       // not, so a failure here stops the load with the rest of the ledger.
-      const candidateResult = await ledgerRequest(
-        "/api/v1/transactions/match-candidates", matchCandidateListSchema, {
-          fallback: "The reconciliation set could not be loaded, so the ledger is not shown.",
-          unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
-          offContract: "The reconciliation set did not match its contract, so the ledger is not shown."
-        });
+      const candidateResult = await candidateRequest;
       if (superseded()) return;
       if (!candidateResult.ok) {
         setError(candidateResult.why);
         return;
       }
 
-      // Provisional entries, loaded after the confirmed ones and deliberately unable to
+      // Provisional entries, read after the confirmed ones and deliberately unable to
       // fail the view. The ledger is the authority; a slips outage must not hide it, so a
       // failure here is reported beside the rows instead of replacing them.
       setSlipsError(null);
@@ -859,10 +896,7 @@ export function TransactionsView() {
       // rule's own. They are one response for exactly that reason (D-067).
       setMatches([]);
       setDecisionError(null);
-      const slipsResult = await ledgerRequest("/api/v1/slips", slipListSchema, {
-        fallback: "Captured slips could not be loaded, so none are shown.",
-        offContract: "The slips response did not match its contract, so none are shown."
-      });
+      const slipsResult = await slipsRequest;
       if (superseded()) return;
       if (slipsResult.ok) {
         setSlips(slipsResult.data.slips);
@@ -878,10 +912,7 @@ export function TransactionsView() {
       setCashError(null);
       setCash([]);
       setCashCorrections([]);
-      const cashResult = await ledgerRequest("/api/v1/cash", cashListSchema, {
-        fallback: "Cash entries could not be loaded, so none are shown.",
-        offContract: "The cash response did not match its contract, so none are shown."
-      });
+      const cashResult = await cashRequest;
       if (superseded()) return;
       if (cashResult.ok) {
         setCash(cashResult.data.entries);
@@ -899,10 +930,7 @@ export function TransactionsView() {
       // own and silently un-retire a card the owner had retired.
       setCardCorrections([]);
       setCardDecisions([]);
-      const cardsResult = await ledgerRequest("/api/v1/notification-cards", notificationCardListSchema, {
-        fallback: "Captured notification cards could not be loaded, so none are shown.",
-        offContract: "The notification cards response did not match its contract, so none are shown."
-      });
+      const cardsResult = await cardsRequest;
       if (superseded()) return;
       if (cardsResult.ok) {
         setCards(cardsResult.data.cards);
@@ -915,7 +943,7 @@ export function TransactionsView() {
       // Left at whatever it already held on a failure — usually empty, on the first load — rather
       // than surfacing a banner for a list nothing above the table depends on.
       //
-      // **Not cleared before the fetch, unlike the three loads above, and the difference matters
+      // **Not cleared before its result is read, unlike the three loads above, and the difference matters
       // now that the correction forms read this list instead of fetching their own.** Clearing it
       // made every reload pass through a moment where `categories` was empty; a correction panel
       // left open across that moment lost every option from its picker while the row's stored
@@ -923,10 +951,7 @@ export function TransactionsView() {
       // to prevent. Slips, cash and cards are cleared because a stale row is a wrong row; a stale
       // category *name* for one paint is not, so this keeps the last good list until the next one
       // lands. That is also what the paragraph above always claimed it did.
-      const categoriesResult = await ledgerRequest("/api/v1/categories", categoryListSchema, {
-        fallback: "Categories could not be loaded.",
-        offContract: "The categories response did not match its contract, so none are shown."
-      });
+      const categoriesResult = await categoriesRequest;
       if (superseded()) return;
       if (categoriesResult.ok) setCategories(categoriesResult.data.categories);
 
@@ -1232,6 +1257,26 @@ export function TransactionsView() {
     setOpenCard((current) => current === transactionId ? null : transactionId);
   }
 
+  // Handed to every row as one prop (`LedgerActions`), so a new row action is one line here and
+  // one call in the row that offers it, rather than a prop threaded through each row kind.
+  const actions: LedgerActions = {
+    chooseRowForSlip,
+    chooseRowForCard,
+    decideSlip: decide,
+    decideCard,
+    setReporting,
+    togglePair,
+    toggleCard,
+    toggleCorrecting,
+    stopCorrecting,
+    storeSlipCorrection,
+    storeCashCorrection,
+    storeCardCorrection,
+    saveCategoryOverlay,
+    reportCategoryError: setCategoryError,
+    setCategorySaving
+  };
+
   return (
     <>
     {/* A sibling of the ledger rather than a child of it, so the page keeps a flat outline —
@@ -1469,9 +1514,7 @@ export function TransactionsView() {
                           original={originalCash.get(row.entry.id)}
                           correction={cashCorrectionByEntry.get(row.entry.id) ?? null}
                           categories={categories}
-                          onToggleCorrecting={toggleCorrecting}
-                          onCorrectionSaved={storeCashCorrection}
-                          onCancelCorrection={stopCorrecting}
+                          actions={actions}
                         />
                       )];
                     }
@@ -1489,11 +1532,7 @@ export function TransactionsView() {
                           fittingRows={reconciled.cardMatches.balanceConflict.get(row.card.id) ?? 0}
                           reviewReason={reconciled.cardMatches.needsReview.get(row.card.id)}
                           categories={categories}
-                          onChooseRow={chooseRowForCard}
-                          onNotAPayment={(cardId) => void decideCard(cardId, "not-a-payment", null)}
-                          onToggleCorrecting={toggleCorrecting}
-                          onCorrectionSaved={storeCardCorrection}
-                          onCancelCorrection={stopCorrecting}
+                          actions={actions}
                         />
                       )];
                     }
@@ -1509,10 +1548,7 @@ export function TransactionsView() {
                           correction={slipCorrectionBySlip.get(row.slip.id) ?? null}
                           candidates={candidatesBySlip.get(row.slip.id) ?? []}
                           categories={categories}
-                          onChooseRow={chooseRowForSlip}
-                          onToggleCorrecting={toggleCorrecting}
-                          onCorrectionSaved={storeSlipCorrection}
-                          onCancelCorrection={stopCorrecting}
+                          actions={actions}
                         />
                       )];
                     }
@@ -1530,16 +1566,8 @@ export function TransactionsView() {
                         slipCorrected={row.slip !== null && slipCorrectionBySlip.has(row.slip.id)}
                         openPair={openPair}
                         openCard={openCard}
-                        onTogglePair={togglePair}
-                        onToggleCard={toggleCard}
-                        onDecideSlip={decide}
-                        onDecideCard={decideCard}
-                        onSetReporting={setReporting}
-                        onToggleCorrecting={toggleCorrecting}
-                        onCategorySaved={saveCategoryOverlay}
-                        onCategoryError={setCategoryError}
                         categorySaving={modes.correcting === row.transaction.id && categorySaving}
-                        onCategoryBusyChange={setCategorySaving}
+                        actions={actions}
                       />
                     )];
                   })}

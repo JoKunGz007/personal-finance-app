@@ -2,12 +2,12 @@
 
 import { Fragment } from "react";
 import { formatThb } from "@/lib/money";
-import { movementMinor, overlayInForce, type AccountTransaction, type TransactionOverlay } from "@/lib/transactions";
+import { movementMinor, overlayInForce, type AccountTransaction } from "@/lib/transactions";
 import { type LedgerAccount } from "@/lib/accounts";
 import { type Category } from "@/lib/categories";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
-import { formatDate, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 import { OverlayCategoryForm } from "@/app/overlay-category-form";
 
 /**
@@ -34,16 +34,8 @@ export function LedgerStatementRow({
   slipCorrected,
   openPair,
   openCard,
-  onTogglePair,
-  onToggleCard,
-  onDecideSlip,
-  onDecideCard,
-  onSetReporting,
-  onToggleCorrecting,
-  onCategorySaved,
-  onCategoryError,
   categorySaving,
-  onCategoryBusyChange
+  actions
 }: {
   row: Extract<ReconciledRow, { kind: "confirmed" }>;
   layout: LedgerLayout;
@@ -69,43 +61,10 @@ export function LedgerStatementRow({
   openPair: string | null;
   /** Which pair's card detail is open, by transaction id. */
   openCard: string | null;
-  onTogglePair: (transactionId: string) => void;
-  onToggleCard: (transactionId: string) => void;
-  onDecideSlip: (slipId: string, decision: "matched" | "unmatched", transactionId: string | null) => void;
-  onDecideCard: (
-    cardId: string,
-    decision: "matched" | "unmatched" | "not-a-payment",
-    transactionId: string | null,
-    acceptBalanceMismatch?: boolean
-  ) => void;
-  /**
-   * Takes this row in or out of income and spending totals (PLAN task 48).
-   *
-   * It is handed the **whole transaction** rather than an id, because the write replaces the whole
-   * overlay and the row is where the rest of that overlay lives. An id would leave the caller to
-   * find the row again, which is the shape that invites sending nulls for the fields it did not
-   * find — the erasure `overlayWriteBody` exists to make unrepresentable.
-   */
-  onSetReporting: (transaction: AccountTransaction, includeInReporting: boolean) => void;
-  /**
-   * Opens or closes this row's category editor, keyed by the transaction's own id.
-   *
-   * **This is `app/transactions-view.tsx`'s existing `toggleCorrecting`, reused rather than a
-   * new piece of state** — it already means exactly "the record whose correction form is open, by
-   * its own id, one at a time, table-wide", and a transaction id never collides with a slip's,
-   * a cash entry's or a card's in any comparison the ledger makes. A second, parallel "one thing
-   * open" gate would only be a second invariant to keep in sync with this one, for no product
-   * reason to allow two panels open across row types at once.
-   */
-  onToggleCorrecting: (transactionId: string) => void;
-  /** The saved overlay, folded back into ledger state and closing the panel on success. */
-  onCategorySaved: (transactionId: string, overlay: TransactionOverlay) => void;
-  /** A refused or unreachable category write, reported for the view's own error line. */
-  onCategoryError: (message: string) => void;
   /** Whether *this* row's own category write is in flight — disables its own toggle so the panel
    *  cannot be closed (and unmounted) out from under a pending request. */
   categorySaving: boolean;
-  onCategoryBusyChange: (busy: boolean) => void;
+  actions: LedgerActions;
 }) {
   const transaction: AccountTransaction = row.transaction;
   const movement = movementMinor(transaction);
@@ -185,7 +144,7 @@ export function LedgerStatementRow({
                 className="primary-button"
                 aria-label={`This is it — ${formatDate(row.date)}${transaction.source_time ? ` at ${transaction.source_time}` : ""}, balance ${formatThb(transaction.post_balance_minor)}`}
                 disabled={modes.decidingCard !== null}
-                onClick={() => onDecideCard(
+                onClick={() => actions.decideCard(
                   modes.matchingCard!,
                   "matched",
                   transaction.id,
@@ -228,7 +187,7 @@ export function LedgerStatementRow({
                    the rest is what distinguishes this row from its twin. */
                 aria-label={`This is it — ${formatDate(row.date)}${transaction.source_time ? ` at ${transaction.source_time}` : ""}, balance ${formatThb(transaction.post_balance_minor)}`}
                 disabled={modes.deciding !== null}
-                onClick={() => onDecideSlip(modes.matching!, "matched", transaction.id)}
+                onClick={() => actions.decideSlip(modes.matching!, "matched", transaction.id)}
               >
                 {modes.deciding === modes.matching ? "Saving…" : "This is it"}
               </button>
@@ -258,7 +217,7 @@ export function LedgerStatementRow({
                          second time in one day that rule caught a locator instead of
                          a screen reader (GOTCHAS). */
                       aria-label={`${openPair === transaction.id ? "Hide slip" : "Show slip"} — the slip matched to the row dated ${formatDate(row.date)}`}
-                      onClick={() => onTogglePair(transaction.id)}
+                      onClick={() => actions.togglePair(transaction.id)}
                     >
                       {openPair === transaction.id ? "Hide slip" : "Show slip"}
                     </button>
@@ -274,7 +233,7 @@ export function LedgerStatementRow({
                          who has only one tab open. The shared error line has the same
                          problem: it cannot say which decision it is about. */
                       disabled={modes.deciding !== null}
-                      onClick={() => onDecideSlip(row.slip!.id, "unmatched", null)}
+                      onClick={() => actions.decideSlip(row.slip!.id, "unmatched", null)}
                     >
                       {modes.deciding === row.slip.id ? "Saving…" : "Not this slip"}
                     </button>
@@ -300,7 +259,7 @@ export function LedgerStatementRow({
                          carries the same rule: an accessible name that does not
                          contain the label is a name nobody can speak (GOTCHAS). */
                       aria-label={`${openCard === transaction.id ? "Hide card" : "Show card"} — the notification card matched to the row dated ${formatDate(row.date)}`}
-                      onClick={() => onToggleCard(transaction.id)}
+                      onClick={() => actions.toggleCard(transaction.id)}
                     >
                       {openCard === transaction.id ? "Hide card" : "Show card"}
                     </button>
@@ -314,7 +273,7 @@ export function LedgerStatementRow({
                       className="secondary-button"
                       aria-label={`Not this card — the row dated ${formatDate(row.date)} is not this payment`}
                       disabled={modes.decidingCard !== null}
-                      onClick={() => onDecideCard(cardPair.id, "unmatched", null)}
+                      onClick={() => actions.decideCard(cardPair.id, "unmatched", null)}
                     >
                       {modes.decidingCard === cardPair.id ? "Saving…" : "Not this card"}
                     </button>
@@ -372,7 +331,7 @@ export function LedgerStatementRow({
                    whose own write is still pending, and the second press then sends a revision the
                    database has already moved past. */
                 disabled={modes.settingReporting !== null}
-                onClick={() => onSetReporting(transaction, !includeInReporting)}
+                onClick={() => actions.setReporting(transaction, !includeInReporting)}
               >
                 {modes.settingReporting === transaction.id ? "Saving…" : includeInReporting ? "Exclude" : "Include"}
               </button>
@@ -393,7 +352,7 @@ export function LedgerStatementRow({
                 aria-expanded={modes.correcting === transaction.id}
                 aria-label={`${modes.correcting === transaction.id ? "Stop editing category" : "Edit category"} — the row dated ${formatDate(row.date)}`}
                 disabled={(modes.correcting !== null && modes.correcting !== transaction.id) || (modes.correcting === transaction.id && categorySaving)}
-                onClick={() => onToggleCorrecting(transaction.id)}
+                onClick={() => actions.toggleCorrecting(transaction.id)}
               >
                 {modes.correcting === transaction.id ? "Stop editing category" : "Edit category"}
               </button>
@@ -432,10 +391,10 @@ export function LedgerStatementRow({
             <OverlayCategoryForm
               transaction={transaction}
               categories={categories}
-              onSaved={(overlay) => onCategorySaved(transaction.id, overlay)}
-              onError={onCategoryError}
-              onCancel={() => onToggleCorrecting(transaction.id)}
-              onBusyChange={onCategoryBusyChange}
+              onSaved={(overlay) => actions.saveCategoryOverlay(transaction.id, overlay)}
+              onError={actions.reportCategoryError}
+              onCancel={() => actions.toggleCorrecting(transaction.id)}
+              onBusyChange={actions.setCategorySaving}
             />
           </td>
         </tr>
