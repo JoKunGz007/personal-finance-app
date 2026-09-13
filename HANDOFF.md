@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-13 (D-193 — D-192's two recorded cleanups built).
 
-**Current headline: D-193.** The ledger's load issues its requests in two waves and the row components take one `LedgerActions` prop. No behaviour change intended and none measured by the gate; not yet read on the deployment. Project state: `PLAN.md`; the reasoning: `DECISIONS.md` D-193.
+**Current headline: D-193.** The ledger's load issues its requests in two waves and the row components take one `LedgerActions` prop. No behaviour change intended and none measured by the gate; confirmed on the deployment read-only (two waves, 1.8s wall clock against 6.9s of requests, no errors). Project state: `PLAN.md`; the reasoning: `DECISIONS.md` D-193.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
