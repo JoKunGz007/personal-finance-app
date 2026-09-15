@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-16 (D-195 — "Don't offer this again" on a mailbox non-statement; D-194 — Sync speedup).
+Last updated: 2026-09-16 (D-196 — stat-strip font fix and field-help trims; D-195 — "Don't offer this again" on a mailbox non-statement).
 
-**Current headline: D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. Deployed as `cecc622`; the bundle and Sync were checked live, the button was not pressed (it needs the document password first). **The owner pressed it on the deployed build and reported that it works** (2026-09-16). **Beneath it, D-194.** Mailbox Sync lists in one IMAP fetch and downloads three at a time; a two-PDF sync measured 8.4s on the deployment, and `imap-open` (~2.4s per request) is what is left. The SCB statement the owner thought Sync had missed was newer than the sync he was looking at. Previously D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
+**Current headline: D-196.** `.statement-strip dd` (the Rows/Deposits/Withdrawals/Net movement/Balance totals) was the one place D-163's "money never renders in a pixel face" rule never reached; it now reads `--font-money` like every other amount. Verified live via `getComputedStyle`, not just read in source. Field-help/banner text on `/import`, `/slips`, `/recovery` and a few similar spots elsewhere was paraphrased shorter, safety-relevant meaning kept. Shipped as `f9e09c4`, pushed — **not yet read on the deployed build.** **Beneath it, D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. Deployed as `cecc622` and the owner pressed it on the deployed build and reported that it works. Previously D-194 (the mailbox Sync speedup) and D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -74,6 +74,7 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
+- **Commit, push: GRANTED and SPENT, 2026-09-16 (the D-196 session).** Asked for directly ("proceed with fix #3... commit push, do the sync continuity if needed") after the owner chose the `--font-money` fix over VT323 from a side-by-side comparison and confirmed the label trims. No real-data read was granted or needed — the whole change is local CSS/JSX text and was verified against `private-ledger-local`'s synthetic seed only, via Dev sign-in. **Spent on `f9e09c4`** and the docs commit recording it. **None of this survives into a new session — ask again.**
 - **Commit, push, real-data read: GRANTED, 2026-09-16 (the D-194 session).** Granted in the owner's
   message asking for the Sync speedup, after he had opened his statement mailbox and the hosted
   `/import` page in Chrome and asked for them to be checked. Used **read-only** in both: the mailbox
@@ -374,10 +375,11 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **As of the D-193 session, read `git log` — this line cannot record the commit that carries it.**
-  D-195's code (`cecc622`, "Don't offer this again") is the newest change to what the app serves;
-  D-194's (`6b53541`, the mailbox Sync speedup) and D-193's (the load waves and `LedgerActions`)
-  are beneath it.
+- **As of the D-196 session, read `git log` — this line cannot record the commit that carries it.**
+  D-196's code (`f9e09c4`, the stat-strip font fix and field-help trims) is the newest change to
+  what the app serves; **it has not yet been read on the deployed build.** Beneath it, D-195's
+  (`cecc622`, "Don't offer this again"), D-194's (`6b53541`, the mailbox Sync speedup) and D-193's
+  (the load waves and `LedgerActions`).
   Previously: **`main` was at `0573a8a` and `origin/main` matched** (pushed and confirmed 2026-09-13). `0573a8a`
   is D-192 — the mailbox sync no longer reporting an empty mailbox for a truncated scan, plus
   `pickableCategories` and `CorrectionForm` taking the category list as a prop — and **it is the
@@ -409,6 +411,10 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   `676a8ea` for two sessions, then `7d9d4e6`, then `cf46a49` after three commits landed past it) —
   read `git log` rather than trusting how current this line looks, on the same D-131 lesson the
   paragraph below already names.
+- **That is no longer true as of D-196, 2026-09-16 — the stat-strip font fix and the field-help
+  trims across `/import`, `/slips`, `/recovery` and elsewhere change what renders and have only
+  been read against `private-ledger-local`'s synthetic seed, never the deployed build.** The next
+  session with real-data read should take that reading before trusting the bullet below.
 - **Everything that changes what renders has been looked at on the deployment**, most recently
   `23bce9d` (D-184): the day headings, the Balance box and the control-row widths on `/ledger`, and
   the three-column calendar, the year select and the per-month readout on `/statistics`, all read
@@ -488,6 +494,10 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on D-196's content, 2026-09-16, with Docker up**: `tsc` clean, `eslint .` clean (the same
+  2 pre-existing warnings), `check:docs --strict` clean at **196 decisions and 204 traps**, Vitest
+  **979 passed / 7 skipped across 45 files**, `pnpm build` clean at the same **24** `/api/v1/`
+  routes. **Playwright not run** — CSS and JSX text only, no interaction or data-path change.
 - **Green on D-195's content, 2026-09-16, with Docker up, run sequentially**: `tsc`, `eslint .`
   (2 pre-existing warnings), `pnpm build` clean; Vitest **979 passed / 7 skipped across 45 files**;
   Playwright **isolated 70 passed / 8 skipped** and **owner 34 passed**. This also covers D-194's
