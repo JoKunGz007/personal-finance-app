@@ -426,8 +426,8 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
           <p>
             Choose many slip images at once. Each QR is read on-device for bank and reference;
             reading the amount sends the image to Google Cloud Vision (nothing stored, either
-            side). A slip auto-captures only when the amount read cleanly <b>and</b> the date came
-            from the QR or slip — never today&apos;s date, since a backlog dated today can&apos;t
+            side). A slip auto-captures only when the amount read cleanly <b>and</b>{" "}
+            the date came from the QR or slip — never today&apos;s date, since a backlog dated today can&apos;t
             pair with a statement. Everything else needs your input below.
           </p>
         </div>

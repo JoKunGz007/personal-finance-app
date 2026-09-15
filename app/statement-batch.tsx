@@ -504,7 +504,8 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
           onChange={(event) => onAutoBindChange(event.target.checked)}
         />
         <span>
-          <b>Bind automatically when the account is unambiguous.</b> Binds when exactly one account
+          <b>Bind automatically when the account is unambiguous.</b>{" "}
+          Binds when exactly one account
           matches the statement&apos;s bank and last four digits, straight to review. A mismatch is
           still refused, every balance is still shown, and nothing reaches the ledger until you
           confirm. Turn off to choose manually — the matching account stays preselected.
