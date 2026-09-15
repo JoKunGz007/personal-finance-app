@@ -36,7 +36,21 @@ type BatchFile = {
   readonly digest: string | null;
   readonly parsed: { frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number } | null;
   readonly reason: string | null;
+  /**
+   * The reader's typed refusal code, when the worker gave one. Kept apart from `reason` so a
+   * decision can switch on the enum rather than on the sentence it was printed into.
+   */
+  readonly failureCode: string | null;
 };
+
+/**
+ * The one refusal that means "this PDF is not a statement", as opposed to "this statement could
+ * not be opened". A wrong password, a damaged file or a totals mismatch are all problems with a
+ * real statement, and offering to hide one of those from Sync would hide the statement.
+ */
+const NOT_A_STATEMENT = "UNSUPPORTED_LAYOUT";
+
+type Dismissal = "saving" | "done" | "failed";
 
 /** What the stage machine hands back once a batched statement has reached the ledger. */
 export type BatchConfirmation = {
@@ -93,8 +107,16 @@ type WorkerReply =
  * review table. Statement import remains the one path in this app that reads entirely on the
  * device (D-128, D-129).
  */
-export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBind, onAutoBindChange }: {
+export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, confirmation, autoBind, onAutoBindChange }: {
   readonly onWork: (handoff: BatchHandoff) => void;
+  /**
+   * Tells the mailbox never to offer one attachment again, and resolves whether that was recorded.
+   *
+   * **A callback, because this component constructs no request** (`tests/privacy.test.ts`). The
+   * request lives in `app/import-bench.tsx`, beside the confirm-time report it reuses; this file
+   * only decides when the owner may ask for it.
+   */
+  readonly onDismissMailbox: (ref: MailboxRef) => Promise<boolean>;
   /** Whether a statement printing an account this ledger holds is bound without asking. */
   readonly autoBind: boolean;
   readonly onAutoBindChange: (next: boolean) => void;
@@ -108,6 +130,8 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  /** Per batch entry: whether "Don't offer this again" is saving, recorded or refused. */
+  const [dismissals, setDismissals] = useState<Readonly<Record<string, Dismissal>>>({});
   const fileInput = useRef<HTMLInputElement>(null);
   /**
    * A monotonic counter behind every entry's key.
@@ -182,6 +206,7 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
 
   function clear() {
     setFiles([]);
+    setDismissals({});
     fileCount.current = 0;
     setProgress(null);
     setStatus(null);
@@ -220,7 +245,8 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
         state: "queued",
         digest: null,
         parsed: null,
-        reason: null
+        reason: null,
+        failureCode: null
       };
     });
     fileCount.current += added.length;
@@ -297,7 +323,8 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
                 state: "read",
                 digest,
                 parsed: { frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount },
-                reason: null
+                reason: null,
+                failureCode: null
               });
             } else {
               // The typed code travels with the message. It is a fixed enum carrying no statement
@@ -308,7 +335,8 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
                 digest,
                 parsed: null,
                 reason: `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})`
-                  + (reply.detail ? ` — ${reply.detail}` : "")
+                  + (reply.detail ? ` — ${reply.detail}` : ""),
+                failureCode: reply.code
               });
             }
             finish();
@@ -386,7 +414,7 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
     }
     const targets = retryable;
     setFiles((current) => current.map((item) => (
-      item.state === "failed" ? { ...item, state: "queued", digest: null, parsed: null, reason: null } : item
+      item.state === "failed" ? { ...item, state: "queued", digest: null, parsed: null, reason: null, failureCode: null } : item
     )));
     await parseMany(targets);
   }
@@ -563,24 +591,65 @@ export function StatementBatch({ onWork, confirmedDigests, confirmation, autoBin
         <>
         <h3 className="batch-note">Not importable — nothing here will be sent</h3>
         <ol className="batch-rows">
-          {plan.blocked.map((item) => (
-            <li key={item.entry.id} className="batch-row">
-              <div className="batch-row-head">
-                <span className="batch-file">
-                  {item.entry.label}
-                  {files.find((file) => file.id === item.entry.id)?.source === "mailbox"
-                    ? <span className="batch-source"> · from the mailbox</span>
-                    : null}
-                </span>
-                {/* The verdict in words, not the discriminant. `item.reason` is a kebab-case enum
-                    for code to switch on; printing it put `not-cross-checked` on screen as though
-                    it were a sentence, and it was also the only thing distinguishing a blocked row
-                    from a ready one, since both lists render the same markup. */}
-                <span className="batch-source">{BLOCKED_LABELS[item.reason]}</span>
-              </div>
-              <p className="batch-reason">{item.message}</p>
-            </li>
-          ))}
+          {plan.blocked.map((item) => {
+            const source = files.find((file) => file.id === item.entry.id);
+            const dismissal = dismissals[item.entry.id];
+            // **Offered only for a mailbox PDF the reader opened and found not to be a statement**,
+            // and never automatically. Sync re-offers such a file forever, because only a confirm
+            // marks one as done — but a refusal is also what a real statement in a layout this app
+            // does not know yet looks like, so the call is the owner's, one file at a time.
+            const dismissable = source?.source === "mailbox" && source.mailboxRef !== null
+              && source.failureCode === NOT_A_STATEMENT;
+            return (
+              <li key={item.entry.id} className="batch-row">
+                <div className="batch-row-head">
+                  <span className="batch-file">
+                    {item.entry.label}
+                    {source?.source === "mailbox"
+                      ? <span className="batch-source"> · from the mailbox</span>
+                      : null}
+                  </span>
+                  {/* The verdict in words, not the discriminant. `item.reason` is a kebab-case enum
+                      for code to switch on; printing it put `not-cross-checked` on screen as though
+                      it were a sentence, and it was also the only thing distinguishing a blocked row
+                      from a ready one, since both lists render the same markup. */}
+                  <span className="batch-source">{BLOCKED_LABELS[item.reason]}</span>
+                  {dismissable && dismissal !== "done" ? (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={working || dismissal === "saving"}
+                      // Visible words first, then which file: several blocked rows can each carry
+                      // this button, and a name that does not say which is a name nobody can use.
+                      aria-label={`Don't offer this again — ${item.entry.label}`}
+                      onClick={() => {
+                        const ref = source.mailboxRef;
+                        if (!ref) return;
+                        const id = item.entry.id;
+                        setDismissals((current) => ({ ...current, [id]: "saving" }));
+                        void onDismissMailbox(ref).then((recorded) => {
+                          setDismissals((current) => ({ ...current, [id]: recorded ? "done" : "failed" }));
+                        });
+                      }}
+                    >
+                      {dismissal === "saving" ? "Saving…" : "Don't offer this again"}
+                    </button>
+                  ) : null}
+                </div>
+                <p className="batch-reason">{item.message}</p>
+                {dismissal === "done" ? (
+                  <p className="batch-note" role="status">
+                    Sync will not offer this file again. It stays in the mailbox, and it can still be
+                    imported by downloading it from there and choosing it here.
+                  </p>
+                ) : dismissal === "failed" ? (
+                  <p className="batch-reason" role="alert">
+                    The mailbox did not record that, so Sync may offer this file again.
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
         </ol>
         </>
       ) : null}

@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-16 (D-194 — mailbox Sync speedup).
+Last updated: 2026-09-16 (D-195 — "Don't offer this again" on a mailbox non-statement; D-194 — Sync speedup).
 
-**Current headline: D-194.** Mailbox Sync lists in one IMAP fetch and downloads three at a time; a two-PDF sync measured 8.4s on the deployment, and `imap-open` (~2.4s per request) is what is left. The SCB statement the owner thought Sync had missed was newer than the sync he was looking at. Previously D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
+**Current headline: D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. **Beneath it, D-194.** Mailbox Sync lists in one IMAP fetch and downloads three at a time; a two-PDF sync measured 8.4s on the deployment, and `imap-open` (~2.4s per request) is what is left. The SCB statement the owner thought Sync had missed was newer than the sync he was looking at. Previously D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -80,8 +80,9 @@ Mutable by nature — granted, spent, re-granted — which is why they live here
   inbox was read for one message's presence and attachment name; on `/import` the list and attachment
   routes were called directly and Sync was pressed twice, which only adds still-encrypted PDFs to that
   tab's batch — nothing was unlocked, confirmed, flagged or imported. Spent on `6b53541` and the docs
-  commit after it. **Docker was down** and was not started. **None of this survives into a new
-  session — ask again.**
+  commit after it. **Docker was down** and was not started. The owner then asked for D-195 under the
+  same grant and started Docker himself, asking for the continuity sync, a commit, a push and a
+  read of the deployed build. **None of this survives into a new session — ask again.**
 - **Real-data read (hosted browser), commit, push: GRANTED AGAIN, 2026-09-13 (the D-193 session).**
   The session opened on the D-192 handoff, whose own rule was "ask again"; the owner answered in his
   opening line that every authorization that handoff listed is granted — read as its granted set
@@ -486,6 +487,10 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on D-195's content, 2026-09-16, with Docker up, run sequentially**: `tsc`, `eslint .`
+  (2 pre-existing warnings), `pnpm build` clean; Vitest **979 passed / 7 skipped across 45 files**;
+  Playwright **isolated 70 passed / 8 skipped** and **owner 34 passed**. This also covers D-194's
+  code, whose earlier run below had skipped the database-backed suites. pgTAP not re-run — no SQL.
 - **Partly green on D-194's content (`6b53541`), 2026-09-16, with Docker down**: `tsc`, `eslint .`
   (2 pre-existing warnings), `check:docs --strict`, `pnpm build` clean; Vitest **893 passed / 92
   skipped across 45 files** — the skips are the database-backed suites. **Playwright not run.**

@@ -286,7 +286,12 @@ export async function verifyAttachment(
  * server that limits custom keywords) should not turn a successful download into a failed one — the
  * cost of a missed flag is only that one file gets offered again next sync, which is exactly the
  * status quo this feature improves on rather than a regression from it.
+ *
+ * **Resolves whether the flag was recorded, and still never throws.** The confirm-time caller
+ * ignores the answer for the reason above; the owner's "Don't offer this again" (D-195) cannot,
+ * because there the flag is the whole of what was asked for, and reporting success over a refused
+ * flag would tell him a file is hidden that Sync goes on offering.
  */
-export async function markFetched(client: ImapFlow, uid: number, part: string): Promise<void> {
-  await client.messageFlagsAdd(uid, [fetchedFlag(part)], { uid: true }).catch(() => {});
+export async function markFetched(client: ImapFlow, uid: number, part: string): Promise<boolean> {
+  return client.messageFlagsAdd(uid, [fetchedFlag(part)], { uid: true }).then((added) => added !== false, () => false);
 }

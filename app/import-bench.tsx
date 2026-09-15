@@ -548,6 +548,27 @@ export function ImportBench() {
     setStatus(`Confirmed ${statement.rows.length} rows into ${boundAccount.label} as batch ${String(record.batchId)}. The last backup is now stale — export a new one from Recovery.`);
   }
 
+  /**
+   * "Don't offer this again", for a mailbox PDF the reader found not to be a statement (D-195).
+   *
+   * **The same body-less report the confirm path sends, on the owner's say rather than a confirm's.**
+   * Sync leaves out a part once it is flagged, and only a confirm flags one — so a bank's
+   * non-statement attachment was downloaded and refused again on every sync. The batch offers this
+   * only for a `UNSUPPORTED_LAYOUT` refusal, and only when pressed; nothing flags a file by itself,
+   * because a statement in a layout this app does not know yet is refused the same way.
+   *
+   * Awaited rather than fired and forgotten, unlike the confirm report: here the flag is the whole
+   * point of the press, so the row says whether it was recorded.
+   */
+  async function dismissMailboxFile(ref: MailboxRef): Promise<boolean> {
+    try {
+      const response = await fetch(attachmentPath(ref.uid, ref.part), { method: "POST", cache: "no-store" });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   function openDetail(index: number) {
     setSelectedRow(index);
     dialog.current?.showModal();
@@ -694,6 +715,7 @@ export function ImportBench() {
 
       <StatementBatch
         onWork={workBatchEntry}
+        onDismissMailbox={dismissMailboxFile}
         confirmedDigests={confirmedDigests}
         confirmation={batchConfirmation}
         autoBind={autoBind}

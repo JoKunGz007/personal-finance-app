@@ -248,6 +248,28 @@ describe("privacy guardrails", () => {
     expect(downloader).not.toMatch(/markFetched/u);
   });
 
+  it("lets the owner stop Sync offering a non-statement, and only a non-statement, only when he asks", () => {
+    // D-195. The one other way a mailbox part is flagged: a press, on a PDF the reader refused as
+    // not a statement. Never automatic, because a statement in an unknown layout is refused the
+    // same way — so the call is the owner's and the button must not appear for any other refusal.
+    const bench = readFileSync("app/import-bench.tsx", "utf8");
+    const dismisser = section(bench, "async function dismissMailboxFile(");
+    expect(dismisser, "dismissMailboxFile must exist for this test to mean anything").toContain("attachmentPath(ref.uid, ref.part)");
+    expect(dismisser).toMatch(/method:\s*"POST"/u);
+    // Body-less, like the confirm report: nothing but a uid/part the mailbox already knows.
+    expect(dismisser).not.toMatch(/body\s*:/u);
+
+    // The batch still constructs no request (asserted above); it is handed the call as a prop, and
+    // it offers the button only for the not-a-statement refusal of a file that came from the mailbox.
+    const batch = readFileSync("app/statement-batch.tsx", "utf8");
+    expect(batch).toContain('const NOT_A_STATEMENT = "UNSUPPORTED_LAYOUT"');
+    expect(batch).toMatch(/source\?\.source === "mailbox" && source\.mailboxRef !== null\s*&& source\.failureCode === NOT_A_STATEMENT/u);
+    expect(batch).toMatch(/\{dismissable && dismissal !== "done" \? \(/u);
+    // And nothing flags a file without the press: the only call site is inside the button's handler.
+    expect(batch.match(/onDismissMailbox\(/gu)).toHaveLength(1);
+    expect(batch).toMatch(/onClick=\{\(\) => \{[\s\S]{0,400}onDismissMailbox\(ref\)/u);
+  });
+
   it("never infers a ledger account when many statements are opened at once", () => {
     // Bulk import makes the inference D-017 forbids far more tempting than a single import does:
     // a statement prints a bank code and four digits, `public.accounts` is unique on

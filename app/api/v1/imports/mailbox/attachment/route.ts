@@ -171,6 +171,10 @@ export async function GET(request: Request) {
  * confirming is offered again next sync, which is the correct answer for something that never
  * reached the ledger.
  *
+ * **Its second caller is the owner saying "Don't offer this again"** on a mailbox PDF the reader
+ * refused as not a statement (D-195), from the same file and with the same empty body. The flag
+ * means "Sync leaves this part out" in both cases; only who decided differs.
+ *
  * **`uid`/`part` are re-verified here rather than trusted**, the same two questions `GET` asks: is
  * this uid in the set matching the configured senders, and is this part one of its PDF attachments?
  * The owner is already authenticated by the time this fires, so a mismatched pair can only mark the
@@ -203,7 +207,9 @@ export async function POST(request: Request) {
   try {
     const attachment = await verifyAttachment(session.client, settings.config.senders, uid, part);
     if (!attachment) return routeError("No statement attachment was found there.", 404);
-    await markFetched(session.client, uid, part);
+    if (!(await markFetched(session.client, uid, part))) {
+      return routeError("The mailbox did not record that.", 502);
+    }
     return Response.json({ ok: true });
   } catch {
     return routeError("Could not be recorded on the mailbox.", 502);
