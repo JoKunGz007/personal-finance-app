@@ -375,8 +375,9 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 ### Where the code is
 
 - **As of the D-193 session, read `git log` — this line cannot record the commit that carries it.**
-  D-194's code (`6b53541`, the mailbox Sync speedup) is the newest change to what the app serves;
-  D-193's (the load waves and `LedgerActions`) is beneath it.
+  D-195's code (`cecc622`, "Don't offer this again") is the newest change to what the app serves;
+  D-194's (`6b53541`, the mailbox Sync speedup) and D-193's (the load waves and `LedgerActions`)
+  are beneath it.
   Previously: **`main` was at `0573a8a` and `origin/main` matched** (pushed and confirmed 2026-09-13). `0573a8a`
   is D-192 — the mailbox sync no longer reporting an empty mailbox for a truncated scan, plus
   `pickableCategories` and `CorrectionForm` taking the category list as a prop — and **it is the

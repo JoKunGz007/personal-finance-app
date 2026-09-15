@@ -66,6 +66,7 @@ the top of `GOTCHAS.md`.
 
 - Symptom one: `git commit -m @'…'@` fails with `error: pathspec 'word' did not match any file(s)` and a wall of message text quoted back as more pathspecs.
 - Cause one: a here-string is only recognized when `@'` is the last thing on its line. A single trailing space after it silently makes it not a here-string, so PowerShell word-splits the message and every apostrophe inside starts a new quoted token.
+- Cause one, second road: a correctly formed here-string still splits when the message contains a **double quote**. Windows PowerShell 5.1 hands a native program its arguments without escaping embedded `"`, so `feat: "Don't offer this again" …` reached git as several arguments and failed the same way — after `git add` had already staged everything. Hit 2026-09-16 on the D-195 commit; nothing was committed and the retry through `-F` landed as `cecc622`.
 - Symptom two: the commit lands, but `git log --oneline` shows an invisible character before the subject (`﻿docs: …`).
 - Cause two: `Out-File -Encoding utf8` in PowerShell 5.1 writes a UTF-8 **BOM**, and `git commit -F` takes those bytes as the first characters of the subject line.
 - Avoid: write the message with the `Write` tool (no BOM) and pass it to `git commit -F`. Do not hand-build message files through `Out-File`/`Set-Content`, and do not rely on here-strings for anything multi-line.
