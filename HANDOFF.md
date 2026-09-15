@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-16 (D-195 — "Don't offer this again" on a mailbox non-statement; D-194 — Sync speedup).
 
-**Current headline: D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. **Beneath it, D-194.** Mailbox Sync lists in one IMAP fetch and downloads three at a time; a two-PDF sync measured 8.4s on the deployment, and `imap-open` (~2.4s per request) is what is left. The SCB statement the owner thought Sync had missed was newer than the sync he was looking at. Previously D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
+**Current headline: D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. Deployed as `cecc622`; the bundle and Sync were checked live, the button was not pressed (it needs the document password first). **Owed: the owner pressing it once on the SCB non-statement attachment still offered by Sync**, then syncing to see it gone. **Beneath it, D-194.** Mailbox Sync lists in one IMAP fetch and downloads three at a time; a two-PDF sync measured 8.4s on the deployment, and `imap-open` (~2.4s per request) is what is left. The SCB statement the owner thought Sync had missed was newer than the sync he was looking at. Previously D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
