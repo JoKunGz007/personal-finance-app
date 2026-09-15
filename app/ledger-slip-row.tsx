@@ -119,7 +119,7 @@ export function LedgerSlipRow({
         </td>
         <td data-label={showCombined ? "Account" : "Reference"}>
           {showCombined
-            ? <span>{row.account ? `${row.account.label} ···· ${row.account.last_four}` : `${slip.bank_code} · account unknown`}</span>
+            ? <span className="mono">{row.account ? `${row.account.label} ···· ${row.account.last_four}` : `${slip.bank_code} · account unknown`}</span>
             : <span className="mono">{slip.slip_reference}</span>}
         </td>
         <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>

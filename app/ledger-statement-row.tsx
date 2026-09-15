@@ -361,8 +361,8 @@ export function LedgerStatementRow({
         </td>
         <td data-label={showCombined ? "Account" : "Reference"}>
           {showCombined
-            ? <span>{account ? `${account.label} ···· ${account.last_four}` : "Unknown account"}</span>
-            : <span>{transaction.reference ?? "Not printed"}</span>}
+            ? <span className="mono">{account ? `${account.label} ···· ${account.last_four}` : "Unknown account"}</span>
+            : <span className="mono">{transaction.reference ?? "Not printed"}</span>}
         </td>
         {/* Colour reinforces a direction the sign already states, and a zero movement stays neutral
             rather than being called an arrival. */}

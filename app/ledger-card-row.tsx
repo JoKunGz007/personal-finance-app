@@ -166,7 +166,7 @@ export function LedgerCardRow({
               it printed are the nearest thing, and they are what the capture
               route checked the account against. */}
           {showCombined
-            ? <span>{row.account ? `${row.account.label} ···· ${row.account.last_four}` : "Unknown account"}</span>
+            ? <span className="mono">{row.account ? `${row.account.label} ···· ${row.account.last_four}` : "Unknown account"}</span>
             : <span className="mono">···· {card.printed_account_digits}</span>}
         </td>
         <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>
