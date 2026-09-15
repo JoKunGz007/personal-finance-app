@@ -8,7 +8,7 @@ import { type CardReviewReason } from "@/lib/notification-card-reconcile";
 import { type NotificationCard, type NotificationCardCorrection } from "@/lib/notification-cards";
 import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
-import { formatDate, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, formatDateParts, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
 /**
  * A captured notification card that has not collapsed onto a statement row (migration 016).
@@ -65,8 +65,12 @@ export function LedgerCardRow({
           rather than living in a colour. */}
       <tr className="card-row">
         <td data-label="Date">
-          <time dateTime={card.occurred_on}>{formatDate(card.occurred_on)}</time>
-          <small>{card.occurred_at_time}</small>
+          <time dateTime={card.occurred_on}>
+            {formatDateParts(card.occurred_on).map((part, index) =>
+              part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
+            )}
+          </time>
+          <small><span className="figure">{card.occurred_at_time}</span></small>
         </td>
         <td data-label="Description">
           <strong>Card · {card.channel}</strong>
@@ -166,8 +170,10 @@ export function LedgerCardRow({
               it printed are the nearest thing, and they are what the capture
               route checked the account against. */}
           {showCombined
-            ? <span className="mono">{row.account ? `${row.account.label} ···· ${row.account.last_four}` : "Unknown account"}</span>
-            : <span className="mono">···· {card.printed_account_digits}</span>}
+            ? (row.account
+                ? <span className="mono">{row.account.label} ···· <span className="figure">{row.account.last_four}</span></span>
+                : <span className="mono">Unknown account</span>)
+            : <span className="mono">···· <span className="figure">{card.printed_account_digits}</span></span>}
         </td>
         <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>
           {amount > 0n ? "+" : ""}{formatThb(card.amount_minor)}

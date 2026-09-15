@@ -78,7 +78,7 @@ import { LedgerRetiredCards } from "@/app/ledger-retired-cards";
 import {
   ALL_ACCOUNTS,
   ALL_STATUSES,
-  formatDayHeading,
+  formatDayHeadingParts,
   type LedgerActions,
   type LedgerBalance,
   type LedgerLayout,
@@ -1426,9 +1426,11 @@ export function TransactionsView() {
               combined balance covers only these is a rule, and folds (PLAN task 42). */}
           {!picking &&showCombined && accounts ? (
             <p className="ledger-status">
-              <b>Imported accounts: {importedAccounts.length} of {accounts.length}</b>
+              <b>Imported accounts: <span className="figure">{importedAccounts.length}</span> of <span className="figure">{accounts.length}</span></b>
               {importedAccounts.length > 0
-                ? ` · ${importedAccounts.map((account) => `${account.label} ···· ${account.last_four}`).join(" · ")}`
+                ? importedAccounts.map((account) => (
+                    <span key={account.id}> · {account.label} ···· <span className="figure">{account.last_four}</span></span>
+                  ))
                 : null}
               {importedAccounts.length < accounts.length ? (
                 <LedgerNote label="Why some accounts are missing">
@@ -1479,8 +1481,14 @@ export function TransactionsView() {
                             what a styled `<td>` would have said nothing about. */}
                         <th scope="colgroup" colSpan={layout.columns}>
                           <span className="day-head-line">
-                            <span className="day-head-date">{formatDayHeading(head.date)}</span>
-                            <span>{head.totals.rows} row{head.totals.rows === 1 ? "" : "s"}</span>
+                            <span className="day-head-date">
+                              {formatDayHeadingParts(head.date).map((part, index) =>
+                                part.numeric
+                                  ? <span key={index} className="figure">{part.value}</span>
+                                  : part.value
+                              )}
+                            </span>
+                            <span><span className="figure">{head.totals.rows}</span> row{head.totals.rows === 1 ? "" : "s"}</span>
                             {/* **In and out separately, never a net figure**: the owner's own reading
                                 on the calendar (D-179) and the same one here - a day that took 20,000
                                 in and paid 19,500 out is not a 500 day, and a single number is the

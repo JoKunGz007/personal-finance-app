@@ -7,7 +7,7 @@ import { type LedgerAccount } from "@/lib/accounts";
 import { type Category } from "@/lib/categories";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
-import { formatDate, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, formatDateParts, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 import { OverlayCategoryForm } from "@/app/overlay-category-form";
 
 /**
@@ -95,8 +95,12 @@ export function LedgerStatementRow({
     <Fragment>
       <tr className={row.slip || row.card ? "verified-row" : ""}>
         <td data-label="Date">
-          <time dateTime={transaction.source_date}>{formatDate(transaction.source_date)}</time>
-          <small>{transaction.source_time ?? "—"}</small>
+          <time dateTime={transaction.source_date}>
+            {formatDateParts(transaction.source_date).map((part, index) =>
+              part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
+            )}
+          </time>
+          <small>{transaction.source_time ? <span className="figure">{transaction.source_time}</span> : "—"}</small>
         </td>
         <td data-label="Description">
           <strong lang="th">{transaction.transaction_label}</strong>
@@ -361,8 +365,14 @@ export function LedgerStatementRow({
         </td>
         <td data-label={showCombined ? "Account" : "Reference"}>
           {showCombined
-            ? <span className="mono">{account ? `${account.label} ···· ${account.last_four}` : "Unknown account"}</span>
-            : <span className="mono">{transaction.reference ?? "Not printed"}</span>}
+            ? (account
+                ? <span className="mono">{account.label} ···· <span className="figure">{account.last_four}</span></span>
+                : <span className="mono">Unknown account</span>)
+            : <span className="mono">
+                {splitFigures(transaction.reference ?? "Not printed").map((part, index) =>
+                  part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
+                )}
+              </span>}
         </td>
         {/* Colour reinforces a direction the sign already states, and a zero movement stays neutral
             rather than being called an arrival. */}

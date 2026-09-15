@@ -35,6 +35,18 @@ export function formatDate(date: string) {
 }
 
 /**
+ * `formatDate`, split into figure and word parts so a caller can put only the digits in
+ * `--font-money` — the month name is a word, not a figure, and D-199 over-applied the never-
+ * pixelate rule to it along with everything else in the same string. `type` is `Intl`'s own
+ * classification: `day` and `year` are numeric, `month` and every literal (spaces, commas) are not.
+ */
+export function formatDateParts(date: string): { value: string; numeric: boolean }[] {
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    .formatToParts(new Date(`${date}T00:00:00+07:00`))
+    .map((part) => ({ value: part.value, numeric: part.type === "day" || part.type === "year" }));
+}
+
+/**
  * The same date with its weekday in front, for a day-group heading row.
  *
  * **The weekday is the whole reason this exists.** A heading that read "30 Aug 2026" would repeat
@@ -47,6 +59,27 @@ export function formatDate(date: string) {
 export function formatDayHeading(date: string) {
   return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
     .format(new Date(`${date}T00:00:00+07:00`));
+}
+
+/**
+ * Splits free-form bank-printed text (a reference, a reason code) into word and figure runs, the
+ * same distinction `formatDateParts` draws for a formatted date — a run of digits (optionally
+ * joined by `.`, `,`, `:` or `-` the way an amount, a time or an account number is) is a figure;
+ * everything else, letters included, is not. Used so `.figure` never lands on English text sharing
+ * the same string, which is the D-200 correction to D-199's blanket `.mono`.
+ */
+export function splitFigures(text: string): { value: string; numeric: boolean }[] {
+  return text
+    .split(/(\d+(?:[.,:-]\d+)*)/)
+    .filter((part) => part !== "")
+    .map((part) => ({ value: part, numeric: /^\d/.test(part) }));
+}
+
+/** `formatDayHeading`, split the same way `formatDateParts` splits `formatDate`. */
+export function formatDayHeadingParts(date: string): { value: string; numeric: boolean }[] {
+  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
+    .formatToParts(new Date(`${date}T00:00:00+07:00`))
+    .map((part) => ({ value: part.value, numeric: part.type === "day" || part.type === "year" }));
 }
 
 /**

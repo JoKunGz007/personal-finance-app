@@ -7,7 +7,7 @@ import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CapturedSlip, type SlipCorrection } from "@/lib/slips";
 import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
-import { formatDate, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, formatDateParts, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
 /**
  * A captured slip that has not collapsed onto a statement row.
@@ -53,8 +53,12 @@ export function LedgerSlipRow({
           screen reader. */}
       <tr className="provisional-row">
         <td data-label="Date">
-          <time dateTime={slip.occurred_on}>{formatDate(slip.occurred_on)}</time>
-          <small>{slip.occurred_at_time ?? "—"}</small>
+          <time dateTime={slip.occurred_on}>
+            {formatDateParts(slip.occurred_on).map((part, index) =>
+              part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
+            )}
+          </time>
+          <small>{slip.occurred_at_time ? <span className="figure">{slip.occurred_at_time}</span> : "—"}</small>
         </td>
         <td data-label="Description">
           <strong>Slip · {slip.bank_code}</strong>
@@ -119,8 +123,14 @@ export function LedgerSlipRow({
         </td>
         <td data-label={showCombined ? "Account" : "Reference"}>
           {showCombined
-            ? <span className="mono">{row.account ? `${row.account.label} ···· ${row.account.last_four}` : `${slip.bank_code} · account unknown`}</span>
-            : <span className="mono">{slip.slip_reference}</span>}
+            ? (row.account
+                ? <span className="mono">{row.account.label} ···· <span className="figure">{row.account.last_four}</span></span>
+                : <span className="mono">{slip.bank_code} · account unknown</span>)
+            : <span className="mono">
+                {splitFigures(slip.slip_reference).map((part, index) =>
+                  part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
+                )}
+              </span>}
         </td>
         <td data-label="Movement" className={`numeric ${amount > 0n ? "positive" : ""}`}>
           {amount > 0n ? "+" : ""}{formatThb(slip.amount_minor)}
