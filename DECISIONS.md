@@ -4,10 +4,10 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198 and D-199** — the two open questions this file has named
-since the twelfth boundary, the fifteenth boundary's own record of itself, and the entry it was
-taken one turn too early for (D-199 landed right after D-198, still well inside the new budget).
-**D-141**:
+This file carries **D-141, D-158, D-198, D-199 and D-200** — the two open questions this file has
+named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
+entries it was taken a turn too early for (both landed right after D-198, still well inside the
+new budget). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
 `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. `scripts/check-docs.mjs`
 pools this file with every archive and checks ids for duplicates and omissions across the whole set,
@@ -374,6 +374,19 @@ a reason to keep it rather than a reason it cannot ever move.
 
 - **D-198** — The fifteenth boundary is taken on the owner's word rather than an argument closing, and this file returns to holding nothing but its two open questions
 - **D-199** — D-196's real scope was every pixelated figure on `/ledger`, not just the stat strip: the day heading, the row timestamp and the account label all still switched to the pixel face
+- **D-200** — D-199 put whole words in the figures font along with the digits beside them — "Sept", "row(s)", a bank name — and the owner's correction was exact: only a digit run takes `--font-money`, never a word sharing its span
+
+## D-200 — D-199 put whole words in the figures font along with the digits beside them — "Sept", "row(s)", a bank name — and the owner's correction was exact: only a digit run takes `--font-money`, never a word sharing its span
+
+- Date: 2026-09-16
+- Status: **Shipped as `baae8e5`, pushed, and confirmed live** via `getComputedStyle` on the deployed build, split at the character level between a digit run and the word beside it.
+- Context: the owner sent a third screenshot, of `/ledger` again, with green boxes around individual digit runs inside otherwise-pixel text — "15", "2026" inside "Tue, 15 Sept 2026"; "4451" inside "Krungthai savings ···· 4451" — and said plainly: **"i meant like only number, not english letter."** D-199's fix had applied `var(--font-money)` to the whole `<span>`/`<time>`/`.mono` element, which is correct when the element holds nothing but digits (an amount, a masked account suffix alone) and wrong the moment it holds a word too.
+- **The fix is a font boundary at the character level, not the element level.** A new `.figure` class carries `font-family: var(--font-money)` and is applied only to the digit run itself; the element around it keeps whatever font it already had. `.day-head-line > span`'s blanket rule is gone; `td time`'s font-money override is gone; `.ledger-table .mono`'s font-money is gone. Nothing lost legibility — every digit that was readable after D-199 still is, and everything that shouldn't have moved (weekday and month names, "row"/"rows", "Krungthai savings", "SCB") moved back.
+- **Two new helpers do the splitting, in `app/ledger-shared.ts`.** `formatDateParts`/`formatDayHeadingParts` use `Intl.DateTimeFormat.formatToParts` — the same formatter `formatDate`/`formatDayHeading` already used, asked for its parts instead of its string — and classify `day`/`year` as numeric, `weekday`/`month`/every literal (spaces, the comma) as not. `formatDate` and `formatDayHeading` themselves are untouched: both still return plain strings, because roughly twenty other call sites use them inside `aria-label`s and template literals where a string is the only shape that fits, and none of those needed to change.
+- **Free-form bank-printed text has no `Intl` API to lean on, so `splitFigures` does the equivalent with a regex** — a run of digits, optionally joined by `.`, `,`, `:` or `-` the way an amount, a time or an account number actually prints, is a figure; everything else, letters included, is not. Used for `transaction.reference` and `slip.slip_reference`, the two places raw bank text reaches the ledger table.
+- **Where a whole element genuinely holds nothing but digits, it stays untouched**: `.day-head-line b` (the day's signed totals — an amount has no letters in it), `.statement-strip dd`, `.numeric` cells. Adding `.figure` there would have been a no-op; the bug was specifically about elements holding a mix.
+- Gate: `tsc` clean, `eslint .` clean on the six touched files (the same 2 pre-existing warnings elsewhere, untouched).
+- Evidence: `app/globals.css`, `app/ledger-shared.ts`, `app/transactions-view.tsx`, `app/ledger-statement-row.tsx`, `app/ledger-card-row.tsx`, `app/ledger-slip-row.tsx`. `getComputedStyle` read on the deployed build, cache-busted, showing the day heading's "Tue"/"Sept" in Pixelify Sans beside its "15"/"2026" in IBM Plex Mono, and the account label's "Krungthai savings ···· " in Pixelify Sans beside its "4451" in IBM Plex Mono. D-199 (what this corrects), D-163 and D-196 (the rule this still serves, now scoped correctly).
 
 ## D-199 — D-196's real scope was every pixelated figure on `/ledger`, not just the stat strip: the day heading, the row timestamp and the account label all still switched to the pixel face
 
