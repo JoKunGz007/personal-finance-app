@@ -1,6 +1,6 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-16 (D-197 — three D-196 trims fixed a JSX space-collapse bug, confirmed live; D-196 — stat-strip font fix and field-help trims).
+Last updated: 2026-09-16 (D-198 — the fifteenth archive boundary; D-197 — three D-196 trims fixed a JSX space-collapse bug, confirmed live; D-196 — stat-strip font fix and field-help trims).
 
 **Current headline: D-197.** Reading D-196 live on the real deployment (owner-granted real-data read this session) found `<b>…</b> text` wrapping to a new source line drops the space right after the tag — `app/slip-batch.tsx` and `app/statement-batch.tsx` confirmed broken and fixed, `app/ledger-controls.tsx` fixed preemptively on the same shape. Shipped as `500a517`, pushed, **and confirmed on the deployed build** — `/import` and `/slips` both read correctly now. New trap in `docs/gotchas/appearance.md`. **A `get_page_text` call on `/ledger` pulled the full real transaction history into this session's context by accident; nothing from it reached any file, doc or commit.** **Beneath it, D-196.** `.statement-strip dd` (the Rows/Deposits/Withdrawals/Net movement/Balance totals) was the one place D-163's "money never renders in a pixel face" rule never reached; it now reads `--font-money` like every other amount. Field-help/banner text on `/import`, `/slips`, `/recovery` and a few similar spots elsewhere was paraphrased shorter, safety-relevant meaning kept. **Beneath that, D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. Deployed as `cecc622` and the owner pressed it on the deployed build and reported that it works. Previously D-194 (the mailbox Sync speedup) and D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
 
@@ -18,25 +18,18 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158, D-179,
-D-180, D-181, D-183, D-184 and D-187** in full, with fourteen archive files beside it under
-[docs/decisions/](docs/decisions/) — the index at the top of `DECISIONS.md` lists every entry in
-all of them, so **read the index rather than opening an archive to find something**.
-**The gaps in the archived ranges are the rule, not an accident** — a boundary excludes every open
-question and steps over one rather than stopping short (D-133, D-154, D-164, D-167, D-171, D-187).
-What is left in the maintained file is **two open questions and six entries with nothing fencing
-them**. The questions are the mailbox archive (D-141) and `list_match_candidates`' unbounded scan
-(D-158); nothing else here is unanswered. **The phone fence is fully discharged as of 2026-09-04.**
-D-187 is the reading — it found the day heading painting over the card below it on 117 of 122
-headings, fixed it and deployed the fix — and **the thirteenth boundary moved D-177, D-178, D-182,
-D-185 and D-186** on the strength of it, taking the file from 99% to 74%. D-188 closed the rest the
-same day: `/statistics` carries the spending calendar, so **D-179 and D-183 were in the owner's
-captures after all** and both are correct at 390px, which frees D-184 with them; **D-180 and D-181
-are closed by the owner's decision** to leave the four schemes unphotographed, since they are barely
-different between his desktop and his phone. That is a weaker close than a measurement and is
-recorded as one. **So the fourteenth boundary is unfenced and available whenever the budget wants
-it** — at 78% it does not yet, and this log's rule is that a boundary sits where an argument ends
-rather than where a number is round.) →
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and D-198**
+in full, with thirteen archive files beside it under [docs/decisions/](docs/decisions/) — the index
+at the top of `DECISIONS.md` lists every entry in all of them, so **read the index rather than
+opening an archive to find something**. **The gaps in the archived ranges are the rule, not an
+accident** — a boundary excludes every open question and steps over one rather than stopping short
+(D-133, D-154, D-164, D-167, D-171, D-187). **What is left in the maintained file is exactly the two
+open questions and the boundary's own record of itself** — the mailbox archive (D-141), deferred by
+the owner, and `list_match_candidates`' unbounded scan (D-158), recorded in its own migration and
+unfixed; nothing else here is unanswered. **The fifteenth boundary (D-198, 2026-09-16) took the file
+from 96% to 49%** — the first boundary taken on the owner's
+direct word rather than an argument closing or a reading landing, because nothing in the range it
+moved (D-187 … D-197) was still open.) →
 [GOTCHAS.md](GOTCHAS.md) (**the index to the traps; their bodies are in `docs/gotchas/`, one file
 per section, since D-149** — read the index, then open the one section that applies).
 
@@ -443,17 +436,26 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   measured only in the unit suite. **The larger half of (b) is discharged**: D-181 read 297 real
   rows in Night Town and confirmed the status chips, the verified rail and the calendar on their
   real surfaces. Phone width is now the single reading that three entries are all waiting on.
-- **The fourteenth archive boundary is taken and `DECISIONS.md` is at 75%, 2026-09-13** (D-192).
-  **The budget asked for it rather than an argument closing** — the first time in fourteen that the
-  number moved first: D-192's own entry took the file to **119 KB against a 117 KB budget** and
-  `check:docs --strict` failed rather than warned. It **completed**
-  [`docs/decisions/ARCHIVE-D-177-D-186.md`](docs/decisions/ARCHIVE-D-177-D-186.md) instead of
-  opening a fifteenth file, moving the five entries the thirteenth had held back — **D-179, D-180,
-  D-181, D-183 and D-184** — back beside their siblings, so that range is now contiguous and its
-  title no longer names a gap. Nothing still being argued about was cut: D-188 had already freed
-  D-179/D-183/D-184, and the owner's decision closed D-180/D-181. `check:docs --strict` clean at
-  **192 decisions and 204 traps** after the move — no id lost, no gap opened. **What the maintained
-  file now holds is the two open questions (D-141, D-158) and D-187 … D-194.**
+- **The fifteenth archive boundary is taken on the owner's direct word, `DECISIONS.md` at
+  49% (57 KB of 117 KB, down from 96%), 2026-09-16** (D-198). Unlike every boundary before it, nothing was waiting on an
+  argument or a reading — the owner said "deal with archiving" after D-197 left the file at 96%,
+  and every candidate entry (D-187 … D-197) was already settled, shipped and confirmed live, so
+  there was nothing left to fence any of it. **Extended**
+  [`docs/decisions/ARCHIVE-D-177-D-197.md`](docs/decisions/ARCHIVE-D-177-D-197.md) (renamed from
+  `ARCHIVE-D-177-D-186.md`) rather than opening a fourteenth file, since the new range sits
+  immediately above the old one with no gap between them. **Also fixed a standing index error**:
+  D-177 … D-186 were archived by the fourteenth boundary but the index kept listing them under
+  "Current — this file" — `check:docs --strict` never catches this, since it checks title agreement
+  between the index and wherever an entry's body lives, not which heading the index files it under.
+  `check:docs --strict` clean at **198 decisions and 205 traps** after the move — no
+  id lost, no gap opened. **What the maintained file now holds is exactly the two open questions
+  (D-141, D-158) and D-198, the boundary's own record of itself.**
+- **Previously, the fourteenth archive boundary, `DECISIONS.md` at 75%, 2026-09-13** (D-192). The
+  budget asked for it rather than an argument closing — the first time in fourteen that the number
+  moved first. It completed the archive that the fifteenth boundary above has since extended,
+  moving the five entries the thirteenth had held back — **D-179, D-180, D-181, D-183 and D-184** —
+  back beside their siblings. `check:docs --strict` clean at **192 decisions and 204 traps** after
+  the move.
 - **Previously, the twelfth archive boundary, `DECISIONS.md` at 74%.** D-171 … D-176 moved to
   [`docs/decisions/ARCHIVE-D-171-D-176.md`](docs/decisions/ARCHIVE-D-171-D-176.md) on 2026-09-01,
   the same day as the eleventh — the file had gone **83% → 95% in one session**, because D-180 and
