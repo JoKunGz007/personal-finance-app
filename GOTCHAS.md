@@ -192,6 +192,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - The phone stacked-table mode renders `attr(data-label)`, so a table without those attributes becomes unlabelled figures
 - A colour that passes as a chart mark can still fail as text
 - A pixel typeface applied to figures makes digits transposable
+- A single space right after a closing inline tag vanishes when the text after it wraps to a new source line
 - A row hover cannot separate rows on a phone
 - A table does not widen when a cell overflows, so `table.scrollWidth` cannot see a control that does not fit
 - Text capped by width occupies a face-dependent number of lines, so it reflows the box around it

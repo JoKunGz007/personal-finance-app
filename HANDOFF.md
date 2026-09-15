@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-16 (D-196 — stat-strip font fix and field-help trims; D-195 — "Don't offer this again" on a mailbox non-statement).
+Last updated: 2026-09-16 (D-197 — three D-196 trims fixed a JSX space-collapse bug, confirmed live; D-196 — stat-strip font fix and field-help trims).
 
-**Current headline: D-196.** `.statement-strip dd` (the Rows/Deposits/Withdrawals/Net movement/Balance totals) was the one place D-163's "money never renders in a pixel face" rule never reached; it now reads `--font-money` like every other amount. Verified live via `getComputedStyle`, not just read in source. Field-help/banner text on `/import`, `/slips`, `/recovery` and a few similar spots elsewhere was paraphrased shorter, safety-relevant meaning kept. Shipped as `f9e09c4`, pushed — **not yet read on the deployed build.** **Beneath it, D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. Deployed as `cecc622` and the owner pressed it on the deployed build and reported that it works. Previously D-194 (the mailbox Sync speedup) and D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
+**Current headline: D-197.** Reading D-196 live on the real deployment (owner-granted real-data read this session) found `<b>…</b> text` wrapping to a new source line drops the space right after the tag — `app/slip-batch.tsx` and `app/statement-batch.tsx` confirmed broken and fixed, `app/ledger-controls.tsx` fixed preemptively on the same shape. Shipped as `500a517`, pushed, **and confirmed on the deployed build** — `/import` and `/slips` both read correctly now. New trap in `docs/gotchas/appearance.md`. **A `get_page_text` call on `/ledger` pulled the full real transaction history into this session's context by accident; nothing from it reached any file, doc or commit.** **Beneath it, D-196.** `.statement-strip dd` (the Rows/Deposits/Withdrawals/Net movement/Balance totals) was the one place D-163's "money never renders in a pixel face" rule never reached; it now reads `--font-money` like every other amount. Field-help/banner text on `/import`, `/slips`, `/recovery` and a few similar spots elsewhere was paraphrased shorter, safety-relevant meaning kept. **Beneath that, D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. Deployed as `cecc622` and the owner pressed it on the deployed build and reported that it works. Previously D-194 (the mailbox Sync speedup) and D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -74,7 +74,8 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
-- **Commit, push: GRANTED and SPENT, 2026-09-16 (the D-196 session).** Asked for directly ("proceed with fix #3... commit push, do the sync continuity if needed") after the owner chose the `--font-money` fix over VT323 from a side-by-side comparison and confirmed the label trims. No real-data read was granted or needed — the whole change is local CSS/JSX text and was verified against `private-ledger-local`'s synthetic seed only, via Dev sign-in. **Spent on `f9e09c4`** and the docs commit recording it. **None of this survives into a new session — ask again.**
+- **Real-data read (Claude in Chrome, the owner's connected browser): GRANTED and SPENT, 2026-09-16 (the D-197 session).** Asked for directly, twice: first "open [the hosted /ledger URL]" to check the D-196 font fix, then, after a `get_page_text` call pulled the full real transaction history into context by accident, an explicit follow-up — "check all of it, and it's fine if you read my real data, just don't record in any docs." Used to read `/ledger`, `/import`, `/slips` and `/recovery` on the real deployment, twice each (pre- and post- the D-197 fix). **Nothing from any real row was written to any file, doc or commit** — every figure and name in D-197's entry is invented or omitted, per the standing value-free-writing rule. **None of this survives into a new session — ask again.**
+- **Commit, push: GRANTED and SPENT, 2026-09-16 (the D-196 session).** Asked for directly ("proceed with fix #3... commit push, do the sync continuity if needed") after the owner chose the `--font-money` fix over VT323 from a side-by-side comparison and confirmed the label trims. No real-data read was granted or needed for D-196 itself — verified against `private-ledger-local`'s synthetic seed only, via Dev sign-in. **Spent on `f9e09c4`** and the docs commit recording it; the same commit/push authorization carried into the D-197 fix later the same session and was spent again on `500a517`. **None of this survives into a new session — ask again.**
 - **Commit, push, real-data read: GRANTED, 2026-09-16 (the D-194 session).** Granted in the owner's
   message asking for the Sync speedup, after he had opened his statement mailbox and the hosted
   `/import` page in Chrome and asked for them to be checked. Used **read-only** in both: the mailbox
@@ -375,11 +376,13 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **As of the D-196 session, read `git log` — this line cannot record the commit that carries it.**
-  D-196's code (`f9e09c4`, the stat-strip font fix and field-help trims) is the newest change to
-  what the app serves; **it has not yet been read on the deployed build.** Beneath it, D-195's
-  (`cecc622`, "Don't offer this again"), D-194's (`6b53541`, the mailbox Sync speedup) and D-193's
-  (the load waves and `LedgerActions`).
+- **As of the D-197 session, read `git log` — this line cannot record the commit that carries it.**
+  D-197's code (`500a517`, three D-196 trims that lost a space to a JSX whitespace-collapse trap)
+  is the newest change to what the app serves, **confirmed on the deployed build** — `/import` and
+  `/slips` both read correctly. Beneath it, D-196's (`f9e09c4`, the stat-strip font fix and
+  field-help trims) — **also now confirmed on the deployed build**: the strip, `/import`, `/slips`
+  and `/recovery` were all read live. Beneath that, D-195's (`cecc622`, "Don't offer this again"),
+  D-194's (`6b53541`, the mailbox Sync speedup) and D-193's (the load waves and `LedgerActions`).
   Previously: **`main` was at `0573a8a` and `origin/main` matched** (pushed and confirmed 2026-09-13). `0573a8a`
   is D-192 — the mailbox sync no longer reporting an empty mailbox for a truncated scan, plus
   `pickableCategories` and `CorrectionForm` taking the category list as a prop — and **it is the
@@ -411,10 +414,9 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   `676a8ea` for two sessions, then `7d9d4e6`, then `cf46a49` after three commits landed past it) —
   read `git log` rather than trusting how current this line looks, on the same D-131 lesson the
   paragraph below already names.
-- **That is no longer true as of D-196, 2026-09-16 — the stat-strip font fix and the field-help
-  trims across `/import`, `/slips`, `/recovery` and elsewhere change what renders and have only
-  been read against `private-ledger-local`'s synthetic seed, never the deployed build.** The next
-  session with real-data read should take that reading before trusting the bullet below.
+- **D-196 and D-197 are the exception this bullet already names as owed, and it is now discharged**:
+  both were read live on the deployed build, 2026-09-16 (`/ledger`'s strip, `/import`, `/slips`,
+  `/recovery`), via the owner's connected Chrome browser with his explicit real-data-read grant.
 - **Everything that changes what renders has been looked at on the deployment**, most recently
   `23bce9d` (D-184): the day headings, the Balance box and the control-row widths on `/ledger`, and
   the three-column calendar, the year select and the per-month readout on `/statistics`, all read
@@ -494,6 +496,11 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on D-197's content, 2026-09-16**: `tsc` clean, `eslint .` clean on the three touched files
+  (`app/slip-batch.tsx`, `app/statement-batch.tsx`, `app/ledger-controls.tsx`; the same 2
+  pre-existing warnings elsewhere, untouched). Not a full suite run — three single-line JSX fixes,
+  verified by rendering rather than by the automated gate (the bug itself is invisible to `tsc` and
+  `eslint`). **Confirmed on the deployed build**, which is the gate that actually matters here.
 - **Green on D-196's content, 2026-09-16, with Docker up**: `tsc` clean, `eslint .` clean (the same
   2 pre-existing warnings), `check:docs --strict` clean at **196 decisions and 204 traps**, Vitest
   **979 passed / 7 skipped across 45 files**, `pnpm build` clean at the same **24** `/api/v1/`
@@ -603,6 +610,12 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 - **No app server is running.** Both browser suites start and stop their own, on ports 3100 and
   3200; the throwaway configs under `.runtime/` use their own ports and `reuseExistingServer: false`,
   because a server someone left running is silently reused and the suite then tests a stale build.
+- **`pnpm dev` started with `Bash run_in_background` and stopped with `TaskStop` does not actually
+  stop, 2026-09-16.** `TaskStop` kills the wrapping shell command; the detached `next dev` child
+  keeps holding port 3000 and keeps serving pre-edit code, so the next `pnpm dev` picks port 3001
+  instead and refuses to proceed ("Another next dev server is already running"). Hit twice the same
+  session. Find the real PID from that refusal message (or `netstat -ano | grep :3000`) and
+  `taskkill /PID <pid> /F` before trusting a "fresh" `pnpm dev`.
 - **`public/zxing_reader.wasm` is generated, not committed** — `prebuild` copies it from
   `node_modules`, so a fresh clone has no reader until a build has run once.
 - **The recovery destination is a second Supabase project and may be left stopped.**

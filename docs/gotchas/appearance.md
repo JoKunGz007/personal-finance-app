@@ -146,6 +146,13 @@ means, and what a backfilled `Dated <date> from <sha>` clause does not, is expla
 - Avoid: give figures their own token — `--font-money`, a mono stack that no typeface choice overrides — and let the pixel character stay on prose, headings and labels. Remove the per-face `font-size` step-downs at the same time; they existed to shrink pixel glyphs and will otherwise shrink a mono face that never needed it.
 - Verify: `.numeric` uses `var(--font-money)` in `app/globals.css` under all four `data-font` values. Dated 2026-08-27 (D-163, after D-162).
 
+## A single space right after a closing inline tag vanishes when the text after it wraps to a new source line
+
+- Symptom: two words run together in the rendered page — `andthe`, `unambiguous.Binds` — even though the JSX source has a plain space between `</b>` (or `</em>`, `</strong>`) and the word that follows it.
+- Cause: `<b>and</b> the date came\n            from the QR…` puts the space and "the date came" in one text node whose *own* first line ends before the next source line break; whatever compiles this repo's JSX (Next.js via SWC, not Babel) drops that leading space rather than keeping it, even though it is not the text node's true first character in the visual sentence. The identical text laid out on one physical source line does not lose it — only a tag-then-wrap does.
+- Avoid: after any inline tag (`<b>`, `<em>`, `<strong>`) that sits mid-sentence and is followed by text continuing onto a wrapped line, write an explicit `<b>…</b>{" "}` before that continuation — the pattern this file already uses elsewhere (`app/statement-batch.tsx`'s confirmation banner). Cheaper still: keep the whole sentence on one source line when it is short enough to.
+- Verify: read the rendered page, not just the source — `eslint`/`tsc` are silent on this, and `get_page_text` reproduces the same missing space a real reader would see. Dated 2026-09-16 (D-197, found reading the deployed `/import` and `/slips` pages after D-196).
+
 ## A row hover cannot separate rows on a phone
 
 - Symptom: a table reads as distinct rows on a desktop and as one continuous field of figures on a phone, and the hover treatment that fixes it on desktop appears to do nothing.
