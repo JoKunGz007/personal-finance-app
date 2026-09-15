@@ -889,7 +889,9 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .statement-strip div { padding: 18px 20px 17px 0; }
 .statement-strip div + div { padding-left: 20px; border-left: 1px solid var(--line); }
 .statement-strip dt { color: var(--muted); font-size: 12px; }
-.statement-strip dd { margin: 5px 0 0; font: 500 clamp(14px, 1.5vw, 20px)/1.2 var(--font-data); font-variant-numeric: tabular-nums; }
+/* Figures, like every other amount and count in this app (D-163) — never the pixel face, so a
+   digit is never misread off a screenshot or at a glance. Missed when .numeric was fixed. */
+.statement-strip dd { margin: 5px 0 0; font: 500 clamp(14px, 1.5vw, 20px)/1.2 var(--font-money); font-variant-numeric: tabular-nums; }
 /* Direction, as colour reinforcing a sign that is already printed — never as the only encoding.
    `.positive` was `--celadon-ink`, a dark olive that read as grey rather than as green. */
 .positive { color: var(--money-in) !important; }

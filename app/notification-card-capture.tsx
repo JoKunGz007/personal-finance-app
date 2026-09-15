@@ -552,9 +552,9 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
         <div>
           <h2 id="card-title">Capture a bank notification</h2>
           <p>
-            When a payment leaves no slip, the bank&rsquo;s LINE channel still posts a card
-            carrying it. Screenshot that card and read it here. The reader shows you where each
-            field sits; you read the figures and type them.
+            When a payment leaves no slip, your bank&rsquo;s LINE channel posts a card instead.
+            Screenshot it and read it here — the reader shows where each field sits so you can
+            check and type the figures.
           </p>
         </div>
       </div>
@@ -660,18 +660,17 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
           </div>
 
           <p id="card-channel-help" className="field-help">
-            The card itself cannot tell us this. SCB Connect and KBank Live print the same title
-            on an incoming card, so the conversation you took the screenshot in is the only thing
-            that says which bank it is — and getting it wrong reads the account digits with the
-            wrong rule.
+            The card can&apos;t tell us this — SCB Connect and KBank Live print identical titles,
+            so only the conversation it came from says which bank it is. Getting it wrong misreads
+            the account digits.
           </p>
 
           {/* Said on the screen where it happens rather than only in a document, because it is the
               one place in this app where an image leaves the device (D-120). Statement import and
               slip capture are both still read entirely on the device. */}
           <p className="field-help">
-            The screenshot is sent to Google Cloud Vision to be read, and is not stored anywhere.
-            Every figure it offers is still yours to check before you save.
+            The screenshot is sent to Google Cloud Vision to be read and isn&apos;t stored. Every
+            offered figure is still yours to check before saving.
           </p>
 
           {isReading && <p className="status" role="status">Reading the card&hellip;</p>}
@@ -849,10 +848,10 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
             // region, and a second computes to the same role and makes every unscoped
             // `getByRole("status")` assertion in the browser suite ambiguous (GOTCHAS).
             <p className="field-help" aria-live="polite">
-              {`The card filled ${offeredNames.map((field) => FIELD_LABELS[field].toLowerCase()).join(", ")}. `}
+              {`The card pre-filled ${offeredNames.map((field) => FIELD_LABELS[field].toLowerCase()).join(", ")}; `}
               {changedNames.length > 0
-                ? `You have changed ${changedNames.length} of ${offeredNames.length}. `
-                : "You have changed none of them. "}
+                ? `you've changed ${changedNames.length} of ${offeredNames.length}. `
+                : "you haven't changed any of them. "}
               Check each against its crop — once you submit, a figure you did not type is as much
               yours as one you did, and a card cannot be edited afterwards.
             </p>

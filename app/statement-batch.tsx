@@ -428,9 +428,8 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
         <div>
           <h2 id="statement-batch-title">Or open several at once</h2>
           <p>
-            Every PDF is unlocked and read on this device, in the same worker the single import
-            uses. Binding and confirming stay one statement at a time. Choose local files, or sync
-            the locked PDFs straight from the statement mailbox.
+            Every PDF is unlocked and read on this device. Binding and confirming still happen one
+            statement at a time. Choose local files, or sync locked PDFs from the mailbox.
           </p>
         </div>
       </div>
@@ -505,12 +504,10 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
           onChange={(event) => onAutoBindChange(event.target.checked)}
         />
         <span>
-          <b>Bind automatically when the account is unambiguous.</b> A statement prints a bank and
-          four digits, and this ledger holds at most one account for that pair — so when exactly one
-          matches, it is bound without asking and you go straight to the review. Everything else is
-          unchanged: a mismatch is still refused, every balance is still shown, and nothing reaches
-          the ledger until you confirm it. Turn this off to choose the account yourself; the
-          matching one is preselected either way.
+          <b>Bind automatically when the account is unambiguous.</b> Binds when exactly one account
+          matches the statement&apos;s bank and last four digits, straight to review. A mismatch is
+          still refused, every balance is still shown, and nothing reaches the ledger until you
+          confirm. Turn off to choose manually — the matching account stays preselected.
         </span>
       </label>
 
@@ -574,10 +571,9 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
                 <p className="batch-values">{describeStatement(item)}</p>
                 {item.overlaps.length > 0 ? (
                   <p className="batch-reason">
-                    This period intersects {item.overlaps.length} other statement(s) chosen for the
-                    same account. Rows they share will be refused as already imported, which is the
-                    ledger working correctly — but confirm the earlier period first so the refusal
-                    is the one you expect.
+                    This period overlaps {item.overlaps.length} other statement(s) for this
+                    account. Shared rows will be refused as duplicates — confirm the earlier
+                    period first so that&apos;s expected.
                   </p>
                 ) : null}
               </li>

@@ -229,8 +229,8 @@ export function StatementSync({ busy, room, onFetched, onWorkingChange }: {
             : "Sync from mailbox"}
         </button>
         <p className="batch-source">
-          Fetches the locked PDFs your banks mailed. They are still encrypted when they arrive and
-          are opened on this device, by the same worker a local file goes through.
+          Fetches the locked PDFs your banks mailed — still encrypted on arrival, opened on this
+          device like a local file.
         </p>
       </div>
 

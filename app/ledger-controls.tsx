@@ -88,9 +88,9 @@ export function LedgerControls({
               {/* Folded here rather than repeated on each excluded row (PLAN task 48, D-156's
                   rule). It explains a principle and never changes, so a row wears the chip and
                   this says once what the chip means. */}
-              A row marked <strong>Excluded</strong> is not counted as income or spending. The
-              money still moved, so it stays in every balance — what changes is only the totals
-              above and the statistics page.
+              A row marked <strong>Excluded</strong> isn&apos;t counted as income or spending, but
+              the money still moved — it stays in every balance. Only the totals above and
+              Statistics change.
             </LedgerNote>
           </div>
         </div>

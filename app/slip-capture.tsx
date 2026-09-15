@@ -380,10 +380,9 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
         <div>
           <h2 id="slip-title">Capture a transfer slip</h2>
           <p>
-            The QR names the bank and the transaction; you confirm the amount. Slips are
-            provisional — the statement stays the authority and reconciles against them later.
-            The QR is read on this device. Reading the amount sends the slip image to Google
-            Cloud Vision, which stores nothing; the image is never stored here either.
+            The QR names the bank and transaction; you confirm the amount. Slips are
+            provisional — the statement remains the authority. QR read is local; reading the
+            amount sends the image to Google Cloud Vision (stores nothing, either side).
           </p>
         </div>
       </div>
@@ -458,7 +457,7 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
                     ? amountCrop
                       ? "Read off the slip and filled in above. Check it against the enlargement below before capturing."
                       : "Read off the slip and filled in above. Check it against the slip before capturing."
-                    : "Optional. Sends the slip image to Google Cloud Vision, fills in the amount it reads, and enlarges that part of the slip so you can check it.")}
+                    : "Optional — sends the image to Google Cloud Vision, fills in the amount read, and shows an enlarged crop to check it.")}
             </p>
             {amountCrop && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -537,7 +536,7 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
               // Say where a pre-filled value came from. A date the owner did not type looks
               // identical to one they did, and the difference matters: this one is exact.
               ? "Read from the slip's QR code, so this is the bank's own date rather than a guess. Change it if it looks wrong."
-              : "This slip's QR carries no date, so today is filled in. Thai slips often print a Buddhist year such as 2569 — enter the Gregorian year, since a Buddhist one is outside the accepted range and will be refused."}
+              : "No date on this QR, so today is filled in. Thai slips often print a Buddhist year (e.g. 2569) — enter the Gregorian year; a Buddhist one will be refused."}
           </p>
 
           <label className="slip-note">

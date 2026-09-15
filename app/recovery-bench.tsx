@@ -134,8 +134,8 @@ export function RecoveryBench() {
         <div>
           <h2 id="recovery-title">Back up and restore the ledger</h2>
           <p>
-            This is the real ledger backup, not the synthetic preview on the import route: the whole owner snapshot, encrypted in this browser under a password the server never receives.
-            Keep the file and the password apart — either one alone is useless, and losing both makes the ledger unrecoverable.
+            The real ledger backup (not the import route&apos;s synthetic preview) — your full snapshot, encrypted in-browser with a password the server never sees.
+            Keep the file and password apart: either alone is useless, and losing both makes the ledger unrecoverable.
           </p>
         </div>
       </div>
@@ -164,8 +164,7 @@ export function RecoveryBench() {
         <div className="recovery-half">
           <h3>Restore from a backup</h3>
           <p>
-            Restoring rebinds every row to the signed-in owner, so it requires an <b>empty ledger</b> and is refused otherwise.
-            That is what makes it a recovery into a fresh installation rather than an overwrite of a live one.
+            Restoring rebinds every row to the signed-in owner, so it requires an <b>empty ledger</b> — this is a recovery into a fresh install, not an overwrite of a live one.
           </p>
           <label className="account-control">
             <span>Backup file</span>

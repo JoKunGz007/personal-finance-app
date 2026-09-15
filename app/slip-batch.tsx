@@ -424,12 +424,11 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
         <div>
           <h2 id="slip-batch-title">Upload a backlog of slips</h2>
           <p>
-            Choose many slip images at once. Each one&apos;s QR is read on this device for its bank and
-            reference; reading the amount sends the image to Google Cloud Vision, which stores
-            nothing, and the image is never stored here either. A slip is captured without a second
-            look only when its amount read cleanly <b>and</b> its date came from the QR code or from
-            the slip itself — never from today, because a backlog dated today can never pair with a
-            statement. Everything else is listed below for you to fill in.
+            Choose many slip images at once. Each QR is read on-device for bank and reference;
+            reading the amount sends the image to Google Cloud Vision (nothing stored, either
+            side). A slip auto-captures only when the amount read cleanly <b>and</b> the date came
+            from the QR or slip — never today&apos;s date, since a backlog dated today can&apos;t
+            pair with a statement. Everything else needs your input below.
           </p>
         </div>
       </div>
@@ -465,8 +464,8 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
       </div>
 
       <p className="field-help batch-note">
-        One direction applies to the whole batch, because nothing on a slip says which side of it you
-        are. A batch holding both is two batches.
+        One direction for the whole batch — a slip doesn&apos;t say which side you&apos;re on.
+        Mixed directions need two batches.
       </p>
 
       {status && <p className="status" role="status">{status}</p>}
@@ -539,8 +538,7 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
                         did not. */}
                     {row.amount.trim() !== "" && amountMagnitude(row.amount) === null && (
                       <p className="batch-reason" role="alert">
-                        This is not an amount this ledger can store. Type it as digits with at most
-                        two decimal places, and not zero.
+                        Not a storable amount — use digits, up to two decimals, and not zero.
                       </p>
                     )}
                   </div>

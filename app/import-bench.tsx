@@ -615,9 +615,8 @@ export function ImportBench() {
           <h1 id="page-title">Import</h1>
           <div className="heading-note">
             <LedgerNote label="About importing">
-              Review every balance before anything is saved. The PDF is unlocked and parsed in a
-              dedicated browser worker, and only validated transaction facts can cross the
-              confirmation boundary.
+              Review every balance before saving. The PDF is parsed locally in a browser worker —
+              only validated transaction facts cross the confirmation boundary.
             </LedgerNote>
           </div>
         </div>
@@ -675,10 +674,10 @@ export function ImportBench() {
           <details className="label-diagnostic">
             <summary>Heading words this PDF prints ({labelCandidates.length} candidate line(s))</summary>
             <p>
-              Repairing the reader needs only the column heading words — the positions come from
-              the PDF itself. Every text run containing a digit was dropped before this list was
-              built, so amounts, balances, dates, and account numbers cannot appear here. Read it
-              before sharing it, and redact anything you do not want to leave this device.
+              Only column heading words are listed — positions come from the PDF, and any text run
+              with a digit (amounts, balances, dates, account numbers) was dropped before this
+              list was built. Still, read it before sharing, and redact anything you don&apos;t want to
+              leave this device.
             </p>
             <ol>
               {labelCandidates.map((line, index) => (
@@ -688,9 +687,8 @@ export function ImportBench() {
             {valueLabels.length > 0 ? (
               <>
                 <p>
-                  Labels printed immediately left of a number — the account, period, and
-                  balance fields. A label only appears here when the run beside it carries a
-                  digit, so a name or address label cannot qualify.
+                  Labels printed next to a number — account, period, and balance fields. Only
+                  labels beside a digit appear here, so a name or address can&apos;t qualify.
                 </p>
                 <ol>
                   {valueLabels.map((label) => <li key={label}><code lang="th">{label}</code></li>)}
@@ -700,11 +698,9 @@ export function ImportBench() {
             {structure.length > 0 ? (
               <>
                 <p>
-                  Structure of the whole statement, with every value replaced by its shape —
-                  <code>d</code> for a digit, <code>x</code> for a letter, positions after the
-                  <code>@</code>. This shows formats, columns, wrapped lines, and page breaks
-                  while containing no name, amount, balance, date, or account number. Select all
-                  and copy if a reader needs fixing.
+                  The whole statement&apos;s shape: <code>d</code> for digit, <code>x</code> for
+                  letter, position after <code>@</code>. Shows formats, columns, and page breaks —
+                  no names, amounts, or account numbers. Select and copy if a reader needs fixing.
                 </p>
                 <textarea className="structure-dump" readOnly rows={14} value={structure.join("\n")} />
               </>
@@ -747,7 +743,7 @@ export function ImportBench() {
             <p className="section-index">Bind / 02</p>
             <div>
               <h2 id="binding-title">Choose the ledger account</h2>
-              <p>Read as a <b>{extracted.frame.bankCode}</b> statement ({extracted.frame.contractVersion}). It printed account ending <b>{extracted.frame.accountLastFour}</b> in {extracted.frame.currency}, {extracted.frame.periodStart} to {extracted.frame.periodEnd}. The parser is not allowed to guess which of your accounts that is.</p>
+              <p>Read as a <b>{extracted.frame.bankCode}</b> statement ({extracted.frame.contractVersion}): account ending <b>{extracted.frame.accountLastFour}</b>, {extracted.frame.currency}, {extracted.frame.periodStart}–{extracted.frame.periodEnd}. The parser won&apos;t guess which of your accounts this is.</p>
               {/* Whether the parse was checked against the bank's own arithmetic is the
                   difference between "these are the rows" and "these are the rows the
                   statement says it has". A statement printing no readable summary block is
@@ -757,7 +753,7 @@ export function ImportBench() {
                 <p className="cross-check-note">Cross-checked: the statement&apos;s own printed counts and totals agree with all {extracted.rows.length} rows.</p>
               ) : (
                 <p className="cross-check-warning" role="alert">
-                  <b>Not cross-checked — this statement will not be imported.</b> It printed no summary block the reader could match, so the {extracted.rows.length} rows were never verified against the bank&apos;s own counts and totals, and a dropped first or last row would not have been caught. If the statement does print totals, the wordings listed below are the candidates the reader saw; the layout needs to learn one of them.
+                  <b>Not cross-checked — this statement will not be imported.</b> It prints no summary block the reader recognizes, so the {extracted.rows.length} rows were never verified against the bank&apos;s own counts and totals — a dropped first or last row would not have been caught. If it does print totals, the wordings below are the candidates the reader saw; the layout needs to learn one of them.
                 </p>
               )}
             </div>
@@ -797,8 +793,7 @@ export function ImportBench() {
           {accounts && !accounts.some((item) => item.bank_code === extracted.frame.bankCode && item.last_four === extracted.frame.accountLastFour) ? (
             <div className="account-create">
               <p>
-                No <b>{extracted.frame.bankCode}</b> account ends in <b>{extracted.frame.accountLastFour}</b>, so there is nothing this statement can bind to yet.
-                Create one — the bank and the last four digits come from the statement itself, because binding checks both.
+                No <b>{extracted.frame.bankCode}</b> account ends in <b>{extracted.frame.accountLastFour}</b> — create one. The bank and last four digits come from the statement itself, since binding checks both.
               </p>
               <div className="binding-controls">
                 <label className="account-control">
@@ -862,7 +857,7 @@ export function ImportBench() {
                 <>
                   <strong>Rows reordered on {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${warning.date}T00:00:00+07:00`))}</strong>
                   <span>
-                    {warning.message} That date&rsquo;s {warning.order.length} rows are shown and imported in the applied order, running from {formatThb(warning.entryBalance)} to {formatThb(warning.recoveredClosing)}. Each row marked <em>reordered</em> below sits later on the printed page than the row above it — read the balance column straight down to check the chain joins up. The printed page and row of every row are kept.
+                    {warning.message} That date&rsquo;s {warning.order.length} rows are shown and imported in the applied order, running from {formatThb(warning.entryBalance)} to {formatThb(warning.recoveredClosing)}. Each row marked <em>reordered</em> below sits later on the printed page than the row above it — read the balance column straight down to check the chain joins up. Original page/row is kept for every row.
                   </span>
                 </>
               ) : (

@@ -68,7 +68,7 @@ export function LedgerSummary({
           <strong>Choosing a statement row for a card</strong>
           <span>
             {`${matchingCardRecord.channel} · ${formatDate(matchingCardRecord.occurred_on)} ${matchingCardRecord.occurred_at_time} · ${formatThb(matchingCardRecord.amount_minor)}`}
-            {` — ${offeredToCardCount} row${offeredToCardCount === 1 ? "" : "s"} on this account carry that exact amount. Rows whose printed balance matches the card are listed first, because that is the one the rule would have taken. Other filters are suspended while you choose.`}
+            {` — ${offeredToCardCount} row${offeredToCardCount === 1 ? "" : "s"} carry that exact amount. Rows whose balance matches the card are listed first — that's what the rule would pick. Other filters are suspended while choosing.`}
           </span>
         </div>
         <button
@@ -94,7 +94,7 @@ export function LedgerSummary({
           <strong>Choosing a statement row</strong>
           <span>
             {`${matchingSlip.bank_code} slip · ${formatDate(matchingSlip.occurred_on)}${matchingSlip.occurred_at_time ? ` ${matchingSlip.occurred_at_time}` : ""} · ${formatThb(matchingSlip.amount_minor)}`}
-            {` — ${offeredCount} row${offeredCount === 1 ? "" : "s"} could be it, each at the same bank for the same amount to the satang. The time and the balance are what tell them apart, so they are shown as rows rather than as a list of names. Other filters are suspended while you choose.`}
+            {` — ${offeredCount} row${offeredCount === 1 ? "" : "s"} could be it, same bank and amount to the satang. Time and balance tell them apart, shown as rows rather than a list of names. Other filters are suspended while choosing.`}
           </span>
         </div>
         <button

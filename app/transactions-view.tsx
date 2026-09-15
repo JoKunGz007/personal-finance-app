@@ -1418,7 +1418,7 @@ export function TransactionsView() {
 
           {!picking &&!showCombined && unattributedSlips > 0 ? (
             <p className="ledger-status">
-              {unattributedSlips} slip{unattributedSlips === 1 ? " is" : "s are"} hidden while one account is selected: you hold more than one account at that bank, and a slip&rsquo;s QR names the bank without saying which account the money moved through.
+              {unattributedSlips} slip{unattributedSlips === 1 ? " is" : "s are"} hidden: you hold more than one account at that bank, and a slip&rsquo;s QR names only the bank, not the account.
             </p>
           ) : null}
 
@@ -1442,7 +1442,7 @@ export function TransactionsView() {
           {visibleRows.length === 0 ? (
             <p className="ledger-empty" role="status">
               {ledgerIsEmpty && slips.length === 0
-                ? "This ledger holds no confirmed transactions yet. Import a statement to fill it, or capture a slip."
+                ? "No confirmed transactions yet — import a statement or capture a slip."
                 : "No transaction matches this filter."}
             </p>
           ) : (
