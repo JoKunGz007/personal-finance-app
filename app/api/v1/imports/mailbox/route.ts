@@ -1,5 +1,5 @@
 import {
-  buildManifest, syncSince, type SyncManifest
+  buildManifest, stepTimer, syncSince, type SyncManifest
 } from "@/lib/statement-sync";
 import { findAttachments, mailboxConfig, openMailbox } from "@/lib/server/statement-mailbox-session";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
@@ -38,8 +38,11 @@ export const runtime = "nodejs";
  * owner's bank mail is not a lesser act than reading his ledger, so it is not a lesser gate.
  */
 export async function GET(request: Request) {
+  // Step durations only, reported as `Server-Timing` on success — see `stepTimer`.
+  const timer = stepTimer();
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
+  timer.lap("auth");
 
   const settings = mailboxConfig();
   if (!settings.ok) return routeError(settings.message, settings.status);
@@ -60,10 +63,12 @@ export async function GET(request: Request) {
     );
   }
 
+  timer.lap("imap-open");
+
   try {
-    const { messages, found, truncated } = await findAttachments(session.client, settings.config.senders, since);
+    const { messages, found, truncated } = await findAttachments(session.client, settings.config.senders, since, timer.lap);
     const manifest: SyncManifest = buildManifest(found, messages, since, truncated);
-    return Response.json(manifest, { headers: noStoreHeaders });
+    return Response.json(manifest, { headers: { ...noStoreHeaders, "Server-Timing": timer.header() } });
   } catch {
     return routeError("The mailbox was opened but could not be listed.", 502);
   } finally {

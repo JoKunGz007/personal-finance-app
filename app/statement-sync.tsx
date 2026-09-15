@@ -9,6 +9,9 @@ import {
 /** The list endpoint. A constant so there is one place the path is written. */
 const MAILBOX_PATH = "/api/v1/imports/mailbox";
 
+/** How many attachments download at once. Each opens its own IMAP session on the server. */
+const DOWNLOAD_LANES = 3;
+
 /** The windows a sync can be asked for. `all` is spelled out rather than being a very large day count. */
 const WINDOWS = [
   { value: "30", label: "Last 30 days" },
@@ -35,7 +38,7 @@ type Phase = { readonly kind: "idle" } | { readonly kind: "listing" } | { readon
  * ## What crosses the wire and what does not
  *
  * **Two GETs and no body, ever.** This asks the app's own server what is in the mailbox and then
- * asks it for one attachment's bytes at a time. It sends nothing: no document password — this
+ * asks it for each attachment's bytes, a few at a time. It sends nothing: no document password — this
  * component never sees one — no PDF bytes, no parse result, no account. What comes back is the
  * bank's own ciphertext, which this app cannot open and which was already sitting on Google's
  * servers before it moved (D-141).
@@ -153,27 +156,42 @@ export function StatementSync({ busy, room, onFetched, onWorkingChange }: {
     // whole manifest and letting the batch discard the overflow would pay for those bytes first.
     const wanted = attachments.slice(0, room);
 
-    // Sequential, matching the batch's own parse loop and for the same reason: forty concurrent
-    // downloads is forty PDFs held at once, and it would make one failure indistinguishable from
-    // all of them. A backlog of statements is not latency-sensitive.
-    const files: MailboxFile[] = [];
-    const failed: string[] = [];
+    // **A few at a time, not one at a time and not all at once.** Each download is its own request
+    // that opens its own mailbox session, and most of its seconds are that session being set up
+    // rather than bytes moving — so one after another made a sync cost the sum of every setup.
+    // Forty at once would open forty IMAP logins against one account, which Gmail limits. Every
+    // result lands in its own slot, so the batch still receives files in manifest order and each
+    // failure still names its own file; a failure is still one line, never the whole sync.
+    const files: (MailboxFile | null)[] = wanted.map(() => null);
+    const errors: (string | null)[] = wanted.map(() => null);
+    let done = 0;
+    let next = 0;
     settle({ kind: "downloading", done: 0, total: wanted.length });
-    for (const [index, attachment] of wanted.entries()) {
-      try {
-        files.push(await downloadOne(attachment));
-      } catch (error) {
-        failed.push(`${attachment.name} — ${error instanceof Error ? error.message : "could not be downloaded."}`);
+    const lane = async () => {
+      while (next < wanted.length) {
+        const index = next;
+        next += 1;
+        const attachment = wanted[index];
+        if (!attachment) break;
+        try {
+          files[index] = await downloadOne(attachment);
+        } catch (error) {
+          errors[index] = `${attachment.name} — ${error instanceof Error ? error.message : "could not be downloaded."}`;
+        }
+        done += 1;
+        settle({ kind: "downloading", done, total: wanted.length });
       }
-      settle({ kind: "downloading", done: index + 1, total: wanted.length });
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(DOWNLOAD_LANES, wanted.length) }, lane));
+    const fetched = files.filter((item): item is MailboxFile => item !== null);
+    const failed = errors.filter((line): line is string => line !== null);
 
     setFailures(failed);
     settle({ kind: "idle" });
     // **What landed, not what was handed over.** `addFiles` can still take fewer than it is given
     // if the batch filled while this ran, and announcing the wrong number beside its own correct
     // one put two contradictory sentences on screen with the false one nearer the button.
-    const added = files.length > 0 ? onFetched(files) : 0;
+    const added = fetched.length > 0 ? onFetched(fetched) : 0;
     setStatus([
       describeManifest(manifest),
       `${added} added to the batch below — type the document password and read them.`,

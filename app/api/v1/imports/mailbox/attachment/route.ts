@@ -1,4 +1,4 @@
-import { contentDisposition, isSafePartPath, parseUid, MAX_ATTACHMENT_BYTES } from "@/lib/statement-sync";
+import { contentDisposition, isSafePartPath, parseUid, stepTimer, MAX_ATTACHMENT_BYTES } from "@/lib/statement-sync";
 import { mailboxConfig, markFetched, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
 import { routeError, strongOwnerClient } from "@/lib/server/supabase";
 
@@ -61,8 +61,11 @@ export const runtime = "nodejs";
  * (D-189), not merely once its bytes reached the browser.
  */
 export async function GET(request: Request) {
+  // Step durations only, reported as `Server-Timing` on the download — see `stepTimer`.
+  const timer = stepTimer();
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
+  timer.lap("auth");
 
   const settings = mailboxConfig();
   if (!settings.ok) return routeError(settings.message, settings.status);
@@ -81,8 +84,10 @@ export async function GET(request: Request) {
     );
   }
 
+  timer.lap("imap-open");
+
   try {
-    const attachment = await verifyAttachment(session.client, settings.config.senders, uid, part);
+    const attachment = await verifyAttachment(session.client, settings.config.senders, uid, part, timer.lap);
     if (!attachment) {
       await session.release();
       // Not found rather than forbidden, and deliberately the same answer for "no such message",
@@ -101,6 +106,7 @@ export async function GET(request: Request) {
       // what produces a sentence; this is what bounds the memory if the server lied.
       maxBytes: MAX_ATTACHMENT_BYTES
     });
+    timer.lap("download-start");
 
     // **Read in `pull`, not in `start`, and that is the difference between streaming and buffering.**
     // An `async start` that drains the source in one loop enqueues every chunk as fast as IMAP
@@ -146,7 +152,8 @@ export async function GET(request: Request) {
         // arrive with a mangled name.
         "Content-Disposition": contentDisposition(attachment.name),
         "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff"
+        "X-Content-Type-Options": "nosniff",
+        "Server-Timing": timer.header()
       }
     });
   } catch {

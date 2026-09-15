@@ -34,7 +34,7 @@
 // and dedupes by checking whether a same-named file is already there, so it has no need to mark
 // anything on the server.
 
-import { ImapFlow, type SearchObject } from "imapflow";
+import { ImapFlow, type FetchMessageObject, type SearchObject } from "imapflow";
 import { collectPdfParts, fetchedFlag, safeFileName, senderSearch, unfetchedParts } from "@/lib/server/statement-mailbox";
 import {
   attachmentId, parseSenders, MAX_SYNC_ATTACHMENTS, MAX_SYNC_MESSAGES_SCANNED, type SyncAttachment
@@ -163,42 +163,58 @@ export async function openMailbox(config: MailboxConfig): Promise<MailboxSession
  * attachments found** (`MAX_SYNC_MESSAGES_SCANNED`): once most old mail is already-fetched, a wide
  * window can walk the whole search result without ever finding forty new attachments, and the
  * attachment cap alone would never stop it.
+ *
+ * **One FETCH for every message examined, not one per message.** The body structures and flags of
+ * the newest `MAX_SYNC_MESSAGES_SCANNED` matches come back in a single IMAP command, and the caps are
+ * applied to that answer in newest-first order afterwards. The per-message `fetchOne` this replaced
+ * cost a round trip each, sequentially, inside a request the owner is waiting on. A body structure
+ * is a small tree of headers and sizes — never a body — so asking for up to two hundred at once is
+ * still bounded, and still carries no message text.
+ *
+ * `lap`, when given, is told after the search and after the fetch, so the route can report where a
+ * slow sync spent its time (`Server-Timing`).
  */
 export async function findAttachments(
   client: ImapFlow,
   senders: readonly string[],
-  since: Date | null
+  since: Date | null,
+  lap?: (step: string) => void
 ): Promise<{ messages: number; found: SyncAttachment[]; truncated: boolean }> {
   const criteria = senderSearch(senders) as SearchObject;
   const search: SearchObject = since === null ? criteria : { ...criteria, since };
   const uids = await client.search(search, { uid: true });
+  lap?.("search");
   if (!uids || uids.length === 0) return { messages: 0, found: [], truncated: false };
 
   // Newest first, because a sync that hits the cap should keep the statements the owner is most
   // likely to be waiting for. The local fetcher has no such ordering because it has no cap.
   const ordered = [...uids].sort((left, right) => right - left);
 
+  // **The scanned cap bounds what is asked for, before it is asked.** `ordered` is newest-first, so
+  // the ones examined are the ones the owner is most likely to be waiting for, and a mailbox holding
+  // years of bank mail still costs one bounded command rather than one per message ever sent. More
+  // matches than that is truncation on its own — the page is told there is more, not how much.
+  const examined = ordered.slice(0, MAX_SYNC_MESSAGES_SCANNED);
+  const byUid = new Map<number, FetchMessageObject>();
+  for await (const message of client.fetch(examined, { uid: true, bodyStructure: true, flags: true }, { uid: true })) {
+    byUid.set(message.uid, message);
+  }
+  lap?.("fetch");
+
   const found: SyncAttachment[] = [];
   let messages = 0;
-  let scanned = 0;
-  let truncated = false;
-  for (const uid of ordered) {
-    // **Stop at either cap here, not after the loop.** Every iteration is one IMAP round trip, and
-    // the page offers "everything the senders ever sent" — so a mailbox holding years of bank mail
-    // would issue thousands of sequential fetches inside one request, and end as a gateway timeout
-    // with no sentence in it. That is the failure the bounded socket timeouts were added to avoid,
-    // reached by a different road. `ordered` is newest-first, so the ones kept are the ones the
-    // owner is most likely to be waiting for. **The scanned cap is what still catches this once
-    // dedup means most old messages contribute nothing** — the attachment cap alone cannot, because
-    // it only counts what a message adds, not that it was looked at.
-    if (found.length >= MAX_SYNC_ATTACHMENTS || scanned >= MAX_SYNC_MESSAGES_SCANNED) {
-      // There is more mail and we are deliberately not looking at it. The page is told so; it is
-      // not told how much, because counting would be the scan this break exists to avoid.
+  let truncated = ordered.length > examined.length;
+  for (const uid of examined) {
+    // The attachment cap, checked only when another message is waiting — so a cap reached on the
+    // very last match is not reported as mail left behind. `MAX_SYNC_ATTACHMENTS` matches the batch.
+    if (found.length >= MAX_SYNC_ATTACHMENTS) {
       truncated = true;
       break;
     }
-    scanned += 1;
-    const message = await client.fetchOne(uid, { bodyStructure: true, flags: true }, { uid: true });
+    // The answer arrives in the server's order, so it is read back through the newest-first list
+    // rather than trusted to be in it. A uid the server did not answer for is skipped, as a missing
+    // `fetchOne` result was.
+    const message = byUid.get(uid);
     if (!message || !message.bodyStructure) continue;
     const parts = unfetchedParts(collectPdfParts(message.bodyStructure, uid), message.flags ?? new Set());
     // Counted only when the message actually contributed. Incrementing for every message with a
@@ -239,13 +255,16 @@ export async function verifyAttachment(
   client: ImapFlow,
   senders: readonly string[],
   uid: number,
-  part: string
+  part: string,
+  lap?: (step: string) => void
 ): Promise<SyncAttachment | null> {
   const criteria = senderSearch(senders) as SearchObject;
   const uids = await client.search({ ...criteria, uid: String(uid) }, { uid: true });
+  lap?.("search");
   if (!uids || !uids.includes(uid)) return null;
 
   const message = await client.fetchOne(uid, { bodyStructure: true }, { uid: true });
+  lap?.("fetch");
   if (!message || !message.bodyStructure) return null;
 
   const match = collectPdfParts(message.bodyStructure, uid).find((item) => item.part === part);

@@ -38,6 +38,10 @@ export const MAX_SYNC_ATTACHMENTS = 40;
  * attachments — which is exactly the "thousands of sequential fetches inside one request" failure
  * the attachment cap exists to prevent, just no longer prevented by it. This is a second, independent
  * brake on the same failure, tripped by messages examined rather than by attachments returned.
+ *
+ * **Since D-194 the examined messages are fetched in one IMAP command rather than one each**, so
+ * this now bounds the size of that command and its answer rather than a count of round trips. The
+ * failure it guards against is the same one: a sync whose cost grows with the mailbox's history.
  */
 export const MAX_SYNC_MESSAGES_SCANNED = 200;
 
@@ -207,6 +211,33 @@ export function buildManifest(
     attachments,
     truncated: truncated || found.length > attachments.length,
     since: since === null ? null : since.toISOString().slice(0, 10)
+  };
+}
+
+/**
+ * A stopwatch for a mailbox route's steps, rendered as a `Server-Timing` header.
+ *
+ * **The mailbox routes are the slow ones, and "slow" was not decomposable from a browser.** An owner
+ * route with no mailbox answers in a fraction of a second from the same region; listing or
+ * downloading takes several, and a sync repeats that per file. Which step pays for it — sign-in, the
+ * IMAP login, the search, the fetch, the download starting — is what this reports, in the response's
+ * own timing panel, so a change meant to make it faster can be checked against the step it targets.
+ *
+ * **Durations and fixed step names only.** A header reaches devtools and anything that captures one,
+ * so nothing here may carry an address, a filename or a count from the mailbox.
+ */
+export function stepTimer(now: () => number = () => performance.now()) {
+  const steps: [string, number][] = [];
+  let last = now();
+  return {
+    lap(step: string) {
+      const current = now();
+      steps.push([step, current - last]);
+      last = current;
+    },
+    header(): string {
+      return steps.map(([step, ms]) => `${step};dur=${Math.round(ms)}`).join(", ");
+    }
   };
 }
 
