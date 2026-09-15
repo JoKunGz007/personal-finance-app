@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-13 (D-193 — D-192's two recorded cleanups built).
+Last updated: 2026-09-16 (D-194 — mailbox Sync speedup).
 
-**Current headline: D-193.** The ledger's load issues its requests in two waves and the row components take one `LedgerActions` prop. No behaviour change intended and none measured by the gate; confirmed on the deployment read-only (two waves, 1.8s wall clock against 6.9s of requests, no errors). Project state: `PLAN.md`; the reasoning: `DECISIONS.md` D-193.
+**Current headline: D-194.** Mailbox Sync lists in one IMAP fetch and downloads three at a time; a two-PDF sync measured 8.4s on the deployment, and `imap-open` (~2.4s per request) is what is left. The SCB statement the owner thought Sync had missed was newer than the sync he was looking at. Previously D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -74,6 +74,14 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
+- **Commit, push, real-data read: GRANTED, 2026-09-16 (the D-194 session).** Granted in the owner's
+  message asking for the Sync speedup, after he had opened his statement mailbox and the hosted
+  `/import` page in Chrome and asked for them to be checked. Used **read-only** in both: the mailbox
+  inbox was read for one message's presence and attachment name; on `/import` the list and attachment
+  routes were called directly and Sync was pressed twice, which only adds still-encrypted PDFs to that
+  tab's batch — nothing was unlocked, confirmed, flagged or imported. Spent on `6b53541` and the docs
+  commit after it. **Docker was down** and was not started. **None of this survives into a new
+  session — ask again.**
 - **Real-data read (hosted browser), commit, push: GRANTED AGAIN, 2026-09-13 (the D-193 session).**
   The session opened on the D-192 handoff, whose own rule was "ask again"; the owner answered in his
   opening line that every authorization that handoff listed is granted — read as its granted set
@@ -366,7 +374,8 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 ### Where the code is
 
 - **As of the D-193 session, read `git log` — this line cannot record the commit that carries it.**
-  D-193's code (the load waves and `LedgerActions`) is the newest change to what the app serves.
+  D-194's code (`6b53541`, the mailbox Sync speedup) is the newest change to what the app serves;
+  D-193's (the load waves and `LedgerActions`) is beneath it.
   Previously: **`main` was at `0573a8a` and `origin/main` matched** (pushed and confirmed 2026-09-13). `0573a8a`
   is D-192 — the mailbox sync no longer reporting an empty mailbox for a truncated scan, plus
   `pickableCategories` and `CorrectionForm` taking the category list as a prop — and **it is the
@@ -434,7 +443,7 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
   title no longer names a gap. Nothing still being argued about was cut: D-188 had already freed
   D-179/D-183/D-184, and the owner's decision closed D-180/D-181. `check:docs --strict` clean at
   **192 decisions and 204 traps** after the move — no id lost, no gap opened. **What the maintained
-  file now holds is the two open questions (D-141, D-158) and D-187 … D-193.**
+  file now holds is the two open questions (D-141, D-158) and D-187 … D-194.**
 - **Previously, the twelfth archive boundary, `DECISIONS.md` at 74%.** D-171 … D-176 moved to
   [`docs/decisions/ARCHIVE-D-171-D-176.md`](docs/decisions/ARCHIVE-D-171-D-176.md) on 2026-09-01,
   the same day as the eleventh — the file had gone **83% → 95% in one session**, because D-180 and
@@ -477,6 +486,10 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Partly green on D-194's content (`6b53541`), 2026-09-16, with Docker down**: `tsc`, `eslint .`
+  (2 pre-existing warnings), `check:docs --strict`, `pnpm build` clean; Vitest **893 passed / 92
+  skipped across 45 files** — the skips are the database-backed suites. **Playwright not run.**
+  Nothing skipped exercises the mailbox; the next session with Docker up should re-run the full gate.
 - **Green on D-193's content, 2026-09-13, against the running local stack, run sequentially**:
   `tsc` clean, `eslint .` clean (the same 2 pre-existing warnings), `check:docs --strict` clean,
   Vitest **970 passed / 7 skipped across 44 files**, `pnpm build` clean, Playwright **isolated 70
