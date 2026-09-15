@@ -4,8 +4,9 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-198** — the two open questions this file has named since the
-twelfth boundary, plus the newest entry, which is the fifteenth boundary's own record of itself.
+This file carries **D-141, D-158, D-198 and D-199** — the two open questions this file has named
+since the twelfth boundary, the fifteenth boundary's own record of itself, and the entry it was
+taken one turn too early for (D-199 landed right after D-198, still well inside the new budget).
 **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
 `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. `scripts/check-docs.mjs`
@@ -372,6 +373,18 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-198** — The fifteenth boundary is taken on the owner's word rather than an argument closing, and this file returns to holding nothing but its two open questions
+- **D-199** — D-196's real scope was every pixelated figure on `/ledger`, not just the stat strip: the day heading, the row timestamp and the account label all still switched to the pixel face
+
+## D-199 — D-196's real scope was every pixelated figure on `/ledger`, not just the stat strip: the day heading, the row timestamp and the account label all still switched to the pixel face
+
+- Date: 2026-09-16
+- Status: **Shipped as `1951568`, pushed, and confirmed live** via `getComputedStyle` on the deployed build (the owner's real-data-read grant from the D-197 session carried into this request).
+- Context: the owner sent a screenshot of the deployed `/ledger` with red circles around the day heading's date/row-count/totals, a row's timestamp, and an account label ("SCB savings ···· 9970") — all still rendering in Pixelify Sans. **This is what the owner's original request ("all the numbers might need a change") already asked for**; D-196 only fixed the one spot the first screenshot showed.
+- **Same root cause as D-196, four more places.** None of `.day-head-line b` (the day's totals), `.day-head-date`, the row-count span, `td time` (the per-row timestamp) or `.ledger-table .mono` (account labels, reference codes) had ever been migrated off `--font-data`, which still switches to the chosen pixel face. `.mono` in particular was never actually mono under a pixel typeface, despite its name.
+- **Fixed, not redesigned**: `.day-head-line`'s date, row-count and both signed totals, `td time`, and `.ledger-table .mono` all take `--font-money` now, the same token D-163 and D-196 already established for figures. Three row components (`ledger-statement-row.tsx`, `ledger-card-row.tsx`, `ledger-slip-row.tsx`) had an account-label `<span>` missing the `.mono` class its own reference-code sibling already carried — added for consistency. **Left alone on purpose**: prose, headings, category chips, status badges and form labels, per D-163's own carve-out ("prose, headings and labels" keep the pixel character) — none of these are figures, and the owner hasn't asked for the pixel face's character to go entirely.
+- **A stale-cache false alarm during verification, worth recording since it cost a detour.** The first `getComputedStyle` read after the push showed `"Pixelify Sans Fitted", "IBM Plex Mono", ...` — looking exactly like the fix had failed — because the tab had loaded before the new deployment propagated. A cache-busted reload (`?_cb=2`) read back the correct `"IBM Plex Mono", "Cascadia Mono", monospace` with no Pixelify prefix at all. **Always force a fresh navigation before trusting a live read that contradicts a just-shipped fix.**
+- Gate: `tsc` clean, `eslint .` clean on the four touched files (the same 2 pre-existing warnings elsewhere, untouched).
+- Evidence: `app/globals.css`, `app/ledger-statement-row.tsx`, `app/ledger-card-row.tsx`, `app/ledger-slip-row.tsx`, a `getComputedStyle` read of all four fixed elements on the deployed build post-fix. D-196 (what this completes), D-163 (the rule both draw on).
 
 ## D-198 — The fifteenth boundary is taken on the owner's word rather than an argument closing, and this file returns to holding nothing but its two open questions
 

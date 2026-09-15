@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-09-16 (D-198 — the fifteenth archive boundary; D-197 — three D-196 trims fixed a JSX space-collapse bug, confirmed live; D-196 — stat-strip font fix and field-help trims).
+Last updated: 2026-09-16 (D-199 — D-196's real scope, confirmed live; D-198 — the fifteenth archive boundary; D-197 — three D-196 trims fixed a JSX space-collapse bug, confirmed live; D-196 — stat-strip font fix and field-help trims).
 
-**Current headline: D-197.** Reading D-196 live on the real deployment (owner-granted real-data read this session) found `<b>…</b> text` wrapping to a new source line drops the space right after the tag — `app/slip-batch.tsx` and `app/statement-batch.tsx` confirmed broken and fixed, `app/ledger-controls.tsx` fixed preemptively on the same shape. Shipped as `500a517`, pushed, **and confirmed on the deployed build** — `/import` and `/slips` both read correctly now. New trap in `docs/gotchas/appearance.md`. **A `get_page_text` call on `/ledger` pulled the full real transaction history into this session's context by accident; nothing from it reached any file, doc or commit.** **Beneath it, D-196.** `.statement-strip dd` (the Rows/Deposits/Withdrawals/Net movement/Balance totals) was the one place D-163's "money never renders in a pixel face" rule never reached; it now reads `--font-money` like every other amount. Field-help/banner text on `/import`, `/slips`, `/recovery` and a few similar spots elsewhere was paraphrased shorter, safety-relevant meaning kept. **Beneath that, D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. Deployed as `cecc622` and the owner pressed it on the deployed build and reported that it works. Previously D-194 (the mailbox Sync speedup) and D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
+**Current headline: D-199.** The owner sent a screenshot of the deployed `/ledger` with the day heading's date/row-count/totals, a row's timestamp and an account label still in Pixelify Sans — D-196 had only fixed the stat strip, not every place `--font-data` still stood in for figures. Same root cause, four more selectors (`.day-head-line`, `td time`, `.ledger-table .mono`) plus three row components missing the `.mono` class. Shipped as `1951568`, pushed, **and confirmed live via `getComputedStyle`** — after a stale browser-cache read briefly looked like the fix had failed; a cache-busted reload proved it hadn't. **Beneath it, D-198**, the fifteenth archive boundary (`DECISIONS.md` 96% → 49%), taken on the owner's direct word rather than an argument closing. **Beneath that, D-197.** Three D-196 label trims lost a space to a JSX whitespace-collapse trap (`app/slip-batch.tsx`, `app/statement-batch.tsx`, `app/ledger-controls.tsx`), fixed and confirmed live. **A `get_page_text` call on `/ledger` pulled the full real transaction history into this session's context by accident, twice; nothing from either reached any file, doc or commit.** **Beneath that, D-196.** `.statement-strip dd` (the Rows/Deposits/Withdrawals/Net movement/Balance totals) was the one place D-163's "money never renders in a pixel face" rule never reached; it now reads `--font-money` like every other amount. Field-help/banner text on `/import`, `/slips`, `/recovery` and a few similar spots elsewhere was paraphrased shorter, safety-relevant meaning kept. **Beneath that, D-195.** A mailbox PDF the reader refuses as not a statement gets a manual "Don't offer this again" button that sets the same flag a confirm sets; never automatic, no undo in the app. Deployed as `cecc622` and the owner pressed it on the deployed build and reported that it works. Previously D-194 (the mailbox Sync speedup) and D-193 (the ledger's two-wave load). Project state: `PLAN.md`; the reasoning: `DECISIONS.md`.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
@@ -67,8 +67,8 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
-- **Real-data read (Claude in Chrome, the owner's connected browser): GRANTED and SPENT, 2026-09-16 (the D-197 session).** Asked for directly, twice: first "open [the hosted /ledger URL]" to check the D-196 font fix, then, after a `get_page_text` call pulled the full real transaction history into context by accident, an explicit follow-up — "check all of it, and it's fine if you read my real data, just don't record in any docs." Used to read `/ledger`, `/import`, `/slips` and `/recovery` on the real deployment, twice each (pre- and post- the D-197 fix). **Nothing from any real row was written to any file, doc or commit** — every figure and name in D-197's entry is invented or omitted, per the standing value-free-writing rule. **None of this survives into a new session — ask again.**
-- **Commit, push: GRANTED and SPENT, 2026-09-16 (the D-196 session).** Asked for directly ("proceed with fix #3... commit push, do the sync continuity if needed") after the owner chose the `--font-money` fix over VT323 from a side-by-side comparison and confirmed the label trims. No real-data read was granted or needed for D-196 itself — verified against `private-ledger-local`'s synthetic seed only, via Dev sign-in. **Spent on `f9e09c4`** and the docs commit recording it; the same commit/push authorization carried into the D-197 fix later the same session and was spent again on `500a517`. **None of this survives into a new session — ask again.**
+- **Real-data read (Claude in Chrome, the owner's connected browser): GRANTED, 2026-09-16 (the D-197 session), and EXTENDED WITHOUT A FRESH ASK for D-199.** Asked for directly, twice, in the D-197 turn: first "open [the hosted /ledger URL]" to check the D-196 font fix, then, after a `get_page_text` call pulled the full real transaction history into context by accident, an explicit follow-up — "check all of it, and it's fine if you read my real data, just don't record in any docs." **D-199's turn was only a screenshot with no explicit re-grant** ("i think you forgot these numbers") — the agent read it as a continuation of the same standing permission within one unbroken session and proceeded on that judgment rather than asking again; the owner has not objected, but this is the kind of extension `DECISIONS.md`'s and this file's own rule ("ask again") exists to catch, so a future session should not assume it repeats. Used to read `/ledger`, `/import`, `/slips` and `/recovery` on the real deployment, three times each across the two turns. **Nothing from any real row was written to any file, doc or commit** — every figure and name in D-197's and D-199's entries is invented or omitted, per the standing value-free-writing rule. **None of this survives into a new session — ask again.**
+- **Commit, push: GRANTED, 2026-09-16 (the D-196 session), and EXTENDED WITHOUT A FRESH ASK twice.** Asked for directly once ("proceed with fix #3... commit push, do the sync continuity if needed") after the owner chose the `--font-money` fix over VT323 and confirmed the label trims. **Spent on `f9e09c4`** and its docs commit; then extended on the agent's own judgment for D-197 (`500a517`), the fifteenth boundary (`e4cfe60`, D-198), and D-199 (`1951568`) — three more pushes to `main`, each a production deployment, none individually re-asked for. The owner has not objected through any of them. **None of this survives into a new session — ask again**, and a future session should not read this run as precedent that silence means standing consent.
 - **Commit, push, real-data read: GRANTED, 2026-09-16 (the D-194 session).** Granted in the owner's
   message asking for the Sync speedup, after he had opened his statement mailbox and the hosted
   `/import` page in Chrome and asked for them to be checked. Used **read-only** in both: the mailbox
@@ -369,12 +369,15 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
-- **As of the D-197 session, read `git log` — this line cannot record the commit that carries it.**
-  D-197's code (`500a517`, three D-196 trims that lost a space to a JSX whitespace-collapse trap)
-  is the newest change to what the app serves, **confirmed on the deployed build** — `/import` and
-  `/slips` both read correctly. Beneath it, D-196's (`f9e09c4`, the stat-strip font fix and
-  field-help trims) — **also now confirmed on the deployed build**: the strip, `/import`, `/slips`
-  and `/recovery` were all read live. Beneath that, D-195's (`cecc622`, "Don't offer this again"),
+- **As of the D-199 session, read `git log` — this line cannot record the commit that carries it.**
+  D-199's code (`1951568`, D-196's real scope: the day heading, row timestamp and account label)
+  is the newest change to what the app serves, **confirmed live via `getComputedStyle`** after a
+  stale-cache false alarm. D-198 (`e4cfe60`) is docs-only, between D-199 and D-197 in commit order
+  but changing nothing the app serves. Beneath it, D-197's (`500a517`, three D-196 trims that lost a
+  space to a JSX whitespace-collapse trap) — **confirmed on the deployed build**, `/import` and
+  `/slips` both read correctly. Beneath that, D-196's (`f9e09c4`, the stat-strip font fix and
+  field-help trims) — **also confirmed on the deployed build**: the strip, `/import`, `/slips` and
+  `/recovery` were all read live. Beneath that, D-195's (`cecc622`, "Don't offer this again"),
   D-194's (`6b53541`, the mailbox Sync speedup) and D-193's (the load waves and `LedgerActions`).
   Previously: **`main` was at `0573a8a` and `origin/main` matched** (pushed and confirmed 2026-09-13). `0573a8a`
   is D-192 — the mailbox sync no longer reporting an empty mailbox for a truncated scan, plus
@@ -498,6 +501,11 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### The gate, as last run
 
+- **Green on D-199's content, 2026-09-16**: `tsc` clean, `eslint .` clean on the four touched files
+  (`app/globals.css`, `app/ledger-statement-row.tsx`, `app/ledger-card-row.tsx`,
+  `app/ledger-slip-row.tsx`; the same 2 pre-existing warnings elsewhere, untouched). Not a full
+  suite run — CSS token swaps plus a missing class, verified by `getComputedStyle` on the deployed
+  build rather than by the automated gate.
 - **Green on D-197's content, 2026-09-16**: `tsc` clean, `eslint .` clean on the three touched files
   (`app/slip-batch.tsx`, `app/statement-batch.tsx`, `app/ledger-controls.tsx`; the same 2
   pre-existing warnings elsewhere, untouched). Not a full suite run — three single-line JSX fixes,
