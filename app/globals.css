@@ -638,7 +638,8 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
 .file-control, .password-control, .backup-form label { display: grid; gap: 7px; }
 .file-control > span, .password-control > span, .backup-form label > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 .file-control { position: relative; }
-.file-control input { position: absolute; inset: 22px 0 0; opacity: 0; cursor: pointer; }
+/* Pinned to the bottom at the visible box's height rather than offset from the top: `inset: 22px` guessed the label's height, missed by 5px, and left a 42px tap target over a 47px button. */
+.file-control input { position: absolute; inset: auto 0 0; height: 47px; opacity: 0; cursor: pointer; }
 .file-control b, .password-control input, .backup-form input { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-weight: 400; min-width: 0; }
 .file-control b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .password-control small { position: absolute; transform: translateY(68px); color: var(--muted); font-size: 11px; }
