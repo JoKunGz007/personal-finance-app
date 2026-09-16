@@ -4,6 +4,8 @@ Last verified: 2026-09-16
 
 ## Current checkpoint
 
+**An `(i)` note opens as a layer over the page instead of pushing content down, 2026-09-16** (D-206, `32970b4`). Fixed position under (or above) its button, kept inside the viewport; outside press or Escape closes. Confirmed live at 1280px and 360px. Playwright not run (Docker stopped).
+
 **A third `/ux-review`, run by a subagent, shipped all twelve fixes, 2026-09-16** (D-205, `3cd055a` `b422c6f`). Every strip figure says "loaded rows only" under a partial filter; month change in words; largest lists lead with the description; phone row actions fold behind "⋯" (card 257px → 223px); rename keyboard flow; disabled-unlock hints; charts size text from rendered width; Escape closes `(i)` notes; calendar Home/End/PageUp/PageDown. `/code-review high` found four, all fixed. Confirmed live at 360px and 1280px. Docker-backed suites, `owner-session.spec.ts` and `owner-phone-audit.spec.ts` (now against the fold) still owed a run.
 
 **A second `/ux-review`, run by a subagent, shipped thirteen fixes, 2026-09-16** (D-204, `3f9e2ce` `d8ca844`). Partial-window filters now say they searched loaded rows only; the desktop ledger fits 1280px; phone ledger, statistics, import stepper, recovery and categories tightened; one calendar tab stop. Two findings verified as not needed; a "last backup" line deferred (needs a route). Confirmed live. Docker-backed suites and the updated `owner-session.spec.ts` still owed a run.

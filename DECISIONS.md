@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204 and D-205** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205 and D-206** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -380,6 +380,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-203** — The first /ux-review pass: ten findings approved and fixed, led by ledger density on both viewports
 - **D-204** — A second /ux-review, run by a subagent as an outsider: thirteen findings fixed, two verified as not needed, and three places D-203 had not gone far enough
 - **D-205** — A third /ux-review, run by a subagent as an outsider: all twelve findings fixed, and the phone row-action fold only shrank the card once the toggle stopped taking a grid row of its own
+- **D-206** — An `(i)` note opens as a layer over the page, not a block that pushes content down
+
+## D-206 — An `(i)` note opens as a layer over the page, not a block that pushes content down
+
+- Date: 2026-09-16
+- Status: **Shipped as `32970b4`, pushed, and confirmed live** at 1280px and 360px (browser pane, signed in).
+- Context: the owner sent a screenshot of the header's typeface note open and asked that pressing `(i)` not move anything: the note should appear as an upper layer, not beside or below its button.
+- **What changed.** `.note-panel` is `position: fixed` (`app/globals.css`), and `LedgerNote` (`app/ledger-note.tsx`) places it 8px under its button, or above when there is no room below, kept 16px inside the viewport, re-placed on any scroll (captured, so inner scrollers count) and resize. A press outside the button and panel closes it; Escape anywhere closes it and returns focus to the button, which supersedes D-205's toggle-only Escape. The panel is still rendered in place and only while open, so D-156's accessible-name and out-of-the-tree reasoning is unchanged, and no portal moves it away from its button in reading order. The flex-basis/`display: contents` placement rules D-203 relied on are now moot for the panel but left alone.
+- **Known limit.** Opening a second note by keyboard (Tab to it, Enter) does not close the first; a pointer press does.
+- Gate: `tsc` clean, `eslint` clean on `app/ledger-note.tsx`, `pnpm build` clean. **Not run:** Playwright (`ledger.spec.ts`, `font-picker.spec.ts` open notes by name and should be unaffected) — Docker stopped.
+- Evidence (live): on `/ledger` with the header settings open, every visible note (typeface, colours, ledger, cash, transactions, slips, cards) moved no heading, button, input or table when opened; panels opened 8px from their button (above it when the button sat low), inside a 16px margin at 360px, with no sideways scroll; outside press and Escape each closed them and Escape returned focus.
 
 ## D-205 — A third /ux-review, run by a subagent as an outsider: all twelve findings fixed, and the phone row-action fold only shrank the card once the toggle stopped taking a grid row of its own
 
