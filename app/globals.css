@@ -955,6 +955,9 @@ td { height: 76px; padding: 12px 14px; border-bottom: 1px solid var(--line); ver
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: color-mix(in srgb, var(--mist) 72%, transparent); }
 td time, td strong, td span, td small { display: block; }
+/* Spans *inside* a cell's text stay inline: `td span` above made each `.figure` digit run and the
+   account label's `···· NNNN` start a new line (D-203). */
+td span .figure, td span .nowrap, td span span { display: inline; margin-top: 0; }
 td time { font-weight: 500; font-size: 13px; line-height: 1.2; }
 td small, td span { margin-top: 3px; color: var(--muted); font-size: 12px; }
 td strong { font-weight: 500; }
