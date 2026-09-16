@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200 and D-201** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201 and D-202** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -376,6 +376,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-199** — D-196's real scope was every pixelated figure on `/ledger`, not just the stat strip: the day heading, the row timestamp and the account label all still switched to the pixel face
 - **D-200** — D-199 put whole words in the figures font along with the digits beside them — "Sept", "row(s)", a bank name — and the owner's correction was exact: only a digit run takes `--font-money`, never a word sharing its span
 - **D-201** — The all-accounts ledger showed gaps that read as missing transactions: each account pages on its own, and the merged view printed every loaded row below the shallowest account that still had more to fetch
+- **D-202** — Digits take the figures font on every page through a digit-only font face rather than markup, and the last long help paragraphs move behind i icons
+
+## D-202 — Digits take the figures font on every page through a digit-only font face rather than markup, and the last long help paragraphs move behind i icons
+
+- Date: 2026-09-16
+- Status: **Shipped as `bda7ba0`, pushed, and confirmed live** on the deployed build.
+- Context: the owner asked for D-200's number-font fix "webwide, not only ledger page", and for the remaining long label/help text to sit behind an i icon as the ledger page's already does.
+- **Digits: a font face, not markup.** D-200 split text per call site with `.figure`; repeating that on every page would only reach the places someone remembered. A `"Figures"` `@font-face` (`app/globals.css`) points at IBM Plex Mono's own files with `unicode-range: U+0030-0039` and leads each pixel typeface's `--font-body` and `--font-data` stack, so the browser picks Plex Mono for each digit and the pixel face for everything else, per character, on every page. No `size-adjust` is needed because the pixel faces are already fitted to Plex's cap height. The `system` typeface is untouched (already Plex). D-200's `.figure` markup stays; it is now redundant but harmless.
+- **Long text.** A scan of the deployed pages for visible text blocks over ~110 characters found eleven, all on `/import`, `/slips` and `/recovery`; each moved into a `LedgerNote`, keeping a short visible lead where the sentence carried a constraint the owner needs before acting (the auto-bind checkbox's bold label, "One direction for the whole batch.", "Requires an empty ledger."). No safety wording was removed.
+- Gate: `tsc` clean, `eslint` clean on the seven touched components, `pnpm build` compiled, `tests/ui-theme.test.ts` + `tests/ledger-window.test.ts` 58/58. **Not run: `tests/e2e/font-picker.spec.ts`** (Docker stopped), which measures per-typeface text heights and is the suite most likely to notice this.
+- Evidence: live, under Pixelify Sans, `0123456789` measured the same width in the page's own stack as in IBM Plex Mono while letters did not, and both `Figures` faces reported `loaded`; the same scan re-run on `/import`, `/slips` and `/recovery` returned no block over the threshold; the mailbox-sync note opened correctly beside its button. D-163, D-196, D-200 (the rule this widens).
 
 ## D-201 — The all-accounts ledger showed gaps that read as missing transactions: each account pages on its own, and the merged view printed every loaded row below the shallowest account that still had more to fetch
 
