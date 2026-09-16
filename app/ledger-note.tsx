@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * A short standing explanation, folded behind an `(i)`.
@@ -48,6 +48,48 @@ export function LedgerNote({ label, children }: {
 }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  const toggle = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLSpanElement>(null);
+
+  // **A layer above the page, not a block in it** (D-206): opening a note used to push everything
+  // after it down. The panel is `position: fixed`, placed under its button (above it when there is
+  // no room below) and kept 16px inside the viewport, and it follows scroll and resize. A press
+  // anywhere else or Escape closes it; Escape returns focus to the button.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const button = toggle.current, box = panel.current;
+      if (!button || !box) return;
+      const b = button.getBoundingClientRect();
+      const width = box.offsetWidth, height = box.offsetHeight;
+      const left = Math.max(16, Math.min(b.left, window.innerWidth - 16 - width));
+      const below = b.bottom + 8;
+      const top = below + height > window.innerHeight - 8 && b.top - 8 - height >= 8 ? b.top - 8 - height : below;
+      box.style.left = `${left}px`;
+      box.style.top = `${top}px`;
+    };
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!toggle.current?.contains(target) && !panel.current?.contains(target)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpen(false);
+      toggle.current?.focus();
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
 
   return (
     <>
@@ -56,14 +98,8 @@ export function LedgerNote({ label, children }: {
         className="note-toggle"
         aria-expanded={open}
         aria-controls={panelId}
+        ref={toggle}
         onClick={() => setOpen((current) => !current)}
-        // Escape closes the note from the toggle, where focus already is (D-205).
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && open) {
-            event.preventDefault();
-            setOpen(false);
-          }
-        }}
       >
         {/* The glyph is decorative and the name is the real one: a screen reader that read the
             letter would announce "i", which names nothing. */}
@@ -76,7 +112,7 @@ export function LedgerNote({ label, children }: {
           browser closes the outer one where the inner begins and the rest of the line escapes the
           paragraph. A `<span>` is valid in both, and `display: block` gives it its own line in the
           paragraph while `flex-basis: 100%` does the same job in the flex row. */}
-      {open ? <span id={panelId} className="note-panel">{children}</span> : null}
+      {open ? <span id={panelId} ref={panel} className="note-panel">{children}</span> : null}
     </>
   );
 }

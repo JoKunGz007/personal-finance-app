@@ -504,7 +504,7 @@ button:disabled { cursor: wait; opacity: .65; }
 /* A picker's own disclosure. Narrower than the page-level panels: it hangs off a header control
    rather than a heading. `.ui-picker` is a grid, so the panel already takes its own row — it is
    a **sibling** of the `<label>`, never a child, for the accessible-name reason in the component. */
-.ui-picker .note-panel { max-width: 34ch; }
+.ui-picker .note-panel { max-width: min(34ch, calc(100vw - 32px)); }
 .privacy-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--celadon-dot); box-shadow: 0 0 0 4px color-mix(in srgb, var(--celadon) 55%, transparent); }
 
 /* One row of routes, since routing replaced the single page (PLAN task 19). Deliberately
@@ -630,8 +630,13 @@ div:has(> .heading-note) > :not(h1, h2, h3, .heading-note) { flex-basis: 100%; }
 /* `display: block` **and** `flex-basis: 100%`, because this lands in two kinds of container and
    each ignores the other's mechanism: inside a `<p class="ledger-status">` the block is what gives
    it a line, and inside a flex row the block is blockified away and the basis does it. */
+/* D-206: now a fixed layer placed by `LedgerNote`, so it takes no room in either container; the two
+   mechanisms above are moot but harmless. */
 .note-panel {
-  display: block; flex-basis: 100%; max-width: 62ch; margin: 10px 0 0;
+  position: fixed; z-index: 60; top: 0; left: 0;
+  width: max-content; max-width: min(62ch, calc(100vw - 32px));
+  box-shadow: 0 0 0 1px var(--frame-inner) inset, 0 0 0 2px var(--frame-outer), 0 10px 28px rgba(0, 0, 0, .28);
+  display: block; flex-basis: 100%; margin: 0;
   padding: 12px 14px; color: var(--muted);
   border: 1px solid var(--line); border-left: 3px solid var(--saffron); border-radius: var(--radius);
   background: var(--mist);
