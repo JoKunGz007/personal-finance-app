@@ -204,6 +204,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - `display: block` on a table cell releases neither its column's width nor its row's height
 - An SVG hit target centred on an edge point runs outside the plot, and the root `<svg>` hides it
 - A `td span` display rule also reaches spans nested inside the cell's text
+- Folding a grid card's buttons behind a toggle does not shrink the card while the toggle keeps their grid row
 
 ### App, auth, routing and accessibility
 
@@ -262,5 +263,5 @@ these section headings rather than a third raise. The owner chose the split.
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 34 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
 | App, auth, routing and accessibility | 42 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
-| Layout, typography and accessibility | 26 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
+| Layout, typography and accessibility | 27 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 

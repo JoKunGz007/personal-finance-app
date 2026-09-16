@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203 and D-204** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204 and D-205** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -379,6 +379,18 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-202** — Digits take the figures font on every page through a digit-only font face rather than markup, and the last long help paragraphs move behind i icons
 - **D-203** — The first /ux-review pass: ten findings approved and fixed, led by ledger density on both viewports
 - **D-204** — A second /ux-review, run by a subagent as an outsider: thirteen findings fixed, two verified as not needed, and three places D-203 had not gone far enough
+- **D-205** — A third /ux-review, run by a subagent as an outsider: all twelve findings fixed, and the phone row-action fold only shrank the card once the toggle stopped taking a grid row of its own
+
+## D-205 — A third /ux-review, run by a subagent as an outsider: all twelve findings fixed, and the phone row-action fold only shrank the card once the toggle stopped taking a grid row of its own
+
+- Date: 2026-09-16
+- Status: **Shipped as `3cd055a` and `b422c6f`, pushed, and confirmed live** at 360px phone and 1280px desktop (browser pane, signed in).
+- Context: the owner approved all twelve findings of the third outsider `/ux-review` ("do all"), then asked for review, commit, push and live verification in a new session.
+- **What changed.** Under a partial-window filter, Deposits, Withdrawals and Net carry "· loaded rows only" as Rows already did (`app/ledger-summary.tsx`). "Out vs previous" reads "฿… more (+…%)" / "฿… less (−…%)", the sign taken from the delta so a truncated 0% cannot read "less (+0%)". Largest-movement rows lead with the ledger description and show the bank channel code as a chip (`LargestMovement` already carried `description`; no SQL or route change). On a phone, Exclude and Edit category fold behind a per-row "⋯" inside the Status cell, D-203's no-new-column decision kept; the fold stays open while that row is editing or saving. Rename focuses and selects the name, Enter saves, Escape cancels, focus returns to Rename (and back into the name after a failed save), and Save stays disabled while the name is unchanged. The disabled unlock buttons on `/import` say why through a visible hint wired by `aria-describedby`. Chart `viewBox` width follows the rendered width (300–820), replacing D-204's phone-only 24px text rule. Escape closes an `(i)` note with focus kept on its toggle. "Your categories" is an `h2`. The reach line drops its "only searches the loaded rows" sentence while the empty notice says it. The calendar handles Home/End (week start/end within the month) and PageUp/PageDown (nearest live day in the adjacent visible month). The account count is pluralised.
+- **The fold that did not shrink.** The first deploy hid both buttons, but "⋯" is itself a 44px button in the same `status` grid row, so the card went 257px → 257px folded (265px open). A second commit moves the Status cell beside the account label while folded (`"acct status"`, via `tr:has(.row-more):not(:has(.actions-open))`) and gives it the full row back when open. Recorded as a trap.
+- **Review (`/code-review`, high) found four, all fixed before commit:** the "less (+0%)" sign; the batch hint naming a password the batch button does not require (now "Choose or sync a PDF to read"); focus lost after a failed rename; and two new helpers inserted between an existing doc comment and the function it documents.
+- Gate: `tsc` clean; `eslint` 0 errors on the touched files (the 2 pre-existing warnings in `app/transactions-view.tsx`); 166 passed / 2 skipped across `tests/dev-session tests/privacy tests/ui-theme tests/owner-access tests/ledger-window tests/statistics`; `pnpm build` clean. **Not run:** Docker-backed suites and Playwright (Docker stopped), so `owner-session.spec.ts` (updated in D-204) and `owner-phone-audit.spec.ts` are still owed a run, the latter now against the "⋯" fold.
+- Evidence (live, structure only, no figures recorded): 360px — charts `viewBox 0 0 328 …` with 11px text and no label clipped; month cells "฿N less (−N%)"; largest rows show a description plus chip; calendar PageUp/Home/End/PageDown/ArrowLeft each landed on the expected date; `(i)` Escape closed with focus kept; ledger cards 257px → 223px folded (257px open), toggle and `aria-expanded` correct, no sideways scroll; a search query marked all four strip counts, and a no-match query showed the empty notice with the reach sentence gone; `/categories` rename focus, selection, disabled Save, Escape and focus return all held with nothing saved, heading `H2`; `/import` both hints visible, account count pluralised, no sideways scroll. 1280px — "⋯" hidden, both row buttons shown, table fits its box; charts keep `viewBox 0 0 820 …`, nothing clipped.
 
 ## D-204 — A second /ux-review, run by a subagent as an outsider: thirteen findings fixed, two verified as not needed, and three places D-203 had not gone far enough
 

@@ -229,3 +229,10 @@ means, and what a backfilled `Dated <date> from <sha>` clause does not, is expla
 - Cause: `td time, td strong, td span, td small { display: block }` is written to stack a cell's parts, but a descendant selector matches spans at any depth, so the spans *inside* one of those parts (`.figure`, a `nowrap` group) become blocks too. `white-space: nowrap` on the span does not help; a block always starts a line.
 - Avoid: when a cell rule stacks parts by element, restore nested spans explicitly (`td span span { display: inline }`), or target direct children (`td > span`).
 - Verify: 2026-09-16 (D-203), measured on the deployed ledger — the account label's box went from 60px to 19px at phone width once nested spans were inline.
+
+## Folding a grid card's buttons behind a toggle does not shrink the card while the toggle keeps their grid row
+
+- Symptom: a phone card hides its action buttons behind a "⋯" disclosure, the buttons measure `display: none`, and the card is the same height as before.
+- Cause: the toggle is itself a full-height tap target (44px here) and sits in the same `grid-template-areas` row the buttons occupied, so that row's height is unchanged; hiding the buttons only removed what shared the row with it.
+- Avoid: while folded, move the cell holding the toggle into a row that already exists (here `"acct status"`, keyed on `tr:has(.row-more):not(:has(.actions-open))`), and give it its own full row back only when open. Measure the card height folded and open, not the buttons' visibility.
+- Verify: 2026-09-16 (D-205), deployed ledger at 360px — folded in its own row 257px (open 265px); beside the account label 223px folded, 257px open.
