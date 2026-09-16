@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205 and D-206** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205, D-206 and D-207** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -381,6 +381,22 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-204** — A second /ux-review, run by a subagent as an outsider: thirteen findings fixed, two verified as not needed, and three places D-203 had not gone far enough
 - **D-205** — A third /ux-review, run by a subagent as an outsider: all twelve findings fixed, and the phone row-action fold only shrank the card once the toggle stopped taking a grid row of its own
 - **D-206** — An `(i)` note opens as a layer over the page, not a block that pushes content down
+- **D-207** — Internal transfers between the owner's own accounts are excluded from reporting automatically, and the row actions fold behind "⋯" on every viewport
+
+## D-207 — Internal transfers between the owner's own accounts are excluded from reporting automatically, and the row actions fold behind "⋯" on every viewport
+
+- Date: 2026-09-17
+- Status: **Shipped as `f2aba04`, pushed; migration 026 applied to hosted by the owner's own `supabase db push --linked` after he exported a fresh backup; first pass run and confirmed live.**
+- Context: the owner found the per-row Exclude button cluttering and asked for internal transfers to be detected and excluded automatically. He chose: match on amount **and** the other account's number; exclude automatically rather than suggest; fold the row buttons on desktop as well. He granted a counts-only real-data read, the migration and Docker.
+- **Measured before building (counts only, nothing recorded).** 1,727 rows across 3 accounts: 66 same-amount cross-account pairs within a day, 57 whose description names the other account's last four (50 on both sides), 9 with no account number. Pairing nearest-in-time one-to-one gave 52 pairs, median gap 0 minutes, largest 144. Task 48's "about eighteen" was an eyeball count and is superseded by this measurement.
+- **The rule** (`supabase/migrations/202609160026_auto_exclude_internal_transfers.sql`): a withdrawal and a deposit of exactly the same amount, on two different accounts, at most 24 hours apart, where either row's bank description holds a digit run ending in the other account's `last_four`; candidates are taken nearest first and each row pairs once. Both rows get `include_in_reporting = false` through the same lock, overlay revision, audit event and mutation-sequence step as `update_transaction_overlay`; other overlay fields are kept.
+- **The owner's decision always wins.** A row is skipped if any overlay revision ever held `include_in_reporting = false` or it already has an `overlay.auto_excluded` event, and both rows of a pair must be eligible. A hand-excluded row stays his, and a row he re-includes is never excluded again.
+- **The marker is the audit event, not a column.** A column on `transaction_overlays` would have changed the strict v7 backup row contract and the restore; `audit_events` is already backed up whole with a free-form `detail`. `list_auto_excluded_transactions()` returns rows whose event revision equals the overlay's current revision, so a later hand edit drops the label. Backup contract stays **v7**.
+- **Where it runs.** `POST /api/v1/imports/confirm` calls it after a successful confirm and ignores its failure (the import is already committed). `GET`/`POST /api/v1/transactions/auto-excluded` list and run it; the ledger labels those rows "Auto-excluded · transfer". Exclude and Edit category fold behind "⋯" on desktop too (D-205 did this on phones only).
+- **Found by the owner Playwright suite and fixed in the same commit.** The phone "⋯" was 36px wide (under the 44px standard); `/ledger` rendered "1 slip ishidden", D-196's trim having lost the space to D-197's JSX trap (now a template string); and two `owner-session.spec.ts` locators still matched D-196's pre-trim wording.
+- Gate: pgTAP **14 files, 403 tests** including the new `014_auto_exclude_internal_transfers.sql` (13), red-proven twice (without the owner-decision guard 5 of 13 fail; with farthest-first pairing the pairing assertion fails); Vitest **981 passed / 7 skipped across 45 files**; Playwright isolated **70 passed / 8 skipped**; owner suite **31 of 34** on the first run with the three failures above, then those plus the reporting test **4/4** after the fix; `tsc`, `eslint`, `pnpm build` clean; `/code-review high` found nothing.
+- **Live.** The first pass excluded **51 pairs, 102 rows**; all 102 read back as auto-excluded; a second run found 0. One fewer than the 52 measured, most likely the real transfer D-165 excluded and re-included on 2026-08-27, which the guard treats as the owner's decision (not confirmed row by row). Desktop: chips on one line, no alert, table fits. 360px: "⋯" 44×44, no overlap, no sideways scroll; an auto-excluded card is 290px against 223px for an ordinary one because the longer chip wraps.
+- Not done: `/security-review` (a new authenticated write route and a security-definer function; access mirrors the existing overlay route and RPC).
 
 ## D-206 — An `(i)` note opens as a layer over the page, not a block that pushes content down
 

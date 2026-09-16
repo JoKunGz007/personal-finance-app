@@ -4,6 +4,8 @@ Last verified: 2026-09-16
 
 ## Current checkpoint
 
+**Internal transfers are excluded from reporting automatically, 2026-09-17** (D-207, `f2aba04`, migration 026). Same amount, two own accounts, within 24 hours, and a description naming the other account; the owner's own decision always wins. Runs after each import confirm; the first pass on hosted excluded 51 pairs (102 rows), labelled "Auto-excluded · transfer". Row actions fold behind "⋯" on desktop too. Hosted and `private-ledger-local` now on **026**. Gate green (pgTAP 403, Vitest 981, Playwright isolated 70; owner suite green after three fixes). `/security-review` not run.
+
 **An `(i)` note opens as a layer over the page instead of pushing content down, 2026-09-16** (D-206, `32970b4`). Fixed position under (or above) its button, kept inside the viewport; outside press or Escape closes. Confirmed live at 1280px and 360px. Playwright not run (Docker stopped).
 
 **A third `/ux-review`, run by a subagent, shipped all twelve fixes, 2026-09-16** (D-205, `3cd055a` `b422c6f`). Every strip figure says "loaded rows only" under a partial filter; month change in words; largest lists lead with the description; phone row actions fold behind "⋯" (card 257px → 223px); rename keyboard flow; disabled-unlock hints; charts size text from rendered width; Escape closes `(i)` notes; calendar Home/End/PageUp/PageDown. `/code-review high` found four, all fixed. Confirmed live at 360px and 1280px. Docker-backed suites, `owner-session.spec.ts` and `owner-phone-audit.spec.ts` (now against the fold) still owed a run.
