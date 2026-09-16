@@ -5,6 +5,7 @@ import {
   attachmentPath, describeManifest,
   type MailboxFile, type SyncAttachment, type SyncManifest
 } from "@/lib/statement-sync";
+import { LedgerNote } from "@/app/ledger-note";
 
 /** The list endpoint. A constant so there is one place the path is written. */
 const MAILBOX_PATH = "/api/v1/imports/mailbox";
@@ -228,10 +229,10 @@ export function StatementSync({ busy, room, onFetched, onWorkingChange }: {
             : phase.kind === "downloading" ? `Fetching ${phase.done} of ${phase.total}…`
             : "Sync from mailbox"}
         </button>
-        <p className="batch-source">
+        <LedgerNote label="About mailbox sync">
           Fetches the locked PDFs your banks mailed — still encrypted on arrival, opened on this
           device like a local file.
-        </p>
+        </LedgerNote>
       </div>
 
       {status ? <p className="status" role="status">{status}</p> : null}

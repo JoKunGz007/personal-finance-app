@@ -2,6 +2,7 @@
 
 import { formatThb } from "@/lib/money";
 import type { CapturedSlip } from "@/lib/slips";
+import { LedgerNote } from "@/app/ledger-note";
 
 /**
  * What this device has captured, on the page that captured it (D-075).
@@ -33,11 +34,13 @@ export function CapturedSlips({ slips, decided, busy, error, onLoad }: {
         <p className="section-index">Captured</p>
         <div>
           <h2 id="captured-title">On this ledger</h2>
-          <p>
+          <div className="heading-note">
+            <LedgerNote label="About captured slips">
             Every slip stored here, newest first. A slip is a provisional entry: it counts as
             money that moved, and the statement is what confirms it. Whether one has been
             matched to a statement row is shown in the ledger, not here.
-          </p>
+            </LedgerNote>
+          </div>
         </div>
       </div>
 

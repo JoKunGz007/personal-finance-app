@@ -49,6 +49,7 @@ import {
   type CardTyped
 } from "@/lib/notification-card-form";
 import { readError } from "@/lib/wire";
+import { LedgerNote } from "@/app/ledger-note";
 
 type Category = { id: string; name: string; archived: boolean };
 type Channel = NotificationCardLayout["channel"];
@@ -551,11 +552,13 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
         <p className="section-index">Notification</p>
         <div>
           <h2 id="card-title">Capture a bank notification</h2>
-          <p>
+          <div className="heading-note">
+            <LedgerNote label="About bank notifications">
             When a payment leaves no slip, your bank&rsquo;s LINE channel posts a card instead.
             Screenshot it and read it here — the reader shows where each field sits so you can
             check and type the figures.
-          </p>
+            </LedgerNote>
+          </div>
         </div>
       </div>
 

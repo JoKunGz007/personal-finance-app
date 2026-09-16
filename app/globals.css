@@ -365,17 +365,40 @@
   src: url("../node_modules/@fontsource/silkscreen/files/silkscreen-latin-700-normal.woff2") format("woff2");
 }
 
+/*
+  **Digits never render in a pixel face, anywhere** (D-202, widening D-200 from `/ledger` to every
+  page). "Figures" is IBM Plex Mono restricted by `unicode-range` to 0–9, placed first in each pixel
+  stack, so the browser draws every digit in Plex Mono and every letter in the pixel face — per
+  character, with no markup. 400 and 500 are real Plex weights; bolder text reuses the 500 file rather than synthesising.
+*/
+@font-face {
+  font-family: "Figures";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0030-0039;
+  src: url("../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Figures";
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  unicode-range: U+0030-0039;
+  src: url("../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+}
+
 :root[data-font="press-start-2p"] {
-  --font-body: "Press Start 2P Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
-  --font-data: "Press Start 2P Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
+  --font-body: "Figures", "Press Start 2P Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Figures", "Press Start 2P Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
 :root[data-font="pixelify-sans"] {
-  --font-body: "Pixelify Sans Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
-  --font-data: "Pixelify Sans Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
+  --font-body: "Figures", "Pixelify Sans Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Figures", "Pixelify Sans Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
 :root[data-font="silkscreen"] {
-  --font-body: "Silkscreen Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
-  --font-data: "Silkscreen Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
+  --font-body: "Figures", "Silkscreen Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Figures", "Silkscreen Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
 
 /*

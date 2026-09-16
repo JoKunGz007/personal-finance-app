@@ -6,6 +6,7 @@ import { backupSnapshotSchema, describeBackupSnapshot } from "@/lib/backup-contr
 import { downloadFile } from "@/lib/download";
 import { buildRestorePlan } from "@/lib/restore-plan";
 import { readError } from "@/lib/wire";
+import { LedgerNote } from "@/app/ledger-note";
 
 /**
  * The recovery route: export an encrypted ledger backup, and restore one.
@@ -133,17 +134,23 @@ export function RecoveryBench() {
         <p className="section-index">Recovery</p>
         <div>
           <h2 id="recovery-title">Back up and restore the ledger</h2>
-          <p>
+          <div className="heading-note">
+            <LedgerNote label="About backup and restore">
             The real ledger backup (not the import route&apos;s synthetic preview) — your full snapshot, encrypted in-browser with a password the server never sees.
             Keep the file and password apart: either alone is useless, and losing both makes the ledger unrecoverable.
-          </p>
+            </LedgerNote>
+          </div>
         </div>
       </div>
 
       <div className="recovery-grid">
         <div className="recovery-half">
           <h3>Export an encrypted backup</h3>
-          <p>Custody is recorded only after the file is written, and only if the ledger has not changed since the snapshot was taken.</p>
+          <div className="heading-note">
+            <LedgerNote label="When custody is recorded">
+              Custody is recorded only after the file is written, and only if the ledger has not changed since the snapshot was taken.
+            </LedgerNote>
+          </div>
           <label className="account-control">
             <span>Backup password</span>
             <input
@@ -164,7 +171,10 @@ export function RecoveryBench() {
         <div className="recovery-half">
           <h3>Restore from a backup</h3>
           <p>
-            Restoring rebinds every row to the signed-in owner, so it requires an <b>empty ledger</b> — this is a recovery into a fresh install, not an overwrite of a live one.
+            Requires an <b>empty ledger</b>.
+            <LedgerNote label="Why restore needs an empty ledger">
+              Restoring rebinds every row to the signed-in owner — this is a recovery into a fresh install, not an overwrite of a live one.
+            </LedgerNote>
           </p>
           <label className="account-control">
             <span>Backup file</span>

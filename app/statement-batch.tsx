@@ -11,6 +11,7 @@ import {
 import type { StatementFrame } from "@/lib/statement-frame";
 import type { SourceRowCandidate } from "@/lib/statement";
 import type { MailboxFile, MailboxRef } from "@/lib/statement-sync";
+import { LedgerNote } from "@/app/ledger-note";
 
 /**
  * **A cap on memory and wall time, not on spend.** Bulk slip upload caps at fifty because every
@@ -427,10 +428,12 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
         <p className="section-index">Import / batch</p>
         <div>
           <h2 id="statement-batch-title">Or open several at once</h2>
-          <p>
+          <div className="heading-note">
+            <LedgerNote label="About batch import">
             Every PDF is unlocked and read on this device. Binding and confirming still happen one
             statement at a time. Choose local files, or sync locked PDFs from the mailbox.
-          </p>
+            </LedgerNote>
+          </div>
         </div>
       </div>
 
@@ -504,11 +507,13 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
           onChange={(event) => onAutoBindChange(event.target.checked)}
         />
         <span>
-          <b>Bind automatically when the account is unambiguous.</b>{" "}
-          Binds when exactly one account
-          matches the statement&apos;s bank and last four digits, straight to review. A mismatch is
-          still refused, every balance is still shown, and nothing reaches the ledger until you
-          confirm. Turn off to choose manually — the matching account stays preselected.
+          <b>Bind automatically when the account is unambiguous.</b>
+          <LedgerNote label="About automatic binding">
+            Binds when exactly one account matches the statement&apos;s bank and last four digits,
+            straight to review. A mismatch is still refused, every balance is still shown, and
+            nothing reaches the ledger until you confirm. Turn off to choose manually — the
+            matching account stays preselected.
+          </LedgerNote>
         </span>
       </label>
 

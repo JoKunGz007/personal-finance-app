@@ -10,6 +10,7 @@ import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
 import { type SlipIdentity } from "@/lib/slip-qr";
 import { slipDateFromReference, slipDateWindow, type SlipKind } from "@/lib/slips";
 import { readError } from "@/lib/wire";
+import { LedgerNote } from "@/app/ledger-note";
 
 type Category = { id: string; name: string; archived: boolean };
 
@@ -379,11 +380,13 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
         <p className="section-index">Slips</p>
         <div>
           <h2 id="slip-title">Capture a transfer slip</h2>
-          <p>
+          <div className="heading-note">
+            <LedgerNote label="About slip capture">
             The QR names the bank and transaction; you confirm the amount. Slips are
             provisional — the statement remains the authority. QR read is local; reading the
             amount sends the image to Google Cloud Vision (stores nothing, either side).
-          </p>
+            </LedgerNote>
+          </div>
         </div>
       </div>
 

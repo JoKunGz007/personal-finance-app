@@ -9,6 +9,7 @@ import { scanForSlipIdentity } from "@/lib/slip-scan";
 import { type SlipIdentity } from "@/lib/slip-qr";
 import { slipDateWindow, type SlipKind } from "@/lib/slips";
 import { readError } from "@/lib/wire";
+import { LedgerNote } from "@/app/ledger-note";
 
 /**
  * A slip's state as it moves through the batch. Every one is a sentence the owner can act on rather
@@ -423,13 +424,15 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
         <p className="section-index">Slips in bulk</p>
         <div>
           <h2 id="slip-batch-title">Upload a backlog of slips</h2>
-          <p>
+          <div className="heading-note">
+            <LedgerNote label="About bulk slip upload">
             Choose many slip images at once. Each QR is read on-device for bank and reference;
             reading the amount sends the image to Google Cloud Vision (nothing stored, either
             side). A slip auto-captures only when the amount read cleanly <b>and</b>{" "}
             the date came from the QR or slip — never today&apos;s date, since a backlog dated today can&apos;t
             pair with a statement. Everything else needs your input below.
-          </p>
+            </LedgerNote>
+          </div>
         </div>
       </div>
 
@@ -464,8 +467,10 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
       </div>
 
       <p className="field-help batch-note">
-        One direction for the whole batch — a slip doesn&apos;t say which side you&apos;re on.
-        Mixed directions need two batches.
+        One direction for the whole batch.
+        <LedgerNote label="Why one direction">
+          A slip doesn&apos;t say which side you&apos;re on, so mixed directions need two batches.
+        </LedgerNote>
       </p>
 
       {status && <p className="status" role="status">{status}</p>}
