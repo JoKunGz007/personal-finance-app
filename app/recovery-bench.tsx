@@ -21,6 +21,9 @@ import { LedgerNote } from "@/app/ledger-note";
  */
 export function RecoveryBench() {
   const [ledgerBackupPassword, setLedgerBackupPassword] = useState("");
+  // Typed twice (D-204): a typo in the only copy of this password makes a backup nobody can open.
+  const [ledgerBackupConfirm, setLedgerBackupConfirm] = useState("");
+  const confirmMismatch = ledgerBackupConfirm !== "" && ledgerBackupConfirm !== ledgerBackupPassword;
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [restorePassword, setRestorePassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -160,10 +163,25 @@ export function RecoveryBench() {
               autoComplete="new-password"
               value={ledgerBackupPassword}
               placeholder="At least 12 characters…"
+              aria-describedby="backup-password-help"
               onChange={(event) => setLedgerBackupPassword(event.target.value)}
             />
+            <small id="backup-password-help">At least 12 characters. Nothing can recover it if lost.</small>
           </label>
-          <button type="button" className="secondary-button" disabled={busy || ledgerBackupPassword.length < 12} onClick={downloadLedgerBackup}>
+          <label className="account-control">
+            <span>Confirm password</span>
+            <input
+              type="password"
+              name="ledger-backup-password-confirm"
+              autoComplete="new-password"
+              value={ledgerBackupConfirm}
+              aria-invalid={confirmMismatch}
+              aria-describedby="backup-confirm-help"
+              onChange={(event) => setLedgerBackupConfirm(event.target.value)}
+            />
+            <small id="backup-confirm-help">{confirmMismatch ? "Doesn't match yet." : "Type it again."}</small>
+          </label>
+          <button type="button" className="secondary-button" disabled={busy || ledgerBackupPassword.length < 12 || ledgerBackupConfirm !== ledgerBackupPassword} onClick={downloadLedgerBackup}>
             Export encrypted backup
           </button>
         </div>

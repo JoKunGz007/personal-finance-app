@@ -1013,13 +1013,13 @@ footer p { margin: 0; }
 .ledger-grouping input { width: 20px; height: 20px; margin: 0; accent-color: var(--blue); }
 /* The shared nth-child widths assume the import review table. This one carries a
    sixth money column in merged mode, which that rule would squeeze to 70px. */
-.ledger-table { min-width: 1160px; }
+.ledger-table { min-width: 1040px; }
 .ledger-table th:nth-child(1) { width: 95px; }
 .ledger-table th:nth-child(2) { width: 26%; }
-.ledger-table th:nth-child(3) { width: 205px; }
-.ledger-table th:nth-child(4) { width: 150px; }
+.ledger-table th:nth-child(3) { width: 230px; }
+.ledger-table th:nth-child(4) { width: 140px; }
 .ledger-table th:nth-child(5), .ledger-table th:nth-child(6) { width: 145px; }
-.ledger-table.merged { min-width: 1280px; }
+.ledger-table.merged { min-width: 1120px; }
 .ledger-table.merged th:nth-child(7) { width: 160px; }
 .combined-balance { color: var(--muted); }
 /* **A day's heading row, and it is a `<th scope="colgroup">` rather than a styled `<td>`.** The
@@ -1628,4 +1628,43 @@ footer p { margin: 0; }
   .phone-more { display: block; margin-top: 12px; }
   .cal-months:not(.show-all) > .cal-month:not(:nth-last-child(-n+3)) { display: none; }
   .phone-capped:not(.show-all) tbody tr:nth-child(n+6) { display: none; }
+}
+
+/* ------------------------------------------------------------------ second ux-review pass (D-204) */
+.stage-count { display: none; }
+.list-heading { margin: 24px 0 8px; font-size: 15px; font-weight: 600; }
+@media (max-width: 700px) {
+  /* #3: a button label that cannot wrap widened three pages under Silkscreen, the widest face. */
+  .primary-button, .secondary-button, .tertiary-button { white-space: normal; max-width: 100%; }
+  .recovery-grid { grid-template-columns: minmax(0, 1fr); }
+
+  /* #2: the charts' 820-unit viewBox renders 11-unit text at ~5px on a phone. */
+  .chart svg text { font-size: 24px; }
+
+  /* #5: "By month" keeps the latest six rows until asked. */
+  .phone-capped-tail:not(.show-all) tbody tr:nth-last-child(n+7) { display: none; }
+
+  /* #6: Reload and Filters share one row. */
+  .ledger-controls { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ledger-controls > button { grid-column: auto; }
+  .ledger-controls > :not(button) { grid-column: 1 / -1; }
+  .ledger-controls .filters-toggle { width: 100%; }
+
+  /* #10: on a card, the description a person recognises leads; the bank's channel code follows. */
+  .ledger-table td[data-label="Description"] { display: flex; flex-direction: column; }
+  .ledger-table td[data-label="Description"] > strong { order: 2; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 500; }
+  .ledger-table td[data-label="Description"] > span:first-of-type { order: 1; margin-top: 0; color: var(--navy); font-size: 14px; font-weight: 600; }
+
+  /* #9: the stepper shows where it is instead of scrolling off-screen. */
+  .stage-nav ol { grid-template-columns: minmax(0, 1fr); }
+  .stage-nav li:not(.active) { display: none; }
+  .stage-nav li.active { padding-left: 0; }
+  .stage-count { display: inline; margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 500; }
+
+  /* #13: the Cash eyebrow sits above its heading, as Ledger's does. */
+  .cash-heading .section-index { flex-basis: 100%; }
+
+  /* #15: in the settings panel, each (i) sits beside its select. */
+  .ui-picker { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
+  .ui-picker > :not(label, .note-toggle) { flex-basis: 100%; }
 }

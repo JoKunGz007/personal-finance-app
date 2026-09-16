@@ -23,7 +23,7 @@ import { LedgerNote } from "@/app/ledger-note";
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
 const stages: Array<{ id: Stage; label: string }> = [
   { id: "select", label: "Select PDF" },
-  { id: "unlock", label: "Unlock & parse locally" },
+  { id: "unlock", label: "Unlock & check layout" },
   { id: "bind", label: "Choose account" },
   { id: "review", label: "Review" },
   { id: "confirmed", label: "Confirmed" }
@@ -627,6 +627,7 @@ export function ImportBench() {
           {stages.map((item, index) => (
             <li key={item.id} className={index < activeIndex ? "done" : index === activeIndex ? "active" : ""} aria-current={index === activeIndex ? "step" : undefined}>
               <span>{index + 1}</span>{item.label}
+              <small className="stage-count">Step {index + 1} of {stages.length}</small>
             </li>
           ))}
         </ol>
@@ -664,7 +665,7 @@ export function ImportBench() {
             <input type="password" value={password} autoComplete="off" name="statement-unlock-code" placeholder="Enter only when ready…" onChange={(event) => setPassword(event.target.value)} />
             <small>Held in worker memory for this attempt only.</small>
           </label>
-          <button className="primary-button" type="button" onClick={parsePdf}>Unlock &amp; check layout</button>
+          <button className="primary-button" type="button" onClick={parsePdf} disabled={!file || !password}>Unlock &amp; check layout</button>
           <span className="or-rule">or</span>
           <button className="secondary-button" type="button" onClick={loadSynthetic}>Use synthetic statement</button>
         </div>

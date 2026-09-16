@@ -226,6 +226,9 @@ export function CategoriesBench() {
       ) : null}
 
       {categories !== null ? (
+        <h3 className="list-heading">Your categories</h3>
+      ) : null}
+      {categories !== null ? (
         <CategoriesList
           categories={categories}
           saving={saving}

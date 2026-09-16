@@ -101,6 +101,7 @@ export function StatisticsView() {
   // is the whole difference between a page that is loading and a page that is quietly wrong.
   const [loaded, setLoaded] = useState<{ search: string; data: LedgerStatistics } | null>(null);
   const [message, setMessage] = useState("Loading statistics…");
+  const [allMonths, setAllMonths] = useState(false);
 
   // **The picker starts from the address bar, so a reload returns to the window that was chosen.**
   // Read once, in a lazy initialiser, rather than kept in sync both ways: the URL seeds the state
@@ -460,7 +461,7 @@ export function StatisticsView() {
           here as exact money, which is also what discharges the dataviz contrast relief. */}
       <section className="stats-section" aria-labelledby="monthly-table-title">
         <h2 id="monthly-table-title">By month</h2>
-        <div className="table-scroll">
+        <div className={`table-scroll phone-capped-tail${allMonths ? " show-all" : ""}`}>
           <table>
             <caption className="sr-only">Money in, money out, net and transaction count for each month.</caption>
             <thead>
@@ -513,6 +514,11 @@ export function StatisticsView() {
               })}
             </tbody>
           </table>
+          {months.length > 6 ? (
+            <button type="button" className="secondary-button phone-more" aria-expanded={allMonths} onClick={() => setAllMonths((all) => !all)}>
+              {allMonths ? "Show the latest 6 months" : `Show all ${months.length} months`}
+            </button>
+          ) : null}
         </div>
       </section>
 

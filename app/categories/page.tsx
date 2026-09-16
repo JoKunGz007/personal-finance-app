@@ -1,6 +1,8 @@
 import { LedgerNote } from "@/app/ledger-note";
 import { CategoriesBench } from "@/app/categories-bench";
 
+export const metadata = { title: "Categories · Private Ledger" };
+
 export const dynamic = "force-dynamic";
 
 export default function CategoriesPage() {

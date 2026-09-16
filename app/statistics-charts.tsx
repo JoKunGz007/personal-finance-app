@@ -211,7 +211,7 @@ export function BalanceChart({ points }: { points: readonly DailyBalance[] }) {
       <figcaption>
         {active
           ? <><strong>{active.date}</strong> · {formatThb(active.value.toString())}</>
-          : <>Combined balance across every account. Hover for a day.</>}
+          : <>Combined balance across every account. Hover or tap for a day.</>}
       </figcaption>
     </figure>
   );
@@ -309,7 +309,7 @@ export function MonthlyChart({ months }: { months: readonly MonthlyStatistic[] }
       </svg>
       <figcaption aria-live="polite">
         {active === null
-          ? <>Money in against money out, by month. Hover for a month.</>
+          ? <>Money in against money out, by month. Hover or tap for a month.</>
           : (
             <>
               <strong>{monthLabel(active.month)}</strong>

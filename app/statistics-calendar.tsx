@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { formatThb } from "@/lib/money";
 import { DEPOSIT, WITHDRAWAL } from "@/app/statistics-charts";
@@ -87,6 +87,21 @@ export function SpendingCalendar(
   // calendar before the next section.
   const [allMonths, setAllMonths] = useState(false);
   const monthCount = monthsBetween(periodFrom, periodTo).length;
+  const lastLive = periodTo;
+
+  function moveBetweenDays(event: KeyboardEvent<HTMLDivElement>) {
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+    if (step === undefined) return;
+    const days = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>("a.cal-day-live")].filter((day) => day.offsetParent !== null);
+    const from = days.indexOf(document.activeElement as HTMLAnchorElement);
+    if (from === -1) return;
+    const to = days[Math.max(0, Math.min(days.length - 1, from + step))];
+    if (!to) return;
+    event.preventDefault();
+    days[from]!.tabIndex = -1;
+    to.tabIndex = 0;
+    to.focus();
+  }
 
   // **Memoized on `movements` alone.** Hovering or focusing a cell moves `active`, which re-renders
   // this component on every cell the pointer crosses — without this, that re-render also rebuilt
@@ -110,7 +125,9 @@ export function SpendingCalendar(
         <span><i style={{ background: DEPOSIT }} aria-hidden="true" />Money in</span>
         <span><i style={{ background: WITHDRAWAL }} aria-hidden="true" />Money out</span>
       </div>
-      <div className={`cal-months${allMonths ? " show-all" : ""}`} onMouseLeave={() => setActive(null)}>
+      {/* One tab stop for the whole calendar (D-204): the latest day is reachable by Tab, and the
+          arrow keys move a day or a week. Without this every day was its own tab stop. */}
+      <div className={`cal-months${allMonths ? " show-all" : ""}`} onMouseLeave={() => setActive(null)} onKeyDown={moveBetweenDays}>
         {monthsBetween(periodFrom, periodTo).map((month) => {
           const year = Number(month.slice(0, 4));
           const monthNum = Number(month.slice(5, 7));
@@ -171,6 +188,7 @@ export function SpendingCalendar(
                   return (
                     <Link key={cell.date} href={`/ledger${windowSearch({ from: cell.date, to: cell.date }, accountId)}`}
                           className="cal-day cal-day-live" aria-label={label}
+                          tabIndex={cell.date === lastLive ? 0 : -1}
                           onMouseEnter={() => setActive(cell.date)}
                           onFocus={() => setActive(cell.date)}
                           onBlur={() => setActive(null)}>
@@ -207,7 +225,7 @@ export function SpendingCalendar(
           `aria-hidden`; a second announcing region would have two of them racing to describe one
           pointer. */}
       <figcaption>
-        Hover or focus a day for its figures.
+        Hover or focus a day for its figures; tap one to open it in the ledger.
         <span className="sr-only" aria-live="polite">
           {active === null
             ? ""

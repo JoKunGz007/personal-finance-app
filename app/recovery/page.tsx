@@ -1,6 +1,8 @@
 import { LedgerNote } from "@/app/ledger-note";
 import { RecoveryBench } from "@/app/recovery-bench";
 
+export const metadata = { title: "Recovery · Private Ledger" };
+
 export const dynamic = "force-dynamic";
 
 export default function RecoveryPage() {

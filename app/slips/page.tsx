@@ -1,6 +1,8 @@
 import { LedgerNote } from "@/app/ledger-note";
 import { SlipsBench } from "@/app/slips-bench";
 
+export const metadata = { title: "Slips · Private Ledger" };
+
 export const dynamic = "force-dynamic";
 
 export default function SlipsPage() {

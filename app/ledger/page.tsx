@@ -1,6 +1,8 @@
 import { LedgerNote } from "@/app/ledger-note";
 import { TransactionsView } from "@/app/transactions-view";
 
+export const metadata = { title: "Ledger · Private Ledger" };
+
 export const dynamic = "force-dynamic";
 
 /**

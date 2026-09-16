@@ -86,20 +86,20 @@ export function CategoriesList({
             ) : (
               <>
                 <span>
-                  {/* The name is the rename trigger, same as a stated house pattern for an
-                      inline edit — a labelled button rather than a bare click target, so a
-                      screen reader hears an action rather than a static label. */}
-                  <button
-                    type="button"
-                    className="link-button"
-                    aria-label={`Rename ${category.name}`}
-                    disabled={saving !== null}
-                    onClick={() => onStartRename(category)}
-                  >
-                    {category.name}
-                  </button>
+                  {category.name}
                   {category.archived ? <em> · archived</em> : null}
                 </span>
+                {/* A visible Rename button (D-204): the name alone looked like a link, so renaming
+                    was discoverable only by accident. */}
+                <button
+                  type="button"
+                  className="secondary-button"
+                  aria-label={`Rename ${category.name}`}
+                  disabled={saving !== null}
+                  onClick={() => onStartRename(category)}
+                >
+                  Rename
+                </button>
                 <button
                   type="button"
                   className="secondary-button"

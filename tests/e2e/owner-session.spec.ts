@@ -227,6 +227,7 @@ test("backs up a confirmed ledger and restores it after the ledger is destroyed"
   // The download is the artifact — there is no server-side copy, by design.
   await page.goto("/recovery");
   await page.locator('input[name="ledger-backup-password"]').fill(BACKUP_PASSWORD);
+  await page.locator('input[name="ledger-backup-password-confirm"]').fill(BACKUP_PASSWORD);
   const downloading = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export encrypted backup" }).click();
   const download = await downloading;
@@ -281,6 +282,7 @@ test("refuses a restore into a ledger that still holds rows", async ({ page }) =
 
   await page.goto("/recovery");
   await page.locator('input[name="ledger-backup-password"]').fill(BACKUP_PASSWORD);
+  await page.locator('input[name="ledger-backup-password-confirm"]').fill(BACKUP_PASSWORD);
   const downloading = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export encrypted backup" }).click();
   const artifact = await (await downloading).path();

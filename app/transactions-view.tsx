@@ -476,6 +476,10 @@ export function TransactionsView() {
    */
   const ledgerIsEmpty = ledgerWindow !== null && windowReach(ledgerWindow, null).total === 0;
   const moreToLoad = ledgerWindow !== null && hasDeeperPage(ledgerWindow, scopedAccount);
+  // A text query, or a confirmed-row status, narrows only what is loaded (D-204): say so wherever
+  // the answer is shown, or an empty result reads as "none exist".
+  const partialFilter = moreToLoad
+    && (query.trim() !== "" || (status !== ALL_STATUSES && !statusIsComplete(status)));
 
   // The account column, not the reference one, whenever a slip is being matched: candidates are
   // filtered by **bank**, so with two accounts at one bank the offered rows can belong to
@@ -1362,6 +1366,7 @@ export function TransactionsView() {
             offeredCount={offered.size}
             offeredToCardCount={offeredToCard.size}
             totals={totals}
+            partial={partialFilter}
             balance={balance}
             slipCount={slips.length}
             cardCount={cards.length}
@@ -1451,7 +1456,9 @@ export function TransactionsView() {
             <p className="ledger-empty" role="status">
               {ledgerIsEmpty && slips.length === 0
                 ? "No confirmed transactions yet — import a statement or capture a slip."
-                : "No transaction matches this filter."}
+                : partialFilter
+                  ? `No transaction matches this filter in the ${reach.loaded.toLocaleString("en-US")} loaded rows. Load older rows below to search further.`
+                  : "No transaction matches this filter."}
             </p>
           ) : (
             <div className="table-scroll">
@@ -1601,7 +1608,8 @@ export function TransactionsView() {
               one on screen. */}
           {moreToLoad && !picking && !pickingCard ? (
             <p className="ledger-status" role="status">
-              Showing {reach.loaded} of {reach.total} confirmed rows.
+              Showing {reach.loaded.toLocaleString("en-US")} of {reach.total.toLocaleString("en-US")} confirmed rows.
+              {partialFilter ? " This filter only searches the loaded rows." : null}
               {status !== ALL_STATUSES && statusIsComplete(status)
                 ? " This filter reads every record, so it is complete whatever is loaded."
                 : null}
