@@ -1656,7 +1656,7 @@ footer p { margin: 0; }
   .ledger-table td[data-label="Description"] > span:first-of-type { order: 1; margin-top: 0; color: var(--navy); font-size: 14px; font-weight: 600; }
 
   /* #9: the stepper shows where it is instead of scrolling off-screen. */
-  .stage-nav ol { grid-template-columns: minmax(0, 1fr); }
+  .stage-nav ol { min-width: 0; grid-template-columns: minmax(0, 1fr); }
   .stage-nav li:not(.active) { display: none; }
   .stage-nav li.active { padding-left: 0; }
   .stage-count { display: inline; margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 500; }
