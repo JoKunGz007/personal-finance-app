@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202 and D-203** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203 and D-204** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -378,6 +378,19 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-201** — The all-accounts ledger showed gaps that read as missing transactions: each account pages on its own, and the merged view printed every loaded row below the shallowest account that still had more to fetch
 - **D-202** — Digits take the figures font on every page through a digit-only font face rather than markup, and the last long help paragraphs move behind i icons
 - **D-203** — The first /ux-review pass: ten findings approved and fixed, led by ledger density on both viewports
+- **D-204** — A second /ux-review, run by a subagent as an outsider: thirteen findings fixed, two verified as not needed, and three places D-203 had not gone far enough
+
+## D-204 — A second /ux-review, run by a subagent as an outsider: thirteen findings fixed, two verified as not needed, and three places D-203 had not gone far enough
+
+- Date: 2026-09-16
+- Status: **Shipped as `3f9e2ce` and `d8ca844`, pushed, and confirmed live** at 1280px desktop and 375px phone (browser pane, signed in).
+- Context: the owner asked for `/ux-review` to be re-run by a subagent with no design history, then for every finding to be fixed where verification showed it was real. Three of its fifteen findings were checked independently before any fix (1280px table overflow, document titles, the partial-filter empty state against `statusIsComplete`); the rest were verified live after deployment.
+- **The one real defect.** A text query or a confirmed-row status (`verified`, `statement-only`) filters only the loaded window, and the ledger said "No transaction matches this filter" with a strip of 0 rows while matches existed further back. `partialFilter` now drives the empty state ("…in the 120 loaded rows"), the reach line and a "loaded rows only" mark on the strip. The existing substring keeps `owner-session.spec.ts`'s locator valid.
+- **Where D-203 had not gone far enough.** Its desktop check ran at ~1450px, so at a 1280px laptop the merged table still overflowed its box by 143px and the row buttons stacked; the min-widths are now 1040/1120px with a 230px Status column. The phone ledger still led with the bank's channel code and stacked Reload over Filters; the description now leads the card and the two buttons share a row.
+- **Fixed as reported:** Silkscreen widened three phone pages through unwrappable button labels; chart text rendered at ~5px (now ~13px) and captions assumed hover; "By month" folds to six rows on a phone; the calendar is one tab stop with arrow keys instead of 440; the backup password shows its minimum and is typed twice (the spec now fills both); the single-PDF unlock is disabled until a file and password exist and the stepper uses its verb; the stepper shows "Step N of 5" on a phone; categories get a visible Rename button and a list heading; every route has its own document title; row counts carry a thousands separator; the Cash eyebrow and the settings panel's `(i)` match their neighbours.
+- **Verified and not changed.** Archiving the default category is reversible ("Bring it back"), so it is not blocked. "Use synthetic statement" is the intentional safe trial path on `/import`. Desktop `(i)` toggles at 26px pass WCAG 2.2's 24px target size for a pointer, so desktop stays exempt from the phone-only 44px rule. A "last backup" line was not added: no route exposes custody history, and adding one is a server change outside this pass.
+- Gate: `tsc` clean; `eslint` 0 errors across `app/`; 166 unit tests (adds `tests/statistics.test.ts`); `pnpm build`. **Not run:** Docker-backed suites and Playwright, including the updated `owner-session.spec.ts`.
+- Evidence (live): 1280px table 1280→1137px in a 1137px box, buttons on one line; partial filter shows the new empty state, reach sentence and "0 · loaded rows only"; phone first row 1,170→1,147px with description at 14px leading; phone statistics 8,023→6,451px, chart text 13px, "By month" 6 rows, 1 calendar tab stop; Silkscreen `/recovery` `/slips` `/import` all 375px wide; stepper 343px with one step; Rename button and "Your categories" heading present; typeface restored to the pane's own Pixelify Sans / Night Town.
 
 ## D-203 — The first /ux-review pass: ten findings approved and fixed, led by ledger density on both viewports
 
