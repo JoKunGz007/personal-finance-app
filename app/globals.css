@@ -1624,9 +1624,7 @@ footer p { margin: 0; }
   .ledger-table td[data-label="Status"]::before, .ledger-table td[data-label="Movement"]::before,
   .ledger-table td[data-label="Account"]::before { display: none; }
   .ledger-table .match-control .secondary-button { flex: 1 1 0; }
-  /* D-205: row actions fold behind one "⋯" per card; the chip still shows the state. */
-  .ledger-table .match-control .row-more { display: inline-flex; flex: 0 0 auto; margin-left: auto; }
-  .ledger-table .match-control:not(.actions-open) .row-action { display: none; }
+  .ledger-table .match-control .row-more { flex: 0 0 auto; margin-left: auto; }
   /* Folded, the "⋯" sits beside the account label instead of taking a row of its own; open, the
      actions get the full width back. */
   .ledger-table tbody tr:has(.row-more):not(:has(.actions-open)) {
@@ -1647,7 +1645,10 @@ footer p { margin: 0; }
 /* ------------------------------------------------------------------ second ux-review pass (D-204) */
 .stage-count { display: none; }
 .list-heading { margin: 24px 0 8px; font-size: 15px; font-weight: 600; }
-.row-more { display: none; }
+/* D-205 folded the row actions on a phone; D-207 folds them everywhere. The chip still shows the state. */
+.ledger-table .match-control .row-more { min-width: 36px; }
+@media (max-width: 700px) { .ledger-table .match-control .row-more { min-width: 44px; } }
+.ledger-table .match-control:not(.actions-open) .row-action { display: none; }
 @media (max-width: 700px) {
   /* #3: a button label that cannot wrap widened three pages under Silkscreen, the widest face. */
   .primary-button, .secondary-button, .tertiary-button { white-space: normal; max-width: 100%; }

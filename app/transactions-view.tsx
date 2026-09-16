@@ -15,6 +15,7 @@ import {
   matchesCashQuery,
   matchesQuery,
   matchesSlipQuery,
+  autoExcludedListSchema,
   overlayWriteBody,
   overlayWriteResponseSchema,
   type AccountTransaction,
@@ -189,6 +190,8 @@ export function TransactionsView() {
    * the ledger's own rows are already on screen.
    */
   const [categories, setCategories] = useState<Category[]>([]);
+  // Rows excluded from reporting automatically as internal transfers (D-207), for their chip.
+  const [autoExcluded, setAutoExcluded] = useState<ReadonlySet<string>>(new Set());
   // The category/note write's own error line, on the same convention as `reportingError` and
   // `correctionError` — cleared by `toggleCorrecting`, so a stale refusal from a previous panel
   // is never read as belonging to the one just opened.
@@ -861,6 +864,10 @@ export function TransactionsView() {
         fallback: "Captured notification cards could not be loaded, so none are shown.",
         offContract: "The notification cards response did not match its contract, so none are shown."
       });
+      const autoExcludedRequest = ledgerRequest("/api/v1/transactions/auto-excluded", autoExcludedListSchema, {
+        fallback: "Automatically excluded rows could not be loaded.",
+        offContract: "The automatically excluded rows did not match their contract."
+      });
       const categoriesRequest = ledgerRequest("/api/v1/categories", categoryListSchema, {
         fallback: "Categories could not be loaded.",
         offContract: "The categories response did not match its contract, so none are shown."
@@ -964,6 +971,10 @@ export function TransactionsView() {
       const categoriesResult = await categoriesRequest;
       if (superseded()) return;
       if (categoriesResult.ok) setCategories(categoriesResult.data.categories);
+      // Only a label: a failure leaves the rows plainly "Excluded", which is still true.
+      const autoExcludedResult = await autoExcludedRequest;
+      if (superseded()) return;
+      setAutoExcluded(new Set(autoExcludedResult.ok ? autoExcludedResult.data.ids : []));
 
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
@@ -1170,6 +1181,13 @@ export function TransactionsView() {
       return;
     }
     setLedgerWindow((current) => current === null ? current : withOverlay(current, transaction.id, result.data.overlay));
+    // A hand decision moves the revision on, so the row is the owner's from here (D-207).
+    setAutoExcluded((current) => {
+      if (!current.has(transaction.id)) return current;
+      const next = new Set(current);
+      next.delete(transaction.id);
+      return next;
+    });
   }
 
   /**
@@ -1429,7 +1447,8 @@ export function TransactionsView() {
 
           {!picking &&!showCombined && unattributedSlips > 0 ? (
             <p className="ledger-status">
-              {unattributedSlips} slip{unattributedSlips === 1 ? " is" : "s are"} hidden: you hold more than one account at that bank, and a slip&rsquo;s QR names only the bank, not the account.
+              {/* One template string: the JSX form dropped the space before "hidden" (D-197's trap). */}
+              {`${unattributedSlips} slip${unattributedSlips === 1 ? " is" : "s are"} hidden: you hold more than one account at that bank, and a slip’s QR names only the bank, not the account.`}
             </p>
           ) : null}
 
@@ -1588,6 +1607,7 @@ export function TransactionsView() {
                         openPair={openPair}
                         openCard={openCard}
                         categorySaving={modes.correcting === row.transaction.id && categorySaving}
+                        autoExcluded={autoExcluded.has(row.transaction.id)}
                         actions={actions}
                       />
                     )];

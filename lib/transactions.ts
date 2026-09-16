@@ -152,6 +152,9 @@ export const ledgerPageSchema = z.object({
 
 export type LedgerPage = z.infer<typeof ledgerPageSchema>;
 
+/** Rows whose current exclusion from reporting was written automatically (migration 026, D-207). */
+export const autoExcludedListSchema = z.object({ ids: z.array(z.string().uuid()) }).strict();
+
 /**
  * A candidate carries its own account, because nobody named one on its behalf.
  *

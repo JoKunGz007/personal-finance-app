@@ -57,5 +57,9 @@ export async function POST(request: Request) {
     const conflict = /idempotency|artifact.*different|payload.*different/iu.test(error.message);
     return routeError(conflict ? "This retry key or artifact was already used for different content." : "The import could not be confirmed atomically.", conflict ? 409 : 400);
   }
+  // Internal transfers the new rows complete are excluded from reporting (D-207). The import is
+  // already committed, so a failure here must not turn it into an error; the next import or a
+  // manual run from the ledger picks the pair up.
+  await auth.supabase.rpc("auto_exclude_internal_transfers");
   return Response.json({ batchId: data, payloadDigest: digest, fingerprints, warnings: reconciliation.warnings }, { status: 201, headers: noStoreHeaders });
 }

@@ -608,6 +608,8 @@ test("takes a row out of reporting and back, without touching what the owner typ
   await expect(totals.getByText("+฿800.00")).toBeVisible();
   await expect(ledger.getByText("Excluded")).toHaveCount(0);
 
+  // The row actions sit behind "⋯" on every viewport since D-207; the fold stays open across the write.
+  await target.getByRole("button", { name: /^More actions/ }).click();
   await target.getByRole("button", { name: "Exclude" }).click();
 
   // **After**: the row says so on its face, and the strip has moved by exactly this row's own
@@ -859,7 +861,7 @@ test("fills the date from the QR when the reference carries one, and says so", a
   // and a slip with no date must not claim to have read one.
   await chooseSlipImage(page, KBANK_SLIP);
   await expect(date).toHaveValue(today);
-  await expect(bench.getByText(/carries no date, so today is filled in/)).toBeVisible();
+  await expect(bench.getByText(/No date on this QR, so today is filled in/)).toBeVisible();
 });
 
 // Bulk slip upload (PLAN task 39, D-135).
@@ -1062,7 +1064,7 @@ test("keeps a slip with no matching row as its own provisional entry, counted in
   await expect(provisional.getByText("SCB · account unknown")).toBeVisible();
   await ledger.getByLabel("Account").selectOption(MATCHING_ACCOUNT);
   await expect(ledger.locator("tr.provisional-row")).toHaveCount(0);
-  await expect(ledger.getByText(/hidden while one account is selected/)).toBeVisible();
+  await expect(ledger.getByText(/slip is hidden: you hold more than one account at that bank/)).toBeVisible();
 });
 
 test("lets the owner overrule a match and put it back, and stores every decision", async ({ page }) => {

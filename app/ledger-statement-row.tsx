@@ -35,6 +35,7 @@ export function LedgerStatementRow({
   openPair,
   openCard,
   categorySaving,
+  autoExcluded,
   actions
 }: {
   row: Extract<ReconciledRow, { kind: "confirmed" }>;
@@ -64,9 +65,11 @@ export function LedgerStatementRow({
   /** Whether *this* row's own category write is in flight — disables its own toggle so the panel
    *  cannot be closed (and unmounted) out from under a pending request. */
   categorySaving: boolean;
+  /** Excluded from reporting automatically as an internal transfer (D-207), not by hand. */
+  autoExcluded: boolean;
   actions: LedgerActions;
 }) {
-  // Phone only (CSS): the row actions fold behind "⋯" so each card is not two buttons taller (D-205).
+  // The row actions fold behind "⋯" (D-205 on a phone, every viewport since D-207).
   const [actionsOpen, setActionsOpen] = useState(false);
   const transaction: AccountTransaction = row.transaction;
   const movement = movementMinor(transaction);
@@ -323,7 +326,7 @@ export function LedgerStatementRow({
                   no information. A chip when the row is *out* of reporting is the opposite — the
                   totals above the table are computed without it, and a figure that quietly excludes
                   a visible row is the silent difference this ledger keeps having to name. */}
-              {includeInReporting ? null : <em className="status-chip excluded">Excluded</em>}
+              {includeInReporting ? null : <em className="status-chip excluded">{autoExcluded ? "Auto-excluded · transfer" : "Excluded"}</em>}
               <button
                 type="button"
                 className="secondary-button row-more"
