@@ -1622,6 +1622,12 @@ footer p { margin: 0; }
   /* D-205: row actions fold behind one "⋯" per card; the chip still shows the state. */
   .ledger-table .match-control .row-more { display: inline-flex; flex: 0 0 auto; margin-left: auto; }
   .ledger-table .match-control:not(.actions-open) .row-action { display: none; }
+  /* Folded, the "⋯" sits beside the account label instead of taking a row of its own; open, the
+     actions get the full width back. */
+  .ledger-table tbody tr:has(.row-more):not(:has(.actions-open)) {
+    grid-template-areas: "desc desc" "date move" "acct status" "bal all";
+  }
+  .ledger-table tbody tr:has(.row-more):not(:has(.actions-open)) td[data-label="Status"] { align-self: center; }
 
   /* Filters fold behind one button; Reload and a range warning stay visible. */
   .filters-toggle { display: block; }
