@@ -1602,7 +1602,7 @@ footer p { margin: 0; }
      the next; controls close the card. */
   .ledger-table tbody tr:not(.day-head) {
     min-height: 0; column-gap: 12px; row-gap: 2px;
-    grid-template-areas: "desc desc" "date move" "acct bal" "all all" "status status";
+    grid-template-areas: "desc desc" "date move" "acct acct" "bal all" "status status";
   }
   .ledger-table td[data-label="Description"] { grid-area: desc; }
   .ledger-table td[data-label="Date"] { grid-area: date; align-self: end; }
@@ -1610,9 +1610,11 @@ footer p { margin: 0; }
   .ledger-table td[data-label="Account"], .ledger-table td[data-label="Reference"] { grid-area: acct; }
   .ledger-table td[data-label="Account balance"], .ledger-table td[data-label="Balance"] { grid-area: bal; text-align: right !important; }
   .ledger-table td[data-label="All accounts"] { grid-area: all; text-align: right !important; }
+  .ledger-table td[data-label="Account balance"], .ledger-table td[data-label="Balance"] { text-align: left !important; }
   .ledger-table td[data-label="Status"] { grid-area: status; }
   .ledger-table td[data-label="Date"]::before, .ledger-table td[data-label="Description"]::before,
-  .ledger-table td[data-label="Status"]::before, .ledger-table td[data-label="Movement"]::before { display: none; }
+  .ledger-table td[data-label="Status"]::before, .ledger-table td[data-label="Movement"]::before,
+  .ledger-table td[data-label="Account"]::before { display: none; }
   .ledger-table .match-control .secondary-button { flex: 1 1 0; }
 
   /* Filters fold behind one button; Reload and a range warning stay visible. */
