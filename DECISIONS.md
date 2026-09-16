@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199 and D-200** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200 and D-201** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -375,6 +375,18 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-198** — The fifteenth boundary is taken on the owner's word rather than an argument closing, and this file returns to holding nothing but its two open questions
 - **D-199** — D-196's real scope was every pixelated figure on `/ledger`, not just the stat strip: the day heading, the row timestamp and the account label all still switched to the pixel face
 - **D-200** — D-199 put whole words in the figures font along with the digits beside them — "Sept", "row(s)", a bank name — and the owner's correction was exact: only a digit run takes `--font-money`, never a word sharing its span
+- **D-201** — The all-accounts ledger showed gaps that read as missing transactions: each account pages on its own, and the merged view printed every loaded row below the shallowest account that still had more to fetch
+
+## D-201 — The all-accounts ledger showed gaps that read as missing transactions: each account pages on its own, and the merged view printed every loaded row below the shallowest account that still had more to fetch
+
+- Date: 2026-09-16
+- Status: **Shipped as `0e486b0`, pushed, and confirmed live** on the deployed build, cache-busted.
+- Context: the owner sent a screenshot of the all-accounts `/ledger` with a run of days holding no rows at all and asked why transactions were missing. Nothing was missing from the ledger. Since task 45 (D-158) each account loads its newest `LEDGER_PAGE_SIZE` rows on its own, and the merged view rendered the union. One account's first page ended weeks after another's reached back a year, so below that point only the deeper accounts' rows appeared, which reads exactly like a ledger with transactions lost. The combined-balance column jumped across the gap by the unloaded account's movements.
+- **Why it had not surfaced before.** D-158 did name a floor, but for the combined *balance* only (`combinedBalanceFloor`), and migration 022 retired it once the server computed that figure per row. Nothing ever floored the *rows*. The comment in `load()` — any row among the newest N of the union is among the newest N of its own account — is true and answers the other direction: it proves nothing shown above the floor is missing, not that nothing below it is.
+- **The fix is the same floor, applied to rows.** `windowFloor` (`lib/ledger-window.ts`) takes, among the accounts in scope with `hasMore`, the newest of their last loaded rows; `shownRows` keeps only rows at or above it under `compareTransactions`. `windowRows`, `windowIds` and `windowReach.loaded` all read through it, so the table, the held-id set and the "Showing N of M" line agree. One account in scope is never cut (its own window is already contiguous), and a scope with nothing left to fetch is never cut. Reconciliation is untouched — `reconciliationRows` still reads every loaded row plus candidates, so no match or status can move because of the cut. Captured records (slips, cards, cash) are fetched whole and are not cut.
+- **Review (`/code-review`, high) found one regression, fixed before commit.** `importedAccounts` was derived from `scope`, which now stops at the floor, so an account whose every loaded row sits below it would have been reported as not imported. It reads the window directly now.
+- Gate: `vitest run tests/ledger-window.test.ts` 25/25, with the new cut case **red against the pre-fix `lib/ledger-window.ts`** and green after; `tsc --noEmit` clean; `eslint` 0 errors on the three touched files (the two pre-existing `exhaustive-deps` warnings in `app/transactions-view.tsx`). **The Docker-backed suites, pgTAP and Playwright were not run** — Docker was stopped and the change touches no schema or route.
+- Evidence: `lib/ledger-window.ts`, `app/transactions-view.tsx`, `tests/ledger-window.test.ts`. On the deployed build: the first page now ends at the shallowest paged account's last row; one *Load older rows* extends the view and fills the previously empty days; the combined-balance column's remaining row-to-row mismatches net to zero (same-timestamp ordering, not missing rows). D-158 (the paging this corrects), migration 022 (why the balance floor was retired). No figure from the real ledger is recorded here.
 
 ## D-200 — D-199 put whole words in the figures font along with the digits beside them — "Sept", "row(s)", a bank name — and the owner's correction was exact: only a digit run takes `--font-money`, never a word sharing its span
 
