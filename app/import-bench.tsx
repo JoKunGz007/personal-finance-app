@@ -387,7 +387,7 @@ export function ImportBench() {
     setAccounts(result.data.accounts);
     setStatus(result.data.accounts.length === 0
       ? "No ledger accounts exist yet. One must be created before a statement can be bound."
-      : `${result.data.accounts.length} ledger account(s) available. Binding is checked against the printed account and currency.`);
+      : `${result.data.accounts.length} ledger account${result.data.accounts.length === 1 ? "" : "s"} available. Binding is checked against the printed account and currency.`);
   }
 
   // Creating an account is the way out of a real dead end. A statement prints an account
@@ -665,7 +665,10 @@ export function ImportBench() {
             <input type="password" value={password} autoComplete="off" name="statement-unlock-code" placeholder="Enter only when ready…" onChange={(event) => setPassword(event.target.value)} />
             <small>Held in worker memory for this attempt only.</small>
           </label>
-          <button className="primary-button" type="button" onClick={parsePdf} disabled={!file || !password}>Unlock &amp; check layout</button>
+          <button className="primary-button" type="button" onClick={parsePdf} disabled={!file || !password} aria-describedby={!file || !password ? "unlock-hint" : undefined}>Unlock &amp; check layout</button>
+          {!file || !password
+            ? <small id="unlock-hint" className="field-help">{!file ? "Choose a PDF and enter its password" : "Enter the PDF's password"}</small>
+            : null}
           <span className="or-rule">or</span>
           <button className="secondary-button" type="button" onClick={loadSynthetic}>Use synthetic statement</button>
         </div>

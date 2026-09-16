@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { type Category } from "@/lib/categories";
 
 /**
@@ -41,15 +42,32 @@ export function CategoriesList({
   /** `{id, name, archived}` with `archived` flipped and `name` unchanged, for the same reason. */
   onArchiveToggle: (category: Category) => void;
 }) {
+  // Focus follows the edit (D-205): into the name, selected, when it opens or a save fails (the input
+  // was disabled mid-save); back to that row's Rename button when it closes by Save, Cancel or Escape.
+  const list = useRef<HTMLUListElement>(null);
+  const lastRenaming = useRef<string | null>(null);
+  useEffect(() => {
+    if (renamingId !== null) {
+      if (saving !== null) return;
+      const input = list.current?.querySelector<HTMLInputElement>("input[data-rename-input]");
+      input?.focus();
+      input?.select();
+    } else if (lastRenaming.current !== null) {
+      list.current?.querySelector<HTMLButtonElement>(`button[data-rename="${lastRenaming.current}"]`)?.focus();
+    }
+    lastRenaming.current = renamingId;
+  }, [renamingId, saving]);
+
   if (categories.length === 0) {
     return <p className="ledger-empty" role="status">No category has been created yet.</p>;
   }
 
   return (
-    <ul className="retired-list">
+    <ul className="retired-list" ref={list}>
       {categories.map((category) => {
         const isRenaming = renamingId === category.id;
         const isSaving = saving === category.id;
+        const unchanged = renameName.trim() === "" || renameName.trim() === category.name;
         return (
           <li key={category.id}>
             {isRenaming ? (
@@ -63,13 +81,23 @@ export function CategoriesList({
                     value={renameName}
                     maxLength={80}
                     disabled={saving !== null}
+                    data-rename-input=""
                     onChange={(event) => onRenameNameChange(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        onCancelRename();
+                      } else if (event.key === "Enter" && !unchanged) {
+                        event.preventDefault();
+                        onSubmitRename(category);
+                      }
+                    }}
                   />
                 </label>
                 <button
                   type="button"
                   className="secondary-button"
-                  disabled={saving !== null || renameName.trim() === ""}
+                  disabled={saving !== null || unchanged}
                   onClick={() => onSubmitRename(category)}
                 >
                   {isSaving ? "Saving…" : "Save"}
@@ -95,6 +123,7 @@ export function CategoriesList({
                   type="button"
                   className="secondary-button"
                   aria-label={`Rename ${category.name}`}
+                  data-rename={category.id}
                   disabled={saving !== null}
                   onClick={() => onStartRename(category)}
                 >

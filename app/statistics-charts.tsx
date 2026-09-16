@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { formatThb } from "@/lib/money";
 import { magnitude, monthLabel, type DailyBalance, type MonthlyStatistic } from "@/lib/statistics";
 
@@ -81,6 +81,26 @@ function niceTicks(max: bigint, count = 4): bigint[] {
   return ticks;
 }
 
+/**
+ * The viewBox width follows the rendered width (D-205), so an 11-unit label renders at 11px on a
+ * phone as on a desktop. A fixed 820-unit box scaled every label down to ~4px at 360px, and the
+ * phone-only font-size override that replaced it still rendered below 10px.
+ */
+function useChartWidth() {
+  // A callback ref, so an empty chart that later fills still gets measured.
+  const [figure, setFigure] = useState<HTMLElement | null>(null);
+  const [width, setWidth] = useState(820);
+  useEffect(() => {
+    if (!figure) return;
+    const measure = () => setWidth(Math.round(Math.max(300, Math.min(820, figure.clientWidth || 820))));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(figure);
+    return () => observer.disconnect();
+  }, [figure]);
+  return [setFigure, width] as const;
+}
+
 // ------------------------------------------------------------------ balance over time
 
 /**
@@ -93,11 +113,11 @@ function niceTicks(max: bigint, count = 4): bigint[] {
 export function BalanceChart({ points }: { points: readonly DailyBalance[] }) {
   const titleId = useId();
   const [hover, setHover] = useState<number | null>(null);
+  const [figureRef, width] = useChartWidth();
   if (points.length < 2) {
     return <p className="chart-empty">A balance line needs at least two days of rows.</p>;
   }
 
-  const width = 820;
   const height = 260;
   const pad = { top: 18, right: 18, bottom: 32, left: 66 };
   const plotWidth = width - pad.left - pad.right;
@@ -139,7 +159,7 @@ export function BalanceChart({ points }: { points: readonly DailyBalance[] }) {
   const active = hover === null ? null : series.at(hover) ?? null;
 
   return (
-    <figure className="chart">
+    <figure className="chart" ref={figureRef}>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby={titleId} aria-describedby={`${titleId}-desc`}
            preserveAspectRatio="xMidYMid meet"
            onMouseLeave={() => setHover(null)}>
@@ -229,9 +249,9 @@ export function BalanceChart({ points }: { points: readonly DailyBalance[] }) {
 export function MonthlyChart({ months }: { months: readonly MonthlyStatistic[] }) {
   const titleId = useId();
   const [hover, setHover] = useState<number | null>(null);
+  const [figureRef, width] = useChartWidth();
   if (months.length === 0) return <p className="chart-empty">No months in this window.</p>;
 
-  const width = 820;
   const height = 280;
   const pad = { top: 18, right: 18, bottom: 46, left: 66 };
   const plotWidth = width - pad.left - pad.right;
@@ -256,7 +276,7 @@ export function MonthlyChart({ months }: { months: readonly MonthlyStatistic[] }
   const scale = (value: bigint) => Number((value * 10000n) / max) / 10000 * plotHeight;
 
   return (
-    <figure className="chart">
+    <figure className="chart" ref={figureRef}>
       <div className="chart-legend">
         <span><i style={{ background: DEPOSIT }} aria-hidden="true" />Money in</span>
         <span><i style={{ background: WITHDRAWAL }} aria-hidden="true" />Money out</span>

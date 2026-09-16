@@ -487,10 +487,14 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
           className="primary-button"
           type="button"
           disabled={working || queuedCount === 0}
+          aria-describedby={!working && queuedCount === 0 ? "batch-unlock-hint" : undefined}
           onClick={() => void parseMany(files.filter((item) => item.state === "queued"))}
         >
           {busy ? "Reading…" : `Unlock & read ${queuedCount || ""}`.trim()}
         </button>
+        {!working && queuedCount === 0
+          ? <small id="batch-unlock-hint" className="field-help">Choose or sync a PDF to read</small>
+          : null}
         {retryable.length > 0 && !busy ? (
           <button className="secondary-button" type="button" onClick={() => void retryRefused()}>
             Retry the {retryable.length} that refused

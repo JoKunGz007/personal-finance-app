@@ -1609,7 +1609,7 @@ export function TransactionsView() {
           {moreToLoad && !picking && !pickingCard ? (
             <p className="ledger-status" role="status">
               Showing {reach.loaded.toLocaleString("en-US")} of {reach.total.toLocaleString("en-US")} confirmed rows.
-              {partialFilter ? " This filter only searches the loaded rows." : null}
+              {partialFilter && visibleRows.length > 0 ? " This filter only searches the loaded rows." : null}
               {status !== ALL_STATUSES && statusIsComplete(status)
                 ? " This filter reads every record, so it is complete whatever is loaded."
                 : null}

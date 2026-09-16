@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { formatThb } from "@/lib/money";
 import { movementMinor, overlayInForce, type AccountTransaction } from "@/lib/transactions";
 import { type LedgerAccount } from "@/lib/accounts";
@@ -66,6 +66,8 @@ export function LedgerStatementRow({
   categorySaving: boolean;
   actions: LedgerActions;
 }) {
+  // Phone only (CSS): the row actions fold behind "⋯" so each card is not two buttons taller (D-205).
+  const [actionsOpen, setActionsOpen] = useState(false);
   const transaction: AccountTransaction = row.transaction;
   const movement = movementMinor(transaction);
   const overlay = transaction.transaction_overlays[0];
@@ -316,7 +318,7 @@ export function LedgerStatementRow({
             them competes with the answer being asked for.
           */}
           {modes.picking || modes.pickingCard ? null : (
-            <div className="match-control">
+            <div className={`match-control${actionsOpen || modes.correcting === transaction.id || modes.settingReporting === transaction.id ? " actions-open" : ""}`}>
               {/* No chip in the ordinary case, which is D-064's rule: a badge on every row carries
                   no information. A chip when the row is *out* of reporting is the opposite — the
                   totals above the table are computed without it, and a figure that quietly excludes
@@ -324,7 +326,16 @@ export function LedgerStatementRow({
               {includeInReporting ? null : <em className="status-chip excluded">Excluded</em>}
               <button
                 type="button"
-                className="secondary-button"
+                className="secondary-button row-more"
+                aria-expanded={actionsOpen}
+                aria-label={`More actions — the row dated ${formatDate(row.date)}`}
+                onClick={() => setActionsOpen((open) => !open)}
+              >
+                <span aria-hidden="true">⋯</span>
+              </button>
+              <button
+                type="button"
+                className="secondary-button row-action"
                 /* No `aria-pressed`. The visible label names the *action* and changes with the
                    state, so a pressed-ness on top of it announces "Include, pressed" — two
                    readings of the same fact that contradict each other. What states the state is
@@ -352,7 +363,7 @@ export function LedgerStatementRow({
                   correction trigger in this table already follows. */}
               <button
                 type="button"
-                className="secondary-button"
+                className="secondary-button row-action"
                 aria-expanded={modes.correcting === transaction.id}
                 aria-label={`${modes.correcting === transaction.id ? "Stop editing category" : "Edit category"} — the row dated ${formatDate(row.date)}`}
                 disabled={(modes.correcting !== null && modes.correcting !== transaction.id) || (modes.correcting === transaction.id && categorySaving)}

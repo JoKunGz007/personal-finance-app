@@ -113,6 +113,8 @@ export function LedgerSummary({
     );
   }
 
+  // A filter over a partial window sums only the matching loaded rows, so every figure says so (D-205).
+  const loadedOnly = partial ? <small> · loaded rows only</small> : null;
   return (
     <>
       {/* One total over both kinds, which is only correct because a matched pair is one
@@ -122,14 +124,14 @@ export function LedgerSummary({
         {/* Cash is counted apart from `provisional`: a slip is waiting for a statement,
             while a cash payment has no bank behind it and never will, so folding the
             two together would say the total is waiting on something never coming. */}
-        <div><dt>Rows</dt><dd>{totals.rows.toLocaleString("en-US")}{partial ? <small> · loaded rows only</small> : null}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}{totals.cash > 0 ? <small> · {totals.cash} cash</small> : null}{totals.cards > 0 ? <small> · {totals.cards} card{totals.cards === 1 ? "" : "s"}</small> : null}</dd></div>
+        <div><dt>Rows</dt><dd>{totals.rows.toLocaleString("en-US")}{loadedOnly}{totals.provisional > 0 ? <small> · {totals.provisional} provisional</small> : null}{totals.cash > 0 ? <small> · {totals.cash} cash</small> : null}{totals.cards > 0 ? <small> · {totals.cards} card{totals.cards === 1 ? "" : "s"}</small> : null}</dd></div>
         {/* **Deposits and withdrawals carry a fixed colour; net carries its sign.** The first two
             are roles — money in is always money in — while net is the one figure here that can fall
             either side of zero, so colouring it by role rather than by value would tell the owner
             he gained in a month he lost. Zero is neutral in both cases. */}
-        <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}</dd></div>
-        <div><dt>Withdrawals</dt><dd className={BigInt(totals.withdrawals) < 0n ? "negative" : ""}>{formatThb(totals.withdrawals)}</dd></div>
-        <div><dt>Net movement</dt><dd className={BigInt(totals.net) > 0n ? "positive" : BigInt(totals.net) < 0n ? "negative" : ""}>{formatThb(totals.net)}</dd></div>
+        <div><dt>Deposits</dt><dd className="positive">+{formatThb(totals.deposits)}{loadedOnly}</dd></div>
+        <div><dt>Withdrawals</dt><dd className={BigInt(totals.withdrawals) < 0n ? "negative" : ""}>{formatThb(totals.withdrawals)}{loadedOnly}</dd></div>
+        <div><dt>Net movement</dt><dd className={BigInt(totals.net) > 0n ? "positive" : BigInt(totals.net) < 0n ? "negative" : ""}>{formatThb(totals.net)}{loadedOnly}</dd></div>
         {/* **A balance, and it is uncoloured on purpose.** The three figures to its left are
             movements, where a sign is the finding; a balance is a position, and painting a healthy
             account green would be this strip's own opinion rather than the ledger's.

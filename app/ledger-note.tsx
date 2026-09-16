@@ -57,6 +57,13 @@ export function LedgerNote({ label, children }: {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((current) => !current)}
+        // Escape closes the note from the toggle, where focus already is (D-205).
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.preventDefault();
+            setOpen(false);
+          }
+        }}
       >
         {/* The glyph is decorative and the name is the real one: a screen reader that read the
             letter would announce "i", which names nothing. */}

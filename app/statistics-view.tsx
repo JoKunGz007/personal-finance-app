@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { accountListSchema, type LedgerAccount } from "@/lib/accounts";
 import { AccountSelect } from "@/app/account-select";
-import { formatThb } from "@/lib/money";
+import { formatThb, type MinorUnitString } from "@/lib/money";
 import {
   ISO_DAY_NAMES,
   ledgerStatisticsSchema,
@@ -40,6 +40,15 @@ import { SpendingCalendar } from "@/app/statistics-calendar";
 function signClass(minor: string): string {
   const amount = BigInt(minor);
   return amount > 0n ? "positive" : amount < 0n ? "negative" : "";
+}
+
+// "฿120.00 more (+12.5%)": words carry the direction, so no bare sign has to (D-205).
+function describeChange(change: { delta: MinorUnitString; percent: number | null }): string {
+  const delta = BigInt(change.delta);
+  if (delta === 0n) return "No change";
+  const amount = formatThb((delta < 0n ? -delta : delta).toString() as MinorUnitString);
+  const percent = change.percent === null ? "" : ` (${delta < 0n ? "−" : "+"}${Math.abs(change.percent)}%)`;
+  return `${amount} ${delta > 0n ? "more" : "less"}${percent}`;
 }
 
 /**
@@ -78,7 +87,11 @@ function MovementTable(
                 {movements.map((movement) => (
                   <tr key={movement.id}>
                     <td data-label="Date"><time dateTime={movement.date}>{movement.date}</time></td>
-                    <td data-label="Transaction">{movement.label}</td>
+                    <td data-label="Transaction">
+                      {movement.description || movement.label}
+                      {movement.description && movement.label !== movement.description
+                        ? <> <span className="status-chip">{movement.label}</span></> : null}
+                    </td>
                     <td className={`numeric ${signClass(movement.amount)}`} data-label="Amount">{formatThb(movement.amount)}</td>
                   </tr>
                 ))}
@@ -506,8 +519,7 @@ export function StatisticsView() {
                             : "Not compared: one of the two months is partial, so the periods are different lengths."}>
                       {change === null
                         ? "—"
-                        : <>{BigInt(change.delta) > 0n ? "+" : ""}{formatThb(change.delta)}
-                            {change.percent === null ? "" : ` (${change.percent > 0 ? "+" : ""}${change.percent}%)`}</>}
+                        : describeChange(change)}
                     </td>
                   </tr>
                 );

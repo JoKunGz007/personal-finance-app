@@ -1619,6 +1619,9 @@ footer p { margin: 0; }
   .ledger-table td[data-label="Status"]::before, .ledger-table td[data-label="Movement"]::before,
   .ledger-table td[data-label="Account"]::before { display: none; }
   .ledger-table .match-control .secondary-button { flex: 1 1 0; }
+  /* D-205: row actions fold behind one "⋯" per card; the chip still shows the state. */
+  .ledger-table .match-control .row-more { display: inline-flex; flex: 0 0 auto; margin-left: auto; }
+  .ledger-table .match-control:not(.actions-open) .row-action { display: none; }
 
   /* Filters fold behind one button; Reload and a range warning stay visible. */
   .filters-toggle { display: block; }
@@ -1633,13 +1636,12 @@ footer p { margin: 0; }
 /* ------------------------------------------------------------------ second ux-review pass (D-204) */
 .stage-count { display: none; }
 .list-heading { margin: 24px 0 8px; font-size: 15px; font-weight: 600; }
+.row-more { display: none; }
 @media (max-width: 700px) {
   /* #3: a button label that cannot wrap widened three pages under Silkscreen, the widest face. */
   .primary-button, .secondary-button, .tertiary-button { white-space: normal; max-width: 100%; }
   .recovery-grid { grid-template-columns: minmax(0, 1fr); }
 
-  /* #2: the charts' 820-unit viewBox renders 11-unit text at ~5px on a phone. */
-  .chart svg text { font-size: 24px; }
 
   /* #5: "By month" keeps the latest six rows until asked. */
   .phone-capped-tail:not(.show-all) tbody tr:nth-last-child(n+7) { display: none; }

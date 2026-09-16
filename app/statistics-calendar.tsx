@@ -90,12 +90,38 @@ export function SpendingCalendar(
   const lastLive = periodTo;
 
   function moveBetweenDays(event: KeyboardEvent<HTMLDivElement>) {
-    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
-    if (step === undefined) return;
     const days = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>("a.cal-day-live")].filter((day) => day.offsetParent !== null);
     const from = days.indexOf(document.activeElement as HTMLAnchorElement);
     if (from === -1) return;
-    const to = days[Math.max(0, Math.min(days.length - 1, from + step))];
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+    let to: HTMLAnchorElement | undefined;
+    if (step !== undefined) {
+      to = days[Math.max(0, Math.min(days.length - 1, from + step))];
+    } else if (event.key === "Home" || event.key === "End" || event.key === "PageUp" || event.key === "PageDown") {
+      // Home/End: the first/last live day of this week in this month. PageUp/PageDown: the same
+      // day of the previous/next visible month, or the nearest live day in it (D-205).
+      const current = days[from]!.dataset.date!;
+      const at = new Date(`${current}T00:00:00Z`);
+      if (event.key === "Home" || event.key === "End") {
+        const offset = (at.getUTCDay() + 6) % 7;
+        const start = new Date(at.getTime() - offset * 86_400_000).toISOString().slice(0, 10);
+        const end = new Date(at.getTime() + (6 - offset) * 86_400_000).toISOString().slice(0, 10);
+        const week = days.filter((day) => {
+          const date = day.dataset.date!;
+          return date >= start && date <= end && date.slice(0, 7) === current.slice(0, 7);
+        });
+        to = event.key === "Home" ? week[0] : week.at(-1);
+      } else {
+        const target = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + (event.key === "PageUp" ? -1 : 1), 1));
+        const month = target.toISOString().slice(0, 7);
+        const inMonth = days.filter((day) => day.dataset.date!.startsWith(month));
+        const dayOfMonth = Number(current.slice(8, 10));
+        to = inMonth.reduce<HTMLAnchorElement | undefined>((best, day) =>
+          best === undefined
+            || Math.abs(Number(day.dataset.date!.slice(8, 10)) - dayOfMonth) < Math.abs(Number(best.dataset.date!.slice(8, 10)) - dayOfMonth)
+            ? day : best, undefined);
+      }
+    }
     if (!to) return;
     event.preventDefault();
     days[from]!.tabIndex = -1;
@@ -187,7 +213,7 @@ export function SpendingCalendar(
                     : `${cell.date}: no reportable movement`;
                   return (
                     <Link key={cell.date} href={`/ledger${windowSearch({ from: cell.date, to: cell.date }, accountId)}`}
-                          className="cal-day cal-day-live" aria-label={label}
+                          className="cal-day cal-day-live" aria-label={label} data-date={cell.date}
                           tabIndex={cell.date === lastLive ? 0 : -1}
                           onMouseEnter={() => setActive(cell.date)}
                           onFocus={() => setActive(cell.date)}

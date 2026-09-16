@@ -226,7 +226,7 @@ export function CategoriesBench() {
       ) : null}
 
       {categories !== null ? (
-        <h3 className="list-heading">Your categories</h3>
+        <h2 className="list-heading">Your categories</h2>
       ) : null}
       {categories !== null ? (
         <CategoriesList
