@@ -83,6 +83,10 @@ export function SpendingCalendar(
 ) {
   const titleId = useId();
   const [active, setActive] = useState<string | null>(null);
+  // Phone only (CSS): the latest three months show until asked, so the page is not 4,000px of
+  // calendar before the next section.
+  const [allMonths, setAllMonths] = useState(false);
+  const monthCount = monthsBetween(periodFrom, periodTo).length;
 
   // **Memoized on `movements` alone.** Hovering or focusing a cell moves `active`, which re-renders
   // this component on every cell the pointer crosses — without this, that re-render also rebuilt
@@ -106,7 +110,7 @@ export function SpendingCalendar(
         <span><i style={{ background: DEPOSIT }} aria-hidden="true" />Money in</span>
         <span><i style={{ background: WITHDRAWAL }} aria-hidden="true" />Money out</span>
       </div>
-      <div className="cal-months" onMouseLeave={() => setActive(null)}>
+      <div className={`cal-months${allMonths ? " show-all" : ""}`} onMouseLeave={() => setActive(null)}>
         {monthsBetween(periodFrom, periodTo).map((month) => {
           const year = Number(month.slice(0, 4));
           const monthNum = Number(month.slice(5, 7));
@@ -181,6 +185,11 @@ export function SpendingCalendar(
           );
         })}
       </div>
+      {monthCount > 3 ? (
+        <button type="button" className="secondary-button phone-more" aria-expanded={allMonths} onClick={() => setAllMonths((all) => !all)}>
+          {allMonths ? "Show the latest 3 months" : `Show all ${monthCount} months`}
+        </button>
+      ) : null}
       {/* The chart's accessible twin for a pointer or a keyboard, on `MonthlyChart`'s pattern —
           `aria-label` alone would need a screen reader to land on the exact cell to hear a figure.
           Only two cases, not three: `active` can only ever be a date a live cell set it to, and

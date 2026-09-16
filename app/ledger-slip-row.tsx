@@ -124,7 +124,7 @@ export function LedgerSlipRow({
         <td data-label={showCombined ? "Account" : "Reference"}>
           {showCombined
             ? (row.account
-                ? <span className="mono">{row.account.label} ···· <span className="figure">{row.account.last_four}</span></span>
+                ? <span className="mono">{row.account.label} <span className="nowrap">···· <span className="figure">{row.account.last_four}</span></span></span>
                 : <span className="mono">{slip.bank_code} · account unknown</span>)
             : <span className="mono">
                 {splitFigures(slip.slip_reference).map((part, index) =>

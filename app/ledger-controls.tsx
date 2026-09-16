@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { type LedgerAccount } from "@/lib/accounts";
 import { AccountSelect } from "@/app/account-select";
 import { LedgerNote } from "@/app/ledger-note";
 import {
+  ALL_ACCOUNTS,
   ALL_STATUSES,
   type LedgerModes,
   type Order,
@@ -68,6 +70,12 @@ export function LedgerControls({
 }) {
   const suspended = modes.picking || modes.pickingCard;
 
+  // Phone only (CSS hides the toggle above 700px): the filters fold behind one button so the
+  // first transaction is not two screens down. Reload stays outside the fold.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = [selected !== ALL_ACCOUNTS, dateFrom !== "", dateTo !== "", status !== ALL_STATUSES, query !== "", order !== "newest"]
+    .filter(Boolean).length;
+
   return (
     <>
       {/* The heading is one line and a disclosure. The paragraph that stood here described what
@@ -97,7 +105,7 @@ export function LedgerControls({
         </div>
       </div>
 
-      <div className="ledger-controls">
+      <div className={`ledger-controls${filtersOpen ? "" : " filters-folded"}`}>
         {/* Every control here is suspended while a slip is being matched — including Reload,
             which would drop the choice half-made. The mode is a different question about the
             ledger, not a filter of it. */}
@@ -109,6 +117,14 @@ export function LedgerControls({
         </button>
         {loaded ? (
           <>
+            <button
+              type="button"
+              className="secondary-button filters-toggle"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((open) => !open)}
+            >
+              {filtersOpen ? "Hide filters" : `Filters${activeFilters > 0 ? ` · ${activeFilters} on` : ""}`}
+            </button>
             {/* **`showUnknown` on**, now that `selected` can arrive seeded from a URL (PLAN task
                 47's calendar) rather than only from this control's own `onChange` — an id that
                 names no account the owner holds must say so rather than silently rendering as

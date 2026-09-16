@@ -56,13 +56,15 @@ function signClass(minor: string): string {
 function MovementTable(
   { id, title, movements }: { id: string; title: string; movements: readonly LargestMovement[] }
 ) {
+  // Phone only (CSS): the first five rows show until asked.
+  const [all, setAll] = useState(false);
   return (
     <section className="stats-section" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>{title}</h2>
       {movements.length === 0
         ? <p className="field-help">Nothing in this window.</p>
         : (
-          <div className="table-scroll">
+          <div className={`table-scroll phone-capped${all ? " show-all" : ""}`}>
             <table>
               <caption className="sr-only">{title} in the selected window.</caption>
               <thead>
@@ -82,6 +84,11 @@ function MovementTable(
                 ))}
               </tbody>
             </table>
+            {movements.length > 5 ? (
+              <button type="button" className="secondary-button phone-more" aria-expanded={all} onClick={() => setAll((open) => !open)}>
+                {all ? "Show the top 5" : `Show all ${movements.length}`}
+              </button>
+            ) : null}
           </div>
         )}
     </section>

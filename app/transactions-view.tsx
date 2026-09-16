@@ -1455,7 +1455,7 @@ export function TransactionsView() {
             </p>
           ) : (
             <div className="table-scroll">
-              <table className={showCombined ? "ledger-table merged" : "ledger-table"}>
+              <table className={`ledger-table${showCombined ? " merged" : ""}${dayHeads ? " grouped" : ""}`}>
                 <thead>
                   <tr>
                     <th>Date</th>

@@ -33,6 +33,9 @@ type Enrolment = { factorId: string; qrCode: string; secret: string };
 export function OwnerAccess() {
   const [supabase] = useState(browserSupabase);
   const [state, setState] = useState<OwnerAccessState>({ kind: "signed-out" });
+  // False until the first session lookup answers, so a signed-in owner never sees "Sign in with
+  // Google" flash in the header while that lookup is in flight.
+  const [checked, setChecked] = useState(false);
   const [email, setEmail] = useState("");
   const [enrolment, setEnrolment] = useState<Enrolment | null>(null);
   const [code, setCode] = useState("");
@@ -46,6 +49,7 @@ export function OwnerAccess() {
     if (!user) {
       setState({ kind: "signed-out" });
       setEmail("");
+      setChecked(true);
       return;
     }
     const [assurance, listed] = await Promise.all([
@@ -55,6 +59,7 @@ export function OwnerAccess() {
     const factors: TotpFactor[] = listed.data?.totp ?? [];
     setEmail(user.email ?? "");
     setState(ownerAccessState({ signedIn: true, level: assurance.data?.currentLevel ?? null, factors }));
+    setChecked(true);
   }, [supabase]);
 
   // The load-on-mount shape the rest of this app uses (`app/correction-form.tsx`): the work
@@ -174,7 +179,7 @@ export function OwnerAccess() {
 
   return (
     <div className="owner-access">
-      {state.kind === "signed-out" ? (
+      {state.kind === "signed-out" && (checked || !supabase) ? (
         <button className="primary-button" type="button" onClick={signIn} disabled={busy}>
           Sign in with Google
         </button>

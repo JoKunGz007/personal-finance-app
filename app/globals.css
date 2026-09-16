@@ -561,6 +561,8 @@ button:disabled { cursor: wait; opacity: .65; }
 .owner-access-qr { width: 184px; height: 184px; padding: 10px; border-radius: var(--radius); background: #fff; }
 .owner-access-secret code { padding: 3px 7px; border-radius: 5px; background: color-mix(in srgb, var(--line) 40%, transparent); font: 500 13px/1.5 var(--font-data); overflow-wrap: anywhere; }
 .link-button { color: var(--blue); background: none; border: 0; padding: 0; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
+/* A taller hit area on every viewport, not only the phone (D-203); the negative margin keeps the text where it was. */
+.link-button { padding-block: 13px; margin-block: -13px; }
 .link-button:disabled { opacity: .5; cursor: not-allowed; }
 
 .stage-nav { border-bottom: 1px solid var(--line); background: var(--paper); }
@@ -601,6 +603,15 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
    is the pattern `.session-state` in this file already uses. */
 .heading-note, .cash-heading { display: flex; flex-wrap: wrap; align-items: baseline; }
 .heading-note { margin-top: 10px; gap: 0; }
+/* **The (i) sits beside its heading, not on a line of its own** (D-203). `display: contents` makes
+   the note's button and panel items of the heading's own row; the panel keeps `flex-basis: 100%`,
+   so it still opens full-width below while the button stays put. The heading stays a sibling of the
+   button, so the `aria-labelledby` name is unchanged. */
+div:has(> .heading-note) { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
+div:has(> .heading-note) > :not(h1, h2, h3, .heading-note) { flex-basis: 100%; }
+.heading-note { display: contents; }
+.half-heading { display: flex; flex-wrap: wrap; align-items: center; column-gap: 10px; }
+.half-heading h3 { margin: 0; }
 .note-toggle {
   /* 26px, not the 18px the glyph needs: WCAG 2.2 wants a 24px target and this is the smallest
      control on the page. It is checked by axe on every route, not judged by eye. */
@@ -815,10 +826,10 @@ h1 { margin: 0; max-width: 900px; font-size: clamp(40px, 6.2vw, 86px); font-weig
    a sentence, and it should wrap at whatever width it needs to. */
 .sync-band { display: grid; }
 .sync-controls { margin: 26px 0 0 167px; display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
-.sync-control { display: grid; gap: 7px; }
+.sync-control { display: grid; gap: 7px; min-width: 0; max-width: 100%; }
 .sync-control > span { color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
 /* 47px, like `.account-control select`, `.batch-direction select` and every other control here. */
-.sync-control select { height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
+.sync-control select { max-width: 100%; min-width: 0; height: 47px; padding: 12px 14px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
 .sync-control select:disabled { opacity: .5; cursor: not-allowed; }
 .sync-controls .batch-source { flex: 1 1 26ch; max-width: 46ch; margin: 0; }
 .sync-failures { margin: 10px 0 0 167px; padding: 0; max-width: 70ch; list-style: none; display: grid; gap: 6px; }
@@ -1000,10 +1011,10 @@ footer p { margin: 0; }
 /* The shared nth-child widths assume the import review table. This one carries a
    sixth money column in merged mode, which that rule would squeeze to 70px. */
 .ledger-table { min-width: 1160px; }
-.ledger-table th:nth-child(1) { width: 115px; }
+.ledger-table th:nth-child(1) { width: 95px; }
 .ledger-table th:nth-child(2) { width: 26%; }
-.ledger-table th:nth-child(3) { width: 140px; }
-.ledger-table th:nth-child(4) { width: 190px; }
+.ledger-table th:nth-child(3) { width: 205px; }
+.ledger-table th:nth-child(4) { width: 150px; }
 .ledger-table th:nth-child(5), .ledger-table th:nth-child(6) { width: 145px; }
 .ledger-table.merged { min-width: 1280px; }
 .ledger-table.merged th:nth-child(7) { width: 160px; }
@@ -1135,7 +1146,15 @@ footer p { margin: 0; }
    writes a stored, audited decision, not a display preference. */
 .decision-mark { display: block; margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .match-control { margin: 8px 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.match-control .secondary-button, .match-control .primary-button { min-height: 36px; padding: 7px 13px; font-size: 12px; }
+/* D-203: a statement-only row's dash says nothing its controls do not, and it cost a line of height
+   above them. It stays for a screen reader; the controls move up. */
+.status-none:has(+ .match-control) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.status-none + .match-control { margin-top: 0; }
+.nowrap { white-space: nowrap; }
+/* D-203: grouped by day, the heading already states the date, so a row shows only its time. */
+.ledger-table.grouped td[data-label="Date"] time { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.filters-toggle, .phone-more { display: none; }
+.match-control .secondary-button, .match-control .primary-button { min-height: 36px; padding: 7px 10px; font-size: 12px; }
 .match-control small { flex-basis: 100%; color: var(--muted); font-size: 11px; }
 /* A candidate row that is already someone else's. Not a refusal — the write is allowed — so it
    reads as a consequence rather than an error, but it is words rather than the green edge. */
@@ -1574,4 +1593,34 @@ footer p { margin: 0; }
 @media (max-width: 700px) {
   .cal-grid { max-width: 100%; }
   .cal-months { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ------------------------------------------------------------------ phone density (D-203) */
+@media (max-width: 700px) {
+  /* A ledger card was 436px: the date alone took the first row, every cell carried a label, and the
+     status dash sat above its buttons. Description leads; time and amount share a row; balances share
+     the next; controls close the card. */
+  .ledger-table tbody tr:not(.day-head) {
+    min-height: 0; column-gap: 12px; row-gap: 2px;
+    grid-template-areas: "desc desc" "date move" "acct bal" "all all" "status status";
+  }
+  .ledger-table td[data-label="Description"] { grid-area: desc; }
+  .ledger-table td[data-label="Date"] { grid-area: date; align-self: end; }
+  .ledger-table td[data-label="Movement"] { grid-area: move; text-align: right !important; }
+  .ledger-table td[data-label="Account"], .ledger-table td[data-label="Reference"] { grid-area: acct; }
+  .ledger-table td[data-label="Account balance"], .ledger-table td[data-label="Balance"] { grid-area: bal; text-align: right !important; }
+  .ledger-table td[data-label="All accounts"] { grid-area: all; text-align: right !important; }
+  .ledger-table td[data-label="Status"] { grid-area: status; }
+  .ledger-table td[data-label="Date"]::before, .ledger-table td[data-label="Description"]::before,
+  .ledger-table td[data-label="Status"]::before, .ledger-table td[data-label="Movement"]::before { display: none; }
+  .ledger-table .match-control .secondary-button { flex: 1 1 0; }
+
+  /* Filters fold behind one button; Reload and a range warning stay visible. */
+  .filters-toggle { display: block; }
+  .ledger-controls.filters-folded > :not(button, .ledger-range-warning) { display: none; }
+
+  /* Statistics: the latest three months and the top five rows until asked. */
+  .phone-more { display: block; margin-top: 12px; }
+  .cal-months:not(.show-all) > .cal-month:not(:nth-last-child(-n+3)) { display: none; }
+  .phone-capped:not(.show-all) tbody tr:nth-child(n+6) { display: none; }
 }

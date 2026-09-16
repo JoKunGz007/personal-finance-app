@@ -145,8 +145,8 @@ export function RecoveryBench() {
 
       <div className="recovery-grid">
         <div className="recovery-half">
-          <h3>Export an encrypted backup</h3>
-          <div className="heading-note">
+          <div className="half-heading">
+            <h3>Export an encrypted backup</h3>
             <LedgerNote label="When custody is recorded">
               Custody is recorded only after the file is written, and only if the ledger has not changed since the snapshot was taken.
             </LedgerNote>

@@ -366,7 +366,7 @@ export function LedgerStatementRow({
         <td data-label={showCombined ? "Account" : "Reference"}>
           {showCombined
             ? (account
-                ? <span className="mono">{account.label} ···· <span className="figure">{account.last_four}</span></span>
+                ? <span className="mono">{account.label} <span className="nowrap">···· <span className="figure">{account.last_four}</span></span></span>
                 : <span className="mono">Unknown account</span>)
             : <span className="mono">
                 {splitFigures(transaction.reference ?? "Not printed").map((part, index) =>

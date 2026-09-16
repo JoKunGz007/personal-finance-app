@@ -171,7 +171,7 @@ export function LedgerCardRow({
               route checked the account against. */}
           {showCombined
             ? (row.account
-                ? <span className="mono">{row.account.label} ···· <span className="figure">{row.account.last_four}</span></span>
+                ? <span className="mono">{row.account.label} <span className="nowrap">···· <span className="figure">{row.account.last_four}</span></span></span>
                 : <span className="mono">Unknown account</span>)
             : <span className="mono">···· <span className="figure">{card.printed_account_digits}</span></span>}
         </td>
