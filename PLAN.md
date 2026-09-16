@@ -4,6 +4,8 @@ Last verified: 2026-09-16
 
 ## Current checkpoint
 
+**The first `/ux-review` pass shipped all ten approved findings, 2026-09-16** (D-203, `91a6cea` `64b787e` `8294e22`). Phone ledger cards 436px → ~270px and desktop rows ~134px → ~80px; phone filters and statistics fold; `/import` fixed at 360px; `(i)` beside headings; no sign-in flash; nested-span trap fixed. Confirmed live at desktop and phone. Docker-backed suites and `owner-phone-audit.spec.ts` still owed a run.
+
 **Digits take the figures font on every page, and the last long help text sits behind i icons, 2026-09-16** (D-202, `bda7ba0`). A digit-only `"Figures"` face (IBM Plex Mono, `unicode-range` 0–9) leads each pixel stack in `app/globals.css`; eleven long paragraphs on `/import`, `/slips`, `/recovery` moved into `LedgerNote`. Gate: `tsc`, `eslint`, `pnpm build`, 58 unit tests; `font-picker.spec.ts` not run (Docker stopped). Confirmed live.
 
 **The all-accounts ledger showed gaps that looked like missing transactions, and none were missing, 2026-09-16** (D-201, `0e486b0`). Each account pages on its own and the merged view printed every loaded row, so below the shallowest account with more to fetch only the deeper accounts appeared. `windowFloor`/`shownRows` in `lib/ledger-window.ts` now cut the merged view there; *Load older rows* moves the cut. Single-account views, reconciliation and captured records are untouched. Gate: `tests/ledger-window.test.ts` 25/25 with the new case red-proven, `tsc` clean, `eslint` 0 errors; Docker-backed suites not run (Docker stopped, no schema or route change). Confirmed live on the deployed build.

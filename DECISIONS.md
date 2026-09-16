@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200, D-201 and D-202** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202 and D-203** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -377,6 +377,18 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-200** — D-199 put whole words in the figures font along with the digits beside them — "Sept", "row(s)", a bank name — and the owner's correction was exact: only a digit run takes `--font-money`, never a word sharing its span
 - **D-201** — The all-accounts ledger showed gaps that read as missing transactions: each account pages on its own, and the merged view printed every loaded row below the shallowest account that still had more to fetch
 - **D-202** — Digits take the figures font on every page through a digit-only font face rather than markup, and the last long help paragraphs move behind i icons
+- **D-203** — The first /ux-review pass: ten findings approved and fixed, led by ledger density on both viewports
+
+## D-203 — The first /ux-review pass: ten findings approved and fixed, led by ledger density on both viewports
+
+- Date: 2026-09-16
+- Status: **Shipped as `91a6cea`, `64b787e`, `8294e22`, pushed, and confirmed live** at desktop (Chrome) and 375px/360px (browser pane, signed in).
+- Context: the owner added a global `/ux-review` skill (live audit in the signed-in pane; design-review phases and tiers, Nielsen's 10, WCAG AA, design-critique summary, this app's own rules; suggests until approved) and approved all ten findings of its first run.
+- **What changed.** Phone ledger cards use grid areas — description, then time and amount, then the account on a full row, then the two balances, then the controls — with self-evident cell labels dropped. Desktop row buttons sit side by side in a 205px Status column (Date 95px, Account 150px, net width unchanged); a statement-only row's dash becomes screen-reader-only when controls follow it. Grouped by day, a row shows only its time. Phone ledger filters fold behind a *Filters* button (Reload and a range warning stay out); statistics on a phone shows the latest 3 calendar months and top 5 largest rows until asked. `/import`'s sync controls shrink instead of scrolling the page at 360px. Every `(i)` sits beside its heading (`display: contents` on `.heading-note`). The header waits for the first session lookup before offering Google sign-in. `.link-button` keeps its 44px hit area on every viewport.
+- **Kept rather than changed, on recorded decisions.** The finding proposed a separate actions column and a "Statement only" label; D-156/task 48 refused the column on width and D-064 refused a badge on every row, so the buttons stayed in the Status cell and the dash stayed for screen readers.
+- **A root cause found during verification.** `td time, td strong, td span, td small { display: block }` also blocked every *nested* span, so the account label's `···· NNNN` and D-200's `.figure` digit runs each started a new line. Nested spans are inline again. Recorded as a trap.
+- Gate: `tsc` clean; `eslint` 0 errors on the touched files; 116 unit tests (dev-session, privacy, ui-theme, owner-access, ledger-window); `pnpm build`. **Not run:** Docker-backed suites and Playwright, including `owner-phone-audit.spec.ts` (Docker stopped).
+- Evidence (live): phone ledger card 436px → 262–286px, first row 1,666px → 1,170px, page ~57k → ~35k px, no control under 44px, no sideways scroll; `/import` no sideways scroll at 360px; phone statistics 12,750px → 8,023px; desktop row ~134px → 76–88px with both buttons on one line and the date cell showing only the time; `(i)` within 4–9px of its heading's top; Sign out 58×46.
 
 ## D-202 — Digits take the figures font on every page through a digit-only font face rather than markup, and the last long help paragraphs move behind i icons
 
