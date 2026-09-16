@@ -145,10 +145,37 @@ function scopeIds(window: LedgerWindow, accountId: string | null): string[] {
   return [...window.byAccount.keys()];
 }
 
-/** Every row loaded for the accounts in scope, in the ledger's own order. */
+/**
+ * The oldest row the merged view can show without a gap, or null when nothing in scope is cut.
+ *
+ * Each account pages on its own, so their windows reach back to different dates. Below the
+ * shallowest account that still has a page left, that account's rows exist but are not loaded, and
+ * showing the other accounts' rows there reads as a ledger with transactions missing (2026-09-16:
+ * SCB's first page ended 24 Aug 2026 while KBANK's reached Aug 2025). The floor is that account's
+ * last loaded row; anything older waits for "Load older rows". One account in scope is never cut,
+ * because its own window is already contiguous.
+ */
+function windowFloor(window: LedgerWindow, ids: readonly string[]): AccountTransaction | null {
+  let floor: AccountTransaction | null = null;
+  for (const id of ids) {
+    const held = window.byAccount.get(id);
+    const last = held?.hasMore ? held.rows.at(-1) : undefined;
+    if (last && (floor === null || compareTransactions(last, floor) < 0)) floor = last;
+  }
+  return floor;
+}
+
+/** The loaded rows of the scope that sit at or above the floor, per account. */
+function shownRows(window: LedgerWindow, accountId: string | null): AccountTransaction[] {
+  const ids = scopeIds(window, accountId);
+  const floor = windowFloor(window, ids);
+  const rows = ids.flatMap((id) => window.byAccount.get(id)?.rows ?? []);
+  return floor === null ? rows : rows.filter((row) => compareTransactions(row, floor) <= 0);
+}
+
+/** Every row shown for the accounts in scope, in the ledger's own order. */
 export function windowRows(window: LedgerWindow, accountId: string | null): AccountTransaction[] {
-  const rows = scopeIds(window, accountId).flatMap((id) => window.byAccount.get(id)?.rows ?? []);
-  return rows.sort(compareTransactions);
+  return shownRows(window, accountId).sort(compareTransactions);
 }
 
 /*
@@ -188,7 +215,7 @@ export function scopeTotals(window: LedgerWindow, accountId: string | null): Tra
 export function windowReach(window: LedgerWindow, accountId: string | null): { loaded: number; total: number } {
   const ids = scopeIds(window, accountId);
   return {
-    loaded: ids.reduce((sum, id) => sum + (window.byAccount.get(id)?.rows.length ?? 0), 0),
+    loaded: shownRows(window, accountId).length,
     total: ids.reduce((sum, id) => sum + (window.byAccount.get(id)?.totals.rows ?? 0), 0)
   };
 }
@@ -247,13 +274,12 @@ export function reconciliationRows(
   return [...byId.values()].sort(compareTransactions);
 }
 
-/** The ids the window actually holds, so a candidate pulled in as evidence is not shown as a row. */
-export function windowIds(window: LedgerWindow): Set<string> {
-  const ids = new Set<string>();
-  for (const held of window.byAccount.values()) {
-    for (const row of held.rows) ids.add(row.id);
-  }
-  return ids;
+/**
+ * The ids shown for the scope, so a candidate pulled in as evidence is not shown as a row — and
+ * neither is a loaded row below the merged view's floor (`windowFloor`).
+ */
+export function windowIds(window: LedgerWindow, accountId: string | null = null): Set<string> {
+  return new Set(shownRows(window, accountId).map((row) => row.id));
 }
 
 /**

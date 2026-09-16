@@ -144,6 +144,29 @@ describe("the window grows without losing what it knew", () => {
   });
 });
 
+describe("the merged view stops where a paged account's window stops", () => {
+  // Account B's first page ends at 07-02 with more to fetch; A's rows older than that must wait,
+  // or the gap in B reads as B having no transactions there.
+  const B_ROW = row("eeeeeeee-0000-4000-8000-000000000001", "2026-07-02", "09:00", "-20000", "300000");
+  const bHasMore = (held = windowOfA(A_PAGE_1, A_PAGE_2, A_PAGE_3)) =>
+    withPage(held, ACCOUNT_B, page([B_ROW], true), cursorAfter([B_ROW]));
+
+  it("cuts other accounts' rows older than the shallowest paged account", () => {
+    const held = bHasMore();
+    expect(windowRows(held, null).map((r) => r.id)).toEqual([TX5.id, B_ROW.id]);
+    expect([...windowIds(held, null)].sort()).toEqual([TX5.id, B_ROW.id].sort());
+    expect(windowReach(held, null).loaded).toBe(2);
+  });
+
+  it("does not cut a single account, or once nothing is left to fetch", () => {
+    const held = bHasMore();
+    expect(windowRows(held, ACCOUNT_A)).toHaveLength(5);
+    let both = windowOfA(A_PAGE_1, A_PAGE_2, A_PAGE_3);
+    both = withPage(both, ACCOUNT_B, page([B_ROW], false), null);
+    expect(windowRows(both, null)).toHaveLength(6);
+  });
+});
+
 describe("totals are whole-account facts, never totals over the window", () => {
   it("reports the server's figure however little is loaded", () => {
     expect(scopeTotals(windowOfA(A_PAGE_1), ACCOUNT_A)).toEqual({

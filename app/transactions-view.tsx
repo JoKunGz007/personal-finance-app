@@ -441,8 +441,8 @@ export function TransactionsView() {
 
   /** The ids actually loaded, so a candidate pulled in as evidence is not shown as a row. */
   const heldIds = useMemo(
-    () => (ledgerWindow === null ? new Set<string>() : windowIds(ledgerWindow)),
-    [ledgerWindow]
+    () => (ledgerWindow === null ? new Set<string>() : windowIds(ledgerWindow, scopedAccount)),
+    [ledgerWindow, scopedAccount]
   );
 
   /**
@@ -737,9 +737,15 @@ export function TransactionsView() {
   // warning about what is not: on this ledger most accounts are empty most of the
   // time, so a banner would fire on nearly every load and be read as noise.
   const importedAccounts = useMemo(() => {
-    const withRows = new Set(scope.map((transaction) => transaction.account_id));
+    // The window rather than `scope`: `scope` stops at the merged view's floor, and an account
+    // whose loaded rows all sit below it is still imported.
+    const withRows = new Set(
+      [...(ledgerWindow?.byAccount ?? [])]
+        .filter(([id, held]) => held.rows.length > 0 && (scopedAccount === null || id === scopedAccount))
+        .map(([id]) => id)
+    );
     return (accounts ?? []).filter((account) => withRows.has(account.id));
-  }, [scope, accounts]);
+  }, [ledgerWindow, scopedAccount, accounts]);
 
   /**
    * Loads everything the view shows.
