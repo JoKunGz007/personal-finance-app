@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205, D-206, D-207, D-208, D-209 and D-210** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205, D-206, D-207, D-208, D-209, D-210 and D-211** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -385,6 +385,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-208** — 7-Eleven receipts become a domain of their own: a reader, three tables, backup v8, and the coverage tripwire that was missing all along
 - **D-209** — Receipt PDFs are captured through the app: read on the device, keyed on the condensed number, and the first end-to-end run on the real pair found three reader defects the tests could not
 - **D-210** — Receipt screenshots are read through Vision and stitched on their overlap; all 21 real screenshots read complete, and an OCR reading never overwrites a PDF's
+- **D-211** — Migration 029 reached hosted and the owner's 13 real receipts were captured on the live site; D-210 miscounted them as 12
+
+## D-211 — Migration 029 reached hosted and the owner's 13 real receipts were captured on the live site; D-210 miscounted them as 12
+
+- Date: 2026-09-23
+- Status: **Done and read back from hosted.** Supersedes D-210's "029 local only" and corrects its count.
+- **029 on hosted**, on the owner's explicit ask: the standing backup read 4 mutations stale (56 against 52 — the D-209 capture and two statement imports), the owner exported a fresh one, it re-read **56 / 56** from a public address, `--dry-run` named only 029, and the agent pushed. Read back: `capture_receipt` carries 029's body, executable by `authenticated` and not `anon`, sequence unchanged.
+- **Captured on the live site through `/receipts`**, at the owner's request, in his own signed-in Chrome (the built-in pane cannot attach files): all 21 screenshots in one pick. **13 entries, none partial**; "Save all 13" stored 12 new receipts and merged the thirteenth into the D-209 PDF receipt, **keeping its full-invoice item list** — 029 working on its first real case. Read back: **13 receipts, all complete, 147 item lines, every one carrying a screenshot source**, sequence 56 → 69, exactly one per save. No value is recorded here.
+- **D-210 said 12 receipts, 7 of them two screenshots; it is 13 and 8.** The harness printed 13 lines; the summary was miscounted by hand. D-210 is left as written; `docs/RECEIPT_CONTRACT.md`, the parsing trap and `PLAN.md` are corrected in place.
+- **One wording defect found by using it**: while the screenshot batch was being read the page said "Reading on this device…", untrue for images sent to Vision. Fixed.
+- The owner's Vision grant is spent (21 images once in the harness, 4 in local browser checks, 21 on the live site). The lag window for matching can now be measured from these captures and the ledger.
 
 ## D-210 — Receipt screenshots are read through Vision and stitched on their overlap; all 21 real screenshots read complete, and an OCR reading never overwrites a PDF's
 

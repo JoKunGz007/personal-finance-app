@@ -249,7 +249,7 @@ on the receipt number. The checksum above is what says whether the stitch is com
 number of images, and not the owner's judgment at capture time.
 
 **Built and measured 2026-09-23** (`lib/receipt-screenshot.ts`, D-210): all 21 real screenshots,
-12 receipts of which 7 span two screenshots, read **complete**, and the one purchase also held as
+13 receipts of which 8 span two screenshots, read **complete**, and the one purchase also held as
 PDFs agrees with both on every figure. The screen's item block *is* the condensed receipt, so OCR's
 words are put back into its lines and the condensed grammar reads them; the app header supplies
 store, branch, number, date and time, and must agree with `R#`. What Vision does to the text, each
@@ -263,7 +263,7 @@ repaired and nowhere else:
   every form, so an OCR and a PDF reading agree on the field matching will key on.
 
 **Stitching compares a priced row on quantity and amount, not its text**: the same row reads
-differently in two screenshots (a stray `.`), so exact comparison joined none of the seven pairs.
+differently in two screenshots (a stray `.`), so exact comparison joined none of the eight pairs.
 One clipped row at each seam's edge may be dropped — Vision reads a half-visible row as garbage —
 and every order of the screenshots is read, the best reading winning, because keys that coarse can
 join a wrong order on a coincidence. A stitch without the tail (payment, `TID#`, `R#`) is refused

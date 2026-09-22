@@ -144,6 +144,6 @@ the top of `GOTCHAS.md`.
 ## One printed row reads differently in two screenshots, so an exact-text overlap joins nothing
 
 - Symptom: every multi-screenshot receipt is refused as "these screenshots do not overlap", though they plainly do.
-- Cause: OCR is not deterministic across images of the same text. The same row came back with a stray `.` or a moved space in its second screenshot, and the row clipped at a screenshot's edge reads as garbage (`ก(a)`). Exact comparison of the overlapping lines found no overlap on any of seven real pairs.
+- Cause: OCR is not deterministic across images of the same text. The same row came back with a stray `.` or a moved space in its second screenshot, and the row clipped at a screenshot's edge reads as garbage (`ก(a)`). Exact comparison of the overlapping lines found no overlap on any of eight real pairs.
 - Avoid: compare the overlap on what the checksum reads — a priced row's quantity and amount (`lib/receipt-screenshot.ts` `lineKey`) — allow one clipped edge row per seam, and let the receipt's own checksums, not the join, say whether the stitch is whole. Keys that coarse can join a wrong order on a coincidence, so read every order and keep the best, never the first.
-- Verify: 2026-09-23 (D-210). 7 of 7 real pairs join and read complete; `tests/receipt-screenshot.test.ts` fails when `lineKey` compares text or the edge drop is removed.
+- Verify: 2026-09-23 (D-210, count corrected in D-211). 8 of 8 real pairs join and read complete; `tests/receipt-screenshot.test.ts` fails when `lineKey` compares text or the edge drop is removed.

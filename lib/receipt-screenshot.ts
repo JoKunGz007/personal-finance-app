@@ -114,7 +114,7 @@ export function groupScreenshotPages<T extends { page: ScreenshotPage }>(pages: 
 /**
  * What two readings of one printed line agree on. **Not the text**: measured on the real pairs,
  * Vision reads the same row differently in two screenshots — a stray `.`, a space — so exact
- * comparison found no overlap on any of seven pairs. A priced row is keyed on its quantity and its
+ * comparison found no overlap on any of eight pairs. A priced row is keyed on its quantity and its
  * amount, which are what the checksum reads; any other line on its characters without spaces.
  */
 export function lineKey(line: string): string {

@@ -237,7 +237,8 @@ export function ReceiptsBench() {
             {picked.map((entry) => (
               <li key={entry.key}>
                 <strong>{entry.file}</strong>
-                {entry.state === "reading" ? <span role="status">Reading on this device…</span> : null}
+                {/* Only a PDF is read on the device; the screenshot batch's placeholder must not say so. */}
+                {entry.state === "reading" ? <span role="status">{entry.key.endsWith("-shots") ? "Sending to Google Cloud Vision to be read…" : "Reading on this device…"}</span> : null}
                 {entry.state === "refused" ? <span className="status error" role="alert">Not read: {entry.message}</span> : null}
                 {"receipt" in entry ? (
                   <>
