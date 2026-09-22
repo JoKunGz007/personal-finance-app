@@ -398,8 +398,8 @@ select throws_ok(
 
 select is(
   (public.export_backup_snapshot() ->> 'schemaVersion')::integer,
-  7,
-  'the export declares schema version 7'
+  8,
+  'the export declares schema version 8'
 );
 select ok(
   (public.export_backup_snapshot() -> 'tableCounts') ?& array[
