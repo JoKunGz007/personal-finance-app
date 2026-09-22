@@ -1185,6 +1185,11 @@ footer p { margin: 0; }
 
 /* Captured slips, listed on the page that captures them (D-075). */
 .captured-slips { padding: 44px 0 12px; border-top: 1px solid var(--line); }
+/* Receipts (PLAN task 56): a queue of PDFs read on this device, and the stored list. */
+.receipt-queue, .receipt-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 10px; }
+.receipt-queue li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.receipt-list li { border-top: 1px solid var(--line); padding: 8px 0; }
+.receipt-list summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
 
 /* Choosing a statement row for a slip (D-069). The table becomes the chooser, so this band has
    to say plainly that what is on screen is no longer the ledger — hence the saffron rule the

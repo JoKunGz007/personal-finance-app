@@ -175,8 +175,21 @@ Both PDF forms are **real text**. `pdfjs-dist` — already a dependency, already
 only capture path in this app that reads a document without either an on-device engine or a third
 party.
 
-**Read in raw reading order**, meaning `getTextContent`'s item order with `hasEOL`. This is the
-whole trick, and it is worth stating plainly because the first measurement got it wrong:
+**Read in raw reading order**, meaning `getTextContent`'s item order, never sorted by x. This is
+the whole trick, and it is worth stating plainly because the first measurement got it wrong.
+
+**But `hasEOL` alone is not a line boundary** (measured 2026-09-23, the first end-to-end run of the
+reader on the real pair). A full-invoice item name that wraps ends its run with `hasEOL`, the
+wrapped tail follows on a lower baseline, and the row's two amounts arrive *after* the tail — so a
+pure `hasEOL` split turns one item row into three lines. And the invoice's `เลขที่` is right-aligned
+on the title's row, its own `วันที่` on the supersedes clause's row. `lib/receipt-pdf.ts` therefore
+groups items **by baseline**, keeping pdf.js order within a row; a wrapped tail becomes a line of its
+own, so a wrapped full-invoice name loses its second line (amounts unaffected). Both real PDFs read
+**complete** this way and agree on every money figure, store, branch and date; the invoice's
+superseded number equals the condensed `R#` number, which is why a full invoice is keyed on it
+(`lib/receipts.ts`). **No NFKC**: it decomposes `ำ`, which the labels depend on.
+
+The first measurement's finding, which still stands:
 
 **Three apparent defects were artifacts of layout-reconstructing extraction, not properties of the
 documents.** A first pass with `pdftotext -layout` showed Thai vowel and tone marks reordered

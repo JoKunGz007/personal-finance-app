@@ -524,3 +524,39 @@ describe("TID# / date-line cross-check", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+// Measured 2026-09-23 through pdf.js on a real full invoice (shapes only, values invented here):
+// the receipt number is right-aligned on the document title's row, and the invoice's own date is
+// right-aligned on the supersedes clause's row. Both were refused by the start-anchored regexes.
+describe("parseReceiptText — full invoice rows as pdf.js groups them", () => {
+  test("reads เลขที่ right-aligned on the title row", () => {
+    const text = fullFixture().replace("เลขที่ F1000123", "ต้นฉบับ ใบกำกับภาษีเต็มรูป เลขที่ F1000123");
+    const result = parseReceiptText(text, "full");
+    expect(result.ok && result.value.receiptNumber).toBe("F1000123");
+  });
+
+  test("reads the invoice date and the superseded number from one row", () => {
+    const text = fullFixture({ withSupersedes: false })
+      .split("\n").filter((line) => !line.startsWith("วันที่")).join("\n")
+      + `\n${FULL_SUPERSEDES_LINE} วันที่ 23/09/2569`;
+    const result = parseReceiptText(text, "full");
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.purchasedAt).toBe("2026-09-23");
+    expect(result.value.supersedesReceiptNumber).toBe("0012");
+  });
+
+  test("the measured row prints two plain วันที่ dates; the right-aligned one is the invoice's", () => {
+    const text = fullFixture({ withSupersedes: false })
+      .split("\n").filter((line) => !line.startsWith("วันที่")).join("\n")
+      + "\nยกเลิกใบกำกับภาษีอย่างย่อเลขที่ : 0012 POS 02 วันที่ 21/09/2569 วันที่ 23/09/2569";
+    const result = parseReceiptText(text, "full");
+    expect(result.ok && result.value.purchasedAt).toBe("2026-09-23");
+  });
+
+  test("an address line ending in เลขที่ and digits is not a receipt number", () => {
+    const text = fullFixture() + "\nที่อยู่ หมู่บ้านทดสอบ เลขที่ 99";
+    const result = parseReceiptText(text, "full");
+    expect(result.ok && result.value.receiptNumber).toBe("F1000123");
+  });
+});

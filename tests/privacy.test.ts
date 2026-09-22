@@ -162,6 +162,18 @@ describe("privacy guardrails", () => {
     expect(withoutLiterals).not.toMatch(/valueLabels\s*:\s*describe/u);
   });
 
+  it("keeps receipt page text inside the receipt worker", () => {
+    // The full invoice prints the buyer's name, address, telephone and national taxpayer number
+    // (docs/RECEIPT_CONTRACT.md § What must never be stored). The reader drops them by never
+    // matching them, which only holds if nothing but the parse, or a static refusal, crosses back.
+    const worker = readFileSync("workers/receipt.worker.ts", "utf8");
+    const withoutLiterals = worker.replace(/"(?:[^"\\]|\\.)*"/gu, '""').replace(/`(?:[^`\\]|\\.)*`/gu, "``");
+    expect(withoutLiterals).not.toMatch(/postMessage\([^;]*\b(bytes|pages|content|items|text|document)\b/su);
+    expect(withoutLiterals.match(/postMessage\(/gu) ?? []).toHaveLength(2);
+    expect(worker).toMatch(/\{ type: "receipt", form: read\.form, receipt: read\.receipt \}/u);
+    expect(worker).toMatch(/\{ type: "error", message: read\.message \}/u);
+  });
+
   it("keeps every client request same-origin and limited to the import contract", () => {
     // Every client surface that fetches, not just the one that used to be the whole app:
     // routing split `app/ledger-app.tsx` into these three, and a check naming one file would

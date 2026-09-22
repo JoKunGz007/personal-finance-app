@@ -208,6 +208,11 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     delete from public.notification_card_correction_revisions where owner_id = '${owner}';
     delete from public.notification_card_correction_overlays where owner_id = '${owner}';
     delete from public.notification_cards where owner_id = '${owner}';
+    -- Receipts hang off no account and no transaction (migration 027), so nothing else here
+    -- removes them; items and discounts first, for the FK reason every block above gives.
+    delete from public.receipt_discounts where owner_id = '${owner}';
+    delete from public.receipt_items where owner_id = '${owner}';
+    delete from public.receipts where owner_id = '${owner}';
     delete from public.import_batch_rows where owner_id = '${owner}';
     -- Before the transactions they reference, and this is the fourth table in this function that
     -- needs saying so — the slip overlays, the slip corrections and the card decisions above all

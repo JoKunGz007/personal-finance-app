@@ -1,8 +1,10 @@
 # Private Ledger execution plan
 
-Last verified: 2026-09-16
+Last verified: 2026-09-23
 
 ## Current checkpoint
+
+**7-Eleven receipt PDFs are captured through the app, 2026-09-23** (D-209, PLAN task 56). `/receipts` reads the short receipt and the full tax invoice on the device and stores one receipt per purchase; migrations 027 and 028 are on hosted. Vitest 1037 / 7 skipped, build clean, browser-checked at desktop and phone against the local project. Next: the screenshot path, then matching.
 
 **Internal transfers are excluded from reporting automatically, 2026-09-17** (D-207, `f2aba04`, migration 026). Same amount, two own accounts, within 24 hours, and a description naming the other account; the owner's own decision always wins. Runs after each import confirm; the first pass on hosted excluded 51 pairs (102 rows), labelled "Auto-excluded · transfer". Row actions fold behind "⋯" on desktop too. Hosted and `private-ledger-local` now on **026**. Gate green (pgTAP 403, Vitest 981, Playwright isolated 70; owner suite green after three fixes). `/security-review` not run.
 
@@ -638,7 +640,7 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
 56. ~~**The phone reading of `/ledger`.**~~ **DONE, DEPLOYED AND CONFIRMED 2026-09-04** (D-187, `b10fadd`). The owner read `/ledger` at 390px on his own device and sent an iOS Safari full-page capture — 390 × 14400pt and **vector rather than a screenshot**, so it could be measured. **It found a defect on its first page**: the day heading's total had been painting across the top border of the first transaction card since the headings shipped — 117 of 122 headings, the worst by 39.4px. Two resets were missing from the ≤700px stacked block. `.ledger-table th:nth-child(1) { width: 115px }` sizes a desktop column, sits outside every media query for that reason, and still matched the `colspan=7` heading cell; and the cell's used height would not grow to its content either, which is what made the wrap land on the card rather than merely look cramped. Fixed with `width: auto; height: auto` — what the `td` rule beside it had always done. The 390px audit that should have caught it asks only about *horizontal* escape, so it had passed every run since D-168; it now asserts the spill and its cause, **both red-proved individually** (85 of 102 headings, and 102 of 102 by 243px). **What this discharges and what it does not**: D-177, D-178, D-182, D-185 and D-186 are closed and were archived by the thirteenth boundary; **D-179, D-180, D-181 and D-183 are not** — see task 57.
 
-56. **7-Eleven receipts: capture, itemize, and match to the ledger.** Scoped 2026-09-22 with the owner across one discussion; the format evidence is `docs/RECEIPT_CONTRACT.md`, measured the same day under an explicit grant to read the real receipts in `receipts_sample/7-11/` and the real ledger. **Nothing is built yet.**
+56. **7-Eleven receipts: capture, itemize, and match to the ledger.** Scoped 2026-09-22 with the owner across one discussion; the format evidence is `docs/RECEIPT_CONTRACT.md`, measured the same day under an explicit grant to read the real receipts in `receipts_sample/7-11/` and the real ledger. **The PDF capture path is built and on hosted as of 2026-09-23 (D-209)**; the screenshot path, matching and statistics are not.
 
     **The decision that shapes everything: a receipt is never money.** Every payment route already lands in the ledger on its own — a per-purchase TrueMoney pull, a wallet top-up, or a reimbursement — so a receipt contributing to totals would double-count all three. Receipts itemize money already recorded, and receipt statistics are a separate lens beside the ledger rather than a second ledger inside it. **This is what keeps the exact-money, append-only and audit invariants untouched by the feature**, and it is why an unmatched receipt costs nothing: the totals are already correct without it. The owner confirmed this is what he had in mind, and the alternative — receipt spend showing in monthly totals — was raised and not taken.
 
@@ -668,7 +670,9 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
     Gate, verified independently rather than on the agents' report: reset on 28 migrations, **Vitest 1015 / 7 skipped**, **pgTAP 441 PASS across 16 files**, `tsc`/`eslint`/`build`/`check:docs` clean, and **the v7-into-v8 restore genuinely ran** against the live recovery destination rather than skipping. Recorded as **D-208**.
 
-    Next, in order: the upload route and UI, then the screenshot/OCR path, then matching, then statistics. **The `capture_receipt(jsonb)` wire contract is provisional** — defined with no caller to constrain it, and the route should revisit it.
+    **The PDF upload route and UI are built, 2026-09-23** (D-209) — `/receipts`, `app/api/v1/receipts/route.ts`, `workers/receipt.worker.ts`, `lib/receipt-pdf.ts`, `lib/receipts.ts`. The PDF is read in a worker and only the parse is sent; the server recomputes the checksums; a full invoice is keyed on the condensed number it names. The wire contract needed no migration change. **The first end-to-end run on the real pair found three reader defects** (a `hasEOL` join that split wrapped rows, and two right-aligned labels) — see D-209 and the parsing trap. Known limit: a wrapped full-invoice name loses its second line.
+
+    Next, in order: the screenshot/OCR path, then matching, then statistics; the discount-names follow-up is independent of all three.
 
     **The lag window is still unmeasured, and is the remaining gate on the matching half.** Two confirmed matches exist, at zero and roughly forty-five minutes, and two points is not a distribution; a guessed window that is too wide is how a false match gets in. It needs a real run of captured receipts, so it does not block the reader.
 

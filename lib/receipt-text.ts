@@ -8,7 +8,8 @@ import { parseThb, type MinorUnitString } from "@/lib/money";
  * `lib/slip-ocr.ts` is kept apart from the engine that supplies its words (D-053). That keeps
  * every rule below testable without a PDF or a network call.
  *
- * No database, no route, no UI. Those are separate later steps (PLAN task 56).
+ * `lib/receipt-pdf.ts` turns pdf.js items into this text; `lib/receipts.ts` and
+ * `app/api/v1/receipts/route.ts` store the parse.
  *
  * **The three input forms are complementary, not ranked** (corrections #14–16, measured
  * 2026-09-22). It is tempting to treat the full tax invoice as simply "the best" source and the
@@ -209,13 +210,22 @@ const MONEY = "(?:0|[1-9]\\d{0,2}(?:,\\d{3})*|[1-9]\\d*)(?:\\.\\d{2})?";
 // branch come from here on the condensed form.
 const CP_ALL_LINE = /^CP ALL,7-Eleven\s+(.+?)\((\d+)\)$/;
 
-// Full invoice only: the one labelled receipt-number line either PDF carries.
-const FULL_RECEIPT_NUMBER_LINE = /^เลขที่\s+(\S+)$/;
+// Full invoice only: the one labelled receipt-number line either PDF carries. **Not anchored at
+// the start**: measured 2026-09-23 through pdf.js, the label is right-aligned on the same row as
+// the document title, so the line reads `<title> เลขที่ <number>`. The number is one letter then
+// digits, and requiring the letter is what keeps an address line ending ` เลขที่ <n>` from matching.
+const FULL_RECEIPT_NUMBER_LINE = /(?:^|\s)เลขที่\s+([A-Z]\d+)$/;
 
 // Full invoice only: `วันที่ <dd/mm/yyyy>`, and the year is **four-digit Buddhist** here —
 // unlike the screenshot's two-digit year, so no century-guessing is needed, only a direct
 // Buddhist-to-Gregorian subtraction before the cross-check against `TID#`.
-const FULL_DATE_LINE = /^วันที่\s+(\d{2})\/(\d{2})\/(\d{4})$/;
+//
+// **Not anchored at the start** (measured 2026-09-23 through pdf.js): the invoice's own date is
+// right-aligned on the same row as `FULL_SUPERSEDES_LINE`, so that one printed line carries both.
+// On the measured row **both** dates print as a plain `วันที่ <date>` — the cancelled receipt's
+// inside the clause, then the invoice's own, right-aligned — so the **end anchor** is the only
+// thing choosing the invoice's date. Keep it. Both regexes run on the line — see the call site.
+const FULL_DATE_LINE = /(?:^|\s)วันที่\s+(\d{2})\/(\d{2})\/(\d{4})$/;
 
 // Full invoice only: `<Thai prose> : <store code> <Thai> 7-Eleven <branch name> Vat Code (<vat code>)`.
 //
@@ -430,6 +440,9 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       fullDay = Number(match[1]);
       fullMonth = Number(match[2]);
       fullBuddhistYear4 = Number(match[3]);
+      // The same printed row can carry the supersedes clause — see `FULL_DATE_LINE`.
+      const supersedes = FULL_SUPERSEDES_LINE.exec(line);
+      if (supersedes) supersedesReceiptNumber = supersedes[1]!;
       continue;
     }
     if (form === "full" && (match = FULL_STORE_LINE.exec(line))) {
@@ -692,6 +705,36 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       ? { preVatMinor: vatPre, vatMinor: vatTax, totalInclVatMinor: vatTotal }
       : null;
 
+  return {
+    ok: true,
+    value: {
+      receiptNumber,
+      storeCode,
+      branchName,
+      purchasedAt,
+      purchasedAtTime,
+      paymentMethod,
+      items,
+      discounts,
+      subtotalMinor,
+      netMinor,
+      unitCount,
+      vat,
+      vatCode,
+      supersedesReceiptNumber,
+      ...assessReceipt({ items, discounts, netMinor, unitCount, vat })
+    }
+  };
+}
+
+/**
+ * The receipt's own checksums, from its fields alone. Exported so the capture route recomputes
+ * them from what it was sent rather than trusting a client's `completeness` — a parse happens on
+ * the device, and `"complete"` is the claim that decides whether a stored item list may be
+ * replaced (migration 027, Rule 3).
+ */
+export function assessReceipt(receipt: Pick<ParsedReceipt, "items" | "discounts" | "netMinor" | "unitCount" | "vat">): Pick<ParsedReceipt, "completeness" | "failedChecks" | "inapplicableChecks"> {
+  const { items, discounts, netMinor, unitCount, vat } = receipt;
   const failedChecks: CompletenessCheck[] = [];
   const inapplicableChecks: CompletenessCheck[] = [];
 
@@ -722,26 +765,5 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
     inapplicableChecks.push("VAT_IDENTITY_CHECK");
   }
 
-  return {
-    ok: true,
-    value: {
-      receiptNumber,
-      storeCode,
-      branchName,
-      purchasedAt,
-      purchasedAtTime,
-      paymentMethod,
-      items,
-      discounts,
-      subtotalMinor,
-      netMinor,
-      unitCount,
-      vat,
-      vatCode,
-      supersedesReceiptNumber,
-      completeness: failedChecks.length === 0 ? "complete" : "partial",
-      failedChecks,
-      inapplicableChecks
-    }
-  };
+  return { completeness: failedChecks.length === 0 ? "complete" : "partial", failedChecks, inapplicableChecks };
 }
