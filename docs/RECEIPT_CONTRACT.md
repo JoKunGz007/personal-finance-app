@@ -33,14 +33,56 @@ domain rather than a change to the ledger's core.
 
 ## The three forms, and what each is good for
 
-| Form | Obtainable | Item list | Item names | Extra |
-| --- | --- | --- | --- | --- |
-| In-app screenshot | always | **only what fit on screen** | truncated at source | — |
-| Condensed e-tax PDF | 7 days | complete | truncated at source | member points, coupon balances |
-| Full e-tax invoice | 7 days | complete | **full** | VAT breakdown |
+**They are complementary, not ranked.** The full tax invoice is the only form carrying complete
+item names, and it was tempting to read it as strictly the best — but it is also the only form
+that prints **no payment method, no time, no `TID#` and no unit count**. Measured 2026-09-22:
+payment-method tokens, `TID#` and `R#` each occur exactly once in the condensed form and **zero
+times** in the full invoice.
+
+| | Screenshot | Condensed PDF | Full invoice |
+| --- | --- | --- | --- |
+| Obtainable | always | 7 days | 7 days |
+| Item list | **only what fit on screen** | complete | complete |
+| Item names | truncated at source | truncated at source | **full** |
+| Payment method | yes | yes | **no** |
+| Time of purchase | yes | yes | **no** (date only) |
+| Unit count (`ชิ้น`) | yes | yes | **no** |
+| Date cross-check | — | `TID#` vs `R#` | **not possible** |
+| VAT breakdown | no | no | **yes** |
 
 The 7-day limit is printed on the document itself (note 2 of the full invoice) and is the
 company's own reservation, not an inference.
+
+**Two consequences follow, and both are load-bearing.**
+
+**Upgrading a receipt must never discard a field an earlier form supplied.** A full invoice
+arriving after a screenshot improves the item names and adds VAT; it cannot supply the payment
+method or the time, and overwriting those with nulls would destroy the better record. The
+create-then-upgrade design (`PLAN.md` task 56) is therefore a merge per field, not a replacement
+per document.
+
+**The payment method is the field the ledger-matching rule keys on**, and the full invoice does
+not have it. So a full invoice **alone can never answer the matching question** — it needs the
+condensed form or the screenshot beside it. Anything that treats the full invoice as a complete
+replacement for the other two breaks matching silently.
+
+### Checks each form can actually support
+
+The two completeness checksums are not both available everywhere, and a check that cannot run
+must be recorded as **inapplicable rather than passed** — a receipt is not "complete" because a
+check was skipped.
+
+- `sum(items) − sum(discounts) = net` — **both PDF forms**, and the screenshot when it is whole.
+- unit count vs summed quantities — **condensed and screenshot only**; the full invoice prints no
+  `ชิ้น`.
+- `TID#` against the header date — **condensed only**. The full invoice prints one date and in
+  **four-digit** Buddhist era, which is unambiguous alone, so this is not a weakening of D-031's
+  rule against trusting a two-digit year — it is that rule not applying.
+- pre-VAT + VAT = total including VAT — **full invoice only**, and it partly compensates for the
+  unit count it lacks.
+- the discount block's own `ส่วนลดที่ได้ทั้งหมด` against the summed discount lines — **full
+  invoice only**. Note it matches the `ส่วนลด` prefix and is a *total*, not another discount;
+  summing it would double-count.
 
 ### The screenshot truncates silently, and that is the hazard
 
@@ -86,7 +128,15 @@ In printed order:
 - `TID#` and `R#`.
 - `บิลนี้ประหยัด` — the amount saved, when any.
 
-The full invoice adds a taxpayer identity block, a VAT breakdown
+**The list above is the screenshot's and the condensed form's shape. The full invoice does not
+merely add to it — it replaces the tail.** Where the condensed form ends `ยอดสุทธิ N ชิ้น`, a
+payment line, `TID#` and `R#`, the full invoice runs `มูลค่าสินค้ารวม` (the subtotal), then an
+optional discount block opened by a bare `หักส่วนลด` heading whose lines carry **no leading
+quantity** and are closed by a `ส่วนลดที่ได้ทั้งหมด` total, then `สินค้าไม่เสียภาษีมูลค่าเพิ่ม`,
+then the three VAT lines — the last of which, `มูลค่าสินค้ารวมภาษีมูลค่าเพิ่ม`, **is the net**.
+It then repeats its own header on every page.
+
+The full invoice also carries a taxpayer identity block, a VAT breakdown
 (`มูลค่าสินค้าก่อนภาษีมูลค่าเพิ่ม`, `ภาษีมูลค่าเพิ่ม`, `มูลค่าสินค้ารวมภาษีมูลค่าเพิ่ม`), and a
 note block defining the line suffixes: `N` exempt, `P` promotion, `NP` both, `PM` price mismatch,
 `MD`/`MN` branch discount, `WS` special branch discount.
@@ -120,35 +170,48 @@ invoice — is one receipt with three sources, never three receipts.
 
 ## Reading each form
 
-### The condensed PDF
+Both PDF forms are **real text**. `pdfjs-dist` — already a dependency, already used for statements
+— reads them directly: **no OCR, no Vision, and no image leaving the device**, which makes this the
+only capture path in this app that reads a document without either an on-device engine or a third
+party.
 
-Real text. `pdftotext -enc UTF-8 -layout` reads it directly — **no OCR, no Vision, no image
-leaving the device**, which makes it the only capture path in this app that reads a document
-without either an on-device engine or a third party.
+**Read in raw reading order**, meaning `getTextContent`'s item order with `hasEOL`. This is the
+whole trick, and it is worth stating plainly because the first measurement got it wrong:
 
-Thai extracts with **vowel and tone marks reordered** relative to their consonants. The damage is
-deterministic — the same input yields the same output every time — so an extracted string is
-usable as an identity key unchanged. It is **not** usable for display, and it will not compare
-equal to the same text typed by hand.
+**Three apparent defects were artifacts of layout-reconstructing extraction, not properties of the
+documents.** A first pass with `pdftotext -layout` showed Thai vowel and tone marks reordered
+relative to their consonants, the full invoice's NO/quantity column interleaved with its item-name
+column on alternating lines, and stray spaces inside words. **All three are gone in raw reading
+order**, in both forms, under `pdfjs-dist` and independently under PyMuPDF with identical output.
+A layout reconstructor sorts glyphs by x-position; Thai combining marks are zero-width and sit
+above their consonant, so x-sorting misplaces them and column inference splits a row. Nothing was
+wrong with the PDFs.
 
-### The full invoice
+**Do not build a Thai normalizer, and do not repair spacing.** A probe for a space directly
+following a Thai combining mark found nine occurrences across both documents and **all nine were
+legitimate word boundaries** (`ซีพี ออลล์`, `จำกัด (มหาชน)`). A space repair would corrupt them.
 
-Also real text, and harder to read than the condensed one in two distinct ways.
+### The one real encoding defect, and its exact repair
 
-**The columns interleave.** `-layout` emits the NO/quantity column and the item-name column on
-alternating lines, so line-by-line parsing attaches quantities to the wrong items. Coordinate-aware
-extraction is required; splitting on newlines is not sufficient.
+The full invoice's embedded font maps **sara aa (`า`) to `U+0006`**. It is not dropped and not a
+space — the character is present and carries a distinct codepoint, which is why a layout extractor
+rendering control characters as spaces made it look lossy.
 
-**There is an independent recovery for quantity, and it should be used as a cross-check even once
-the columns are parsed correctly**: the unit-price and amount columns give the quantity by
-division, and an `@unit-price` is printed exactly when the quantity exceeds one. A quantity that
-the two disagree on is a refusal.
+It is therefore **fully recoverable by two deterministic replacements**, in order:
 
-**`า` is dropped.** This font's glyph for sara aa carries no usable mapping and extracts as a
-space — the label `รายการสินค้า` comes out as `ร ยก รสินค้`. This is **lossy in a way the
-condensed PDF's reordering is not**: a real space and a dropped `า` are indistinguishable without
-a dictionary. It affects the one form that carries the full item names, which is precisely the
-form we want them from.
+1. `U+0006` → `U+0E32`.
+2. Then `U+0E33 U+0E32` → `U+0E33`. Sara am is encoded decomposed in this font, so rule 1 otherwise
+   leaves a spurious trailing `า` on every `ำ`.
+
+Measured 2026-09-22: the full invoice carries **163 occurrences of `U+0006` and no other control
+character whatsoever**; the condensed form carries none and needs no repair. After both rules,
+eighteen independent probe strings — labels and long product names — match exactly, the only
+non-matches being genuine vocabulary differences between the two forms (a full tax invoice says
+`มูลค่าสินค้ารวม` where the condensed says `ยอดรวม`) and names the condensed form truncates.
+
+**This is an encoding repair, not a normalizer**, and its correctness is a property of this
+issuer's fonts rather than of Thai. A different merchant, or a re-issued template, earns its own
+measurement — D-031 is the standing reason one layout's convention is never applied to another.
 
 ### The screenshot
 
