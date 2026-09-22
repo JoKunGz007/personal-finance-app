@@ -36,7 +36,9 @@ per section, since D-149** — read the index, then open the one section that ap
 Claude Code starts at `CLAUDE.md`; Codex at `AGENTS.md`. Product, design, parser, fixture and
 recovery contracts are in `PRODUCT.md`, `DESIGN.md` and `docs/`, including the three per-bank layout
 contracts ([Krungthai](docs/KRUNGTHAI_CONTRACT.md), [SCB](docs/SCB_CONTRACT.md),
-[KBANK](docs/KBANK_CONTRACT.md)). Local setup and the validation order are in
+[KBANK](docs/KBANK_CONTRACT.md)) and, for a merchant rather than a bank,
+[7-Eleven](docs/RECEIPT_CONTRACT.md) — format knowledge for `PLAN.md` task 56, which is scoped
+and not built. Local setup and the validation order are in
 [docs/LOCAL_DEV.md](docs/LOCAL_DEV.md).
 
 After substantive changes, run `/sync-continuity` to reconcile these docs against verified evidence.
