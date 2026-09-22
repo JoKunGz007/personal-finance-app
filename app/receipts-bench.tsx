@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LedgerNote } from "@/app/ledger-note";
+import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
 import { formatThb } from "@/lib/money";
 import type { ReceiptForm } from "@/lib/receipt-pdf";
+import { groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
-import { receiptCaptureBody, receiptCaptureResultSchema, receiptListSchema, type StoredReceipt } from "@/lib/receipts";
+import { receiptCaptureBody, receiptCaptureResultSchema, receiptListSchema, type CaptureForm, type StoredReceipt } from "@/lib/receipts";
 import { ledgerRequest } from "@/lib/wire";
 
 type WorkerReply =
@@ -15,12 +17,12 @@ type WorkerReply =
 type Picked =
   | { key: string; file: string; state: "reading" }
   | { key: string; file: string; state: "refused"; message: string }
-  | { key: string; file: string; state: "ready"; form: ReceiptForm; receipt: ParsedReceipt }
-  | { key: string; file: string; state: "saving"; form: ReceiptForm; receipt: ParsedReceipt }
-  | { key: string; file: string; state: "saved"; form: ReceiptForm; receipt: ParsedReceipt; outcome: string }
-  | { key: string; file: string; state: "failed"; form: ReceiptForm; receipt: ParsedReceipt; message: string };
+  | { key: string; file: string; state: "ready"; form: CaptureForm; receipt: ParsedReceipt }
+  | { key: string; file: string; state: "saving"; form: CaptureForm; receipt: ParsedReceipt }
+  | { key: string; file: string; state: "saved"; form: CaptureForm; receipt: ParsedReceipt; outcome: string }
+  | { key: string; file: string; state: "failed"; form: CaptureForm; receipt: ParsedReceipt; message: string };
 
-const FORM_LABEL: Record<ReceiptForm | "screenshot", string> = { condensed: "Short receipt", full: "Full tax invoice", screenshot: "Screenshot" };
+const FORM_LABEL: Record<CaptureForm, string> = { condensed: "Short receipt", full: "Full tax invoice", screenshot: "Screenshot" };
 
 // A receipt is a page or two; a worker silent for this long is not going to answer.
 const READ_TIMEOUT_MS = 60_000;
@@ -51,7 +53,33 @@ async function readReceiptPdf(file: File): Promise<WorkerReply> {
   });
 }
 
-function summary(form: ReceiptForm, receipt: ParsedReceipt): string {
+/**
+ * One screenshot's header and item lines, read through the app's Vision route — the image leaves
+ * the device here, and the page says so above the picker. Always resolves.
+ */
+async function readScreenshotFile(file: File): Promise<{ ok: true; page: ScreenshotPage } | { ok: false; message: string }> {
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(file);
+    const encoded = await encodeForReader(bitmap);
+    if (!encoded) return { ok: false, message: "This image could not be prepared for the reader." };
+    const read = await readImageWords(encoded);
+    if (!read.ok) return { ok: false, message: read.why };
+    const page = readScreenshotPage(read.words);
+    return page.ok ? { ok: true, page: page.value } : { ok: false, message: page.message };
+  } catch {
+    return { ok: false, message: "This image could not be opened on this device." };
+  } finally {
+    bitmap?.close();
+  }
+}
+
+/** A receipt's identity across picks: its store and unpadded number, as the stitch groups them. */
+const screenshotKey = (page: ScreenshotPage) => `${page.storeCode}:${page.receiptNumber.replace(/^0+(?=.)/u, "")}`;
+
+const isPdf = (file: File) => file.type === "application/pdf" || /\.pdf$/iu.test(file.name);
+
+function summary(form: CaptureForm, receipt: ParsedReceipt): string {
   const when = receipt.purchasedAtTime ? `${receipt.purchasedAt} ${receipt.purchasedAtTime}` : receipt.purchasedAt;
   const items = receipt.items.filter((item) => !item.isPromotion).length;
   return `${FORM_LABEL[form]} · ${when} · ${receipt.branchName} · ${items} item${items === 1 ? "" : "s"} · ${formatThb(receipt.netMinor)}`;
@@ -68,6 +96,10 @@ export function ReceiptsBench() {
   const inFlight = useRef(new Set<string>());
   // Whether the stored list is showing *now*, read when a save lands rather than when it began.
   const listShown = useRef(false);
+  // Screenshots of receipts that did not read complete, kept so a missing part picked later joins
+  // the parts already read — the refusal tells the owner to "add a screenshot", which only works
+  // if an added one meets the earlier ones. Keyed by receipt; a complete reading drops its pages.
+  const heldPages = useRef(new Map<string, { file: string; page: ScreenshotPage }[]>());
   useEffect(() => { listShown.current = receipts !== null; }, [receipts]);
 
   const update = (key: string, next: Picked) => setPicked((current) => current.map((entry) => (entry.key === key ? next : entry)));
@@ -90,15 +122,53 @@ export function ReceiptsBench() {
 
   async function choose(files: FileList | null) {
     if (!files || files.length === 0) return;
-    const batch = [...files].map((file, index) => ({ key: `${Date.now()}-${index}-${file.name}`, file }));
-    setPicked((current) => [...batch.map(({ key, file }) => ({ key, file: file.name, state: "reading" as const })), ...current]);
+    const stamp = Date.now();
+    const all = [...files];
+    const pdfs = all.filter(isPdf).map((file, index) => ({ key: `${stamp}-p${index}-${file.name}`, file }));
+    const images = all.filter((file) => !isPdf(file));
+    // Screenshots become one queue entry per *receipt*, not per image, so they wait under one
+    // placeholder until every image is read and the ones of the same receipt can be joined.
+    const shotsKey = `${stamp}-shots`;
+    setPicked((current) => [
+      ...pdfs.map(({ key, file }) => ({ key, file: file.name, state: "reading" as const })),
+      ...(images.length > 0 ? [{ key: shotsKey, file: `${images.length} screenshot${images.length === 1 ? "" : "s"}`, state: "reading" as const }] : []),
+      ...current
+    ]);
     // One at a time: each worker loads pdf.js, and a phone reading several at once gains nothing.
-    for (const { key, file } of batch) {
+    for (const { key, file } of pdfs) {
       const reply = await readReceiptPdf(file);
       update(key, reply.type === "receipt"
         ? { key, file: file.name, state: "ready", form: reply.form, receipt: reply.receipt }
         : { key, file: file.name, state: "refused", message: reply.message });
     }
+    if (images.length === 0) return;
+
+    const pages: { file: string; page: ScreenshotPage }[] = [];
+    const entries: Picked[] = [];
+    for (const [index, file] of images.entries()) {
+      const read = await readScreenshotFile(file);
+      if (read.ok) pages.push({ file: file.name, page: read.page });
+      else entries.push({ key: `${shotsKey}-x${index}`, file: file.name, state: "refused", message: read.message });
+    }
+    // Each receipt's entry is keyed by the receipt, so re-reading it with an added screenshot
+    // replaces the earlier entry instead of listing the receipt twice.
+    const regrouped = new Set<string>();
+    for (const group of groupScreenshotPages(pages)) {
+      const receiptKey = screenshotKey(group[0]!.page);
+      const all = [...(heldPages.current.get(receiptKey) ?? []), ...group];
+      regrouped.add(`shot:${receiptKey}`);
+      const names = all.map((entry) => entry.file).join(" + ");
+      const read = readScreenshotReceipt(all.map((entry) => entry.page));
+      if (read.ok && read.value.completeness === "complete") heldPages.current.delete(receiptKey);
+      else heldPages.current.set(receiptKey, all);
+      const key = `shot:${receiptKey}`;
+      entries.push(read.ok
+        ? { key, file: names, state: "ready", form: "screenshot", receipt: read.value }
+        : { key, file: names, state: "refused", message: read.message });
+    }
+    setPicked((current) => current
+      .filter((entry) => !regrouped.has(entry.key))
+      .flatMap((entry) => (entry.key === shotsKey ? entries : [entry])));
   }
 
   async function save(entry: Extract<Picked, { state: "ready" | "failed" }>) {
@@ -141,12 +211,17 @@ export function ReceiptsBench() {
       <section className="cash-bench compact" aria-labelledby="receipt-add-title">
         <div className="cash-heading">
           <p className="section-index">Add</p>
-          <h2 id="receipt-add-title">Read receipt PDFs</h2>
+          <h2 id="receipt-add-title">Read receipts</h2>
         </div>
         <div className="slip-form">
+          <p className="field-help">
+            PDFs are read on this device. Screenshots of the 7-Eleven app are sent to Google Cloud
+            Vision to be read (stored nowhere, either side); pick every screenshot of a long receipt
+            together and they are joined into one.
+          </p>
           <label className="account-control">
-            <span>7-Eleven e-tax PDFs</span>
-            <input type="file" accept="application/pdf,.pdf" multiple onChange={(event) => { void choose(event.target.files); event.target.value = ""; }} />
+            <span>7-Eleven e-tax PDFs or app screenshots</span>
+            <input type="file" accept="application/pdf,.pdf,image/*" multiple onChange={(event) => { void choose(event.target.files); event.target.value = ""; }} />
           </label>
           {ready.length > 1 ? (
             <div className="slip-actions">
@@ -168,7 +243,9 @@ export function ReceiptsBench() {
                   <>
                     <span>{summary(entry.form, entry.receipt)}</span>
                     {entry.receipt.completeness === "partial" ? (
-                      <span className="status error">Its own checks did not all pass, so it is saved as partial: the total counts, the item list does not.</span>
+                      <span className="status error">{entry.form === "screenshot"
+                        ? "Its items do not add up to its total, so part of the receipt is probably not in the screenshots. Add the missing part, or save it as partial: the total counts, the item list does not."
+                        : "Its own checks did not all pass, so it is saved as partial: the total counts, the item list does not."}</span>
                     ) : null}
                   </>
                 ) : null}

@@ -149,6 +149,18 @@ They must be excluded from item statistics or the most-bought item is a stamp fo
 
 The printed `ชิ้น` count already excludes them, which is what makes check 2 above meaningful.
 
+**The rule is the price, not the name** (measured 2026-09-23, D-210). Those three names were
+examples; a real receipt also printed `10 Delivery Servi @0.00 0.00N` and a bare `สิทธิ์แลกซื้อ`, and
+its `ชิ้น` count excluded both. The reader treats **any zero-priced line that is not a discount** as
+not merchandise.
+
+### Discounts are decided by position
+
+Every priced line between `ยอดรวม` and `ยอดสุทธิ` is a discount — `ยอดรวม` prints only when
+discounts follow — whatever its name. Measured 2026-09-23: real discounts also print as `TMWลด…`
+and `AMBฟรี…`, which a name list (`ส่วนลด…`, `ฟรี…`) counted as merchandise. The full invoice keeps
+its own `หักส่วนลด` … `ส่วนลดที่ได้ทั้งหมด` block.
+
 ### Dates
 
 The header prints Buddhist era with a two-digit year. `TID#` opens with the **full Gregorian
@@ -235,6 +247,31 @@ surface must say so on screen exactly as the slip and card forms do.
 A receipt too long for one screen is captured as **several screenshots of one receipt**, stitched
 on the receipt number. The checksum above is what says whether the stitch is complete — not the
 number of images, and not the owner's judgment at capture time.
+
+**Built and measured 2026-09-23** (`lib/receipt-screenshot.ts`, D-210): all 21 real screenshots,
+12 receipts of which 7 span two screenshots, read **complete**, and the one purchase also held as
+PDFs agrees with both on every figure. The screen's item block *is* the condensed receipt, so OCR's
+words are put back into its lines and the condensed grammar reads them; the app header supplies
+store, branch, number, date and time, and must agree with `R#`. What Vision does to the text, each
+repaired and nowhere else:
+
+- a space between Thai words the receipt prints joined, and around tight punctuation — removed;
+- the exempt `N` hard against a figure read as a third decimal (`0.000`) — a printed amount always
+  has two decimals, so that character can only be the `N`;
+- `ชิ้น` read as `ชั้น` on the net line;
+- a space it adds inside the payment method (`ทรูวอลเล็ท 7App`) — the reader drops spaces there for
+  every form, so an OCR and a PDF reading agree on the field matching will key on.
+
+**Stitching compares a priced row on quantity and amount, not its text**: the same row reads
+differently in two screenshots (a stray `.`), so exact comparison joined none of the seven pairs.
+One clipped row at each seam's edge may be dropped — Vision reads a half-visible row as garbage —
+and every order of the screenshots is read, the best reading winning, because keys that coarse can
+join a wrong order on a coincidence. A stitch without the tail (payment, `TID#`, `R#`) is refused
+with a sentence asking for the bottom of the receipt.
+
+**An OCR reading never overwrites a PDF's** (migration 029): items rank complete first, then full
+invoice > condensed PDF > screenshot, and a screenshot only fills a branch or payment method no PDF
+has supplied.
 
 ## What must never be stored
 

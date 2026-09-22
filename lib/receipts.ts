@@ -30,8 +30,14 @@ const receiptItemSchema = z.object({
   isPromotion: z.boolean()
 }).strict();
 
+/**
+ * Where a parse came from. A screenshot is the condensed receipt rendered by the app and read by
+ * OCR (`lib/receipt-screenshot.ts`), so it carries exactly the condensed form's fields.
+ */
+export type CaptureForm = ReceiptForm | "screenshot";
+
 export const receiptCaptureSchema = z.object({
-  form: z.enum(["condensed", "full"]),
+  form: z.enum(["condensed", "full", "screenshot"]),
   receipt: z.object({
     receiptNumber: z.string().regex(/^[A-Z]?\d{1,24}$/),
     storeCode: z.string().regex(/^\d{1,12}$/),
@@ -55,7 +61,7 @@ export const receiptCaptureSchema = z.object({
 }).strict().superRefine(({ form, receipt }, context) => {
   // Each form's fields are that form's own limits (`lib/receipt-text.ts`), so a parse carrying a
   // field its form never prints did not come from the reader.
-  const expectPresent = form === "condensed"
+  const expectPresent = form !== "full"
     ? { purchasedAtTime: true, paymentMethod: true, unitCount: true, vat: false, vatCode: false, supersedesReceiptNumber: false }
     : { purchasedAtTime: false, paymentMethod: false, unitCount: false, vat: true, vatCode: true, supersedesReceiptNumber: true };
   for (const [field, present] of Object.entries(expectPresent)) {
@@ -69,15 +75,15 @@ export const receiptCaptureSchema = z.object({
   if (age < -1 || age > RECEIPT_MAX_AGE_DAYS) {
     context.addIssue({ code: "custom", message: "The receipt date is outside the plausible window.", path: ["receipt", "purchasedAt"] });
   }
-  if (form === "condensed" && !/^\d+$/.test(receipt.receiptNumber)) {
-    context.addIssue({ code: "custom", message: "A condensed receipt number is digits only.", path: ["receipt", "receiptNumber"] });
+  if (form !== "full" && !/^\d+$/.test(receipt.receiptNumber)) {
+    context.addIssue({ code: "custom", message: "A short receipt's number is digits only.", path: ["receipt", "receiptNumber"] });
   }
 });
 
 export type ReceiptCapture = z.infer<typeof receiptCaptureSchema>;
 
 /** What the device sends: the parse without its self-assessment, which the server redoes. */
-export function receiptCaptureBody(form: ReceiptForm, receipt: ParsedReceipt): ReceiptCapture {
+export function receiptCaptureBody(form: CaptureForm, receipt: ParsedReceipt): ReceiptCapture {
   return {
     form,
     receipt: {

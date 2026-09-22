@@ -82,6 +82,13 @@ describe("receipt capture contract", () => {
     expect(receiptCaptureSchema.safeParse(receiptCaptureBody("condensed", { ...condensed, purchasedAt: "1483-06-12" })).success).toBe(false);
   });
 
+  test("a screenshot carries the short receipt's fields and no others", () => {
+    const request = captureReceiptRequest(receiptCaptureSchema.parse(receiptCaptureBody("screenshot", condensed)));
+    expect(request.source).toBe("screenshot");
+    expect(request.receiptNumber).toBe("00012");
+    expect(receiptCaptureSchema.safeParse(receiptCaptureBody("screenshot", { ...condensed, vat: full.vat })).success).toBe(false);
+  });
+
   test("money must be canonical minor-unit text", () => {
     expect(receiptCaptureSchema.safeParse(receiptCaptureBody("condensed", { ...condensed, netMinor: "35.00" })).success).toBe(false);
   });

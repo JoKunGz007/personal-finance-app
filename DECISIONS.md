@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205, D-206, D-207, D-208 and D-209** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205, D-206, D-207, D-208, D-209 and D-210** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -384,6 +384,19 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-207** — Internal transfers between the owner's own accounts are excluded from reporting automatically, and the row actions fold behind "⋯" on every viewport
 - **D-208** — 7-Eleven receipts become a domain of their own: a reader, three tables, backup v8, and the coverage tripwire that was missing all along
 - **D-209** — Receipt PDFs are captured through the app: read on the device, keyed on the condensed number, and the first end-to-end run on the real pair found three reader defects the tests could not
+- **D-210** — Receipt screenshots are read through Vision and stitched on their overlap; all 21 real screenshots read complete, and an OCR reading never overwrites a PDF's
+
+## D-210 — Receipt screenshots are read through Vision and stitched on their overlap; all 21 real screenshots read complete, and an OCR reading never overwrites a PDF's
+
+- Date: 2026-09-23
+- Status: **Built, reviewed and gated locally. Migration 029 is local only** — it needs a fresh backup and its own `db push` before screenshots are captured on hosted. `lib/receipt-screenshot.ts`, `/receipts` accepting images, `supabase/migrations/202609240029_receipt_ocr_rank.sql`, `supabase/tests/017_receipt_ocr_rank.sql`.
+- **Authorised by the owner in this session**: sending the real screenshots to Google Cloud Vision, after he asked that the quota and cost be checked first. Checked in his Google Cloud console (read only): the billing account is on its **free trial** with its credit unused and ฿0.00 this month, Vision showed no requests in 30 days, and the trial **ends 2026-11-15** — after which the project stops unless upgraded, and every Vision reader in this app with it. The 21 screenshots were read **once** by a `.runtime/` harness (key from the owner's user environment, never printed) and the words cached there, gitignored; the browser checks sent four more.
+- **The screen's item block is the condensed receipt, so the condensed grammar reads it.** OCR's words are put back into printed lines (Thai spacing, tight punctuation, `0.000` → `0.00N`, `ชั้น` → `ชิ้น`), the app header supplies store, branch, number, date and time, and the header must agree with `R#`. Result on the real set: **12 receipts, 7 of them two screenshots each, all complete**; the one purchase also held as PDFs agrees with both on store, branch, date, time, net, subtotal, unit count, every item amount and flag, and every discount.
+- **Stitching keys a priced row on quantity and amount, not text.** Exact comparison joined none of the seven real pairs — Vision reads one row differently in two screenshots. One clipped edge row may be dropped per seam, and every order is read with the best reading winning, because keys that coarse can join a wrong order on a coincidence (a code-review finding, red-proved). A stitch without the tail is refused with a sentence asking for the bottom; a screenshot picked later joins the ones already read.
+- **Three reader rules changed, from the real receipts, for every form.** Discounts are decided **by position** — every priced line between `ยอดรวม` and `ยอดสุทธิ` — because real discounts also print as `TMWลด…` and `AMBฟรี…`. **Any zero-priced non-discount line is not merchandise**: a real receipt printed `Delivery Servi … 0.00N` and a bare `สิทธิ์แลกซื้อ`, and its `ชิ้น` excluded both. The payment method is stored **without spaces**, so an OCR and a PDF reading agree on the field matching will key on.
+- **Migration 029: an OCR reading never overwrites a PDF's.** 027 ranked items complete-or-not then full-or-not, so a complete screenshot tied a complete condensed PDF and replaced its exact names; and Rule 1 let it replace branch and payment. Items now rank complete, then full > condensed > screenshot; a screenshot only fills a branch or payment no PDF supplied. pgTAP `017` fails 5 of 10 against 027's function and passes on 029.
+- `/code-review high` found six, all fixed (the two above, carry-over across picks, best order, a discount with an `@unit`, the contract). No new server route; the images go through the existing `/api/v1/ocr/read`, and the page says so above the picker.
+- Gate, current turn: reset on **29 migrations**; `tsc`, `eslint` (2 pre-existing warnings), `check:docs --strict` clean; **Vitest 1053 passed / 7 skipped across 49 files**; **pgTAP 17 files, 451, PASS**; recovery destination on 29. **In a real browser** against the local project: the PDF pair (desktop and phone), a screenshot pair picked out of order with both PDFs becoming one receipt from all three sources, and a screenshot picked later joining the earlier one. `pnpm build` ran inside each browser check.
 
 ## D-209 — Receipt PDFs are captured through the app: read on the device, keyed on the condensed number, and the first end-to-end run on the real pair found three reader defects the tests could not
 

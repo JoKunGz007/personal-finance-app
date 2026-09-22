@@ -343,9 +343,23 @@ type QtyLineClass = "discount" | "promotion" | "item";
  * promotion's names are closed, specific vocabularies; anything else is merchandise by default.
  */
 function classifyQtyNameAmountLine(name: string): QtyLineClass {
-  if (/^(ส่วนลด|ฟรี)/.test(name)) return "discount";
-  if (name === "M-Stamp(บาท)" || name === "AMBสิทธิ์แลกซื้อ" || /^ภารกิจช้อป/.test(name)) return "promotion";
+  // Compared without spaces: an OCR engine spaces a name the receipt prints joined
+  // (`AMB สิทธิ์ แลก ซื้อ`), and no name in either vocabulary depends on a space.
+  const joined = name.replace(/\s+/g, "");
+  if (/^(ส่วนลด|ฟรี)/.test(joined)) return "discount";
+  if (joined === "M-Stamp(บาท)" || /^(AMB)?สิทธิ์แลกซื้อ$/.test(joined) || /^ภารกิจ/.test(joined)) return "promotion";
   return "item";
+}
+
+/**
+ * **A zero-priced line is not merchandise, whatever it is called** (measured 2026-09-23, D-210).
+ * The named vocabulary above was never the whole set: a real receipt printed `10 Delivery Servi
+ * @0.00 0.00N` and a bare `สิทธิ์แลกซื้อ`, and its `ชิ้น` count excluded both — the contract's rule
+ * ("Zero-priced lines are not purchases") is about the price, and the names were only examples.
+ * Keyed on the amount so the next unnamed campaign line cannot fail the unit count.
+ */
+function notMerchandise(kind: QtyLineClass, amountMinor: string): boolean {
+  return kind === "promotion" || amountMinor === "0";
 }
 
 function toMinor(printed: string): MinorUnitString | null {
@@ -418,6 +432,11 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
   // `FULL_DISCOUNT_LINE`'s deliberately generic `<name> <amount>` shape is allowed to claim a
   // line (correction #12).
   let inFullDiscountBlock = false;
+  // Condensed form: true between `ยอดรวม` and `ยอดสุทธิ`. Every priced line there is a discount —
+  // the contract's structure prints `ยอดรวม` only when discounts follow it — and that position is
+  // what decides, not the name: measured 2026-09-23 (D-210), real discounts are also printed as
+  // `TMWลด…` and `AMBฟรี…`, which the name vocabulary did not know and counted as merchandise.
+  let inCondensedDiscountBlock = false;
 
   for (let index = 0; index < lines.length; index++) {
     const lineNo = index + 1;
@@ -498,7 +517,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       if (BigInt(unitPriceMinor) * BigInt(quantity) !== BigInt(amountMinor)) {
         return { ok: false, code: "QUANTITY_MISMATCH", message: "Unit price times quantity does not equal the printed amount.", lineNo };
       }
-      items.push({ lineNo, quantity, name, unitPriceMinor, amountMinor, vatExempt: Boolean(match[6]), isPromotion: kind === "promotion" });
+      items.push({ lineNo, quantity, name, unitPriceMinor, amountMinor, vatExempt: Boolean(match[6]), isPromotion: notMerchandise(kind, amountMinor) });
       continue;
     }
     if (form === "condensed" && (match = ITEM_CONDENSED_WITH_UNIT_LINE.exec(line))) {
@@ -508,10 +527,17 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       if (unitPriceMinor === null || amountMinor === null) {
         return malformed(lineNo, "An item line's price or amount does not read as a plain figure.");
       }
+      // Position decides here too: a line with an `@unit` between `ยอดรวม` and `ยอดสุทธิ` is a
+      // discount like any other there, and must not reach the item list.
+      if (inCondensedDiscountBlock) {
+        discounts.push(amountMinor);
+        continue;
+      }
       if (BigInt(unitPriceMinor) * BigInt(quantity) !== BigInt(amountMinor)) {
         return { ok: false, code: "QUANTITY_MISMATCH", message: "Unit price times quantity does not equal the printed amount.", lineNo };
       }
-      items.push({ lineNo, quantity, name: match[2]!.trim(), unitPriceMinor, amountMinor, vatExempt: Boolean(match[5]), isPromotion: false });
+      const name = match[2]!.trim();
+      items.push({ lineNo, quantity, name, unitPriceMinor, amountMinor, vatExempt: Boolean(match[5]), isPromotion: notMerchandise(classifyQtyNameAmountLine(name), amountMinor) });
       continue;
     }
     // **Condensed form only.** This shape is deliberately generic — a leading integer, any text,
@@ -527,7 +553,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       const amountMinor = toMinor(match[3]!);
       if (amountMinor === null) return malformed(lineNo, "A line's amount does not read as a plain figure.");
       const quantity = Number(match[1]);
-      const kind = classifyQtyNameAmountLine(name);
+      const kind = inCondensedDiscountBlock ? "discount" : classifyQtyNameAmountLine(name);
       if (kind === "discount") {
         discounts.push(amountMinor);
       } else if (kind === "promotion") {
@@ -535,7 +561,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       } else {
         // No `@unit` on this shape, so there is no second figure to cross-check against —
         // trusted at face value, exactly as before.
-        items.push({ lineNo, quantity, name, unitPriceMinor: null, amountMinor, vatExempt: Boolean(match[4]), isPromotion: false });
+        items.push({ lineNo, quantity, name, unitPriceMinor: null, amountMinor, vatExempt: Boolean(match[4]), isPromotion: notMerchandise(kind, amountMinor) });
       }
       continue;
     }
@@ -543,6 +569,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       const parsed = toMinor(match[1]!);
       if (parsed === null) return malformed(lineNo, "The subtotal does not read as a plain figure.");
       subtotalMinor = parsed;
+      inCondensedDiscountBlock = form === "condensed";
       continue;
     }
     if (form === "full" && (match = FULL_SUBTOTAL_LINE.exec(line))) {
@@ -577,6 +604,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       if (parsed === null) return malformed(lineNo, "The net amount does not read as a plain figure.");
       unitCount = Number(match[1]);
       netMinor = parsed;
+      inCondensedDiscountBlock = false;
       awaitingPaymentLine = true;
       continue;
     }
@@ -608,7 +636,10 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
     // so this positional detection — armed only by `NET_LINE`, which is condensed-only in
     // practice — never runs on a full-form parse.
     if (form === "condensed" && awaitingPaymentLine && paymentMethod === null && (match = PAYMENT_LINE.exec(line))) {
-      paymentMethod = match[1]!.trim();
+      // Without spaces: they carry no meaning in a method's name, and OCR adds them where the PDF
+      // prints none (`ทรูวอลเล็ท 7App` against `ทรูวอลเล็ท7App`, D-210) — the two readings of one
+      // purchase must agree on the field the ledger match will key on.
+      paymentMethod = match[1]!.replace(/\s+/g, "");
       awaitingPaymentLine = false;
       awaitingTenderedLine = true;
       continue;

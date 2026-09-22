@@ -114,6 +114,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A measurement taken on slips does not govern cards, and this is the fourth time
 - A reader tuned to one OCR engine's word boundaries fails silently on another's
 - pdf.js `hasEOL` is not a row boundary, and a reader tested on measured text never met it
+- One printed row reads differently in two screenshots, so an exact-text overlap joins nothing
 
 ### Real data, masking and privacy
 
@@ -260,7 +261,7 @@ these section headings rather than a third raise. The owner chose the split.
 | Docker and the local Supabase projects | 15 | [`docs/gotchas/docker-supabase.md`](docs/gotchas/docker-supabase.md) |
 | Database, migrations and pgTAP | 17 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
 | Backup, restore and recovery | 10 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |
-| Statement and slip parsing | 18 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
+| Statement and slip parsing | 19 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 34 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
 | App, auth, routing and accessibility | 42 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |

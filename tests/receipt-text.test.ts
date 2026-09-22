@@ -560,3 +560,33 @@ describe("parseReceiptText — full invoice rows as pdf.js groups them", () => {
     expect(result.ok && result.value.receiptNumber).toBe("F1000123");
   });
 });
+
+// Measured 2026-09-23 on the real screenshots and PDFs (D-210); values invented.
+describe("parseReceiptText — condensed lines the name vocabulary did not know", () => {
+  test("every priced line between ยอดรวม and ยอดสุทธิ is a discount, whatever its name", () => {
+    const result = parseReceiptText(condensedFixture({ withSubtotal: true }).replace("1 ส่วนลดคูปอง 5.00", "1 TMWลดขนมปัง 5.00"), "condensed");
+    expect(result.ok && result.value.discounts).toEqual(["500"]);
+    expect(result.ok && result.value.completeness).toBe("complete");
+  });
+
+  test("a zero-priced line is not merchandise, even under a name nobody listed", () => {
+    const result = parseReceiptText(condensedFixture({
+      itemLines: ["2 ขนมปังไส้ครีม @15.00 30.00", "1 น้ำดื่มตราช้าง 10.00", "10 Delivery Servi @0.00 0.00N", "3 สิทธิ์แลกซื้อ 0.00"]
+    }), "condensed");
+    expect(result.ok, result.ok ? "" : result.message).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.items.filter((item) => item.isPromotion)).toHaveLength(2);
+    expect(result.value.completeness).toBe("complete");
+  });
+
+  test("the payment method carries no spaces, so an OCR reading and a PDF reading agree", () => {
+    const result = parseReceiptText(condensedFixture().replace("เงินสด 40.00", "ทรูวอลเล็ท 7App 40.00"), "condensed");
+    expect(result.ok && result.value.paymentMethod).toBe("ทรูวอลเล็ท7App");
+  });
+});
+
+test("a discount printed with an @unit inside the discount block is still a discount", () => {
+  const result = parseReceiptText(condensedFixture({ withSubtotal: true }).replace("1 ส่วนลดคูปอง 5.00", "2 ฟรีขนม @2.50 5.00"), "condensed");
+  expect(result.ok && result.value.discounts).toEqual(["500"]);
+  expect(result.ok && result.value.completeness).toBe("complete");
+});
