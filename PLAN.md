@@ -4,6 +4,8 @@ Last verified: 2026-09-23
 
 ## Current checkpoint
 
+**A matched ledger row shows its receipt, and `/receipts` reads by colour, 2026-09-23** (D-216, D-215). Task 56's planned work is done; its follow-ups are listed at the end of task 56.
+
 **Receipt statistics are live, 2026-09-23** (D-214). `/receipts` shows what the stored receipts show, computed in SQL (migration 031, on hosted): every receipt's total, and item figures from complete item lists only. Never added to a ledger total. Task 56's parts are all built. Next: show a row's matched receipt on `/ledger`.
 
 **Receipts match the ledger, 2026-09-23** (D-212). The lag window was measured from the 13 captures: 0–2 minutes for the app wallet, 47 for the TrueMoney wallet. The owner chose a two-hour window. Migration 030 adds the owner's link/decline and backup v9. Next: receipt statistics.
@@ -684,7 +686,9 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
     **Statistics are built and live, 2026-09-23** (D-214). They are a panel on `/receipts` from `public.receipt_statistics()` (migration 031, on hosted; backup stays v9). Every receipt's net counts; item figures read only `items_complete` receipts and only merchandise. The list's "partial" label now reads `items_complete` too.
 
-    Next: show a row's matched receipt on `/ledger`. It must compute the match at read time, as `/receipts` does, because no link is stored. Independent: discount names (`receipt_discounts.name` is always null); `completeness` being overwritten by a lower-ranked source in `capture_receipt` (D-214; harmless now that nothing reads it for trust); the mailbox path for full invoices (deferred by the owner).
+    **A matched ledger row shows its receipt, 2026-09-23** (D-216). `/ledger` reads the receipts route and folds the items under the row. `/receipts` was restyled by colour for meaning on the owner's request (D-215).
+
+    Follow-ups, all independent: discount names (`receipt_discounts.name` is always null); `completeness` being overwritten by a lower-ranked source in `capture_receipt` (D-214; harmless now that nothing reads it for trust); the mailbox path for full invoices (deferred by the owner).
 
     **Matching is built, 2026-09-23 (D-212)** — migration **030**, `lib/receipt-match.ts`, `PUT /api/v1/receipts/[id]/match`, and a match panel on each stored receipt. The lag window was **measured**: 0–2 minutes for the 7-Eleven app wallet (10 of 10) and 47 for the TrueMoney wallet (1). The owner chose **two hours**. The automatic rule is a read-time proposal; the owner's link or decline is stored, and a link may name any row whose amount agrees, which covers the PromptPay-reimbursement case. Backup **v9**. Local gate green; hosted state in `HANDOFF.md`.
 

@@ -4,8 +4,8 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-212, D-213 and D-214** — the two open questions this file has
-named since the twelfth boundary, the two newest entries, and the sixteenth boundary's own record of
+This file carries **D-141, D-158 and D-212 … D-216** — the two open questions this file has
+named since the twelfth boundary, the newest entries, and the sixteenth boundary's own record of
 itself. **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
 `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. `scripts/check-docs.mjs`
@@ -394,6 +394,28 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-212** — Receipts match the ledger on a measured two-hour window, the owner's decision wins, and backup moves to v9
 - **D-213** — The sixteenth boundary moves D-198 … D-211 on the owner's word, and this file again holds its two open questions, the newest entry and the boundary's own record
 - **D-214** — Receipt statistics are computed in SQL on `/receipts`, never added to a ledger total, and item figures trust only complete item lists
+- **D-215** — Receipts read by colour for meaning, and their amounts stay in ink because green and red already mean money in and out
+- **D-216** — A matched ledger row shows its receipt, computed at read time from the receipts route
+
+## D-216 — A matched ledger row shows its receipt, computed at read time from the receipts route
+
+- Date: 2026-09-23
+- Status: **Built, gated; committed as `c888132`, pushed, confirmed live.** `receiptsOnRows` in `lib/receipts.ts`, `LedgerReceipt` in `app/ledger-statement-row.tsx`, the extra read in `app/transactions-view.tsx`. No SQL, no new route.
+- **The ledger reads `GET /api/v1/receipts`**, whose match is already computed at read time (D-212). It keys matched and owner-linked receipts by their row. No link is stored, so a second calculation on the ledger could only drift from the one on `/receipts`. The read joins the ledger's other secondary reads; a failure shows no receipt and claims nothing about the row.
+- **Folded under the row's description** as "7-Eleven receipt · N items", listing the merchandise and discounts. It never adds an amount column: the row's own amount is the payment, and the receipt only itemizes it.
+- **Known limits**: a link to a row outside the candidate read's three days has no `row` in the match state, so it does not show on the ledger (tested as dropped, not guessed). A receipt shows only once its row is loaded; paging applies.
+- **Confirmed live**: 11 receipts are matched, and 9 showed on the first page. The other 2 sit on rows older than the page's floor, which "Load older rows" reaches. There is no sideways overflow. No value recorded.
+- Gate: Vitest **1074 passed / 7 skipped across 50 files**; `tsc` clean; `eslint` 2 pre-existing warnings; `pnpm build` clean. No SQL, so pgTAP was not re-run (492 at D-214).
+
+## D-215 — Receipts read by colour for meaning, and their amounts stay in ink because green and red already mean money in and out
+
+- Date: 2026-09-23
+- Status: **Shipped as `0f04256`, confirmed live.** `app/receipts-bench.tsx`, `app/receipt-statistics.tsx`, the receipt rules in `app/globals.css`.
+- **The owner asked for colour and formatting** to make `/receipts` easier to read, suggesting green amounts. Three schemes were shown side by side in the app's Night Town colours with invented receipts: all green, spending red, and neutral amounts with colour only for meaning. **The owner chose neutral.** On `/ledger` green means money in and red means money out, and a receipt is neither.
+- What changed: status chips (green "on the ledger", amber "pick a row" and "partial", muted "no ledger row"), muted mono date and time, a bold branch, a bold right-aligned amount, promotions greyed and italic, and discounts in the money-in colour with a minus sign on the list and the statistics strip.
+- A "no ledger row" chip is muted, never red: it is normal for a wallet purchase (D-212).
+- The browser pane would not render the live page reliably for an in-page preview, so the comparison was a mockup built from the app's own colour values rather than the real page. The shipped result was read live by computed style instead.
+
 
 ## D-214 — Receipt statistics are computed in SQL on `/receipts`, never added to a ledger total, and item figures trust only complete item lists
 
