@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-212 … D-219** — the two open questions this file has
+This file carries **D-141, D-158 and D-212 … D-220** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the sixteenth boundary's own record of
 itself. **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -399,6 +399,21 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-217** — The `/receipts` UX review's three recommended fixes: desktop fit, 44px receipt fold, load on arrival
 - **D-218** — Food delivery orders get their own page, GrabFood is read from email and LINE MAN from its order page
 - **D-219** — GrabFood orders are read on the server from the statement mailbox, measured on every real receipt before commit, and stored append-only at backup v10
+- **D-220** — GrabFood orders match ledger rows on a measured two-hour window before the e-receipt, and backup moves to v11
+
+## D-220 — GrabFood orders match ledger rows on a measured two-hour window before the e-receipt, and backup moves to v11
+
+- Date: 2026-09-24
+- Status: **Shipped as `f2d4f82`, migration 033 on hosted, and confirmed live.** Task: `PLAN.md` 58 part 3. Precedent: D-212. Files: `supabase/migrations/202609280033_delivery_match_decisions.sql`, `lib/delivery-match.ts`, `lib/ledger-match.ts`, `app/api/v1/deliveries/route.ts`, `app/api/v1/deliveries/[id]/match/route.ts`, `app/ledger-match-panel.tsx`, `app/deliveries-bench.tsx`, `supabase/tests/021_delivery_match.sql`, `tests/delivery-match.test.ts`.
+- **The window was measured on hosted, then chosen by the owner**, as D-212's was. The e-receipt carries only its send time, which is after delivery; the order time is not in the email, so PLAN's earlier "match on the order time" could not be built and the window is measured backward from the send time. For the 100 paid orders, counts and lags only: 89 SCB rows of the exact amount landed 0–35 minutes **before** the email, one at 100 minutes, none after; every one named `GRAB`; each order had exactly one candidate and no row was wanted by two orders; the nearest other equal-amount row was 43 hours away. The 10 orders without a row are 7 from before the first SCB statement and 3 paid with another card. **The owner chose two hours and the `GRAB` filter**, and asked that all accounts be searched rather than SCB alone, since he occasionally pays from another.
+- **The rule**: a row naming `GRAB`, whose movement is the order's printed total negated to the minor unit (for the `unprinted` order too), at or up to 120 minutes before the send time in Bangkok, and mutually unique. The proposal is computed at read time; only the owner's link or decline is stored (overlay + append-only revisions, audit, sequence bump, one claim per ledger row). A manual link is held to the exact amount only. **A ฿0 order is never a candidate and `set_delivery_match` refuses it.**
+- **Shared with receipts rather than copied**: the mutual-uniqueness core moved to `lib/ledger-match.ts` (`proposeReceiptMatches` now delegates, behaviour unchanged, its tests unchanged and passing) and the match panel to `app/ledger-match-panel.tsx`.
+- **The planted-order question from D-219.** A forged e-receipt still moves no money and stores nothing on its own; one that wants a real order's row makes both ambiguous rather than taking it. **What it can do**: be proposed against a `GRAB` row no order claims — today, a Grab ride's card row, because rides are skipped. Display only. The owner wants rides matched automatically too (part 5), which closes this by giving those rows their own claimant.
+- **Backup v10 → v11**, two kinds appended; v2 … v10 stay restorable; a v10 file into v11 and a matched order across a restore were proven against the recovery project.
+- **Reviews**: finance-reviewer found nothing material. `/code-review high` found 6: fixed, `/deliveries` driving its chip and panel from the match status rather than re-deriving ฿0. Left: the ride-row proposal above (owner's call: rides later); candidate read on every account (the owner's choice); the match route and request schema duplicated between receipts and deliveries; the list route's refusal path untested.
+- Gate: `pnpm supabase:reset` on 33 migrations (the first attempt hit a transient container error; the rerun applied all); pgTAP **540 across 21 files**, `Result: PASS`; Vitest **1119 passed / 7 skipped across 53 files**, recovery rehearsal running; `tsc` clean; `eslint` 0 errors, 2 pre-existing warnings; `check:docs --strict` and `pnpm build` clean.
+- **Hosted, before `db push`**: the backup first read 183 / 69, stale; the owner exported, and it re-read **183 / 183** from a public address. `--dry-run` named only 033; pushed on the owner's grant. Read back: 033 in the remote list, the candidate read executable by `authenticated`, the write path not by `anon`, sequence unchanged at 183. Code pushed after the migration, so the deployed list never called a missing function.
+- **Confirmed live, 2026-09-24**: `/deliveries` reads **90 matched, 10 no row, 14 paid outside Grab, 0 ambiguous** — the measurement exactly; at 375px no sideways scroll and match controls 47–48px tall. Counts only; no value recorded.
 
 ## D-219 — GrabFood orders are read on the server from the statement mailbox, measured on every real receipt before commit, and stored append-only at backup v10
 

@@ -90,3 +90,13 @@ Measured over all 114 real food receipts in the four backfill bundles by `script
 - After `ค่าจัดส่ง`, each line is a **discount printed with a minus sign** (`- ฿ n`; rides print `฿ -n`) or, on 2 receipts, a **charge printed without one**. A discount's name can itself contain a baht figure, so only an amount-only line is an amount.
 - **A GrabCoins redemption is not printed on the e-receipt.** One receipt's lines do not reach its printed total, and the Grab app's order page shows the missing deduction as GrabCoins. The reader stores such an order with an `unprinted` line sized to the gap, only when both printed totals agree and more was taken off than printed (D-219).
 - Rides use the "E-Receipt/Abbreviated Tax Invoice" template and are skipped.
+
+## Matching a GrabFood order to the ledger, measured 2026-09-24
+
+Measured over the 100 paid orders against the hosted ledger, counts and lags only (D-220). Applied by `lib/delivery-match.ts` over `public.delivery_ledger_candidates()` (migration 033).
+
+- **The card row comes before the e-receipt**, because the email is sent after delivery: 89 rows 0–35 minutes before, one at 100, none after. The window is 120 minutes before the send time, the owner's choice.
+- **Every matched row's bank description names `GRAB`**, so the automatic rule requires it; a manual link does not.
+- The amount is the email's printed total, negated, to the minor unit, including on the `unprinted` order.
+- An order with no row is normal: one paid with another card, or one older than the first imported statement.
+- Grab ride payments are `GRAB` rows too and have no stored order yet (rides are skipped).
