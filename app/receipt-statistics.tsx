@@ -27,7 +27,7 @@ function ItemTable({ id, title, items }: { id: string; title: string; items: rea
             <tbody>
               {items.map((item) => (
                 <tr key={item.name}>
-                  <td data-label="Item">{item.name}</td>
+                  <td data-label="Item" className="receipt-name">{item.name}</td>
                   <td data-label="Qty" className="numeric">{item.quantity}</td>
                   <td data-label="Spent" className="numeric">{formatThb(item.spend)}</td>
                   <td data-label="Receipts" className="numeric">{item.receipts}</td>
@@ -61,7 +61,7 @@ function GroupTable({ id, title, label, rows }: {
           <tbody>
             {rows.map((row) => (
               <tr key={row.key}>
-                <td data-label={label}>{row.name}</td>
+                <td data-label={label} className="receipt-name">{row.name}</td>
                 <td data-label="Receipts" className="numeric">{row.receipts}</td>
                 <td data-label="Total" className="numeric">{formatThb(row.net)}</td>
               </tr>
@@ -151,7 +151,7 @@ export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
             <div><dt>Average receipt</dt><dd>{totals.averageNet ? formatThb(totals.averageNet.quotient) : "—"}</dd></div>
             <div><dt>Items bought</dt><dd>{totals.units}</dd></div>
             <div><dt>Items before discounts</dt><dd>{formatThb(totals.itemSpend)}</dd></div>
-            <div><dt>Discounts</dt><dd>{formatThb(totals.discounts)}</dd></div>
+            <div><dt>Discounts</dt><dd className="positive">{totals.discounts === "0" ? formatThb("0") : `−${formatThb(totals.discounts)}`}</dd></div>
           </dl>
 
           <ItemTable id="receipt-most-bought" title="Most bought" items={stats.mostBought} />

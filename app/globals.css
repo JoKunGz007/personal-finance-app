@@ -1190,6 +1190,20 @@ footer p { margin: 0; }
 .receipt-queue li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .receipt-list li { border-top: 1px solid var(--line); padding: 8px 0; }
 .receipt-list summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
+/* Receipts (D-215): neutral amounts, colour only for meaning. Green and red mean money in and out
+   on /ledger, and a receipt is neither, so its amounts stay in the ink colour and only discounts
+   (a saving) and the status chips carry colour. */
+.receipt-list summary { gap: 4px 10px; }
+.receipt-when { font-family: var(--font-money); color: var(--muted); font-size: .9em; }
+.receipt-branch, .receipt-name { font-weight: 600; }
+.receipt-count { color: var(--muted); font-size: .9em; }
+.receipt-chip { display: inline-block; padding: 1px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.5; }
+.receipt-chip.ok { color: var(--verified-ink); }
+.receipt-chip.warn { color: var(--warn-ink); background: var(--saffron-wash); }
+.receipt-chip.quiet { color: var(--muted); }
+.receipt-amount { margin-left: auto; font-weight: 700; font-family: var(--font-money); }
+.receipt-promotion td { color: var(--muted); font-style: italic; }
+.receipt-discount td { color: var(--money-in); font-weight: 600; }
 .receipt-match { display: grid; gap: 6px; margin: 4px 0 10px; overflow-wrap: anywhere; }
 .receipt-match .slip-actions { flex-wrap: wrap; align-items: flex-end; }
 .receipt-match select { max-width: 100%; }

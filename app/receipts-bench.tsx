@@ -318,16 +318,18 @@ function StoredReceipts({ receipts, busy, error, onLoad }: {
             <li key={receipt.id}>
               <details>
                 <summary>
-                  <time dateTime={receipt.purchased_on}>{receipt.purchased_on}</time>
-                  {receipt.purchased_at_time ? ` ${receipt.purchased_at_time.slice(0, 5)}` : ""}
-                  {" · "}{receipt.branch_name}
-                  {" · "}{receipt.items.filter((item) => !item.is_promotion).length} items
-                  {" · "}<span className="numeric">{formatThb(receipt.net_minor)}</span>
+                  <span className="receipt-when">
+                    <time dateTime={receipt.purchased_on}>{receipt.purchased_on}</time>
+                    {receipt.purchased_at_time ? ` ${receipt.purchased_at_time.slice(0, 5)}` : ""}
+                  </span>
+                  <span className="receipt-branch">{receipt.branch_name}</span>
+                  <span className="receipt-count">{receipt.items.filter((item) => !item.is_promotion).length} items</span>
+                  <span className={`receipt-chip ${MATCH_CHIP[receipt.match.status].tone}`}>{MATCH_CHIP[receipt.match.status].label}</span>
                   {/* `items_complete`, not `completeness`: capture overwrites the latter with the latest
                       source's verdict even when it keeps the stored items, and "partial" here means
                       the items shown are not trusted — the rule the statistics count by. */}
-                  {receipt.items_complete ? "" : " · partial"}
-                  {receipt.match.status === "matched" || receipt.match.status === "linked" ? " · on the ledger" : ""}
+                  {receipt.items_complete ? null : <span className="receipt-chip warn">partial</span>}
+                  <span className="receipt-amount numeric">{formatThb(receipt.net_minor)}</span>
                 </summary>
                 <ReceiptMatch receipt={receipt} onChanged={onLoad} />
                 <p className="ledger-status">
@@ -341,14 +343,14 @@ function StoredReceipts({ receipts, busy, error, onLoad }: {
                     </thead>
                     <tbody>
                       {receipt.items.map((item) => (
-                        <tr key={item.position}>
+                        <tr key={item.position} className={item.is_promotion ? "receipt-promotion" : undefined}>
                           <td data-label="Item">{item.display_name ?? item.name}{item.is_promotion ? " (promotion)" : ""}</td>
                           <td data-label="Qty" className="numeric">{item.quantity}</td>
                           <td data-label="Amount" className="numeric">{formatThb(item.amount_minor)}</td>
                         </tr>
                       ))}
                       {receipt.discounts.map((discount) => (
-                        <tr key={`d${discount.position}`}>
+                        <tr key={`d${discount.position}`} className="receipt-discount">
                           <td data-label="Item">Discount</td>
                           <td data-label="Qty" className="numeric"></td>
                           <td data-label="Amount" className="numeric">−{formatThb(discount.amount_minor)}</td>
@@ -376,6 +378,16 @@ function describeRow(row: ReceiptLedgerRow): string {
       : ` (${-row.lag_minutes} min before)`;
   return `${when}${lag} · ${row.description}`;
 }
+
+// The summary's chip. Green only for a row that is on the ledger, amber for something the owner
+// can act on, muted otherwise — "no row" is normal for a wallet purchase and must not read as an error.
+const MATCH_CHIP = {
+  matched: { label: "on the ledger", tone: "ok" },
+  linked: { label: "on the ledger", tone: "ok" },
+  declined: { label: "no ledger row", tone: "quiet" },
+  ambiguous: { label: "pick a row", tone: "warn" },
+  none: { label: "no ledger row", tone: "quiet" }
+} as const;
 
 const MATCH_SENTENCE = {
   matched: "Paid by this ledger row, found automatically:",
