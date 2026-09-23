@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-212 … D-220** — the two open questions this file has
+This file carries **D-141, D-158 and D-212 … D-221** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the sixteenth boundary's own record of
 itself. **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -400,6 +400,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-218** — Food delivery orders get their own page, GrabFood is read from email and LINE MAN from its order page
 - **D-219** — GrabFood orders are read on the server from the statement mailbox, measured on every real receipt before commit, and stored append-only at backup v10
 - **D-220** — GrabFood orders match ledger rows on a measured two-hour window before the e-receipt, and backup moves to v11
+- **D-221** — A matched ledger row shows its GrabFood order, and the receipt and delivery match routes share one handler
+
+## D-221 — A matched ledger row shows its GrabFood order, and the receipt and delivery match routes share one handler
+
+- Date: 2026-09-24
+- Status: **Shipped as `4a7aee9`, confirmed live.** D-220's follow-ups, asked for by the owner. Files: `lib/deliveries.ts` (`deliveriesOnRows`), `app/ledger-statement-row.tsx` (`LedgerDelivery`), `app/transactions-view.tsx`, `lib/server/ledger-match-route.ts`, `lib/ledger-match.ts` (`ledgerMatchRequestSchema`), `tests/deliveries-route.test.ts`.
+- **`/ledger` folds a matched or linked order under its row**, D-216's rule unchanged: "GrabFood · restaurant · N dishes", then dishes, delivery fee and adjustments, never an amount column. The ledger reads `GET /api/v1/deliveries` beside its other secondary reads; a failure shows no order and claims nothing about the row. A link to a row outside the candidate read's three days has no `row` and is not placed (tested).
+- **One match handler for both documents**, parameterised by RPC, id field, noun and extra refusals (the ฿0 one). The receipt route's database-backed tests pass unchanged against it.
+- **The list route's refusal is tested** with a stubbed client: a failed or off-contract candidate or decision read is a 500, never "no row" (the candidate cases red-proved by removing the guard); a ฿0 total arriving as a number reads `outside`.
+- Gate: Vitest **1124 passed / 7 skipped across 54 files**; `tsc` clean; `eslint` 0 errors, 2 pre-existing warnings; `pnpm build` clean. No SQL.
+- **Confirmed live, 2026-09-24**: the first `/ledger` page shows 10 GrabFood folds beside the 9 7-Eleven ones (older matched orders sit below the paging floor, as D-216 found for receipts); at 375px no sideways scroll and the fold's link is 44px. Counts only.
 
 ## D-220 — GrabFood orders match ledger rows on a measured two-hour window before the e-receipt, and backup moves to v11
 
