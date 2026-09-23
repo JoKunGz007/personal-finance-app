@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, test, vi } from "vitest";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import { captureReceiptRequest, receiptCaptureBody, receiptCaptureSchema, receiptListSchema } from "@/lib/receipts";
+import { receiptStatisticsSchema } from "@/lib/receipt-statistics";
 import {
   API, OWNER_EMAIL, PUBLISHABLE, containerReachable, ownerId as lookupOwnerId,
   ownerSession, psql, resetOwnerImportSurface
@@ -194,6 +195,16 @@ describe.skipIf(!reachable)("receipts route", () => {
     const response = await post({ form: "condensed", receipt: { receiptNumber: "1" } });
     expect(response.status).toBe(422);
     expect(psql(`select count(*) from public.receipts where owner_id = '${owner}';`).output.trim()).toBe("1");
+  });
+
+  it("reads statistics over the stored receipt, on contract", async () => {
+    const { GET } = await import("@/app/api/v1/receipts/statistics/route");
+    const response = await GET();
+    expect(response.status).toBe(200);
+    const stats = receiptStatisticsSchema.parse(await response.json());
+    expect(stats.totals).toMatchObject({ receipts: 1, net: "3500", units: 3, itemSpend: "4000", discounts: "500", partialReceipts: 0 });
+    expect(stats.mostBought[0]).toEqual({ name: "ขนมปังไส้ครีมรสช็อกโกแลต", quantity: 2, spend: "3000", receipts: 1 });
+    expect(stats.paymentMethods).toEqual([{ method: "เงินสด", receipts: 1, net: "3500" }]);
   });
 
   it("reads no ledger row as none, then matches the TRUE MONEY row once it exists", async () => {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LedgerNote } from "@/app/ledger-note";
+import { ReceiptStatisticsPanel } from "@/app/receipt-statistics";
 import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
 import { formatThb } from "@/lib/money";
 import { receiptMatchResponseSchema, type ReceiptLedgerRow, type ReceiptMatchRequest } from "@/lib/receipt-match";
@@ -97,6 +98,8 @@ export function ReceiptsBench() {
   const inFlight = useRef(new Set<string>());
   // Whether the stored list is showing *now*, read when a save lands rather than when it began.
   const listShown = useRef(false);
+  // Bumped on every save, so statistics already on screen reload rather than go stale.
+  const [saves, setSaves] = useState(0);
   // Screenshots of receipts that did not read complete, kept so a missing part picked later joins
   // the parts already read — the refusal tells the owner to "add a screenshot", which only works
   // if an added one meets the earlier ones. Keyed by receipt; a complete reading drops its pages.
@@ -203,6 +206,7 @@ export function ReceiptsBench() {
         : "Merged into the receipt already stored for this purchase; its existing item list was kept.";
     update(entry.key, { key: entry.key, file: entry.file, state: "saved", form: entry.form, receipt: entry.receipt, outcome });
     if (listShown.current) void load();
+    setSaves((count) => count + 1);
   }
 
   const ready = picked.filter((entry): entry is Extract<Picked, { state: "ready" | "failed" }> => entry.state === "ready" || entry.state === "failed");
@@ -266,6 +270,7 @@ export function ReceiptsBench() {
       </section>
 
       <StoredReceipts receipts={receipts} busy={busy} error={error} onLoad={() => void load()} />
+      <ReceiptStatisticsPanel saves={saves} />
     </>
   );
 }
@@ -318,7 +323,10 @@ function StoredReceipts({ receipts, busy, error, onLoad }: {
                   {" · "}{receipt.branch_name}
                   {" · "}{receipt.items.filter((item) => !item.is_promotion).length} items
                   {" · "}<span className="numeric">{formatThb(receipt.net_minor)}</span>
-                  {receipt.completeness === "partial" ? " · partial" : ""}
+                  {/* `items_complete`, not `completeness`: capture overwrites the latter with the latest
+                      source's verdict even when it keeps the stored items, and "partial" here means
+                      the items shown are not trusted — the rule the statistics count by. */}
+                  {receipt.items_complete ? "" : " · partial"}
                   {receipt.match.status === "matched" || receipt.match.status === "linked" ? " · on the ledger" : ""}
                 </summary>
                 <ReceiptMatch receipt={receipt} onChanged={onLoad} />
