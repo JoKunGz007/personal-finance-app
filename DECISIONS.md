@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205, D-206, D-207, D-208, D-209, D-210 and D-211** — the two open questions this file has
+This file carries **D-141, D-158, D-198, D-199, D-200, D-201, D-202, D-203, D-204, D-205, D-206, D-207, D-208, D-209, D-210, D-211 and D-212** — the two open questions this file has
 named since the twelfth boundary, the fifteenth boundary's own record of itself, and the two
 entries it was taken a turn too early for (both landed right after D-198, still well inside the
 new budget). **D-141**:
@@ -386,6 +386,20 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-209** — Receipt PDFs are captured through the app: read on the device, keyed on the condensed number, and the first end-to-end run on the real pair found three reader defects the tests could not
 - **D-210** — Receipt screenshots are read through Vision and stitched on their overlap; all 21 real screenshots read complete, and an OCR reading never overwrites a PDF's
 - **D-211** — Migration 029 reached hosted and the owner's 13 real receipts were captured on the live site; D-210 miscounted them as 12
+- **D-212** — Receipts match the ledger on a measured two-hour window, the owner's decision wins, and backup moves to v9
+
+## D-212 — Receipts match the ledger on a measured two-hour window, the owner's decision wins, and backup moves to v9
+
+- Date: 2026-09-23
+- Status: **Built, reviewed, gated; migration 030 on hosted** (backup verified at 69 / 69 first, read back after). Migration 030 (`receipt_match_overlays`, `receipt_match_revisions`, `receipt_ledger_candidates()`, `set_receipt_match`, backup **v9**), `lib/receipt-match.ts`, `PUT /api/v1/receipts/[id]/match`, the match panel on `/receipts`. Hosted and commit state: `HANDOFF.md`.
+- **The lag window was measured, not picked**, under the owner's grant to read the hosted ledger (counts and distributions recorded, no values). Of the 13 captured receipts, 12 fall inside the ledger's imported range. **The 10 paid by the 7-Eleven app wallet each have exactly one TRUE MONEY row of the exact amount, 0–2 minutes after the receipt.** Of the 2 paid by the TrueMoney wallet, one matched at **47 minutes**; the other has no TRUE MONEY row at all: it is the third-party-wallet purchase reimbursed by PromptPay a minute later, the contract's own proving case. No candidate fell before its receipt, and the only other same-amount TRUE MONEY rows were weeks earlier. **The owner chose two hours** from 60 minutes, per-method, and two hours.
+- **Same shape as slip matching (D-063, D-067), deliberately.** The automatic rule is a read-time proposal: TRUE MONEY, exact amount, 0–120 minutes after, and mutually unique across undecided receipts and rows no decision holds. What is stored is only the owner's `matched`/`unmatched`, in an overlay-plus-append-only-revisions pair, audited and sequence-bumped. **A manual link may name any row, not only TRUE MONEY** (the reimbursement case), and the database holds it to the amount alone: the row's movement must equal the receipt's net, negated. One row, at most one receipt, by a partial unique index.
+- **`receipts` gained a `(id, owner_id)` unique key**, a constraint and not a column, because the owner-bound foreign key every decision table uses had nothing to reference; D-097 is untouched.
+- **Backup v9**: the two tables append after `receipt_discounts`, and v2 … v8 stay restorable. Proven by a v8 file carrying a receipt restoring into v9 (the first pair whose older side's newest tables are non-empty) and a v9 file carrying a stored decision whose revision snapshot rebinds the owner. SPEC gate 6 moved with it.
+- Red-proved: removing the money guard turns pgTAP `018` red; letting a row before the receipt through turns the unit suite red.
+- `/code-review high` found five: a stale link choice that would re-link on the next press, a timeless receipt (full invoice only) explained as "normal for a wallet purchase", SPEC's stale version, and two sequential reads. Four were fixed. The fifth is recorded: PostgREST's row cap on the candidate and decision reads, far above today's volume.
+- **The Vision cost question, answered in another session and carried here.** Google's pricing page gives the first 1,000 text reads a month free, permanently and apart from the trial, then $1.50 per 1,000. So upgrading the billing account before 2026-11-15, with a daily request quota under ~30, keeps every Vision reader working at no cost. D-210's "stops unless upgraded" stands; upgrading is the owner's call.
+- Gate: pgTAP **18 files, 478, PASS**; **Vitest 1071 passed / 7 skipped across 50 files**; `tsc`, `eslint` (2 pre-existing warnings), `check:docs --strict`, `pnpm build` clean; the recovery destination on 030.
 
 ## D-211 — Migration 029 reached hosted and the owner's 13 real receipts were captured on the live site; D-210 miscounted them as 12
 

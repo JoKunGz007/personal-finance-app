@@ -113,14 +113,24 @@ async function post(body: unknown) {
   return { status: response.status, body: await response.json() };
 }
 
+async function putMatch(receiptId: string, body: unknown) {
+  const { PUT } = await import("@/app/api/v1/receipts/[id]/match/route");
+  const response = await PUT(new Request(`http://localhost/api/v1/receipts/${receiptId}/match`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  }), { params: Promise.resolve({ id: receiptId }) });
+  return { status: response.status, body: await response.json() };
+}
+
 async function list() {
   const { GET } = await import("@/app/api/v1/receipts/route");
   const response = await GET();
   return { status: response.status, body: await response.json() };
 }
 
-// The cleanup helper deletes by account id and needs at least one; this suite creates none.
+// The one account this suite seeds, for the match tests; the cleanup helper deletes by it.
 const NO_ACCOUNT = "cccccccc-0000-4000-8000-000000000056";
+const ROW_TRUE_MONEY = "dddddddd-0000-4000-8000-000000000561";
+const ROW_OTHER_AMOUNT = "dddddddd-0000-4000-8000-000000000562";
 let owner = "";
 
 describe.skipIf(!reachable)("receipts route", () => {
@@ -184,5 +194,58 @@ describe.skipIf(!reachable)("receipts route", () => {
     const response = await post({ form: "condensed", receipt: { receiptNumber: "1" } });
     expect(response.status).toBe(422);
     expect(psql(`select count(*) from public.receipts where owner_id = '${owner}';`).output.trim()).toBe("1");
+  });
+
+  it("reads no ledger row as none, then matches the TRUE MONEY row once it exists", async () => {
+    const before = receiptListSchema.parse((await list()).body).receipts[0]!;
+    expect(before.match).toMatchObject({ status: "none", row: null, options: [], revision: 0 });
+
+    // One minute after the invented purchase, of its exact net; and a row of another amount.
+    const seeded = psql(`
+      set session_replication_role = replica;
+      insert into public.accounts(id, owner_id, bank_code, label, account_type, last_four, currency, timezone)
+      values ('${NO_ACCOUNT}', '${owner}', 'SCB', 'Invented receipt account', 'savings', '5656', 'THB', 'Asia/Bangkok');
+      insert into public.source_transactions(id, owner_id, account_id, fingerprint_version, fingerprint, source_date, source_time,
+        effective_date, transaction_label, description, post_balance_minor, currency)
+      values
+        ('${ROW_TRUE_MONEY}', '${owner}', '${NO_ACCOUNT}', 'fingerprint-v1', repeat('5', 64), '2026-06-12', '14:36', '2026-06-12',
+         'SIPI', 'SIPS TRUE MONEY CO.,LTD. NOTE : -', 100000, 'THB'),
+        ('${ROW_OTHER_AMOUNT}', '${owner}', '${NO_ACCOUNT}', 'fingerprint-v1', repeat('6', 64), '2026-06-12', '14:40', '2026-06-12',
+         'SIPI', 'SIPS TRUE MONEY CO.,LTD. NOTE : -', 90000, 'THB');
+      insert into public.source_components(owner_id, transaction_id, position, kind, amount_minor, currency)
+      values ('${owner}', '${ROW_TRUE_MONEY}', 1, 'withdrawal', -3500, 'THB'),
+             ('${owner}', '${ROW_OTHER_AMOUNT}', 1, 'withdrawal', -9999, 'THB');
+    `);
+    expect(seeded.ok, seeded.output).toBe(true);
+
+    const after = receiptListSchema.parse((await list()).body).receipts[0]!;
+    expect(after.match).toMatchObject({ status: "matched", row: { transaction_id: ROW_TRUE_MONEY, lag_minutes: 1 }, revision: 0 });
+    expect(after.match.options.map((option) => option.transaction_id)).toEqual([ROW_TRUE_MONEY]);
+  });
+
+  it("stores the owner's decline and link, and refuses a row whose amount differs", async () => {
+    const receipt = receiptListSchema.parse((await list()).body).receipts[0]!;
+
+    const declined = await putMatch(receipt.id, { expectedRevision: 0, decision: "unmatched", transactionId: null });
+    expect(declined.status, JSON.stringify(declined.body)).toBe(200);
+    expect(receiptListSchema.parse((await list()).body).receipts[0]!.match).toMatchObject({ status: "declined", row: null, revision: 1 });
+
+    const stale = await putMatch(receipt.id, { expectedRevision: 0, decision: "matched", transactionId: ROW_TRUE_MONEY });
+    expect(stale.status).toBe(409);
+
+    const wrong = await putMatch(receipt.id, { expectedRevision: 1, decision: "matched", transactionId: ROW_OTHER_AMOUNT });
+    expect(wrong.status).toBe(422);
+    expect(wrong.body.error).toContain("amount");
+
+    const linked = await putMatch(receipt.id, { expectedRevision: 1, decision: "matched", transactionId: ROW_TRUE_MONEY });
+    expect(linked.status, JSON.stringify(linked.body)).toBe(200);
+    expect(linked.body.match).toMatchObject({ decision: "matched", transaction_id: ROW_TRUE_MONEY, revision: 2 });
+    expect(receiptListSchema.parse((await list()).body).receipts[0]!.match).toMatchObject({ status: "linked", row: { transaction_id: ROW_TRUE_MONEY } });
+  });
+
+  it("refuses a malformed decision before the database sees it", async () => {
+    const receipt = receiptListSchema.parse((await list()).body).receipts[0]!;
+    expect((await putMatch(receipt.id, { expectedRevision: 2, decision: "matched", transactionId: null })).status).toBe(422);
+    expect((await putMatch("not-a-uuid", { expectedRevision: 0, decision: "unmatched", transactionId: null })).status).toBe(400);
   });
 });

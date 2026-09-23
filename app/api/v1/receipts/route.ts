@@ -1,4 +1,6 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
+import { z } from "zod";
+import { proposeReceiptMatches, receiptLedgerCandidateSchema, receiptMatchDecisionSchema } from "@/lib/receipt-match";
 import { captureReceiptRequest, receiptCaptureSchema } from "@/lib/receipts";
 
 export const dynamic = "force-dynamic";
@@ -8,12 +10,27 @@ const money = (value: number | string | null) => (value === null ? null : String
 export async function GET() {
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
-  const { data, error } = await auth.supabase
+  // Three independent reads, started together: the receipts, the candidate rows (migration 030)
+  // and the owner's stored decisions.
+  const [{ data, error }, candidates, decisions] = await Promise.all([auth.supabase
     .from("receipts")
     .select("id,store_code,branch_name,receipt_number,purchased_on,purchased_at_time,payment_method,subtotal_minor,net_minor,unit_count,completeness,failed_checks,sources,items_source,items_complete,updated_at,items:receipt_items(position,quantity,name,display_name,amount_minor,is_promotion,vat_exempt),discounts:receipt_discounts(position,amount_minor)")
     .order("purchased_on", { ascending: false })
-    .order("purchased_at_time", { ascending: false, nullsFirst: false });
+    .order("purchased_at_time", { ascending: false, nullsFirst: false }),
+    auth.supabase.rpc("receipt_ledger_candidates"),
+    auth.supabase.from("receipt_match_overlays").select("receipt_id,decision,transaction_id,revision")
+  ]);
   if (error) return routeError("Receipts could not be loaded.", 400);
+
+  // The match state is computed here rather than on the device. Off-contract either read is a
+  // refusal, never a receipt shown as unmatched — "no row" is a claim the page would then be
+  // making about the ledger without having read it.
+  const parsedCandidates = z.array(receiptLedgerCandidateSchema).safeParse(candidates.data);
+  const parsedDecisions = z.array(receiptMatchDecisionSchema).safeParse(decisions.data);
+  if (candidates.error || decisions.error || !parsedCandidates.success || !parsedDecisions.success) {
+    return routeError("Receipts could not be matched to the ledger, so none are shown.", 500);
+  }
+  const matches = proposeReceiptMatches((data ?? []).map((receipt) => receipt.id), parsedCandidates.data, parsedDecisions.data);
 
   // bigint arrives as a JS number from PostgREST, so every money column is stringified here
   // (D-018), exactly as the slips route does. Children are ordered here rather than trusted to
@@ -23,7 +40,8 @@ export async function GET() {
     subtotal_minor: money(receipt.subtotal_minor),
     net_minor: String(receipt.net_minor),
     items: [...receipt.items].sort((a, b) => a.position - b.position).map((item) => ({ ...item, amount_minor: String(item.amount_minor) })),
-    discounts: [...receipt.discounts].sort((a, b) => a.position - b.position).map((discount) => ({ ...discount, amount_minor: String(discount.amount_minor) }))
+    discounts: [...receipt.discounts].sort((a, b) => a.position - b.position).map((discount) => ({ ...discount, amount_minor: String(discount.amount_minor) })),
+    match: matches.get(receipt.id)!
   }));
   return Response.json({ receipts }, { headers: noStoreHeaders });
 }

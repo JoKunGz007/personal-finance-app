@@ -1190,6 +1190,9 @@ footer p { margin: 0; }
 .receipt-queue li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .receipt-list li { border-top: 1px solid var(--line); padding: 8px 0; }
 .receipt-list summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
+.receipt-match { display: grid; gap: 6px; margin: 4px 0 10px; overflow-wrap: anywhere; }
+.receipt-match .slip-actions { flex-wrap: wrap; align-items: flex-end; }
+.receipt-match select { max-width: 100%; }
 
 /* Choosing a statement row for a slip (D-069). The table becomes the chooser, so this band has
    to say plainly that what is on screen is no longer the ledger — hence the saffron rule the

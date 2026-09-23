@@ -306,12 +306,18 @@ figures also appear, and those are the genuine top-ups. Both models are in use a
 - **Unmatched is a normal outcome and must not read as an error.** A wallet-balance purchase can
   never have a row.
 
-### The lag window is not yet measured
+### The lag window: two hours, measured
 
-Two confirmed matches were observed: one at the same minute, one at roughly three quarters of an
-hour later. **Two points is not a distribution.** The window must be measured over a real run of
-captured receipts before a number is fixed, and a guessed window that is too wide is how a false
-match gets in.
+Measured 2026-09-23 (D-212): 13 captured receipts against the hosted ledger, of which 12 fall inside
+its imported range. A purchase paid by the 7-Eleven app wallet posts **0–2 minutes** after the
+receipt (10 of 10). One paid by the TrueMoney wallet posted at **47 minutes**. No row posted before
+its receipt. The window is **two hours** (`RECEIPT_MATCH_WINDOW_MINUTES`, `lib/receipt-match.ts`).
+What keeps a wider window from letting a wrong row in is mutual uniqueness: two qualifying rows, or
+one row two receipts want, is a refusal.
+
+The receipt's time and the row's time are both Bangkok wall-clock minutes. A receipt with no time
+(read only from a full invoice, which prints none) cannot establish "at or after" and is never
+matched automatically.
 
 ### The case that proves the rule
 

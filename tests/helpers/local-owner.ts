@@ -209,7 +209,10 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     delete from public.notification_card_correction_overlays where owner_id = '${owner}';
     delete from public.notification_cards where owner_id = '${owner}';
     -- Receipts hang off no account and no transaction (migration 027), so nothing else here
-    -- removes them; items and discounts first, for the FK reason every block above gives.
+    -- removes them; match decisions, items and discounts first, for the FK reason every block
+    -- above gives (a match decision also references a transaction, removed further down).
+    delete from public.receipt_match_revisions where owner_id = '${owner}';
+    delete from public.receipt_match_overlays where owner_id = '${owner}';
     delete from public.receipt_discounts where owner_id = '${owner}';
     delete from public.receipt_items where owner_id = '${owner}';
     delete from public.receipts where owner_id = '${owner}';

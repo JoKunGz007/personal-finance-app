@@ -4,6 +4,8 @@ Last verified: 2026-09-23
 
 ## Current checkpoint
 
+**Receipts match the ledger, 2026-09-23** (D-212). The lag window was measured from the 13 captures: 0–2 minutes for the app wallet, 47 for the TrueMoney wallet. The owner chose a two-hour window. Migration 030 adds the owner's link/decline and backup v9. Next: receipt statistics.
+
 **The owner's 13 real receipts are captured on the live site, 2026-09-23** (D-211). Migration 029 is on hosted; 13 receipts, all complete, 147 items. Next: matching — the lag window can now be measured.
 
 **7-Eleven receipt screenshots are read too, 2026-09-23** (D-210). All 21 real screenshots (13 receipts, 8 of them two screenshots — D-210 miscounted, D-211) read complete through Vision and stitching; migration 029 stops an OCR reading overwriting a PDF's.
@@ -678,9 +680,9 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
     **The screenshot path is built, 2026-09-23** (D-210) — `lib/receipt-screenshot.ts`; `/receipts` takes PDFs and screenshots together. All 21 real screenshots read complete. Three reader rules changed for every form (discounts by position, zero-priced lines not merchandise, payment method without spaces), and **migration 029** stops an OCR reading overwriting a PDF's — **on hosted since D-211**, and the owner's 13 receipts are captured there.
 
-    Next, in order: matching (measure the lag window first, from the 13 captured receipts against the ledger — it still gates the design), then statistics; the discount-names follow-up is independent.
+    Next: receipt statistics; the discount-names follow-up is independent. The ledger does not yet show a row's matched receipt; that is the obvious follow-up to matching.
 
-    **The lag window is still unmeasured, and is the remaining gate on the matching half.** Two confirmed matches exist, at zero and roughly forty-five minutes, and two points is not a distribution; a guessed window that is too wide is how a false match gets in. It needs a real run of captured receipts, so it does not block the reader.
+    **Matching is built, 2026-09-23 (D-212)** — migration **030**, `lib/receipt-match.ts`, `PUT /api/v1/receipts/[id]/match`, and a match panel on each stored receipt. The lag window was **measured**: 0–2 minutes for the 7-Eleven app wallet (10 of 10) and 47 for the TrueMoney wallet (1). The owner chose **two hours**. The automatic rule is a read-time proposal; the owner's link or decline is stored, and a link may name any row whose amount agrees, which covers the PromptPay-reimbursement case. Backup **v9**. Local gate green; hosted state in `HANDOFF.md`.
 
     **What must never be stored, as a reader-level rule rather than a null column**: the full invoice's taxpayer identity block — full name, home address, telephone and **national taxpayer identification number** — and the condensed PDF's member name and point balances. Dropped before anything is written, so there is no schema in which the field could later be filled.
 

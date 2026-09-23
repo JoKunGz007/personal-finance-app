@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { bangkokToday, dayNumber, isoDateSchema } from "@/lib/dates";
 import { minorUnitStringSchema } from "@/lib/money";
+import { receiptMatchStateSchema } from "@/lib/receipt-match";
 import { assessReceipt, type ParsedReceipt } from "@/lib/receipt-text";
 import type { ReceiptForm } from "@/lib/receipt-pdf";
 
@@ -172,7 +173,8 @@ export const storedReceiptSchema = z.object({
     is_promotion: z.boolean(),
     vat_exempt: z.boolean()
   }).strict()),
-  discounts: z.array(z.object({ position: z.number().int(), amount_minor: minorUnitStringSchema }).strict())
+  discounts: z.array(z.object({ position: z.number().int(), amount_minor: minorUnitStringSchema }).strict()),
+  match: receiptMatchStateSchema
 }).strict();
 
 export type StoredReceipt = z.infer<typeof storedReceiptSchema>;
