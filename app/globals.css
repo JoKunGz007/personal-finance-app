@@ -1187,6 +1187,10 @@ footer p { margin: 0; }
 .captured-slips { padding: 44px 0 12px; border-top: 1px solid var(--line); }
 /* Receipts (PLAN task 56): a queue of PDFs read on this device, and the stored list. */
 .receipt-queue, .receipt-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 10px; }
+/* The item table borrows .ledger-table's look but not its 1040px floor, and the single grid track
+   must not grow to fit it, or the whole page scrolls sideways at desktop. */
+.receipt-list { grid-template-columns: minmax(0, 1fr); }
+.receipt-list .ledger-table { min-width: 0; }
 .receipt-queue li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .receipt-list li { border-top: 1px solid var(--line); padding: 8px 0; }
 .receipt-list summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
@@ -1206,10 +1210,11 @@ footer p { margin: 0; }
 .receipt-discount td, .ledger-receipt .receipt-discount { color: var(--money-in); font-weight: 600; }
 /* A matched row's receipt on /ledger: folded under the description, never a second amount column. */
 .ledger-receipt { margin-top: 4px; font-size: 12px; }
-.ledger-receipt summary { cursor: pointer; color: var(--verified-ink); font-weight: 600; min-height: 24px; }
+/* 44px hit areas (D-136): padding, not flex, so the summary keeps its marker and its spaces. */
+.ledger-receipt summary { cursor: pointer; color: var(--verified-ink); font-weight: 600; padding-block: 12px; line-height: 20px; }
 .ledger-receipt ul { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 2px; }
 .ledger-receipt li { display: flex; justify-content: space-between; gap: 12px; }
-.ledger-receipt a { font-size: 11px; }
+.ledger-receipt a { font-size: 11px; display: inline-flex; align-items: center; min-height: 44px; }
 .receipt-match { display: grid; gap: 6px; margin: 4px 0 10px; overflow-wrap: anywhere; }
 .receipt-match .slip-actions { flex-wrap: wrap; align-items: flex-end; }
 .receipt-match select { max-width: 100%; }

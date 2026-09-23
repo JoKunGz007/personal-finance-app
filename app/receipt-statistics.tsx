@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LedgerNote } from "@/app/ledger-note";
+import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { formatThb } from "@/lib/money";
 import { receiptStatisticsSchema, type ReceiptStatistics } from "@/lib/receipt-statistics";
 import { ledgerRequest } from "@/lib/wire";
@@ -76,16 +77,18 @@ function GroupTable({ id, title, label, rows }: {
 /**
  * What the stored receipts show (migration 031). **A separate lens, never a ledger total**: every
  * purchase here is already in the ledger as the payment that made it, so these figures are not
- * added to anything and do not appear on `/statistics`. Loaded on request, like the receipt list.
+ * added to anything and do not appear on `/statistics`. Loaded on arrival, like the receipt list.
  */
 export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
   const [stats, setStats] = useState<ReceiptStatistics | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signInNote, setSignInNote] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (automatic = false) => {
     setBusy(true);
     setError(null);
+    setSignInNote(null);
     const result = await ledgerRequest("/api/v1/receipts/statistics", receiptStatisticsSchema, {
       fallback: "Receipt statistics could not be loaded.",
       unreachable: "The ledger could not be reached, so receipt statistics are not shown.",
@@ -93,15 +96,20 @@ export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
     });
     setBusy(false);
     if (!result.ok) {
+      if (automatic && (result.status === 401 || result.status === 403)) {
+        setSignInNote(result.status === 401 ? "Sign in to see receipt statistics." : result.why);
+        return;
+      }
       setError(result.why);
       return;
     }
     setStats(result.data);
   }, []);
+  useLoadOnArrival(load, signInNote !== null);
 
   const shown = useRef(false);
   useEffect(() => { shown.current = stats !== null; }, [stats]);
-  // A save changes the figures; reload them if they are on screen, never load them unasked.
+  // A save changes the figures; reload them if they are on screen.
   useEffect(() => { if (saves > 0 && shown.current) void load(); }, [saves, load]);
 
   const totals = stats?.totals;
@@ -127,6 +135,8 @@ export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
           {busy ? "Loading…" : stats ? "Reload" : "Show receipt statistics"}
         </button>
       </div>
+
+      {signInNote ? <p className="ledger-status" role="status">{signInNote}</p> : null}
 
       {error ? (
         <div className="warning error" role="alert">

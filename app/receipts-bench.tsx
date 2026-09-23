@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LedgerNote } from "@/app/ledger-note";
 import { ReceiptStatisticsPanel } from "@/app/receipt-statistics";
+import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
 import { formatThb } from "@/lib/money";
 import { receiptMatchResponseSchema, type ReceiptLedgerRow, type ReceiptMatchRequest } from "@/lib/receipt-match";
@@ -92,6 +93,7 @@ export function ReceiptsBench() {
   const [receipts, setReceipts] = useState<StoredReceipt[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signInNote, setSignInNote] = useState<string | null>(null);
   // Keys with a save in flight. A ref, not state: a second press can land before React has
   // re-rendered the first press's "saving", and state read then is still "ready". A duplicate POST
   // merges harmlessly but writes an audit row and bumps the backup sequence for nothing.
@@ -108,9 +110,11 @@ export function ReceiptsBench() {
 
   const update = (key: string, next: Picked) => setPicked((current) => current.map((entry) => (entry.key === key ? next : entry)));
 
-  const load = useCallback(async () => {
+  // Loads on arrival, like the ledger (PLAN task 43): the list is what this page is for.
+  const load = useCallback(async (automatic = false) => {
     setBusy(true);
     setError(null);
+    setSignInNote(null);
     const result = await ledgerRequest("/api/v1/receipts", receiptListSchema, {
       fallback: "Receipts could not be loaded.",
       unreachable: "The ledger could not be reached, so receipts are not shown.",
@@ -118,11 +122,17 @@ export function ReceiptsBench() {
     });
     setBusy(false);
     if (!result.ok) {
+      // Signed out is not a failure on arrival; see `app/categories-bench.tsx`.
+      if (automatic && (result.status === 401 || result.status === 403)) {
+        setSignInNote(result.status === 401 ? "Sign in to see stored receipts." : result.why);
+        return;
+      }
       setError(result.why);
       return;
     }
     setReceipts(result.data.receipts);
   }, []);
+  useLoadOnArrival(load, signInNote !== null);
 
   async function choose(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -269,16 +279,17 @@ export function ReceiptsBench() {
         ) : null}
       </section>
 
-      <StoredReceipts receipts={receipts} busy={busy} error={error} onLoad={() => void load()} />
+      <StoredReceipts receipts={receipts} busy={busy} error={error} signInNote={signInNote} onLoad={() => void load()} />
       <ReceiptStatisticsPanel saves={saves} />
     </>
   );
 }
 
-function StoredReceipts({ receipts, busy, error, onLoad }: {
+function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
   receipts: StoredReceipt[] | null;
   busy: boolean;
   error: string | null;
+  signInNote: string | null;
   onLoad: () => void;
 }) {
   return (
@@ -302,6 +313,8 @@ function StoredReceipts({ receipts, busy, error, onLoad }: {
           {busy ? "Loading…" : receipts ? "Reload" : "Show stored receipts"}
         </button>
       </div>
+
+      {signInNote ? <p className="ledger-status" role="status">{signInNote}</p> : null}
 
       {error ? (
         <div className="warning error" role="alert">
