@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { proposeLedgerMatches } from "@/lib/ledger-match";
+import { ledgerMatchRequestSchema, proposeLedgerMatches, type LedgerMatchRequest } from "@/lib/ledger-match";
 
 /**
  * Matching a 7-Eleven receipt to the ledger row that paid for it (PLAN task 56, D-212).
@@ -88,17 +88,9 @@ export const receiptMatchStateSchema = z.object({
 
 export type ReceiptMatchState = z.infer<typeof receiptMatchStateSchema>;
 
-export const receiptMatchRequestSchema = z.object({
-  expectedRevision: z.number().int().nonnegative(),
-  decision: z.enum(["matched", "unmatched"]),
-  transactionId: z.string().uuid().nullable()
-}).strict().superRefine((match, context) => {
-  if ((match.decision === "matched") !== (match.transactionId !== null)) {
-    context.addIssue({ code: "custom", message: "A link names a ledger row and a decline names none.", path: ["transactionId"] });
-  }
-});
+export const receiptMatchRequestSchema = ledgerMatchRequestSchema;
 
-export type ReceiptMatchRequest = z.infer<typeof receiptMatchRequestSchema>;
+export type ReceiptMatchRequest = LedgerMatchRequest;
 
 export const receiptMatchResponseSchema = z.object({ match: receiptMatchDecisionSchema }).strict();
 

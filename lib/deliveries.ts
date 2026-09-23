@@ -68,6 +68,18 @@ export function paidOutsidePlatform(delivery: Pick<StoredDelivery, "total_minor"
 }
 
 /** What one sync did, in counts only: nothing here names a dish, a restaurant or an amount. */
+/**
+ * Each ledger row's order, keyed by transaction id, for `/ledger`'s fold (D-220, as D-216 does for
+ * receipts): only orders matched automatically or linked by the owner. One row holds at most one
+ * order (migration 033's partial unique index and the rule's mutual uniqueness).
+ */
+export function deliveriesOnRows(deliveries: readonly StoredDelivery[]): [string, StoredDelivery][] {
+  return deliveries.flatMap((delivery) =>
+    (delivery.match.status === "matched" || delivery.match.status === "linked") && delivery.match.row
+      ? [[delivery.match.row.transaction_id, delivery] as [string, StoredDelivery]]
+      : []);
+}
+
 export const deliverySyncReportSchema = z.object({
   /** Messages whose unread receipts were examined this run. */
   messages: z.number().int().nonnegative(),

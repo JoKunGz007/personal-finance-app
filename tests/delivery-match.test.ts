@@ -5,8 +5,10 @@ import {
   proposeDeliveryMatches,
   qualifiesAutomatically,
   type DeliveryLedgerCandidate,
-  type DeliveryMatchDecision
+  type DeliveryMatchDecision,
+  type DeliveryMatchState
 } from "@/lib/delivery-match";
+import { deliveriesOnRows, type StoredDelivery } from "@/lib/deliveries";
 
 // Every id and value here is invented.
 const D1 = "dddddddd-0000-4000-8000-000000000001";
@@ -119,5 +121,22 @@ describe("deliveryMatchRequestSchema", () => {
     expect(deliveryMatchRequestSchema.safeParse({ expectedRevision: 0, decision: "unmatched", transactionId: null }).success).toBe(true);
     expect(deliveryMatchRequestSchema.safeParse({ expectedRevision: 0, decision: "matched", transactionId: null }).success).toBe(false);
     expect(deliveryMatchRequestSchema.safeParse({ expectedRevision: 0, decision: "unmatched", transactionId: T1 }).success).toBe(false);
+  });
+});
+
+describe("deliveriesOnRows", () => {
+  const stored = (id: string, match: DeliveryMatchState) => ({ id, match }) as unknown as StoredDelivery;
+  const row = { transaction_id: T1, source_date: "2026-09-01", source_time: "19:02:00", transaction_label: "Card payment", description: "INVENTED GRAB MERCHANT", lag_minutes: -8 };
+
+  it("keys matched and linked orders by their ledger row, and nothing else", () => {
+    const pairs = deliveriesOnRows([
+      stored(D1, { status: "matched", row, options: [], revision: 0 }),
+      stored(D2, { status: "linked", row: { ...row, transaction_id: T2 }, options: [], revision: 1 }),
+      stored(FREE, { status: "outside", row: null, options: [], revision: 0 }),
+      stored("dddddddd-0000-4000-8000-000000000004", { status: "ambiguous", row: null, options: [row], revision: 0 }),
+      // A link to a row outside the candidate read's three days carries no row, so it cannot be placed.
+      stored("dddddddd-0000-4000-8000-000000000005", { status: "linked", row: null, options: [], revision: 1 })
+    ]);
+    expect(pairs.map(([transaction, delivery]) => [transaction, delivery.id])).toEqual([[T1, D1], [T2, D2]]);
   });
 });

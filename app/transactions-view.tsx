@@ -23,6 +23,7 @@ import {
 } from "@/lib/transactions";
 import { categoryListSchema, type Category } from "@/lib/categories";
 import { receiptListSchema, receiptsOnRows, type StoredReceipt } from "@/lib/receipts";
+import { deliveriesOnRows, deliveryListSchema, type StoredDelivery } from "@/lib/deliveries";
 import {
   deeperPages,
   emptyWindow,
@@ -196,6 +197,8 @@ export function TransactionsView() {
   // Each ledger row's receipt, by transaction id (D-212's match, computed by the receipts route at
   // read time; no link is stored). Only matched or owner-linked receipts are here.
   const [receiptByRow, setReceiptByRow] = useState<Map<string, StoredReceipt>>(new Map());
+  // The same for delivery orders (D-220's match, computed by the deliveries route).
+  const [deliveryByRow, setDeliveryByRow] = useState<Map<string, StoredDelivery>>(new Map());
   // The category/note write's own error line, on the same convention as `reportingError` and
   // `correctionError` — cleared by `toggleCorrecting`, so a stale refusal from a previous panel
   // is never read as belonging to the one just opened.
@@ -876,6 +879,10 @@ export function TransactionsView() {
         fallback: "Receipts could not be loaded.",
         offContract: "The receipts response did not match its contract."
       });
+      const deliveriesRequest = ledgerRequest("/api/v1/deliveries", deliveryListSchema, {
+        fallback: "Delivery orders could not be loaded.",
+        offContract: "The orders response did not match its contract."
+      });
       const categoriesRequest = ledgerRequest("/api/v1/categories", categoryListSchema, {
         fallback: "Categories could not be loaded.",
         offContract: "The categories response did not match its contract, so none are shown."
@@ -987,6 +994,9 @@ export function TransactionsView() {
       const receiptsResult = await receiptsRequest;
       if (superseded()) return;
       setReceiptByRow(new Map(receiptsResult.ok ? receiptsOnRows(receiptsResult.data.receipts) : []));
+      const deliveriesResult = await deliveriesRequest;
+      if (superseded()) return;
+      setDeliveryByRow(new Map(deliveriesResult.ok ? deliveriesOnRows(deliveriesResult.data.deliveries) : []));
 
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
@@ -1621,6 +1631,7 @@ export function TransactionsView() {
                         categorySaving={modes.correcting === row.transaction.id && categorySaving}
                         autoExcluded={autoExcluded.has(row.transaction.id)}
                         receipt={receiptByRow.get(row.transaction.id) ?? null}
+                        delivery={deliveryByRow.get(row.transaction.id) ?? null}
                         actions={actions}
                       />
                     )];

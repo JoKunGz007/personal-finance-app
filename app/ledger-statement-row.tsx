@@ -9,6 +9,7 @@ import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
 import { formatDate, formatDateParts, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 import { OverlayCategoryForm } from "@/app/overlay-category-form";
+import { type StoredDelivery } from "@/lib/deliveries";
 import { type StoredReceipt } from "@/lib/receipts";
 
 /**
@@ -38,6 +39,7 @@ export function LedgerStatementRow({
   categorySaving,
   autoExcluded,
   receipt,
+  delivery,
   actions
 }: {
   row: Extract<ReconciledRow, { kind: "confirmed" }>;
@@ -71,6 +73,8 @@ export function LedgerStatementRow({
   autoExcluded: boolean;
   /** The 7-Eleven receipt this row paid for, when one is matched or linked (D-212). Itemization only. */
   receipt: StoredReceipt | null;
+  /** The GrabFood order this row paid for, when one is matched or linked (D-220). Itemization only. */
+  delivery: StoredDelivery | null;
   actions: LedgerActions;
 }) {
   // The row actions fold behind "⋯" (D-205 on a phone, every viewport since D-207).
@@ -130,6 +134,7 @@ export function LedgerStatementRow({
           ) : null}
           {transaction.source_components.length > 1 ? <em>2 components</em> : null}
           {receipt ? <LedgerReceipt receipt={receipt} /> : null}
+          {delivery ? <LedgerDelivery delivery={delivery} /> : null}
         </td>
         {/* No chip for a statement row with no slip. It is the ledger's default
             state — on this ledger, essentially every row — so a badge on each
@@ -540,6 +545,40 @@ function LedgerReceipt({ receipt }: { receipt: StoredReceipt }) {
         ))}
       </ul>
       <a href="/receipts">Open on Receipts</a>
+    </details>
+  );
+}
+
+/**
+ * What a matched row's GrabFood order held, folded by default, beside `LedgerReceipt` and on its
+ * rule: **never money**. The row's own amount is the payment; these lines only itemize it.
+ */
+function LedgerDelivery({ delivery }: { delivery: StoredDelivery }) {
+  const dishes = delivery.items.reduce((sum, item) => sum + item.quantity, 0);
+  return (
+    <details className="ledger-receipt">
+      <summary>GrabFood · {delivery.restaurant} · {dishes} dish{dishes === 1 ? "" : "es"}</summary>
+      <ul>
+        {delivery.items.map((item) => (
+          <li key={item.position}>
+            <span>{item.quantity > 1 ? `${item.quantity} × ` : ""}{item.name}</span>
+            <span className="numeric">{formatThb(item.amount_minor)}</span>
+          </li>
+        ))}
+        {delivery.delivery_fee_minor === null ? null : (
+          <li>
+            <span>Delivery</span>
+            <span className="numeric">{formatThb(delivery.delivery_fee_minor)}</span>
+          </li>
+        )}
+        {delivery.adjustments.map((row) => (
+          <li key={`a${row.position}`} className={row.kind === "charge" ? undefined : "receipt-discount"}>
+            <span>{row.name}</span>
+            <span className="numeric">{row.kind === "charge" ? "" : "−"}{formatThb(row.amount_minor)}</span>
+          </li>
+        ))}
+      </ul>
+      <a href="/deliveries">Open on Deliveries</a>
     </details>
   );
 }

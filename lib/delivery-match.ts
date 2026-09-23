@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { proposeLedgerMatches } from "@/lib/ledger-match";
+import { ledgerMatchRequestSchema, proposeLedgerMatches, type LedgerMatchRequest } from "@/lib/ledger-match";
 
 /**
  * Matching a GrabFood order to the ledger row that paid for it (PLAN task 58 part 3, D-220).
@@ -79,17 +79,9 @@ export const deliveryMatchStateSchema = z.object({
 
 export type DeliveryMatchState = z.infer<typeof deliveryMatchStateSchema>;
 
-export const deliveryMatchRequestSchema = z.object({
-  expectedRevision: z.number().int().nonnegative(),
-  decision: z.enum(["matched", "unmatched"]),
-  transactionId: z.string().uuid().nullable()
-}).strict().superRefine((match, context) => {
-  if ((match.decision === "matched") !== (match.transactionId !== null)) {
-    context.addIssue({ code: "custom", message: "A link names a ledger row and a decline names none.", path: ["transactionId"] });
-  }
-});
+export const deliveryMatchRequestSchema = ledgerMatchRequestSchema;
 
-export type DeliveryMatchRequest = z.infer<typeof deliveryMatchRequestSchema>;
+export type DeliveryMatchRequest = LedgerMatchRequest;
 
 export const deliveryMatchResponseSchema = z.object({ match: deliveryMatchDecisionSchema }).strict();
 

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * The automatic half of matching an itemizing document — a 7-Eleven receipt (D-212) or a
  * delivery order (D-220) — to the ledger row that paid for it. Each caller supplies its own
@@ -12,6 +14,19 @@
  * Order-independent: nothing here depends on the order documents or candidates arrive in, which
  * is what mutual uniqueness buys over greedy pairing.
  */
+
+/** The owner's link or decline, as either match route accepts it: a link names a row, a decline none. */
+export const ledgerMatchRequestSchema = z.object({
+  expectedRevision: z.number().int().nonnegative(),
+  decision: z.enum(["matched", "unmatched"]),
+  transactionId: z.string().uuid().nullable()
+}).strict().superRefine((match, context) => {
+  if ((match.decision === "matched") !== (match.transactionId !== null)) {
+    context.addIssue({ code: "custom", message: "A link names a ledger row and a decline names none.", path: ["transactionId"] });
+  }
+});
+
+export type LedgerMatchRequest = z.infer<typeof ledgerMatchRequestSchema>;
 
 export type LedgerMatchStatus = "linked" | "declined" | "matched" | "ambiguous" | "none";
 
