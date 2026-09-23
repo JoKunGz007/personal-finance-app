@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { LedgerNote } from "@/app/ledger-note";
 import { ReceiptStatisticsPanel } from "@/app/receipt-statistics";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
 import { formatThb } from "@/lib/money";
-import { receiptMatchResponseSchema, type ReceiptLedgerRow, type ReceiptMatchRequest } from "@/lib/receipt-match";
+import { receiptMatchResponseSchema } from "@/lib/receipt-match";
 import type { ReceiptForm } from "@/lib/receipt-pdf";
 import { groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
@@ -381,17 +382,6 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
   );
 }
 
-/** A ledger row in one line: when it posted, how long after the purchase, and what the bank called it. */
-function describeRow(row: ReceiptLedgerRow): string {
-  const when = row.source_time ? `${row.source_date} ${row.source_time.slice(0, 5)}` : row.source_date;
-  const lag = row.lag_minutes === null
-    ? ""
-    : row.lag_minutes >= 0
-      ? ` (${row.lag_minutes} min after)`
-      : ` (${-row.lag_minutes} min before)`;
-  return `${when}${lag} · ${row.description}`;
-}
-
 // The summary's chip. Green only for a row that is on the ledger, amber for something the owner
 // can act on, muted otherwise — "no row" is normal for a wallet purchase and must not read as an error.
 const MATCH_CHIP = {
@@ -410,79 +400,19 @@ const MATCH_SENTENCE = {
   none: "No ledger row found. That is normal for a wallet-balance purchase, or when the statement covering this date is not imported yet."
 } as const;
 
-/**
- * Which ledger row a receipt itemizes (migration 030, D-212). A receipt is never money, so
- * nothing here changes a balance; the owner's decision always wins over the automatic rule, and
- * a link is held by the database to the receipt's exact total.
- */
 function ReceiptMatch({ receipt, onChanged }: { receipt: StoredReceipt; onChanged: () => void }) {
-  const { match } = receipt;
-  const [choice, setChoice] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function decide(request: Omit<ReceiptMatchRequest, "expectedRevision">) {
-    setSaving(true);
-    setError(null);
-    const result = await ledgerRequest(`/api/v1/receipts/${receipt.id}/match`, receiptMatchResponseSchema, {
-      fallback: "The decision could not be saved.",
-      unreachable: "The ledger could not be reached, so nothing was saved."
-    }, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...request, expectedRevision: match.revision })
-    });
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.why);
-      return;
-    }
-    // The chosen row is about to leave the choices; a kept id would re-link it on the next press.
-    setChoice("");
-    onChanged();
-  }
-
-  const showsRow = match.status === "matched" || match.status === "linked";
-  // Rows a link could name, other than the one already in force.
-  const choices = match.options.filter((option) => option.transaction_id !== match.row?.transaction_id);
-
   return (
-    <div className="receipt-match">
-      <p className="ledger-status">
-        {match.status === "none" && receipt.purchased_at_time === null
-          // Read only from a full invoice, which prints no time: the rule cannot establish
-          // "at or after", so "normal for a wallet purchase" would be the wrong explanation.
-          ? "This receipt has no purchase time, so it cannot be matched automatically. Save its short receipt or a screenshot to add the time, or link a row below."
-          : MATCH_SENTENCE[match.status]}
-        {showsRow ? <> <span>{match.row ? describeRow(match.row) : "a ledger row outside the three days around this receipt."}</span></> : null}
-      </p>
-      <div className="slip-actions">
-        {showsRow ? (
-          <button type="button" className="secondary-button" disabled={saving}
-            onClick={() => void decide({ decision: "unmatched", transactionId: null })}>
-            {match.status === "linked" ? "Unlink" : "Not this row"}
-          </button>
-        ) : null}
-        {choices.length > 0 ? (
-          <>
-            <label className="account-control">
-              <span>{showsRow ? "Link a different row" : "Link a row of the same amount"}</span>
-              <select value={choice} disabled={saving} onChange={(event) => setChoice(event.target.value)}>
-                <option value="">Choose a row…</option>
-                {choices.map((option) => (
-                  <option key={option.transaction_id} value={option.transaction_id}>{describeRow(option)}</option>
-                ))}
-              </select>
-            </label>
-            <button type="button" className="secondary-button" disabled={saving || choice === ""}
-              onClick={() => void decide({ decision: "matched", transactionId: choice })}>
-              Link
-            </button>
-          </>
-        ) : null}
-        {saving ? <span role="status">Saving…</span> : null}
-      </div>
-      {error ? <p className="status error" role="alert">{error}</p> : null}
-    </div>
+    <LedgerMatchPanel
+      endpoint={`/api/v1/receipts/${receipt.id}/match`}
+      match={receipt.match}
+      sentence={receipt.match.status === "none" && receipt.purchased_at_time === null
+        // Read only from a full invoice, which prints no time: the rule cannot establish
+        // "at or after", so "normal for a wallet purchase" would be the wrong explanation.
+        ? "This receipt has no purchase time, so it cannot be matched automatically. Save its short receipt or a screenshot to add the time, or link a row below."
+        : MATCH_SENTENCE[receipt.match.status]}
+      outsideRange="a ledger row outside the three days around this receipt."
+      responseSchema={receiptMatchResponseSchema}
+      onChanged={onChanged}
+    />
   );
 }

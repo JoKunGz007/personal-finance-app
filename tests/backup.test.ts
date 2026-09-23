@@ -11,6 +11,7 @@ import {
   BACKUP_TABLE_KINDS_V7,
   BACKUP_TABLE_KINDS_V8,
   BACKUP_TABLE_KINDS_V9,
+  BACKUP_TABLE_KINDS_V10,
   backupDataSchema,
   backupDataSchemaV2,
   backupDataSchemaV3,
@@ -19,6 +20,7 @@ import {
   backupDataSchemaV7,
   backupDataSchemaV8,
   backupDataSchemaV9,
+  backupDataSchemaV10,
   backupSnapshotSchema,
   describeBackupSnapshot,
   restoreActionSchemas,
@@ -30,7 +32,8 @@ import {
   restoreManifestSchemaV6,
   restoreManifestSchemaV7,
   restoreManifestSchemaV8,
-  restoreManifestSchemaV9
+  restoreManifestSchemaV9,
+  restoreManifestSchemaV10
 } from "@/lib/backup-contract";
 
 describe("portable encrypted backup", () => {
@@ -63,7 +66,7 @@ function manifestOver(kinds: readonly string[]) {
 describe("restore manifest", () => {
   it("requires the exact ordered table set and canonical snapshot sequence", () => {
     const manifest = manifestOver(BACKUP_TABLE_KINDS);
-    expect(restoreManifestSchema.parse(manifest).chunks).toHaveLength(32);
+    expect(restoreManifestSchema.parse(manifest).chunks).toHaveLength(34);
     expect(() => restoreManifestSchema.parse({ ...manifest, snapshotSequence: "01" })).toThrow();
     expect(() => restoreManifestSchema.parse({ ...manifest, chunks: [...manifest.chunks].reverse() })).toThrow();
   });
@@ -82,7 +85,8 @@ describe("restore manifest", () => {
     const v7 = manifestOver(BACKUP_TABLE_KINDS_V7);
     const v8 = manifestOver(BACKUP_TABLE_KINDS_V8);
     const v9 = manifestOver(BACKUP_TABLE_KINDS_V9);
-    const v10 = manifestOver(BACKUP_TABLE_KINDS);
+    const v10 = manifestOver(BACKUP_TABLE_KINDS_V10);
+    const v11 = manifestOver(BACKUP_TABLE_KINDS);
     expect(restoreManifestSchemaV2.parse(v2).chunks).toHaveLength(11);
     expect(restoreManifestSchemaV3.parse(v3).chunks).toHaveLength(12);
     expect(restoreManifestSchemaV4.parse(v4).chunks).toHaveLength(14);
@@ -91,6 +95,7 @@ describe("restore manifest", () => {
     expect(restoreManifestSchemaV7.parse(v7).chunks).toHaveLength(24);
     expect(restoreManifestSchemaV8.parse(v8).chunks).toHaveLength(27);
     expect(restoreManifestSchemaV9.parse(v9).chunks).toHaveLength(29);
+    expect(restoreManifestSchemaV10.parse(v10).chunks).toHaveLength(32);
 
     // Accepting an old version must not mean accepting anything. Each version pins its own
     // table count, so no manifest passes as another.
@@ -102,6 +107,7 @@ describe("restore manifest", () => {
     expect(restoreManifestSchemaV7.safeParse(v8).success).toBe(false);
     expect(restoreManifestSchemaV8.safeParse(v9).success).toBe(false);
     expect(restoreManifestSchemaV9.safeParse(v10).success).toBe(false);
+    expect(restoreManifestSchemaV10.safeParse(v11).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v2).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v3).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v4).success).toBe(false);
@@ -110,6 +116,7 @@ describe("restore manifest", () => {
     expect(restoreManifestSchema.safeParse(v7).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v8).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v9).success).toBe(false);
+    expect(restoreManifestSchema.safeParse(v10).success).toBe(false);
   });
 
   it("binds a staged manifest to the version declared alongside it", () => {
@@ -126,7 +133,8 @@ describe("restore manifest", () => {
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 7, manifest: manifestOver(BACKUP_TABLE_KINDS_V7) }).success).toBe(true);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 8, manifest: manifestOver(BACKUP_TABLE_KINDS_V8) }).success).toBe(true);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 9, manifest: manifestOver(BACKUP_TABLE_KINDS_V9) }).success).toBe(true);
-    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 10, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 10, manifest: manifestOver(BACKUP_TABLE_KINDS_V10) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 11, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
     // The pairing is the point: a version and a manifest that disagree about how many
     // tables exist cannot both be right, and the server would otherwise stage one and
     // then refuse chunks against the other.
@@ -141,6 +149,8 @@ describe("restore manifest", () => {
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 8, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 10, manifest: manifestOver(BACKUP_TABLE_KINDS_V9) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 9, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 11, manifest: manifestOver(BACKUP_TABLE_KINDS_V10) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 10, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 6, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 5, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 4, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
@@ -177,7 +187,7 @@ describe("restore manifest", () => {
     const parsed = backupSnapshotSchema.parse({
       schemaVersion: BACKUP_SCHEMA_VERSION, exportedAt: "2026-07-24T00:00:00.000Z", snapshotSequence: "9223372036854775807", tableCounts, data
     });
-    expect(parsed.schemaVersion).toBe(10);
+    expect(parsed.schemaVersion).toBe(11);
     expect(parsed.data.source_transactions).toHaveLength(1001);
     expect(parsed.data.source_transactions[0]).toMatchObject({ post_balance_minor: "-9223372036854775808" });
     expect(parsed.data.source_transactions[1000]).toMatchObject({ post_balance_minor: "9223372036854775807" });
@@ -235,9 +245,14 @@ describe("restore manifest", () => {
     expect(v9).toContain("schema version 9");
     expect(v9).not.toContain(`${BACKUP_TABLE_KINDS.length} tables`);
 
-    const v10 = describeBackupSnapshot({ schemaVersion: 10, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
-    expect(v10).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    const v10 = describeBackupSnapshot({ schemaVersion: 10, tableCounts: countsFor(BACKUP_TABLE_KINDS_V10) });
+    expect(v10).toContain(`${BACKUP_TABLE_KINDS_V10.length} tables`);
     expect(v10).toContain("schema version 10");
+    expect(v10).not.toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+
+    const v11 = describeBackupSnapshot({ schemaVersion: 11, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
+    expect(v11).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    expect(v11).toContain("schema version 11");
 
     // Rows are summed from the counts, so the sentence cannot claim rows the file lacks.
     const rows = BACKUP_TABLE_KINDS_V3.reduce((sum, _kind, index) => sum + index, 0);
@@ -305,7 +320,8 @@ describe("backup row shapes are shared by every version that carries the table",
     { name: "v7", data: backupDataSchemaV7, kinds: BACKUP_TABLE_KINDS_V7 },
     { name: "v8", data: backupDataSchemaV8, kinds: BACKUP_TABLE_KINDS_V8 },
     { name: "v9", data: backupDataSchemaV9, kinds: BACKUP_TABLE_KINDS_V9 },
-    { name: "v10", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
+    { name: "v10", data: backupDataSchemaV10, kinds: BACKUP_TABLE_KINDS_V10 },
+    { name: "v11", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
   ] as const;
 
   it("uses one row schema per table across every version, so a column cannot diverge them", () => {

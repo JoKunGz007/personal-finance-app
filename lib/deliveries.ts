@@ -1,13 +1,15 @@
 // The wire contract for food delivery orders (PLAN task 58, migration 032).
 //
-// Unlike receipts, nothing here is posted by the page: the server reads the e-receipt email, parses
-// it and captures it itself (`app/api/v1/deliveries/sync/route.ts`), so the page only ever reads.
+// Unlike receipts, no order is posted by the page: the server reads the e-receipt email, parses
+// it and captures it itself (`app/api/v1/deliveries/sync/route.ts`). The page posts only the
+// owner's match decision (`lib/delivery-match.ts`).
 // This module holds the capture request the server builds, the stored shape the list returns, and
 // the sync report.
 
 import { z } from "zod";
 import { minorUnitStringSchema } from "@/lib/money";
 import type { ParsedDelivery } from "@/lib/delivery-grab";
+import { deliveryMatchStateSchema } from "@/lib/delivery-match";
 
 /** The `capture_delivery` request: camelCase keys, money as canonical int64 text. */
 export function captureDeliveryRequest(order: ParsedDelivery) {
@@ -49,7 +51,8 @@ export const storedDeliverySchema = z.object({
     kind: z.enum(["discount", "charge", "unprinted"]),
     name: z.string(),
     amount_minor: minorUnitStringSchema
-  }).strict())
+  }).strict()),
+  match: deliveryMatchStateSchema
 }).strict();
 
 export type StoredDelivery = z.infer<typeof storedDeliverySchema>;

@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { LedgerNote } from "@/app/ledger-note";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { formatThb } from "@/lib/money";
 import {
-  deliveryListSchema, deliverySyncReportSchema, describeSyncReport, paidOutsidePlatform,
+  deliveryListSchema, deliverySyncReportSchema, describeSyncReport,
   type DeliverySyncReport, type StoredDelivery
 } from "@/lib/deliveries";
+import { deliveryMatchResponseSchema } from "@/lib/delivery-match";
 import { ledgerRequest } from "@/lib/wire";
 
 // One request reads until its time budget and says `truncated`; the page asks again. A backfill of
@@ -124,7 +126,8 @@ export function DeliveriesBench() {
             <div className="heading-note">
               <LedgerNote label="About stored orders">
                 Every order stored here, newest first, dated when its e-receipt was sent. An order
-                itemizes a payment the ledger already holds. A ฿0 order was paid outside Grab, under
+                itemizes a card payment the ledger already holds, found by its exact total on a GRAB
+                row up to two hours before the e-receipt. A ฿0 order was paid outside Grab, under
                 the co-payment scheme, and is never a card payment.
               </LedgerNote>
             </div>
@@ -156,13 +159,23 @@ export function DeliveriesBench() {
                     <span className="receipt-when"><time dateTime={delivery.receipt_sent_at}>{bangkokTime(delivery.receipt_sent_at)}</time></span>
                     <span className="receipt-branch">{delivery.restaurant}</span>
                     <span className="receipt-count">{delivery.items.reduce((sum, item) => sum + item.quantity, 0)} dishes</span>
-                    {paidOutsidePlatform(delivery) ? <span className="receipt-chip quiet">paid outside Grab</span> : null}
+                    <span className={`receipt-chip ${MATCH_CHIP[delivery.match.status].tone}`}>{MATCH_CHIP[delivery.match.status].label}</span>
                     {delivery.adjustments.some((row) => row.kind === "unprinted") ? <span className="receipt-chip warn">not all on the e-receipt</span> : null}
                     <span className="receipt-amount numeric">{formatThb(delivery.total_minor)}</span>
                   </summary>
                   <p className="ledger-status">
                     GrabFood {delivery.booking_id}{delivery.payment_method ? ` · ${delivery.payment_method}` : ""}
                   </p>
+                  {delivery.match.status === "outside" ? null : (
+                    <LedgerMatchPanel
+                      endpoint={`/api/v1/deliveries/${delivery.id}/match`}
+                      match={delivery.match}
+                      sentence={MATCH_SENTENCE[delivery.match.status]}
+                      outsideRange="a ledger row outside the three days around this order."
+                      responseSchema={deliveryMatchResponseSchema}
+                      onChanged={() => void load()}
+                    />
+                  )}
                   <div className="table-scroll">
                     <table className="ledger-table">
                       <thead>
@@ -206,3 +219,23 @@ export function DeliveriesBench() {
     </>
   );
 }
+
+// The summary's chip, the receipts page's tones: green for a row on the ledger, amber for
+// something the owner can act on, muted otherwise.
+const MATCH_CHIP = {
+  matched: { label: "on the ledger", tone: "ok" },
+  linked: { label: "on the ledger", tone: "ok" },
+  declined: { label: "no ledger row", tone: "quiet" },
+  ambiguous: { label: "pick a row", tone: "warn" },
+  none: { label: "no ledger row", tone: "quiet" },
+  outside: { label: "paid outside Grab", tone: "quiet" }
+} as const;
+
+const MATCH_SENTENCE = {
+  matched: "Paid by this ledger row, found automatically:",
+  linked: "You linked this order to:",
+  declined: "You said no ledger row pays for this order.",
+  ambiguous: "More than one ledger row could be this payment, so none was chosen. Pick one below if you know which.",
+  none: "No ledger row found. That is normal for an order paid with another card, or when the statement covering this date is not imported yet.",
+  outside: "Paid outside Grab, so there is no card row."
+} as const;

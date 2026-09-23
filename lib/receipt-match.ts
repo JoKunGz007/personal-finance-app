@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { proposeLedgerMatches } from "@/lib/ledger-match";
 
 /**
  * Matching a 7-Eleven receipt to the ledger row that paid for it (PLAN task 56, D-212).
@@ -113,62 +114,18 @@ export function qualifiesAutomatically(candidate: Pick<ReceiptLedgerCandidate, "
 }
 
 /**
- * Every receipt's match state. Order-independent: nothing here depends on the order receipts or
- * candidates arrive in, which is what mutual uniqueness buys over greedy pairing.
+ * Every receipt's match state: the shared mutual-uniqueness rule (`lib/ledger-match.ts`) over
+ * this contract's own candidate rule.
  */
 export function proposeReceiptMatches(
   receiptIds: readonly string[],
   candidates: readonly ReceiptLedgerCandidate[],
   decisions: readonly ReceiptMatchDecision[]
 ): Map<string, ReceiptMatchState> {
-  const decisionOf = new Map(decisions.map((decision) => [decision.receipt_id, decision]));
-  // Rows an owner decision holds, and by which receipt: off the table for everyone else.
-  const claimedBy = new Map<string, string>();
-  for (const decision of decisions) {
-    if (decision.decision === "matched" && decision.transaction_id) claimedBy.set(decision.transaction_id, decision.receipt_id);
-  }
-
-  const candidatesOf = new Map<string, ReceiptLedgerCandidate[]>();
-  for (const candidate of candidates) {
-    const list = candidatesOf.get(candidate.receipt_id) ?? [];
-    list.push(candidate);
-    candidatesOf.set(candidate.receipt_id, list);
-  }
-
-  const automaticOf = new Map<string, ReceiptLedgerCandidate[]>();
-  const wantedBy = new Map<string, number>();
-  for (const receiptId of receiptIds) {
-    if (decisionOf.has(receiptId)) continue;
-    const automatic = (candidatesOf.get(receiptId) ?? [])
-      .filter((candidate) => qualifiesAutomatically(candidate) && !claimedBy.has(candidate.transaction_id));
-    automaticOf.set(receiptId, automatic);
-    for (const candidate of automatic) wantedBy.set(candidate.transaction_id, (wantedBy.get(candidate.transaction_id) ?? 0) + 1);
-  }
-
-  const states = new Map<string, ReceiptMatchState>();
-  for (const receiptId of receiptIds) {
-    const own = candidatesOf.get(receiptId) ?? [];
-    const options = own
-      .filter((candidate) => { const holder = claimedBy.get(candidate.transaction_id); return holder === undefined || holder === receiptId; })
-      .map(toRow);
-    const decision = decisionOf.get(receiptId);
-    if (decision) {
-      const linked = decision.transaction_id === null ? undefined : own.find((candidate) => candidate.transaction_id === decision.transaction_id);
-      states.set(receiptId, {
-        status: decision.decision === "matched" ? "linked" : "declined",
-        row: linked ? toRow(linked) : null,
-        options,
-        revision: decision.revision
-      });
-      continue;
-    }
-    const automatic = automaticOf.get(receiptId) ?? [];
-    const only = automatic.length === 1 ? automatic[0]! : null;
-    if (only && wantedBy.get(only.transaction_id) === 1) {
-      states.set(receiptId, { status: "matched", row: toRow(only), options, revision: 0 });
-    } else {
-      states.set(receiptId, { status: automatic.length === 0 ? "none" : "ambiguous", row: null, options, revision: 0 });
-    }
-  }
-  return states;
+  return proposeLedgerMatches(
+    receiptIds,
+    candidates,
+    decisions.map((decision) => ({ ...decision, documentId: decision.receipt_id })),
+    { documentOf: (candidate) => candidate.receipt_id, qualifies: qualifiesAutomatically, toRow }
+  );
 }
