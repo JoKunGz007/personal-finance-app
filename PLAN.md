@@ -4,6 +4,8 @@ Last verified: 2026-09-23
 
 ## Current checkpoint
 
+**`/receipts` UX fixes live, 2026-09-23** (D-217). The page fits at desktop, stored receipts and statistics load on arrival, and `/ledger`'s receipt fold meets the 44px rule. Task 56's follow-ups are unchanged.
+
 **A matched ledger row shows its receipt, and `/receipts` reads by colour, 2026-09-23** (D-216, D-215). Task 56's planned work is done; its follow-ups are listed at the end of task 56.
 
 **Receipt statistics are live, 2026-09-23** (D-214). `/receipts` shows what the stored receipts show, computed in SQL (migration 031, on hosted): every receipt's total, and item figures from complete item lists only. Never added to a ledger total. Task 56's parts are all built. Next: show a row's matched receipt on `/ledger`.
@@ -686,7 +688,7 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
     **Statistics are built and live, 2026-09-23** (D-214). They are a panel on `/receipts` from `public.receipt_statistics()` (migration 031, on hosted; backup stays v9). Every receipt's net counts; item figures read only `items_complete` receipts and only merchandise. The list's "partial" label now reads `items_complete` too.
 
-    **A matched ledger row shows its receipt, 2026-09-23** (D-216). `/ledger` reads the receipts route and folds the items under the row. `/receipts` was restyled by colour for meaning on the owner's request (D-215).
+    **A matched ledger row shows its receipt, 2026-09-23** (D-216). `/ledger` reads the receipts route and folds the items under the row. `/receipts` was restyled by colour for meaning on the owner's request (D-215). A `/ux-review` of both followed; its three recommended fixes shipped (D-217).
 
     Follow-ups, all independent: discount names (`receipt_discounts.name` is always null); `completeness` being overwritten by a lower-ranked source in `capture_receipt` (D-214; harmless now that nothing reads it for trust); the mailbox path for full invoices (deferred by the owner).
 

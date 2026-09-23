@@ -396,6 +396,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-214** — Receipt statistics are computed in SQL on `/receipts`, never added to a ledger total, and item figures trust only complete item lists
 - **D-215** — Receipts read by colour for meaning, and their amounts stay in ink because green and red already mean money in and out
 - **D-216** — A matched ledger row shows its receipt, computed at read time from the receipts route
+- **D-217** — The `/receipts` UX review's three recommended fixes: desktop fit, 44px receipt fold, load on arrival
+
+## D-217 — The `/receipts` UX review's three recommended fixes: desktop fit, 44px receipt fold, load on arrival
+
+- Date: 2026-09-23
+- Status: **Built, gated; committed as `67c3f58`, pushed, confirmed live at 1024px and 375px.** `app/globals.css`, `app/receipts-bench.tsx`, `app/receipt-statistics.tsx`, new `app/use-load-on-arrival.ts`. No SQL.
+- **Desktop sideways scroll**: the item table inside each receipt borrowed `.ledger-table` and with it the ledger's 1040px `min-width`, and `.receipt-list`'s single auto grid track grew to fit it. Now `.receipt-list .ledger-table { min-width: 0 }` and `.receipt-list { grid-template-columns: minmax(0, 1fr) }`. Live at 1024px with every receipt open: page width 1009, was 1091.
+- **44px hit areas (D-136)** on `/ledger`'s receipt fold: the summary was 24px and "Open on Receipts" 14px; both measure 44px live at 375px. **The summary is sized with padding, not `display: flex`**: flex drops the disclosure marker and turns each JSX text node into its own flex item, which collapses the spaces between them (the D-197 trap).
+- **Stored receipts and receipt statistics load on arrival**, as `/ledger` (PLAN task 43) and `/categories` do: a list is what the page is for. The shared `useLoadOnArrival` hook carries the sign-in retry that `app/categories-bench.tsx` spells out inline; a signed-out arrival shows a sign-in note, not an error. The buttons remain as reload and retry.
+- **Not changed**: the 26px `(i)` note buttons are the app-wide `LedgerNote` pattern, so the review's nitpick stays a "revisit", not a defect.
+- Gate: Vitest **1074 passed / 7 skipped across 50 files**; `tsc` clean; `eslint` clean on the changed files; `pnpm build` clean. No SQL, so pgTAP was not re-run (492 at D-214). No real value recorded.
 
 ## D-216 — A matched ledger row shows its receipt, computed at read time from the receipts route
 
