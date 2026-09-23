@@ -1203,7 +1203,13 @@ footer p { margin: 0; }
 .receipt-chip.quiet { color: var(--muted); }
 .receipt-amount { margin-left: auto; font-weight: 700; font-family: var(--font-money); }
 .receipt-promotion td { color: var(--muted); font-style: italic; }
-.receipt-discount td { color: var(--money-in); font-weight: 600; }
+.receipt-discount td, .ledger-receipt .receipt-discount { color: var(--money-in); font-weight: 600; }
+/* A matched row's receipt on /ledger: folded under the description, never a second amount column. */
+.ledger-receipt { margin-top: 4px; font-size: 12px; }
+.ledger-receipt summary { cursor: pointer; color: var(--verified-ink); font-weight: 600; min-height: 24px; }
+.ledger-receipt ul { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 2px; }
+.ledger-receipt li { display: flex; justify-content: space-between; gap: 12px; }
+.ledger-receipt a { font-size: 11px; }
 .receipt-match { display: grid; gap: 6px; margin: 4px 0 10px; overflow-wrap: anywhere; }
 .receipt-match .slip-actions { flex-wrap: wrap; align-items: flex-end; }
 .receipt-match select { max-width: 100%; }

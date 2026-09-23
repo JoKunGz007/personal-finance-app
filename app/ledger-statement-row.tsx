@@ -9,6 +9,7 @@ import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
 import { formatDate, formatDateParts, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 import { OverlayCategoryForm } from "@/app/overlay-category-form";
+import { type StoredReceipt } from "@/lib/receipts";
 
 /**
  * A confirmed statement row, and whichever captured records collapsed onto it.
@@ -36,6 +37,7 @@ export function LedgerStatementRow({
   openCard,
   categorySaving,
   autoExcluded,
+  receipt,
   actions
 }: {
   row: Extract<ReconciledRow, { kind: "confirmed" }>;
@@ -67,6 +69,8 @@ export function LedgerStatementRow({
   categorySaving: boolean;
   /** Excluded from reporting automatically as an internal transfer (D-207), not by hand. */
   autoExcluded: boolean;
+  /** The 7-Eleven receipt this row paid for, when one is matched or linked (D-212). Itemization only. */
+  receipt: StoredReceipt | null;
   actions: LedgerActions;
 }) {
   // The row actions fold behind "⋯" (D-205 on a phone, every viewport since D-207).
@@ -125,6 +129,7 @@ export function LedgerStatementRow({
             </em>
           ) : null}
           {transaction.source_components.length > 1 ? <em>2 components</em> : null}
+          {receipt ? <LedgerReceipt receipt={receipt} /> : null}
         </td>
         {/* No chip for a statement row with no slip. It is the ledger's default
             state — on this ledger, essentially every row — so a badge on each
@@ -505,5 +510,36 @@ export function LedgerStatementRow({
         </tr>
       ) : null}
     </Fragment>
+  );
+}
+
+/**
+ * What a matched row bought, folded by default. **Never money**: the row's own amount is the
+ * payment, and these lines only itemize it, so nothing here enters a total (PLAN task 56).
+ */
+function LedgerReceipt({ receipt }: { receipt: StoredReceipt }) {
+  const items = receipt.items.filter((item) => !item.is_promotion && item.amount_minor !== "0");
+  return (
+    <details className="ledger-receipt">
+      <summary>
+        7-Eleven receipt · {items.length} item{items.length === 1 ? "" : "s"}
+        {receipt.items_complete ? "" : " · partial"}
+      </summary>
+      <ul>
+        {items.map((item) => (
+          <li key={item.position}>
+            <span>{item.quantity > 1 ? `${item.quantity} × ` : ""}{item.display_name ?? item.name}</span>
+            <span className="numeric">{formatThb(item.amount_minor)}</span>
+          </li>
+        ))}
+        {receipt.discounts.map((discount) => (
+          <li key={`d${discount.position}`} className="receipt-discount">
+            <span>Discount</span>
+            <span className="numeric">−{formatThb(discount.amount_minor)}</span>
+          </li>
+        ))}
+      </ul>
+      <a href="/receipts">Open on Receipts</a>
+    </details>
   );
 }

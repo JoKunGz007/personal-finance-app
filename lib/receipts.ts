@@ -181,6 +181,18 @@ export type StoredReceipt = z.infer<typeof storedReceiptSchema>;
 
 export const receiptListSchema = z.object({ receipts: z.array(storedReceiptSchema) }).strict();
 
+/**
+ * The receipts that sit on a ledger row, keyed by that row's transaction id: matched automatically
+ * or linked by the owner. A declined, ambiguous or unmatched receipt is on no row. One row holds
+ * at most one receipt (migration 030's partial unique index and the rule's mutual uniqueness).
+ */
+export function receiptsOnRows(receipts: readonly StoredReceipt[]): [string, StoredReceipt][] {
+  return receipts.flatMap((receipt) =>
+    (receipt.match.status === "matched" || receipt.match.status === "linked") && receipt.match.row
+      ? [[receipt.match.row.transaction_id, receipt] as [string, StoredReceipt]]
+      : []);
+}
+
 export const receiptCaptureResultSchema = z.object({
   captured: z.boolean(),
   merged: z.boolean(),

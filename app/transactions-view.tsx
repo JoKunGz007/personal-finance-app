@@ -22,6 +22,7 @@ import {
   type TransactionOverlay
 } from "@/lib/transactions";
 import { categoryListSchema, type Category } from "@/lib/categories";
+import { receiptListSchema, receiptsOnRows, type StoredReceipt } from "@/lib/receipts";
 import {
   deeperPages,
   emptyWindow,
@@ -192,6 +193,9 @@ export function TransactionsView() {
   const [categories, setCategories] = useState<Category[]>([]);
   // Rows excluded from reporting automatically as internal transfers (D-207), for their chip.
   const [autoExcluded, setAutoExcluded] = useState<ReadonlySet<string>>(new Set());
+  // Each ledger row's receipt, by transaction id (D-212's match, computed by the receipts route at
+  // read time; no link is stored). Only matched or owner-linked receipts are here.
+  const [receiptByRow, setReceiptByRow] = useState<Map<string, StoredReceipt>>(new Map());
   // The category/note write's own error line, on the same convention as `reportingError` and
   // `correctionError` — cleared by `toggleCorrecting`, so a stale refusal from a previous panel
   // is never read as belonging to the one just opened.
@@ -868,6 +872,10 @@ export function TransactionsView() {
         fallback: "Automatically excluded rows could not be loaded.",
         offContract: "The automatically excluded rows did not match their contract."
       });
+      const receiptsRequest = ledgerRequest("/api/v1/receipts", receiptListSchema, {
+        fallback: "Receipts could not be loaded.",
+        offContract: "The receipts response did not match its contract."
+      });
       const categoriesRequest = ledgerRequest("/api/v1/categories", categoryListSchema, {
         fallback: "Categories could not be loaded.",
         offContract: "The categories response did not match its contract, so none are shown."
@@ -975,6 +983,10 @@ export function TransactionsView() {
       const autoExcludedResult = await autoExcludedRequest;
       if (superseded()) return;
       setAutoExcluded(new Set(autoExcludedResult.ok ? autoExcludedResult.data.ids : []));
+      // Only an addition to a row: a failure shows no receipt, which claims nothing about the row.
+      const receiptsResult = await receiptsRequest;
+      if (superseded()) return;
+      setReceiptByRow(new Map(receiptsResult.ok ? receiptsOnRows(receiptsResult.data.receipts) : []));
 
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
@@ -1608,6 +1620,7 @@ export function TransactionsView() {
                         openCard={openCard}
                         categorySaving={modes.correcting === row.transaction.id && categorySaving}
                         autoExcluded={autoExcluded.has(row.transaction.id)}
+                        receipt={receiptByRow.get(row.transaction.id) ?? null}
                         actions={actions}
                       />
                     )];

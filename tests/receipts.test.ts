@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, test, vi } from "vitest";
 import type { ParsedReceipt } from "@/lib/receipt-text";
-import { captureReceiptRequest, receiptCaptureBody, receiptCaptureSchema, receiptListSchema } from "@/lib/receipts";
+import { captureReceiptRequest, receiptCaptureBody, receiptCaptureSchema, receiptListSchema, receiptsOnRows, type StoredReceipt } from "@/lib/receipts";
 import { receiptStatisticsSchema } from "@/lib/receipt-statistics";
 import {
   API, OWNER_EMAIL, PUBLISHABLE, containerReachable, ownerId as lookupOwnerId,
@@ -50,6 +50,27 @@ const full: ParsedReceipt = {
   supersedesReceiptNumber: "0000000012",
   inapplicableChecks: ["UNIT_COUNT_CHECK"]
 };
+
+describe("receipts on ledger rows", () => {
+  const row = (id: string) => ({ transaction_id: id, source_date: "2026-06-12", source_time: "14:36", account_id: "cccccccc-0000-4000-8000-000000000001", transaction_label: "SIPI", description: "Invented", lag_minutes: 1, names_true_money: true });
+  const receipt = (id: string, status: StoredReceipt["match"]["status"], rowId: string | null) =>
+    ({ id, match: { status, row: rowId ? row(rowId) : null, options: [], revision: 0 } }) as unknown as StoredReceipt;
+
+  it("keys matched and linked receipts by their row, and leaves every other state off the ledger", () => {
+    const pairs = receiptsOnRows([
+      receipt("r1", "matched", "t1"),
+      receipt("r2", "linked", "t2"),
+      receipt("r3", "declined", null),
+      receipt("r4", "ambiguous", null),
+      receipt("r5", "none", null)
+    ]);
+    expect(pairs.map(([rowId, stored]) => [rowId, stored.id])).toEqual([["t1", "r1"], ["t2", "r2"]]);
+  });
+
+  it("drops a link whose row the candidate read did not return, rather than guessing it", () => {
+    expect(receiptsOnRows([receipt("r1", "linked", null)])).toEqual([]);
+  });
+});
 
 describe("receipt capture contract", () => {
   test("a full invoice is keyed on the condensed number it replaces, never its own", () => {
