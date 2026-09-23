@@ -62,7 +62,7 @@ export type MailboxConfigResult =
  * secret and saying which one is unset is the difference between a fixable message and a shrug.
  * **It never names the values**, and the password is never compared, logged or echoed.
  */
-export function mailboxConfig(): MailboxConfigResult {
+export function mailboxConfig({ requireSenders = true }: { requireSenders?: boolean } = {}): MailboxConfigResult {
   const user = process.env.STATEMENT_MAILBOX_USER?.trim();
   const pass = process.env.STATEMENT_MAILBOX_APP_PASSWORD;
   const senders = parseSenders(process.env.STATEMENT_MAILBOX_SENDERS);
@@ -74,7 +74,7 @@ export function mailboxConfig(): MailboxConfigResult {
   // the commonest way this fails with a bare "invalid credentials" that explains nothing.
   const cleanedPass = (pass ?? "").replace(/\s+/gu, "");
   if (cleanedPass === "") missing.push("STATEMENT_MAILBOX_APP_PASSWORD");
-  if (senders.length === 0) missing.push("STATEMENT_MAILBOX_SENDERS");
+  if (requireSenders && senders.length === 0) missing.push("STATEMENT_MAILBOX_SENDERS");
 
   if (missing.length > 0) {
     return {

@@ -211,6 +211,10 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     -- Receipts hang off no account and no transaction (migration 027), so nothing else here
     -- removes them; match decisions, items and discounts first, for the FK reason every block
     -- above gives (a match decision also references a transaction, removed further down).
+    -- Deliveries hang off nothing either (migration 032); items and discounts before the order.
+    delete from public.delivery_adjustments where owner_id = '${owner}';
+    delete from public.delivery_items where owner_id = '${owner}';
+    delete from public.deliveries where owner_id = '${owner}';
     delete from public.receipt_match_revisions where owner_id = '${owner}';
     delete from public.receipt_match_overlays where owner_id = '${owner}';
     delete from public.receipt_discounts where owner_id = '${owner}';

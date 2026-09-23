@@ -147,3 +147,10 @@ the top of `GOTCHAS.md`.
 - Cause: OCR is not deterministic across images of the same text. The same row came back with a stray `.` or a moved space in its second screenshot, and the row clipped at a screenshot's edge reads as garbage (`ก(a)`). Exact comparison of the overlapping lines found no overlap on any of eight real pairs.
 - Avoid: compare the overlap on what the checksum reads — a priced row's quantity and amount (`lib/receipt-screenshot.ts` `lineKey`) — allow one clipped edge row per seam, and let the receipt's own checksums, not the join, say whether the stitch is whole. Keys that coarse can join a wrong order on a coincidence, so read every order and keep the best, never the first.
 - Verify: 2026-09-23 (D-210, count corrected in D-211). 8 of 8 real pairs join and read complete; `tests/receipt-screenshot.test.ts` fails when `lineKey` compares text or the edge drop is removed.
+
+## Gmail's IMAP `SUBJECT` search matches whole words, so a hyphenated subject word finds nothing
+
+- Symptom: a mailbox search for `{ subject: "E-Receipt" }` returns zero messages from a mailbox that plainly holds the mail, and so does Gmail's own `X-GM-RAW "subject:e-receipt"`. Nothing errors; the fetcher reports an empty mailbox.
+- Cause: Gmail answers IMAP `SEARCH SUBJECT` with its own word-based index, not RFC 3501's substring match. `E-Receipt` does not match `e-receipts` (the backfill bundles' subject), and the search also failed on the forwards' subject in the probe that found this.
+- Avoid: search for a whole word that every candidate's subject carries — `Grab` — and let the content decide what is a receipt (`lib/server/delivery-mailbox.ts` `DELIVERY_SEARCH`). When a search returns nothing, probe with several single-word searches and counts before trusting "empty".
+- Verify: 2026-09-23 (D-219), measured against the real statement mailbox by `scripts/measure-grab-mail.ts --probe`: `E-Receipt` 0 hits in INBOX and All Mail, `Grab` 4 (the four bundles), counts only.

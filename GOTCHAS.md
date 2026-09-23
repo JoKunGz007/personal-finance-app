@@ -35,6 +35,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A PowerShell `**` path glob does not recurse, so the build's target check silently under-counts
 - A PowerShell `;` chain does not propagate exit codes, so a truncated log plus a later command's zero reads as a green suite
 - A scripted replacement's escape sequences survive one layer of quoting and not two, and land real newlines inside string literals
+- A `\uXXXX` escape written through the agent's file tools lands as the literal character, invisible ones included
 
 ### Docker and the local Supabase projects
 
@@ -115,6 +116,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A reader tuned to one OCR engine's word boundaries fails silently on another's
 - pdf.js `hasEOL` is not a row boundary, and a reader tested on measured text never met it
 - One printed row reads differently in two screenshots, so an exact-text overlap joins nothing
+- Gmail's IMAP `SUBJECT` search matches whole words, so a hyphenated subject word finds nothing
 
 ### Real data, masking and privacy
 

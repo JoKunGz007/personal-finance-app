@@ -59,9 +59,16 @@ export const BACKUP_TABLE_KINDS_V8 = [
 // v9 appends the owner's receipt match decisions and their history (migration 030, D-212), in
 // the same overlay-then-revisions order as the slip pair. Indices 0..26 keep meaning exactly
 // what they meant in v8.
-export const BACKUP_TABLE_KINDS = [
+export const BACKUP_TABLE_KINDS_V9 = [
   ...BACKUP_TABLE_KINDS_V8,
   "receipt_match_overlays", "receipt_match_revisions"
+] as const;
+
+// v10 appends the food delivery orders (migration 032, PLAN task 58, D-219), parent first because
+// both children carry a `delivery_id` foreign key. Indices 0..28 keep meaning what they meant in v9.
+export const BACKUP_TABLE_KINDS = [
+  ...BACKUP_TABLE_KINDS_V9,
+  "deliveries", "delivery_items", "delivery_adjustments"
 ] as const;
 
 export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
@@ -72,8 +79,8 @@ export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
 // been refused at every version since. Nothing about that arithmetic weakens with age: the
 // files the owner holds now span v2 to v5, and each stops being restorable only if this list
 // stops naming it.
-export const BACKUP_SCHEMA_VERSION = 9;
-export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9] as const;
+export const BACKUP_SCHEMA_VERSION = 10;
+export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 export function backupTableKindsFor(schemaVersion: number): readonly BackupTableKind[] {
   if (schemaVersion === 2) return BACKUP_TABLE_KINDS_V2;
@@ -83,6 +90,7 @@ export function backupTableKindsFor(schemaVersion: number): readonly BackupTable
   if (schemaVersion === 6) return BACKUP_TABLE_KINDS_V6;
   if (schemaVersion === 7) return BACKUP_TABLE_KINDS_V7;
   if (schemaVersion === 8) return BACKUP_TABLE_KINDS_V8;
+  if (schemaVersion === 9) return BACKUP_TABLE_KINDS_V9;
   return BACKUP_TABLE_KINDS;
 }
 
@@ -516,6 +524,43 @@ const receiptMatchRevisionRowSchema = z.object({
   changed_by: uuidSchema
 }).strict();
 
+// A food delivery order (migration 032). Never money in the ledger sense, like a receipt; its
+// money fields are still canonical int64 text, and the delivery fee is null on a pickup order.
+const deliveryRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  platform: z.literal("grabfood"),
+  booking_id: z.string().min(1),
+  restaurant: z.string().min(1),
+  payment_method: nullableText,
+  receipt_sent_at: timestampSchema,
+  food_minor: minorUnitStringSchema,
+  delivery_fee_minor: minorUnitStringSchema.nullable(),
+  total_minor: minorUnitStringSchema,
+  created_at: timestampSchema
+}).strict();
+
+const deliveryItemRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  delivery_id: uuidSchema,
+  position: z.number().int(),
+  quantity: z.number().int(),
+  name: z.string().min(1),
+  options: z.array(z.string()),
+  amount_minor: minorUnitStringSchema
+}).strict();
+
+const deliveryAdjustmentRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  delivery_id: uuidSchema,
+  position: z.number().int(),
+  kind: z.enum(["discount", "charge", "unprinted"]),
+  name: z.string().min(1),
+  amount_minor: minorUnitStringSchema
+}).strict();
+
 const v2DataShape = {
   accounts: z.array(accountRowSchema),
   categories: z.array(categoryRowSchema),
@@ -572,10 +617,17 @@ const v8DataShape = {
   receipt_discounts: z.array(receiptDiscountRowSchema)
 } as const;
 export const backupDataSchemaV8 = z.object(v8DataShape).strict();
-export const backupDataSchema = z.object({
+const v9DataShape = {
   ...v8DataShape,
   receipt_match_overlays: z.array(receiptMatchOverlayRowSchema),
   receipt_match_revisions: z.array(receiptMatchRevisionRowSchema)
+} as const;
+export const backupDataSchemaV9 = z.object(v9DataShape).strict();
+export const backupDataSchema = z.object({
+  ...v9DataShape,
+  deliveries: z.array(deliveryRowSchema),
+  delivery_items: z.array(deliveryItemRowSchema),
+  delivery_adjustments: z.array(deliveryAdjustmentRowSchema)
 }).strict();
 
 function chunkSchema<const Kind extends (typeof BACKUP_TABLE_KINDS)[number], Row extends z.ZodType>(
@@ -614,7 +666,10 @@ export const backupChunkSchema = z.discriminatedUnion("kind", [
   chunkSchema("receipt_items", receiptItemRowSchema),
   chunkSchema("receipt_discounts", receiptDiscountRowSchema),
   chunkSchema("receipt_match_overlays", receiptMatchOverlayRowSchema),
-  chunkSchema("receipt_match_revisions", receiptMatchRevisionRowSchema)
+  chunkSchema("receipt_match_revisions", receiptMatchRevisionRowSchema),
+  chunkSchema("deliveries", deliveryRowSchema),
+  chunkSchema("delivery_items", deliveryItemRowSchema),
+  chunkSchema("delivery_adjustments", deliveryAdjustmentRowSchema)
 ]);
 
 function tableCountsFor(kinds: readonly BackupTableKind[]) {
@@ -654,6 +709,7 @@ export const restoreManifestSchemaV5 = manifestFor(BACKUP_TABLE_KINDS_V5);
 export const restoreManifestSchemaV6 = manifestFor(BACKUP_TABLE_KINDS_V6);
 export const restoreManifestSchemaV7 = manifestFor(BACKUP_TABLE_KINDS_V7);
 export const restoreManifestSchemaV8 = manifestFor(BACKUP_TABLE_KINDS_V8);
+export const restoreManifestSchemaV9 = manifestFor(BACKUP_TABLE_KINDS_V9);
 export const restoreManifestSchema = manifestFor(BACKUP_TABLE_KINDS);
 
 // Version is part of the request rather than a constant, and the manifest that travels
@@ -673,6 +729,7 @@ const baseV6 = z.object({ ...identity, schemaVersion: z.literal(6) }).strict();
 const baseV7 = z.object({ ...identity, schemaVersion: z.literal(7) }).strict();
 const baseV8 = z.object({ ...identity, schemaVersion: z.literal(8) }).strict();
 const baseV9 = z.object({ ...identity, schemaVersion: z.literal(9) }).strict();
+const baseV10 = z.object({ ...identity, schemaVersion: z.literal(10) }).strict();
 
 // Each version keeps its own kind list, so a v2 request is still checked against eleven
 // chunks and a v3 against twelve. Widening the union is not the same as relaxing it.
@@ -685,7 +742,8 @@ function actionUnion<Shape extends z.ZodRawShape>(extend: (kinds: readonly Backu
     baseV6.extend(extend(BACKUP_TABLE_KINDS_V6)).strict(),
     baseV7.extend(extend(BACKUP_TABLE_KINDS_V7)).strict(),
     baseV8.extend(extend(BACKUP_TABLE_KINDS_V8)).strict(),
-    baseV9.extend(extend(BACKUP_TABLE_KINDS)).strict()
+    baseV9.extend(extend(BACKUP_TABLE_KINDS_V9)).strict(),
+    baseV10.extend(extend(BACKUP_TABLE_KINDS)).strict()
   ]);
 }
 
@@ -696,8 +754,8 @@ export const restoreActionSchemas = {
     chunkDigest: digestSchema,
     chunk: backupChunkSchema
   })),
-  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9]),
-  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9])
+  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10]),
+  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10])
 } as const;
 
 function snapshotFor<Data extends z.ZodType>(
@@ -733,7 +791,8 @@ export const backupSnapshotSchemaV5 = snapshotFor(5, BACKUP_TABLE_KINDS_V5, back
 export const backupSnapshotSchemaV6 = snapshotFor(6, BACKUP_TABLE_KINDS_V6, backupDataSchemaV6);
 export const backupSnapshotSchemaV7 = snapshotFor(7, BACKUP_TABLE_KINDS_V7, backupDataSchemaV7);
 export const backupSnapshotSchemaV8 = snapshotFor(8, BACKUP_TABLE_KINDS_V8, backupDataSchemaV8);
-export const backupSnapshotSchemaV9 = snapshotFor(9, BACKUP_TABLE_KINDS, backupDataSchema);
+export const backupSnapshotSchemaV9 = snapshotFor(9, BACKUP_TABLE_KINDS_V9, backupDataSchemaV9);
+export const backupSnapshotSchemaV10 = snapshotFor(10, BACKUP_TABLE_KINDS, backupDataSchema);
 
 // What a restore accepts. A snapshot read off disk is one of these and nothing else — the
 // union discriminates on the payload's own declared version rather than sniffing for a
@@ -746,7 +805,8 @@ export const backupSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   backupSnapshotSchemaV6,
   backupSnapshotSchemaV7,
   backupSnapshotSchemaV8,
-  backupSnapshotSchemaV9
+  backupSnapshotSchemaV9,
+  backupSnapshotSchemaV10
 ]);
 
 /**

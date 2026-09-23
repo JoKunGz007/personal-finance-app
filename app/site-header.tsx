@@ -22,6 +22,7 @@ const ROUTES = [
   { href: "/import", label: "Import" },
   { href: "/slips", label: "Slips" },
   { href: "/receipts", label: "Receipts" },
+  { href: "/deliveries", label: "Deliveries" },
   { href: "/categories", label: "Categories" },
   { href: "/recovery", label: "Recovery" }
 ] as const;

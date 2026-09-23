@@ -78,3 +78,15 @@ the total, and the second screenshot's opening lines must overlap the first's cl
 The owner's name, phone number, delivery and restaurant addresses, notes to the rider, and every
 rider detail (name, photo, vehicle, plate). Dropped by the reader before anything is sent or
 written, as the 7-Eleven taxpayer block is (`RECEIPT_CONTRACT.md`).
+
+## The GrabFood e-receipt's layout, measured 2026-09-23
+
+Measured over all 114 real food receipts in the four backfill bundles by `scripts/measure-grab-mail.ts`, as masked line shapes and counts only (D-219). Read on the server by `lib/delivery-grab.ts`.
+
+- **Every label and every amount is its own line** once the HTML is flattened: `ค่าอาหาร` on one line, `฿ 250` on the next. A dish is `1x`, its name, its price, then zero or more priceless option lines (0 to 11 measured).
+- **The total is printed twice**: `รวม` under the heading, and again after the discounts. They must agree.
+- The date line reads `dd Mon yy HH:MM +0700` and is the email's send time.
+- `รหัสการจอง`, `สถานที่เริ่มต้นการเดินทาง:` and `รูปแบบการชำระเงิน:` each carry their value on the next line. The destination and the name on the receipt sit between them under their own labels and are never read.
+- After `ค่าจัดส่ง`, each line is a **discount printed with a minus sign** (`- ฿ n`; rides print `฿ -n`) or, on 2 receipts, a **charge printed without one**. A discount's name can itself contain a baht figure, so only an amount-only line is an amount.
+- **A GrabCoins redemption is not printed on the e-receipt.** One receipt's lines do not reach its printed total, and the Grab app's order page shows the missing deduction as GrabCoins. The reader stores such an order with an `unprinted` line sized to the gap, only when both printed totals agree and more was taken off than printed (D-219).
+- Rides use the "E-Receipt/Abbreviated Tax Invoice" template and are skipped.
