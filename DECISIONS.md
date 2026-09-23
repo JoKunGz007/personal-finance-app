@@ -397,6 +397,18 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-215** — Receipts read by colour for meaning, and their amounts stay in ink because green and red already mean money in and out
 - **D-216** — A matched ledger row shows its receipt, computed at read time from the receipts route
 - **D-217** — The `/receipts` UX review's three recommended fixes: desktop fit, 44px receipt fold, load on arrival
+- **D-218** — Food delivery orders get their own page, GrabFood is read from email and LINE MAN from its order page
+
+## D-218 — Food delivery orders get their own page, GrabFood is read from email and LINE MAN from its order page
+
+- Date: 2026-09-23
+- Status: **Scoped with the owner; nothing built.** Task: `PLAN.md` 58. Format evidence: `docs/DELIVERY_CONTRACT.md`, measured on real orders read in the session only.
+- **A separate page and tables, sharing the 7-Eleven machinery.** The owner leaned this way and the formats agree: a booking number instead of a store and receipt number, fees and named discounts, and statistics about restaurants and fees rather than items. Shared: the Vision route, matching, the `/ledger` fold, audit, backup.
+- **GrabFood from the e-receipt email, not screenshots.** One email is one whole order, needs no OCR, and carries no address or rider details. The screenshots cannot be joined safely: the one holding the money has no booking ID. The server reads the email (the owner's choice); it arrives through the statement mailbox by a Gmail filter, which the owner deferred.
+- **LINE MAN from its in-app order page.** It sends no email. The Notice in LINE has the order number on every screenshot but no dishes, and the owner wants the dishes. The order page's join is made safe by rules instead of a key: one order per pick, and arithmetic and overlap checks.
+- **A ฿0 order is paid outside the platform.** Under the co-payment scheme Grab prints the whole food price as a discount, and the owner's share is on neither form. Such an order is never matched to a card row and never read as free. The email names the scheme only by a promo code, from which no split may be inferred.
+- **Never stored**: names, phone numbers, addresses, notes to the rider, rider details.
+- **Deferred**: mail setup and backfill; Grab rides; linking ฿0 orders to เป๋าตัง.
 
 ## D-217 — The `/receipts` UX review's three recommended fixes: desktop fit, 44px receipt fold, load on arrival
 
