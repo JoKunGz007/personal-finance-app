@@ -24,7 +24,7 @@ Every payment route already lands in the ledger on its own:
 - A purchase paid by someone else and reimbursed is the reimbursement row.
 
 So a receipt that contributed to income or spending totals would double-count in all three cases.
-Receipts attach detail to money already recorded, and receipt statistics are a **separate lens**
+Receipts attach detail to money already recorded, and receipt statistics (D-214, on `/receipts`) are a **separate lens**
 beside the ledger rather than a second ledger inside it. This is what keeps the exact-money,
 append-only and audit invariants untouched by the whole feature, and it is why this is a new
 domain rather than a change to the ledger's core.

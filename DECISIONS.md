@@ -4,8 +4,8 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158, D-212 and D-213** — the two open questions this file has
-named since the twelfth boundary, the newest entry, and the sixteenth boundary's own record of
+This file carries **D-141, D-158, D-212, D-213 and D-214** — the two open questions this file has
+named since the twelfth boundary, the two newest entries, and the sixteenth boundary's own record of
 itself. **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
 `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. `scripts/check-docs.mjs`
@@ -393,6 +393,19 @@ a reason to keep it rather than a reason it cannot ever move.
 
 - **D-212** — Receipts match the ledger on a measured two-hour window, the owner's decision wins, and backup moves to v9
 - **D-213** — The sixteenth boundary moves D-198 … D-211 on the owner's word, and this file again holds its two open questions, the newest entry and the boundary's own record
+- **D-214** — Receipt statistics are computed in SQL on `/receipts`, never added to a ledger total, and item figures trust only complete item lists
+
+## D-214 — Receipt statistics are computed in SQL on `/receipts`, never added to a ledger total, and item figures trust only complete item lists
+
+- Date: 2026-09-23
+- Status: **Built, reviewed, gated; migration 031 on hosted; committed as `53fc190`, pushed, confirmed live.** Migration 031 (`public.receipt_statistics()`), `lib/receipt-statistics.ts`, `GET /api/v1/receipts/statistics`, `app/receipt-statistics.tsx`, pgTAP `019`. The last unbuilt part of PLAN task 56.
+- **A separate lens, placed on `/receipts` rather than `/statistics`.** A receipt is never money (task 56), so nothing here is read by `ledger_statistics` and nothing there reads this. Putting it on `/statistics` would have set receipt totals beside ledger totals as if they could be compared or added.
+- **What counts**: every receipt's net, partial or not. Item figures (units, item spend, discounts, most bought, most spent) read only receipts whose `items_complete` is true, and only merchandise: not a promotion line, not a zero-priced line. An item is named by `display_name` when the owner set one, else the printed name, so a truncated and a whole name are two items until the owner joins them.
+- **Computed in SQL over every receipt**, on D-160's rule. This also keeps the figures clear of the PostgREST row cap D-212 left open on the receipt list. The average receipt is D-160's exact quotient/remainder pair. Security invoker: row-level security scopes it, and a session without MFA sees zero receipts (asserted). No table, no column, so **backup stays v9**.
+- **`completeness` and `items_complete` can disagree**, found by `/code-review high`. `capture_receipt` (029) overwrites `completeness` with the latest source's verdict even when it keeps the stored items, so a complete short receipt followed by a partial full invoice reads `completeness = 'partial'` with trusted items. The list's "· partial" now reads `items_complete`, the same rule the statistics count by. The column itself is unchanged. The review also found: the panel not reloading after a save, an ambiguous "Items total" label (now "Items before discounts"), and missing table captions, all fixed. Left: a store's branch name is `min(branch_name)`, arbitrary if two readings spell it differently.
+- **Pushed after reading the backup state from hosted, 69 / 69**: 031 adds a function only and changes no owner data. Dry-run first, then read back: 13 receipts, sequence unchanged, anon cannot execute.
+- **Confirmed live** in the signed-in pane: the panel loads all 13 receipts with no error. Items before discounts minus discounts equals the total, as it must when every receipt is complete. There is no sideways overflow at 375px. No value recorded.
+- Gate: pgTAP **19 files, 492, PASS**; Vitest **1072 passed / 7 skipped across 50 files**, re-run after the review fixes; `tsc` clean; `eslint` 2 pre-existing warnings; `check:docs --strict` and `pnpm build` clean.
 
 ## D-213 — The sixteenth boundary moves D-198 … D-211 on the owner's word, and this file again holds its two open questions, the newest entry and the boundary's own record
 
