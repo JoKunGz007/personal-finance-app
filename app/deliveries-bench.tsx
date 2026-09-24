@@ -5,6 +5,7 @@ import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { LedgerNote } from "@/app/ledger-note";
 import { LinemanCapture } from "@/app/lineman-capture";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
+import { schemeRealCost } from "@/lib/delivery-cost";
 import { formatThb } from "@/lib/money";
 import {
   deliveryListSchema, deliverySyncReportSchema, deliveryTime, describeSyncReport,
@@ -143,7 +144,8 @@ export function DeliveriesBench() {
                 order is dated when it was placed, and matches a LINE PAY or LINE MAN row of what was
                 charged, from 5 minutes before that time to 30 after.
                 An order paid with เป๋าตัง was paid outside the app, in full or for its food, and
-                only what was charged is ever a ledger row.
+                only what was charged is ever a ledger row. Its real cost under ไทยช่วยไทย is 40% of
+                the food the wallet paid, plus the fee in full.
               </LedgerNote>
             </div>
           </div>
@@ -179,6 +181,7 @@ export function DeliveriesBench() {
                     {delivery.adjustments.some((row) => row.kind === "unprinted") ? <span className="receipt-chip warn">not all on the e-receipt</span> : null}
                     {delivery.charged_minor !== null && delivery.charged_minor !== delivery.total_minor && delivery.charged_minor !== "0"
                       ? <span className="receipt-chip quiet">{formatThb(delivery.charged_minor)} charged, food paid outside</span> : null}
+                    <SchemeChip delivery={delivery} />
                     <span className="receipt-amount numeric">{formatThb(delivery.total_minor)}</span>
                   </summary>
                   <p className="ledger-status">
@@ -303,6 +306,12 @@ export function DeliveriesBench() {
       )}
     </>
   );
+}
+
+// What a ไทยช่วยไทย order really cost, beside the printed total it does not change.
+function SchemeChip({ delivery }: { delivery: Parameters<typeof schemeRealCost>[0] }) {
+  const cost = schemeRealCost(delivery);
+  return cost === null ? null : <span className="receipt-chip quiet">ไทยช่วยไทย · real cost {formatThb(cost)}</span>;
 }
 
 function dishCount(delivery: { items: readonly { quantity: number }[] }): string {
