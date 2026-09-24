@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { LedgerNote } from "@/app/ledger-note";
 import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
 import { captureLinemanRequest, deliveryCaptureResultSchema } from "@/lib/deliveries";
 import { readLinemanOrder, readLinemanPage, type LinemanPage, type ParsedLinemanOrder } from "@/lib/delivery-lineman";
@@ -100,12 +101,15 @@ export function LinemanCapture({ onSaved }: { onSaved: () => void }) {
       <div className="cash-heading">
         <p className="section-index">Add</p>
         <h2 id="lineman-add-title">A LINE MAN order</h2>
+        <LedgerNote label="About reading LINE MAN screenshots">
+          The screenshots are sent to Google Cloud Vision to be read, and stored nowhere, on either
+          side. Only the order is kept: your name, phone and addresses are ignored and never stored.
+        </LedgerNote>
       </div>
       <div className="slip-form">
         <p className="field-help">
-          Pick one order&apos;s screenshots together, starting with the one showing the order number.
-          They are sent to Google Cloud Vision to be read (stored nowhere, either side); your name,
-          phone and addresses are never read. Check the order below before saving it.
+          Pick one order&apos;s screenshots together, the one with the order number first, and check
+          the order below before saving it.
         </p>
         <label className="account-control">
           <span>LINE MAN order-page screenshots</span>

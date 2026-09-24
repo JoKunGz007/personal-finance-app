@@ -135,12 +135,13 @@ export function DeliveriesBench() {
         <div className="bench-heading">
           <p className="section-index">Stored</p>
           <div>
-            <h2 id="stored-deliveries-title">On this ledger</h2>
+            <h2 id="stored-deliveries-title">Food orders</h2>
             <div className="heading-note">
               <LedgerNote label="About stored orders">
                 Every order stored here, newest first. A GrabFood order is dated when its e-receipt
                 was sent, and matches a GRAB row of its exact total up to two hours before. A LINE MAN
-                order is dated when it was placed, and matches a row of what was charged just after.
+                order is dated when it was placed, and matches a LINE PAY or LINE MAN row of what was
+                charged, from 5 minutes before that time to 30 after.
                 An order paid with เป๋าตัง was paid outside the app, in full or for its food, and
                 only what was charged is ever a ledger row.
               </LedgerNote>
@@ -172,7 +173,8 @@ export function DeliveriesBench() {
                   <summary>
                     <span className="receipt-when"><time dateTime={deliveryTime(delivery)}>{bangkokTime(deliveryTime(delivery))}</time></span>
                     <span className="receipt-branch">{delivery.restaurant}</span>
-                    <span className="receipt-count">{delivery.items.reduce((sum, item) => sum + item.quantity, 0)} dishes</span>
+                    <span className="receipt-count">{dishCount(delivery)}</span>
+                    {delivery.platform === "lineman" ? <span className="receipt-chip quiet">LINE MAN</span> : null}
                     <span className={`receipt-chip ${MATCH_CHIP[delivery.match.status].tone}`}>{MATCH_CHIP[delivery.match.status].label}</span>
                     {delivery.adjustments.some((row) => row.kind === "unprinted") ? <span className="receipt-chip warn">not all on the e-receipt</span> : null}
                     {delivery.charged_minor !== null && delivery.charged_minor !== delivery.total_minor && delivery.charged_minor !== "0"
@@ -301,6 +303,11 @@ export function DeliveriesBench() {
       )}
     </>
   );
+}
+
+function dishCount(delivery: { items: readonly { quantity: number }[] }): string {
+  const dishes = delivery.items.reduce((sum, item) => sum + item.quantity, 0);
+  return `${dishes} ${dishes === 1 ? "dish" : "dishes"}`;
 }
 
 const PLATFORM_LABEL = { grabfood: "GrabFood", lineman: "LINE MAN" } as const;

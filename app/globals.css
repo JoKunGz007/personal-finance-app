@@ -1485,6 +1485,8 @@ footer p { margin: 0; }
   td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--muted); font: 500 9px/1 var(--font-data); text-transform: uppercase; letter-spacing: .06em; }
   td:nth-child(2), td:nth-child(3), td:last-child { grid-column: 1 / -1; }
   td:last-child { text-align: right !important; }
+  /* A stacked receipt or order card with no quantity would print its label over nothing. */
+  .receipt-list td:empty { display: none; }
   .backup-band { margin-bottom: 32px; padding: 22px 18px; }
   .backup-form { grid-template-columns: 1fr; }
   footer { align-items: flex-start; flex-direction: column; gap: 6px; }
