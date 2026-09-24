@@ -1697,6 +1697,9 @@ footer p { margin: 0; }
   .ledger-controls { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .ledger-controls > button { grid-column: auto; }
   .ledger-controls > :not(button) { grid-column: 1 / -1; }
+  /* The one-column rule's `grid-column: auto` for this field outranks the line above (0,2,0 over
+     0,1,1), which left it half a row wide in this two-track grid. */
+  .ledger-controls > .ledger-filter { grid-column: 1 / -1; }
   .ledger-controls .filters-toggle { width: 100%; }
 
   /* #10: on a card, the description a person recognises leads; the bank's channel code follows. */
