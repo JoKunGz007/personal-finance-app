@@ -48,7 +48,7 @@ missing screenshot, would attach a total to the wrong order.
 
 **Rides come from the same sender in a different template**: subject "Your Grab E-Receipt", body
 headed "E-Receipt/Abbreviated Tax Invoice" with the ride type ("Standard Bike", "Saver Bike").
-Not read yet. The same mailbox also carries "Sorry your order was cancelled" and GrabCoins
+Read since D-222; the layout is below. The same mailbox also carries "Sorry your order was cancelled" and GrabCoins
 promotions, which are not receipts.
 
 ## LINE MAN: two forms, and no email
@@ -89,7 +89,7 @@ Measured over all 114 real food receipts in the four backfill bundles by `script
 - `รหัสการจอง`, `สถานที่เริ่มต้นการเดินทาง:` and `รูปแบบการชำระเงิน:` each carry their value on the next line. The destination and the name on the receipt sit between them under their own labels and are never read.
 - After `ค่าจัดส่ง`, each line is a **discount printed with a minus sign** (`- ฿ n`; rides print `฿ -n`) or, on 2 receipts, a **charge printed without one**. A discount's name can itself contain a baht figure, so only an amount-only line is an amount.
 - **A GrabCoins redemption is not printed on the e-receipt.** One receipt's lines do not reach its printed total, and the Grab app's order page shows the missing deduction as GrabCoins. The reader stores such an order with an `unprinted` line sized to the gap, only when both printed totals agree and more was taken off than printed (D-219).
-- Rides use the "E-Receipt/Abbreviated Tax Invoice" template and are skipped.
+- Rides use the "E-Receipt/Abbreviated Tax Invoice" template; see the ride layout below.
 
 ## Matching a GrabFood order to the ledger, measured 2026-09-24
 
@@ -99,4 +99,25 @@ Measured over the 100 paid orders against the hosted ledger, counts and lags onl
 - **Every matched row's bank description names `GRAB`**, so the automatic rule requires it; a manual link does not.
 - The amount is the email's printed total, negated, to the minor unit, including on the `unprinted` order.
 - An order with no row is normal: one paid with another card, or one older than the first imported statement.
-- Grab ride payments are `GRAB` rows too and have no stored order yet (rides are skipped).
+- Grab ride payments are `GRAB` rows too. Orders and rides are proposed together, so a row both want is ambiguous, and the database never links one row to both (D-222).
+
+## The Grab ride e-receipt's layout, measured 2026-09-24
+
+Measured over all 276 real ride receipts in the four backfill bundles by `scripts/measure-grab-mail.ts` (`--rides`, `--rides-detail`, `--rides-parse`), as labels and counts only (D-222). Read on the server by `parseGrabRide` in `lib/delivery-grab.ts`; 276 of 276 read.
+
+- **The heading, then the ride type** on the next line: 10 values, all Latin text, for example "Saver Bike", "GrabBike (Win)" and "Standard | Van".
+- **`Picked up on D Month YYYY`**, with the full English month name and no time. There is no `+0700` send-time line.
+- **`Booking ID: A-…`**, then `Total Paid` and its amount, then the rating, `Compliments for driver`, and the driver's name. **The reader never reads those three.**
+- **`Breakdown`**: label and amount pairs, then `Total Paid` and its amount. The labels seen are `Fare`, `Platform Fee` (printed `฿ N*`, with a VAT asterisk), and optionally `Promo`, `GrabCoins` and `Toll`. Promo and GrabCoins print negative, and a toll prints positive. On 2 rides a GrabCoins amount prints bare (`-99`, with no baht sign).
+- **`Passenger`**, the passenger's name (never read), `Profile`, `PERSONAL`, `Paid by`, the card's last four, and the amount paid. Optional marketing lines follow, until `Got an issue…`.
+- **`Your Trip`**, then `X.XX km • N mins` (once `N hour N min`), eight `⋮`, and then the pickup place, pickup time, drop-off place and drop-off time. Times look like `8:05PM`. Then `Grab Thailand`.
+- **Money checks, all 276**: fare + platform fee + charges − discounts = the bottom total = the top total = the amount paid.
+- **Stored**: the ride type, both places and both times (the owner's reversal of the never-store rule, for ride places only), distance, duration, the last four, and the breakdown. The drop-off takes the pickup date, plus one day when its time is earlier on the clock.
+
+## Matching a Grab ride to the ledger, measured 2026-09-24
+
+Measured over the 276 stored rides against the hosted ledger, counts and lags only (D-222). Applied by `lib/delivery-match.ts` over `public.ride_ledger_candidates()` (migration 035).
+
+- **Grab charges at booking.** Of 183 rides with a `GRAB` row of the exact total within three days, 176 landed 1–15 minutes before pickup, 2 at 16–30 before, 2 within 15 after, and 2 over two hours before (booked ahead). The window is 30 minutes before pickup to 15 after, the owner's choice.
+- Inside that window no ride had two rows, no row was wanted by two rides, and none fell in an order's window.
+- Of the 93 rides with no row, 53 predate the first SCB statement; the rest were most likely paid with another card.

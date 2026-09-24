@@ -154,3 +154,17 @@ the top of `GOTCHAS.md`.
 - Cause: Gmail answers IMAP `SEARCH SUBJECT` with its own word-based index, not RFC 3501's substring match. `E-Receipt` does not match `e-receipts` (the backfill bundles' subject), and the search also failed on the forwards' subject in the probe that found this.
 - Avoid: search for a whole word that every candidate's subject carries — `Grab` — and let the content decide what is a receipt (`lib/server/delivery-mailbox.ts` `DELIVERY_SEARCH`). When a search returns nothing, probe with several single-word searches and counts before trusting "empty".
 - Verify: 2026-09-23 (D-219), measured against the real statement mailbox by `scripts/measure-grab-mail.ts --probe`: `E-Receipt` 0 hits in INBOX and All Mail, `Grab` 4 (the four bundles), counts only.
+
+## A Grab ride's card is charged at booking, so a window keyed on the drop-off matches almost nothing
+
+- Symptom: rides stored with correct times, and nearly every ride reads "no ledger row" although a `GRAB` row of its exact total sits minutes away.
+- Cause: the assumption that a ride is charged when it ends. It is charged when it is booked: the card row lands before the pickup, so its lag from the drop-off is the trip's length plus the booking lead, and a window around the drop-off misses it.
+- Avoid: measure the lag against **every** time the document carries (pickup and drop-off here, send time for food) before choosing the anchor, and choose the window from the measured distribution with the owner (D-220's method). Key the candidate read on the anchor the measurement picked (`ride_ledger_candidates()`, migration 035).
+- Verify: 2026-09-24 (D-222), counts only on hosted: against the drop-off, 179 of 183 rows landed 1–60 minutes before it, 3 earlier still and 1 within 5 minutes after; against the pickup, 176 landed 1–15 minutes before it. Live after 035: 181 matched, 0 ambiguous.
+
+## A done-flag set while a reader skipped a kind hides that kind from the reader that follows
+
+- Symptom: a new reader for something the Sync used to skip (Grab rides) is built and deployed, and the Sync still reads none of it.
+- Cause: the Sync flags a message done once every receipt in it is resolved, and "a ride, skipped" counted as resolved. Every bundle holding rides was already flagged, so it is never opened again.
+- Avoid: when a reader starts reading what it used to skip, change the done-flag (`DELIVERY_FLAG`, `PLDelivery` → `PLGrab` in `lib/server/delivery-mailbox.ts`) so every message is read once more. Already-stored documents come back as `alreadyStored`, so the re-read is harmless.
+- Verify: 2026-09-24 (D-222): the harness reported 4 of 4 messages flagged `PLDelivery` and 0 flagged `PLGrab` before the deploy. The first live Sync then read all 4 and stored 276 rides, with 114 orders already stored.
