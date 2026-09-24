@@ -108,8 +108,8 @@ export function LinemanCapture({ onSaved }: { onSaved: () => void }) {
       </div>
       <div className="slip-form">
         <p className="field-help">
-          Pick one order&apos;s screenshots together, the one with the order number first, and check
-          the order below before saving it.
+          Pick one order&apos;s screenshots together, order number first, then check the order
+          before saving.
         </p>
         <label className="account-control">
           <span>LINE MAN order-page screenshots</span>

@@ -116,8 +116,8 @@ export function DeliveriesBench() {
         </div>
         <div className="slip-form">
           <p className="field-help">
-            Reads Grab e-receipts, food and rides, that reach the statement mailbox, forwarded or
-            backfilled. An order or ride already stored is never stored twice.
+            Reads the Grab e-receipts, food and rides, in the statement mailbox. Nothing is stored
+            twice.
           </p>
           <div className="slip-actions">
             <button type="button" className="primary-button" disabled={syncing} onClick={() => void sync()}>
