@@ -96,24 +96,92 @@ export function qualifiesAutomatically(candidate: Pick<DeliveryLedgerCandidate, 
     && candidate.lag_minutes >= -DELIVERY_MATCH_WINDOW_MINUTES;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Rides (migration 034, D-222)
+//
+// A ride's card row is charged when the trip ends, so the window is around the drop-off time, not
+// before a send time. **Provisional until measured** on the stored rides, as D-220 measured orders:
+// the owner picks the window from the lag distribution, then these two constants move.
+// ---------------------------------------------------------------------------------------------
+
+export const RIDE_MATCH_BEFORE_MINUTES = 30;
+export const RIDE_MATCH_AFTER_MINUTES = 120;
+
+export const rideLedgerCandidateSchema = deliveryLedgerCandidateSchema.omit({ delivery_id: true }).extend({ ride_id: z.string().uuid() }).strict();
+
+export type RideLedgerCandidate = z.infer<typeof rideLedgerCandidateSchema>;
+
+export const rideMatchDecisionSchema = deliveryMatchDecisionSchema.omit({ delivery_id: true }).extend({ ride_id: z.string().uuid() }).strict();
+
+export type RideMatchDecision = z.infer<typeof rideMatchDecisionSchema>;
+
+export const rideMatchResponseSchema = z.object({ match: rideMatchDecisionSchema }).strict();
+
+/** Whether one ride candidate satisfies the automatic rule on its own, before uniqueness. */
+export function rideQualifiesAutomatically(candidate: Pick<RideLedgerCandidate, "names_grab" | "lag_minutes">): boolean {
+  return candidate.names_grab
+    && candidate.lag_minutes !== null
+    && candidate.lag_minutes >= -RIDE_MATCH_BEFORE_MINUTES
+    && candidate.lag_minutes <= RIDE_MATCH_AFTER_MINUTES;
+}
+
+type Tagged = DeliveryLedgerCandidate & { readonly document: string; readonly ride: boolean };
+
 /**
- * Every order's match state. `paidOutside` names the ฿0 orders: they are `outside` whatever the
- * candidates say, and hold no row that another order could otherwise want.
+ * Every order's and every ride's match state, **decided together** (D-222): a `GRAB` row that an
+ * order and a ride both want is wanted twice, so neither takes it (D-063), and a row either
+ * kind's decision holds is off the table for the other. Each kind keeps its own window.
+ *
+ * A ฿0 document (an order paid outside Grab, or a ride paid in full by discounts) is `outside`
+ * whatever the candidates say, and wants no row.
  */
+export function proposeGrabMatches(
+  orders: readonly { id: string; paidOutside: boolean }[],
+  orderCandidates: readonly DeliveryLedgerCandidate[],
+  orderDecisions: readonly DeliveryMatchDecision[],
+  rides: readonly { id: string; paidOutside: boolean }[],
+  rideCandidates: readonly RideLedgerCandidate[],
+  rideDecisions: readonly RideMatchDecision[]
+): { orders: Map<string, DeliveryMatchState>; rides: Map<string, DeliveryMatchState> } {
+  // Keys carry the kind, so an order and a ride can never be mistaken for one document.
+  const orderKey = (id: string) => `order:${id}`;
+  const rideKey = (id: string) => `ride:${id}`;
+  const matchableOrders = new Set(orders.filter((order) => !order.paidOutside).map((order) => order.id));
+  const matchableRides = new Set(rides.filter((ride) => !ride.paidOutside).map((ride) => ride.id));
+  const candidates: Tagged[] = [
+    ...orderCandidates.filter((candidate) => matchableOrders.has(candidate.delivery_id))
+      .map((candidate) => ({ ...candidate, document: orderKey(candidate.delivery_id), ride: false })),
+    ...rideCandidates.filter((candidate) => matchableRides.has(candidate.ride_id))
+      .map(({ ride_id, ...candidate }) => ({ ...candidate, delivery_id: ride_id, document: rideKey(ride_id), ride: true }))
+  ];
+  const decisions = [
+    ...orderDecisions.filter((decision) => matchableOrders.has(decision.delivery_id))
+      .map((decision) => ({ ...decision, documentId: orderKey(decision.delivery_id) })),
+    ...rideDecisions.filter((decision) => matchableRides.has(decision.ride_id))
+      .map((decision) => ({ ...decision, documentId: rideKey(decision.ride_id) }))
+  ];
+  const states: Map<string, DeliveryMatchState> = proposeLedgerMatches(
+    [...[...matchableOrders].map(orderKey), ...[...matchableRides].map(rideKey)],
+    candidates,
+    decisions,
+    {
+      documentOf: (candidate) => candidate.document,
+      qualifies: (candidate) => (candidate.ride ? rideQualifiesAutomatically(candidate) : qualifiesAutomatically(candidate)),
+      toRow
+    }
+  );
+  const outside: DeliveryMatchState = { status: "outside", row: null, options: [], revision: 0 };
+  return {
+    orders: new Map(orders.map((order) => [order.id, order.paidOutside ? outside : states.get(orderKey(order.id))!])),
+    rides: new Map(rides.map((ride) => [ride.id, ride.paidOutside ? outside : states.get(rideKey(ride.id))!]))
+  };
+}
+
+/** Orders alone: `proposeGrabMatches` with no rides. */
 export function proposeDeliveryMatches(
   orders: readonly { id: string; paidOutside: boolean }[],
   candidates: readonly DeliveryLedgerCandidate[],
   decisions: readonly DeliveryMatchDecision[]
 ): Map<string, DeliveryMatchState> {
-  const matchable = new Set(orders.filter((order) => !order.paidOutside).map((order) => order.id));
-  const states: Map<string, DeliveryMatchState> = proposeLedgerMatches(
-    [...matchable],
-    candidates.filter((candidate) => matchable.has(candidate.delivery_id)),
-    decisions.filter((decision) => matchable.has(decision.delivery_id)).map((decision) => ({ ...decision, documentId: decision.delivery_id })),
-    { documentOf: (candidate) => candidate.delivery_id, qualifies: qualifiesAutomatically, toRow }
-  );
-  for (const order of orders) {
-    if (order.paidOutside) states.set(order.id, { status: "outside", row: null, options: [], revision: 0 });
-  }
-  return states;
+  return proposeGrabMatches(orders, candidates, decisions, [], [], []).orders;
 }

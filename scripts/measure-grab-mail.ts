@@ -14,7 +14,7 @@
 
 import { readFile } from "node:fs/promises";
 import { ImapFlow, type FetchMessageObject, type SearchObject } from "imapflow";
-import { classifyGrabReceipt, htmlToLines, lineShape, pairAmounts, parseGrabFood, FOOD_LABEL, TOTAL_LABEL } from "@/lib/delivery-grab";
+import { classifyGrabReceipt, htmlToLines, lineShape, pairAmounts, parseGrabFood, parseGrabRide, FOOD_LABEL, TOTAL_LABEL } from "@/lib/delivery-grab";
 import { DELIVERY_FLAG, DELIVERY_SEARCH, decodeBody, receiptDocuments } from "@/lib/server/delivery-mailbox";
 import { openMailbox } from "@/lib/server/statement-mailbox-session";
 import type { MessagePart } from "@/lib/server/statement-mailbox";
@@ -130,6 +130,7 @@ async function main() {
     let undecodable = 0, ok = 0, zeroTotal = 0, noFee = 0, noPayment = 0, withOptions = 0, discounted = 0, charged = 0;
     let okShape: string[] | null = null;
     let rideShape: string[] | null = null;
+    const rides: string[][] = [];
     const bigBundleTypes = new Map<string, number>();
     const optionCounts = new Map<number, number>();
 
@@ -146,6 +147,7 @@ async function main() {
         const kind = classifyGrabReceipt(lines);
         kinds[kind] += 1;
         if (kind === "ride" && !rideShape) rideShape = lines.slice(0, 40);
+        if (kind === "ride") rides.push(lines);
         if (kind !== "food") continue;
         const parsed = parseGrabFood(lines);
         if (parsed.ok) {
@@ -187,10 +189,154 @@ async function main() {
       console.log(shapeOf(lines.slice(0, Math.max(totalAt, foodAt, 60) + 3)));
     }
     if (okShape) console.log(`\nOne read receipt (masked):\n${shapeOf(okShape)}`);
-    if (rideShape) console.log(`\nOne ride receipt, first 40 lines (masked):\n${shapeOf(rideShape)}`);
+    if (rideShape && !process.argv.includes("--rides")) console.log(`\nOne ride receipt, first 40 lines (masked):\n${shapeOf(rideShape)}`);
+    if (process.argv.includes("--rides")) printRideTemplate(rides);
+    if (process.argv.includes("--rides-detail")) printRideDetail(rides);
+    if (process.argv.includes("--rides-parse")) printRideParse(rides);
   } finally {
     await session.release();
   }
+}
+
+/**
+ * `--rides` (PLAN task 58 part 5): the ride template's layout, measured before any reader is
+ * written. A line is printed **as text** only when, with its digits masked, it appears in at least
+ * 80% of ride receipts — template labels, not a trip. Every other line goes through `lineShape`, so
+ * a place, name or plate is masked, and amounts are masked everywhere. **Glance over the template
+ * lines before pasting**: a saved place you ride to on most trips could clear 80% too.
+ */
+function printRideTemplate(rides: readonly string[][]) {
+  if (rides.length === 0) return void console.log("\nNo ride receipts.");
+  const digitMasked = (line: string) => line.replace(/\d/gu, "9");
+  const seen = new Map<string, number>();
+  for (const lines of rides) for (const line of new Set(lines.map(digitMasked))) seen.set(line, (seen.get(line) ?? 0) + 1);
+  const template = new Set([...seen].filter(([, n]) => n >= rides.length * 0.8).map(([line]) => line));
+  const shape = (line: string) => {
+    const masked = digitMasked(line);
+    if (template.has(masked)) return masked;
+    if (/^(?:-|−)?\s*฿\s*(?:-|−)?\s*[\d,.]+$/u.test(line)) return /-|−/u.test(line) ? "฿ -9" : "฿ 9";
+    return `~ ${lineShape(line)}`;
+  };
+  const signatures = new Map<string, { count: number; lines: string[] }>();
+  for (const lines of rides) {
+    const shaped = lines.map(shape);
+    const key = shaped.join("\n");
+    const entry = signatures.get(key) ?? { count: 0, lines: shaped };
+    entry.count += 1;
+    signatures.set(key, entry);
+  }
+  const lengths = rides.map((lines) => lines.length).sort((a, b) => a - b);
+  console.log(`\nRide receipts: ${rides.length}; lines per receipt ${lengths[0]}–${lengths.at(-1)}; distinct layouts ${signatures.size}`);
+  console.log("Template lines (in 80%+ of rides, digits masked), with how many rides carry each:");
+  for (const line of template) console.log(`    ${String(seen.get(line)).padStart(4)}  ${line}`);
+  const top = [...signatures.values()].sort((a, b) => b.count - a.count).slice(0, 4);
+  top.forEach(({ count, lines }, index) => {
+    console.log(`\nLayout ${index + 1}, ${count} rides (~ = masked, ฿ 9 = an amount):`);
+    console.log(lines.map((line, at) => `    ${String(at).padStart(3)} ${line}`).join("\n"));
+  });
+}
+
+/**
+ * `--rides-detail` (owner-granted real-data read, 2026-09-24): the ride lines a reader depends on,
+ * **as text** with digits masked and counted — the ride type, the date line, the booking line, each
+ * breakdown label sequence, the payment block and the trip header — plus yes/no answers on whether
+ * the printed money closes. Never the driver's name (the line after "Compliments for driver"), and
+ * never an amount.
+ */
+function printRideDetail(rides: readonly string[][]) {
+  const mask = (line: string) => line.replace(/\d/gu, "9");
+  const amountOnly = /^(-|−)?\s*฿\s*(-|−)?\s*([\d,]+(?:\.\d{1,2})?)\*?$/u;
+  const tally = (label: string, values: string[]) => {
+    const counts = new Map<string, number>();
+    for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+    console.log(`\n${label}:`);
+    for (const [value, n] of [...counts].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(4)}  ${value}`);
+  };
+  const minor = (line: string) => {
+    const match = amountOnly.exec(line);
+    if (!match) return null;
+    const [whole, fraction = ""] = match[3]!.replace(/,/gu, "").split(".");
+    const value = BigInt(whole!) * 100n + BigInt((fraction + "00").slice(0, 2));
+    return match[1] || match[2] ? -value : value;
+  };
+  const types: string[] = [], dates: string[] = [], bookings: string[] = [], breakdowns: string[] = [];
+  const payments: string[] = [], trips: string[] = [], tails: string[] = [], closes: string[] = [];
+  for (const lines of rides) {
+    types.push(mask(lines[1] ?? "(none)"));
+    dates.push(mask(lines[3] ?? "(none)"));
+    bookings.push(mask(lines[4] ?? "(none)").replace(/[A-Za-z]{3,}$/u, "ID"));
+    const from = lines.indexOf("Breakdown");
+    const to = lines.findIndex((line, index) => index > from && line === "Total Paid");
+    const labels: string[] = [];
+    let sum = 0n;
+    for (const line of lines.slice(from + 1, to)) {
+      const value = minor(line);
+      if (value === null) labels.push(mask(line));
+      else { labels.push(value < 0n ? "฿-" : line.endsWith("*") ? "฿*" : "฿"); sum += value; }
+    }
+    breakdowns.push(from < 0 || to < 0 ? "(no breakdown)" : labels.join(" | "));
+    const topTotal = minor(lines[lines.indexOf("Total Paid") + 1] ?? "");
+    const bottomTotal = to >= 0 ? minor(lines[to + 1] ?? "") : null;
+    const paidAt = lines.indexOf("Paid by");
+    const issueAt = lines.findIndex((line) => line.startsWith("Got an issue"));
+    const paid = paidAt >= 0 && issueAt > paidAt ? lines.slice(paidAt + 1, issueAt) : [];
+    payments.push(paid.map((line) => (minor(line) === null ? mask(line) : "฿")).join(" | ") || "(none)");
+    const paidAmount = paid.map(minor).find((value) => value !== null) ?? null;
+    closes.push([
+      `breakdown sums to bottom total ${bottomTotal !== null && sum === bottomTotal}`,
+      `top equals bottom ${topTotal !== null && topTotal === bottomTotal}`,
+      `paid-by amount equals total ${paidAmount !== null && paidAmount === bottomTotal}`
+    ].join("; "));
+    const tripAt = lines.indexOf("Your Trip");
+    trips.push(mask(lines[tripAt + 1] ?? "(none)"));
+    const grabAt = lines.indexOf("Grab Thailand");
+    const dots = lines.slice(tripAt + 2, grabAt).filter((line) => line === "⋮").length;
+    const rest = lines.slice(tripAt + 2, grabAt).filter((line) => line !== "⋮");
+    tails.push(`${dots} dots, then ${rest.length} lines: ${rest.map((line) => (/^\d{1,2}:\d{2}\s?[AP]M$/iu.test(line) ? "TIME" : /^\d{1,2}:\d{2}/u.test(line) ? mask(line) : "PLACE")).join(" | ")}`);
+  }
+  tally("Line 1 (ride type?)", types);
+  tally("Line 3 (date?)", dates);
+  tally("Line 4 (booking?)", bookings);
+  tally("Breakdown (labels as printed; ฿ amount, ฿* VAT-marked, ฿- negative)", breakdowns);
+  tally("Paid by block", payments);
+  tally("Money checks", closes);
+  tally("Trip header (line after Your Trip)", trips);
+  tally("Trip section shape", tails);
+}
+
+/**
+ * `--rides-parse` (D-222): the app's own ride reader, `parseGrabRide`, over every ride receipt, as
+ * counts only — how many read, each refusal code with its fixed message, and yes/no tallies of the
+ * shapes the reader accepted. No place, name, time, booking ID or amount is printed.
+ */
+function printRideParse(rides: readonly string[][]) {
+  const outcomes = new Map<string, number>();
+  const bump = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
+  const types = new Map<string, number>(), adjustments = new Map<string, number>(), payments = new Map<string, number>();
+  const bookings = new Set<string>();
+  let overnight = 0, duplicates = 0;
+  for (const lines of rides) {
+    const parsed = parseGrabRide(lines);
+    if (!parsed.ok) { bump(outcomes, `refused ${parsed.code}: ${parsed.message}`); continue; }
+    const ride = parsed.value;
+    bump(outcomes, "read");
+    bump(types, ride.rideType);
+    bump(adjustments, ride.adjustments.map((row) => `${row.name} (${row.kind})`).join(", ") || "(none)");
+    bump(payments, ride.paymentMethod.replace(/\d/gu, "9"));
+    if (ride.droppedOffAt.slice(0, 10) !== ride.pickedUpAt.slice(0, 10)) overnight += 1;
+    if (bookings.has(ride.bookingId)) duplicates += 1;
+    bookings.add(ride.bookingId);
+  }
+  const print = (label: string, map: Map<string, number>) => {
+    console.log(`\n${label}:`);
+    for (const [key, n] of [...map].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(4)}  ${key}`);
+  };
+  console.log(`\nparseGrabRide over ${rides.length} ride receipts:`);
+  print("Outcome", outcomes);
+  print("Ride type", types);
+  print("Adjustments (names as printed)", adjustments);
+  print("Paid by (digits masked)", payments);
+  console.log(`\nDrop-off on the next day: ${overnight}; same booking ID read twice: ${duplicates}; distinct bookings: ${bookings.size}`);
 }
 
 /**

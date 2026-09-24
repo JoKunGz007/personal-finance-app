@@ -9,7 +9,7 @@ import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
 import { formatDate, formatDateParts, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 import { OverlayCategoryForm } from "@/app/overlay-category-form";
-import { type StoredDelivery } from "@/lib/deliveries";
+import { type StoredDelivery, type StoredRide } from "@/lib/deliveries";
 import { type StoredReceipt } from "@/lib/receipts";
 
 /**
@@ -40,6 +40,7 @@ export function LedgerStatementRow({
   autoExcluded,
   receipt,
   delivery,
+  ride,
   actions
 }: {
   row: Extract<ReconciledRow, { kind: "confirmed" }>;
@@ -75,6 +76,8 @@ export function LedgerStatementRow({
   receipt: StoredReceipt | null;
   /** The GrabFood order this row paid for, when one is matched or linked (D-220). Itemization only. */
   delivery: StoredDelivery | null;
+  /** The Grab ride this row paid for, when one is matched or linked (D-222). Itemization only. */
+  ride: StoredRide | null;
   actions: LedgerActions;
 }) {
   // The row actions fold behind "⋯" (D-205 on a phone, every viewport since D-207).
@@ -135,6 +138,7 @@ export function LedgerStatementRow({
           {transaction.source_components.length > 1 ? <em>2 components</em> : null}
           {receipt ? <LedgerReceipt receipt={receipt} /> : null}
           {delivery ? <LedgerDelivery delivery={delivery} /> : null}
+          {ride ? <LedgerRide ride={ride} /> : null}
         </td>
         {/* No chip for a statement row with no slip. It is the ledger's default
             state — on this ledger, essentially every row — so a badge on each
@@ -573,6 +577,32 @@ function LedgerDelivery({ delivery }: { delivery: StoredDelivery }) {
         )}
         {delivery.adjustments.map((row) => (
           <li key={`a${row.position}`} className={row.kind === "charge" ? undefined : "receipt-discount"}>
+            <span>{row.name}</span>
+            <span className="numeric">{row.kind === "charge" ? "" : "−"}{formatThb(row.amount_minor)}</span>
+          </li>
+        ))}
+      </ul>
+      <a href="/deliveries">Open on Deliveries</a>
+    </details>
+  );
+}
+
+/** The same for a Grab ride (D-222): where it went, and its fare lines. Never money. */
+function LedgerRide({ ride }: { ride: StoredRide }) {
+  return (
+    <details className="ledger-receipt">
+      <summary>Grab · {ride.ride_type} · {ride.pickup_place} → {ride.dropoff_place}</summary>
+      <ul>
+        <li>
+          <span>Fare</span>
+          <span className="numeric">{formatThb(ride.fare_minor)}</span>
+        </li>
+        <li>
+          <span>Platform fee</span>
+          <span className="numeric">{formatThb(ride.platform_fee_minor)}</span>
+        </li>
+        {ride.adjustments.map((row) => (
+          <li key={row.position} className={row.kind === "charge" ? undefined : "receipt-discount"}>
             <span>{row.name}</span>
             <span className="numeric">{row.kind === "charge" ? "" : "−"}{formatThb(row.amount_minor)}</span>
           </li>

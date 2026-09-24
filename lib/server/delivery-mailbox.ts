@@ -1,4 +1,5 @@
-// Reading GrabFood e-receipts out of the statement mailbox, over IMAP (PLAN task 58 part 1).
+// Reading Grab e-receipts — food orders and rides — out of the statement mailbox, over IMAP (PLAN
+// task 58 parts 1 and 5).
 //
 // The third caller of the mailbox after the statement script and the statement Sync, and the first
 // that reads a **body** rather than an attachment: an e-receipt is an HTML email with no PDF, which
@@ -25,8 +26,11 @@
 //
 // ## Marking a message done
 //
-// A message is flagged `PLDelivery` once **every** receipt in it is resolved — stored, already
-// stored, a ride, or not a receipt — so the next sync skips it. A message with any refused receipt
+// A message is flagged `PLGrab` once **every** receipt in it is resolved — stored, already stored,
+// or not a receipt — so the next sync skips it. **The flag was `PLDelivery` until rides were read**
+// (D-222): that flag marked messages whose rides had been skipped, so a new flag makes every Grab
+// message read once more. The orders in them come back as already stored, which costs one query
+// per message. A message with any refused receipt
 // is left unflagged and re-read next time, so a reader fix picks it up without anyone re-sending
 // mail; re-reading is cheap because a stored order is recognised by its booking ID and skipped. One
 // flag per message rather than per part: a bundle has a hundred parts, and a keyword per part is a
@@ -34,10 +38,10 @@
 
 import type { ImapFlow, FetchMessageObject, SearchObject } from "imapflow";
 import type { MessagePart } from "@/lib/server/statement-mailbox";
-import { classifyGrabReceipt, htmlToLines, parseGrabFood, type ParsedDelivery } from "@/lib/delivery-grab";
+import { classifyGrabReceipt, htmlToLines, parseGrabFood, parseGrabRide, type ParsedDelivery, type ParsedRide } from "@/lib/delivery-grab";
 import type { DeliverySyncReport } from "@/lib/deliveries";
 
-export const DELIVERY_FLAG = "PLDelivery";
+export const DELIVERY_FLAG = "PLGrab";
 // **The word `Grab`, not `E-Receipt`.** Gmail's IMAP SUBJECT search matches whole words, so
 // `E-Receipt` found none of the bundles ("Grab e-receipts backfill") — measured 2026-09-23 against
 // the real mailbox, 0 hits where `Grab` found all four. `Grab` also covers Grab's own "Your Grab
@@ -135,14 +139,19 @@ export function decodeBody(raw: Buffer, document: Pick<ReceiptDocument, "encodin
   }
 }
 
-/** What happened to one food order the route was handed. */
+/** What happened to one food order or ride the route was handed. */
 export type OrderOutcome = "captured" | "alreadyStored" | "disagrees" | "storeRefused";
 
 /** Stores a message's food orders, in order, and says what happened to each. */
 export type StoreOrders = (orders: readonly ParsedDelivery[]) => Promise<OrderOutcome[]>;
 
+/** The same for rides. */
+export type StoreRides = (rides: readonly ParsedRide[]) => Promise<OrderOutcome[]>;
+
+export type Stores = { readonly orders: StoreOrders; readonly rides: StoreRides };
+
 export function emptyReport(): DeliverySyncReport {
-  return { messages: 0, captured: 0, alreadyStored: 0, rides: 0, notReceipts: 0, refused: {}, truncated: false };
+  return { messages: 0, captured: 0, alreadyStored: 0, ridesCaptured: 0, ridesAlreadyStored: 0, notReceipts: 0, refused: {}, truncated: false };
 }
 
 function countRefusal(report: DeliverySyncReport, code: string) {
@@ -150,18 +159,20 @@ function countRefusal(report: DeliverySyncReport, code: string) {
 }
 
 /**
- * Reads the receipts in one message's fetched bodies into the report, stores the food orders, and
- * says whether every receipt in it is resolved (so the message may be flagged done).
+ * Reads the receipts in one message's fetched bodies into the report, stores the food orders and
+ * the rides, and says whether every receipt in it is resolved (so the message may be flagged done).
+ * A ride's refusal codes carry a `RIDE_` prefix, so the report tells the two readers apart.
  */
 export async function readMessage(
   documents: readonly ReceiptDocument[],
   bodies: ReadonlyMap<string, Buffer>,
   decodedParts: ReadonlySet<string>,
-  store: StoreOrders,
+  stores: Stores,
   report: DeliverySyncReport
 ): Promise<boolean> {
   let resolved = true;
   const orders: ParsedDelivery[] = [];
+  const rides: ParsedRide[] = [];
   for (const document of documents) {
     const raw = bodies.get(document.part);
     const html = raw ? decodeBody(raw, document, decodedParts.has(document.part)) : null;
@@ -173,7 +184,12 @@ export async function readMessage(
     const lines = htmlToLines(html);
     const kind = classifyGrabReceipt(lines);
     if (kind === "ride") {
-      report.rides += 1;
+      const parsed = parseGrabRide(lines);
+      if (parsed.ok) rides.push(parsed.value);
+      else {
+        countRefusal(report, `RIDE_${parsed.code}`);
+        resolved = false;
+      }
     } else if (kind === "other") {
       report.notReceipts += 1;
     } else {
@@ -186,12 +202,21 @@ export async function readMessage(
     }
   }
   if (orders.length > 0) {
-    const outcomes = await store(orders);
-    for (const outcome of outcomes) {
+    for (const outcome of await stores.orders(orders)) {
       if (outcome === "captured") report.captured += 1;
       else if (outcome === "alreadyStored") report.alreadyStored += 1;
       else {
         countRefusal(report, outcome === "disagrees" ? "DISAGREES" : "STORE_REFUSED");
+        resolved = false;
+      }
+    }
+  }
+  if (rides.length > 0) {
+    for (const outcome of await stores.rides(rides)) {
+      if (outcome === "captured") report.ridesCaptured += 1;
+      else if (outcome === "alreadyStored") report.ridesAlreadyStored += 1;
+      else {
+        countRefusal(report, outcome === "disagrees" ? "RIDE_DISAGREES" : "RIDE_STORE_REFUSED");
         resolved = false;
       }
     }
@@ -210,7 +235,7 @@ export async function readMessage(
  */
 export async function syncDeliveryMail(
   client: ImapFlow,
-  store: StoreOrders,
+  stores: Stores,
   deadline: number,
   now: () => number = Date.now
 ): Promise<DeliverySyncReport> {
@@ -252,7 +277,7 @@ export async function syncDeliveryMail(
       const body = fetched ? fetched.bodyParts?.get(document.part) ?? fetched.bodyParts?.get(document.part.toLowerCase()) : undefined;
       if (body) bodies.set(document.part, body);
     }
-    const resolved = await readMessage(documents, bodies, (fetched && fetched.binaryParts) || new Set(), store, report);
+    const resolved = await readMessage(documents, bodies, (fetched && fetched.binaryParts) || new Set(), stores, report);
     // Best-effort, as statement sync's flag is: a missed flag costs one re-read, never a wrong row.
     if (resolved) await client.messageFlagsAdd(uid, [DELIVERY_FLAG], { uid: true }).catch(() => false);
   }

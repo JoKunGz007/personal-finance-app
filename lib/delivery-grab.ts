@@ -8,7 +8,7 @@
 // forwarded copy still comes from Grab, but a backfilled one arrives inside a bundle from the
 // owner's own address, and a hand-forward can come from anywhere. So the body decides: the food
 // template is headed `ทานอาหารให้อร่อย!` and names GrabFood; the ride template is headed
-// "E-Receipt/Abbreviated Tax Invoice". Rides are recognised and skipped, never parsed (later work).
+// "E-Receipt/Abbreviated Tax Invoice". Rides have their own reader, `parseGrabRide`, at the end.
 //
 // **Only what the order needs is read.** The destination label, the name on the receipt and every
 // rider detail are never looked up, so nothing downstream can store them (the contract's "What is
@@ -318,4 +318,226 @@ export function lineShape(line: string): string {
     .replace(/\p{Script=Thai}+/gu, "ก")
     .replace(/[A-Za-z]+/gu, (word) => (word === "x" || word === "X" ? word : "a"));
   return masked.replace(/\p{Co}/gu, (mark) => KNOWN_LABELS[mark.charCodeAt(0) - 0xe000]!);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rides (PLAN task 58 part 5, D-222)
+//
+// The ride template, measured 2026-09-24 over all 276 real ride receipts by the owner-run harness
+// (`scripts/measure-grab-mail.ts --rides-detail`), counts and labels only:
+//
+//   E-Receipt/Abbreviated Tax Invoice · the ride type · … · `Picked up on D Month YYYY` (no time,
+//   and unlike food no `+0700` line) · `Booking ID: A-…` · `Total Paid` · `฿ N` · the rating ·
+//   `Compliments for driver` · the driver's name · … · `Breakdown` · label / amount pairs ·
+//   `Total Paid` · `฿ N` · `Passenger` · the passenger's name · `Profile` · `PERSONAL` · `Paid by` ·
+//   the card's last four · `฿ N` · optional marketing · `Got an issue…` · `Your Trip` ·
+//   `X.XX km • N mins` · eight `⋮` · pickup place · pickup time · drop-off place · drop-off time ·
+//   `Grab Thailand`.
+//
+// **Read by label, never by position**, and never near a name: the rating, the driver's name, the
+// passenger's name and any plate sit between labels this reader skips over, so nothing downstream
+// can store them. The pickup and drop-off places and times *are* read — the owner reversed D-218's
+// never-store rule for ride places only (D-222).
+//
+// Breakdown labels seen: Fare, Platform Fee, and optionally Promo, GrabCoins and Toll. The platform
+// fee prints `฿ N*` (a VAT asterisk), and in 2 rides a GrabCoins amount prints as a bare `-99` with
+// no baht sign; both are accepted, the second only straight after a GrabCoins label. The sums close
+// in all 276: fare + fee + charges − discounts = the bottom total = the top total = the amount paid.
+// ---------------------------------------------------------------------------------------------
+
+export const RIDE_BOOKING_LABEL = "Booking ID";
+export const RIDE_TOTAL_LABEL = "Total Paid";
+export const RIDE_BREAKDOWN_LABEL = "Breakdown";
+export const RIDE_FARE_LABEL = "Fare";
+export const RIDE_FEE_LABEL = "Platform Fee";
+export const RIDE_PAID_BY_LABEL = "Paid by";
+export const RIDE_TRIP_LABEL = "Your Trip";
+export const RIDE_FOOTER = "Grab Thailand";
+const RIDE_COINS_LABEL = "GrabCoins";
+
+export type RideAdjustment = {
+  readonly position: number;
+  /** A discount prints negative (Promo, GrabCoins); a charge positive (Toll). Amount always positive. */
+  readonly kind: "discount" | "charge";
+  readonly name: string;
+  readonly amountMinor: MinorUnitString;
+};
+
+export type ParsedRide = {
+  readonly platform: "grab";
+  readonly bookingId: string;
+  /** As printed: "Saver Bike", "JustGrab", "GrabCar (Airport)". */
+  readonly rideType: string;
+  /** Pickup date plus pickup time, Bangkok (ISO, +07:00). */
+  readonly pickedUpAt: string;
+  /** The pickup date plus the drop-off time, a day later when that time is earlier than pickup's. */
+  readonly droppedOffAt: string;
+  readonly pickupPlace: string;
+  readonly dropoffPlace: string;
+  readonly distanceMeters: number;
+  readonly durationMinutes: number;
+  /** The line under "Paid by", as printed (the card's last four). */
+  readonly paymentMethod: string;
+  readonly fareMinor: MinorUnitString;
+  readonly platformFeeMinor: MinorUnitString;
+  readonly adjustments: readonly RideAdjustment[];
+  readonly totalMinor: MinorUnitString;
+};
+
+const FULL_MONTHS = [
+  "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"
+];
+const PICKED_UP_ON = /^Picked up on (\d{1,2}) ([A-Za-z]+) (\d{4})$/u;
+const CLOCK = /^(\d{1,2}):(\d{2})\s?([AP]M)$/iu;
+const RIDE_AMOUNT = /^(-|−)?\s*฿\s*(-|−)?\s*([\d,]+(?:\.\d{1,2})?)\*?$/u;
+const BARE_NEGATIVE = /^(?:-|−)\s*([\d,]+(?:\.\d{1,2})?)$/u;
+const DISTANCE_DURATION = /^(\d+(?:\.\d{1,3})?) km • (.+)$/u;
+const DURATION = /^(?:(\d+) hours?)?\s*(?:(\d+) mins?)?$/u;
+// Grab's product name, Latin text (10 values over 276 real rides: "GrabBike Saver", "Standard I Car
+// only", "GrabCar Priority (BETA)", "Standard | Van"). A narrower class refused the `|`, so the line
+// is held to its shape instead: Latin-led, short, and no Thai, baht sign or sentence punctuation — so
+// a greeting that moved under the heading is refused rather than stored as the ride type.
+const RIDE_TYPE = /^[A-Za-z][^\p{Script=Thai}฿!?.:]{1,39}$/u;
+
+type RideAmount = { readonly negative: boolean; readonly minor: MinorUnitString };
+
+function rideAmount(line: string | undefined): RideAmount | null {
+  const match = line === undefined ? null : RIDE_AMOUNT.exec(line);
+  if (!match || (match[1] !== undefined && match[2] !== undefined)) return null;
+  return { negative: match[1] !== undefined || match[2] !== undefined, minor: parseThb(match[3]!).minor };
+}
+
+/** `8:05PM` as minutes after midnight, or null. */
+function clockMinutes(line: string): number | null {
+  const match = CLOCK.exec(line);
+  if (!match) return null;
+  const hour = Number(match[1]), minute = Number(match[2]);
+  if (hour < 1 || hour > 12 || minute > 59) return null;
+  return ((hour % 12) + (match[3]!.toUpperCase() === "PM" ? 12 : 0)) * 60 + minute;
+}
+
+function bangkokIso(year: number, month: number, day: number, minutes: number): string {
+  const at = new Date(Date.UTC(year, month - 1, day) + minutes * 60_000);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}T${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())}:00+07:00`;
+}
+
+/** "3.45" km as 3450 metres, from the digits rather than a float. */
+function metres(km: string): number {
+  const [whole, fraction = ""] = km.split(".");
+  return Number(whole) * 1000 + Number((fraction + "000").slice(0, 3));
+}
+
+const refuse = (code: DeliveryRefusal, message: string) => ({ ok: false as const, code, message });
+
+/** Reads a ride e-receipt's lines. Call only on lines `classifyGrabReceipt` called `ride`. */
+export function parseGrabRide(lines: readonly string[]): DeliveryRead<ParsedRide> {
+  const headingAt = lines.findIndex((line) => line.includes(RIDE_HEADING));
+  if (headingAt < 0) return refuse("MISSING_FIELD", "No ride heading was found.");
+  const rideType = lines[headingAt + 1] ?? "";
+  if (!RIDE_TYPE.test(rideType)) return refuse("MISSING_FIELD", "No ride type line was found.");
+
+  // The date: `Picked up on D Month YYYY`, the full English month name, and no time.
+  let date: { year: number; month: number; day: number } | null = null;
+  for (const line of lines) {
+    const match = PICKED_UP_ON.exec(line);
+    if (!match) continue;
+    const month = FULL_MONTHS.indexOf(match[2]!.toLowerCase()) + 1;
+    const year = Number(match[3]), day = Number(match[1]);
+    const check = new Date(Date.UTC(year, month - 1, day));
+    if (month === 0 || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) {
+      return refuse("MALFORMED_LINE", "The pickup date is not a date.");
+    }
+    date = { year, month, day };
+    break;
+  }
+  if (!date) return refuse("MISSING_FIELD", "No pickup date line was found.");
+
+  const bookingId = labelValue(lines, `${RIDE_BOOKING_LABEL}:`)?.split(" ")[0] ?? "";
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{5,}$/u.test(bookingId)) return refuse("MISSING_FIELD", "No booking ID was found.");
+
+  // The top total: the first `Total Paid`, before the breakdown.
+  const breakdownAt = lines.indexOf(RIDE_BREAKDOWN_LABEL);
+  if (breakdownAt < 0) return refuse("MISSING_FIELD", "No breakdown was found.");
+  const topAt = lines.indexOf(RIDE_TOTAL_LABEL);
+  const topTotal = topAt >= 0 && topAt < breakdownAt ? rideAmount(lines[topAt + 1]) : null;
+  if (!topTotal || topTotal.negative) return refuse("MISSING_FIELD", "No total was found at the top.");
+
+  // The breakdown: label / amount pairs until the second `Total Paid`.
+  const bottomAt = lines.findIndex((line, index) => index > breakdownAt && line === RIDE_TOTAL_LABEL);
+  const bottomTotal = bottomAt < 0 ? null : rideAmount(lines[bottomAt + 1]);
+  if (!bottomTotal || bottomTotal.negative) return refuse("MISSING_FIELD", "The breakdown has no total.");
+  const pairs = lines.slice(breakdownAt + 1, bottomAt);
+  if (pairs.length % 2 !== 0) return refuse("MALFORMED_LINE", "A breakdown line has no amount.");
+  let fare: MinorUnitString | null = null;
+  let fee: MinorUnitString | null = null;
+  const adjustments: RideAdjustment[] = [];
+  for (let index = 0; index < pairs.length; index += 2) {
+    const label = pairs[index]!;
+    if (rideAmount(label) !== null) return refuse("MALFORMED_LINE", "A breakdown amount has no label.");
+    let amount = rideAmount(pairs[index + 1]);
+    // A GrabCoins redemption can print as a bare `-99`, with no baht sign — only after that label.
+    if (!amount && label.includes(RIDE_COINS_LABEL)) {
+      const bare = BARE_NEGATIVE.exec(pairs[index + 1]!);
+      if (bare) amount = { negative: true, minor: parseThb(bare[1]!).minor };
+    }
+    if (!amount) return refuse("MALFORMED_LINE", "A breakdown line has no amount.");
+    if (label === RIDE_FARE_LABEL || label === RIDE_FEE_LABEL) {
+      if (amount.negative) return refuse("MALFORMED_LINE", "A fare or fee prints negative.");
+      if ((label === RIDE_FARE_LABEL ? fare : fee) !== null) return refuse("MALFORMED_LINE", "A fare or fee line is printed twice.");
+      if (label === RIDE_FARE_LABEL) fare = amount.minor;
+      else fee = amount.minor;
+    } else {
+      if (BigInt(amount.minor) === 0n) return refuse("MALFORMED_LINE", "A breakdown line is zero.");
+      adjustments.push({ position: adjustments.length + 1, kind: amount.negative ? "discount" : "charge", name: label, amountMinor: amount.minor });
+    }
+  }
+  if (fare === null) return refuse("MISSING_FIELD", "No fare line was found.");
+  if (fee === null) return refuse("MISSING_FIELD", "No platform fee line was found.");
+
+  const totalMinor = bottomTotal.minor;
+  if (topTotal.minor !== totalMinor) return refuse("TOTAL_MISMATCH", "The total at the top does not equal the total at the bottom.");
+  const net = adjustments.reduce((sum, row) => sum + (row.kind === "charge" ? 1n : -1n) * BigInt(row.amountMinor), 0n);
+  if (BigInt(fare) + BigInt(fee) + net !== BigInt(totalMinor)) {
+    return refuse("TOTAL_MISMATCH", "Fare plus fee plus charges minus discounts does not equal the total.");
+  }
+
+  // Payment: `Paid by`, the method as printed, then the amount paid, which must be the total.
+  const paidAt = lines.findIndex((line, index) => index > bottomAt && line === RIDE_PAID_BY_LABEL);
+  const paymentMethod = paidAt >= 0 ? lines[paidAt + 1] ?? "" : "";
+  if (paymentMethod === "" || rideAmount(paymentMethod) !== null) return refuse("MISSING_FIELD", "No payment method was found.");
+  const paid = rideAmount(lines[paidAt + 2]);
+  if (!paid || paid.negative || paid.minor !== totalMinor) return refuse("TOTAL_MISMATCH", "The amount paid does not equal the total.");
+
+  // The trip: distance and duration, then pickup place, pickup time, drop-off place, drop-off time.
+  const tripAt = lines.findIndex((line, index) => index > paidAt && line === RIDE_TRIP_LABEL);
+  const footerAt = tripAt < 0 ? -1 : lines.findIndex((line, index) => index > tripAt && line === RIDE_FOOTER);
+  if (footerAt < 0) return refuse("MISSING_FIELD", "No trip section was found.");
+  const measured = DISTANCE_DURATION.exec(lines[tripAt + 1] ?? "");
+  const duration = measured ? DURATION.exec(measured[2]!) : null;
+  if (!measured || !duration || (duration[1] === undefined && duration[2] === undefined)) {
+    return refuse("MALFORMED_LINE", "The trip's distance and duration line is not the known shape.");
+  }
+  const stops = lines.slice(tripAt + 2, footerAt).filter((line) => line !== "⋮");
+  if (stops.length !== 4) return refuse("MALFORMED_LINE", "The trip does not print one pickup and one drop-off.");
+  const [pickupPlace, pickupClock, dropoffPlace, dropoffClock] = stops as [string, string, string, string];
+  const pickupMinutes = clockMinutes(pickupClock);
+  const dropoffMinutes = clockMinutes(dropoffClock);
+  if (pickupMinutes === null || dropoffMinutes === null || clockMinutes(pickupPlace) !== null || clockMinutes(dropoffPlace) !== null) {
+    return refuse("MALFORMED_LINE", "The trip does not print one pickup and one drop-off.");
+  }
+  const dropoffOffset = dropoffMinutes < pickupMinutes ? dropoffMinutes + 24 * 60 : dropoffMinutes;
+
+  return {
+    ok: true,
+    value: {
+      platform: "grab", bookingId, rideType,
+      pickedUpAt: bangkokIso(date.year, date.month, date.day, pickupMinutes),
+      droppedOffAt: bangkokIso(date.year, date.month, date.day, dropoffOffset),
+      pickupPlace, dropoffPlace,
+      distanceMeters: metres(measured[1]!),
+      durationMinutes: Number(duration[1] ?? 0) * 60 + Number(duration[2] ?? 0),
+      paymentMethod, fareMinor: fare, platformFeeMinor: fee, adjustments, totalMinor
+    }
+  };
 }

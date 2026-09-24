@@ -7,9 +7,9 @@ import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { formatThb } from "@/lib/money";
 import {
   deliveryListSchema, deliverySyncReportSchema, describeSyncReport,
-  type DeliverySyncReport, type StoredDelivery
+  type DeliverySyncReport, type StoredDelivery, type StoredRide
 } from "@/lib/deliveries";
-import { deliveryMatchResponseSchema } from "@/lib/delivery-match";
+import { deliveryMatchResponseSchema, rideMatchResponseSchema } from "@/lib/delivery-match";
 import { ledgerRequest } from "@/lib/wire";
 
 // One request reads until its time budget and says `truncated`; the page asks again. A backfill of
@@ -23,11 +23,19 @@ function addReports(total: DeliverySyncReport, next: DeliverySyncReport): Delive
     messages: total.messages + next.messages,
     captured: total.captured + next.captured,
     alreadyStored: total.alreadyStored + next.alreadyStored,
-    rides: total.rides + next.rides,
+    ridesCaptured: total.ridesCaptured + next.ridesCaptured,
+    ridesAlreadyStored: total.ridesAlreadyStored + next.ridesAlreadyStored,
     notReceipts: total.notReceipts + next.notReceipts,
     refused,
     truncated: next.truncated
   };
+}
+
+/** "4.2 km · 17 min" from stored metres and minutes. */
+function tripLength(ride: StoredRide): string {
+  const km = (ride.distance_meters / 1000).toFixed(ride.distance_meters % 1000 === 0 ? 0 : 1);
+  const hours = Math.floor(ride.duration_minutes / 60), minutes = ride.duration_minutes % 60;
+  return `${km} km · ${hours > 0 ? `${hours} h ` : ""}${minutes} min`;
 }
 
 /** Bangkok wall time, which is what the e-receipt printed. */
@@ -39,6 +47,7 @@ function bangkokTime(iso: string): string {
 
 export function DeliveriesBench() {
   const [deliveries, setDeliveries] = useState<StoredDelivery[] | null>(null);
+  const [rides, setRides] = useState<StoredRide[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signInNote, setSignInNote] = useState<string | null>(null);
@@ -65,6 +74,7 @@ export function DeliveriesBench() {
       return;
     }
     setDeliveries(result.data.deliveries);
+    setRides(result.data.rides);
   }, []);
   useLoadOnArrival(load, signInNote !== null);
 
@@ -105,12 +115,12 @@ export function DeliveriesBench() {
         </div>
         <div className="slip-form">
           <p className="field-help">
-            Reads GrabFood e-receipts that reach the statement mailbox, forwarded or backfilled. Ride
-            receipts are skipped for now. An order already stored is never stored twice.
+            Reads Grab e-receipts, food and rides, that reach the statement mailbox, forwarded or
+            backfilled. An order or ride already stored is never stored twice.
           </p>
           <div className="slip-actions">
             <button type="button" className="primary-button" disabled={syncing} onClick={() => void sync()}>
-              {syncing ? "Syncing…" : "Sync GrabFood orders"}
+              {syncing ? "Syncing…" : "Sync Grab receipts"}
             </button>
           </div>
           {syncNote ? <p className="ledger-status" role="status">{syncNote}</p> : null}
@@ -216,6 +226,73 @@ export function DeliveriesBench() {
           </ul>
         )}
       </section>
+
+      {rides === null ? null : (
+        <section className="captured-slips" aria-labelledby="stored-rides-title">
+          <div className="bench-heading">
+            <p className="section-index">Rides</p>
+            <div>
+              <h2 id="stored-rides-title">Grab rides</h2>
+              <div className="heading-note">
+                <LedgerNote label="About stored rides">
+                  Every ride stored here, newest first, dated when it ended. A ride itemizes a card
+                  payment the ledger already holds, found by its exact total on a GRAB row around the
+                  drop-off time. A row that both an order and a ride could be is left for you to pick.
+                </LedgerNote>
+              </div>
+            </div>
+          </div>
+          {rides.length === 0 ? (
+            <p className="ledger-empty" role="status">No ride has been stored on this ledger yet.</p>
+          ) : (
+            <ul className="receipt-list">
+              {rides.map((ride) => (
+                <li key={ride.id}>
+                  <details>
+                    <summary>
+                      <span className="receipt-when"><time dateTime={ride.dropped_off_at}>{bangkokTime(ride.dropped_off_at)}</time></span>
+                      <span className="receipt-branch">{ride.pickup_place} → {ride.dropoff_place}</span>
+                      <span className="receipt-count">{ride.ride_type}</span>
+                      <span className={`receipt-chip ${RIDE_CHIP[ride.match.status].tone}`}>{RIDE_CHIP[ride.match.status].label}</span>
+                      <span className="receipt-amount numeric">{formatThb(ride.total_minor)}</span>
+                    </summary>
+                    <p className="ledger-status">
+                      {ride.booking_id} · {tripLength(ride)} · picked up {bangkokTime(ride.picked_up_at)} · paid by {ride.payment_method}
+                    </p>
+                    {ride.match.status === "outside" ? null : (
+                      <LedgerMatchPanel
+                        endpoint={`/api/v1/rides/${ride.id}/match`}
+                        match={ride.match}
+                        sentence={RIDE_SENTENCE[ride.match.status]}
+                        outsideRange="a ledger row outside the three days around this ride."
+                        responseSchema={rideMatchResponseSchema}
+                        onChanged={() => void load()}
+                      />
+                    )}
+                    <div className="table-scroll">
+                      <table className="ledger-table">
+                        <thead>
+                          <tr><th>Line</th><th className="numeric">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                          <tr><td data-label="Line">Fare</td><td data-label="Amount" className="numeric">{formatThb(ride.fare_minor)}</td></tr>
+                          <tr><td data-label="Line">Platform fee</td><td data-label="Amount" className="numeric">{formatThb(ride.platform_fee_minor)}</td></tr>
+                          {ride.adjustments.map((row) => (
+                            <tr key={row.position} className={row.kind === "charge" ? undefined : "receipt-discount"}>
+                              <td data-label="Line">{row.name}</td>
+                              <td data-label="Amount" className="numeric">{row.kind === "charge" ? "" : "−"}{formatThb(row.amount_minor)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </>
   );
 }
@@ -238,4 +315,18 @@ const MATCH_SENTENCE = {
   ambiguous: "More than one ledger row could be this payment, so none was chosen. Pick one below if you know which.",
   none: "No ledger row found. That is normal for an order paid with another card, or when the statement covering this date is not imported yet.",
   outside: "Paid outside Grab, so there is no card row."
+} as const;
+
+const RIDE_CHIP = {
+  ...MATCH_CHIP,
+  outside: { label: "paid by discounts", tone: "quiet" }
+} as const;
+
+const RIDE_SENTENCE = {
+  matched: "Paid by this ledger row, found automatically:",
+  linked: "You linked this ride to:",
+  declined: "You said no ledger row pays for this ride.",
+  ambiguous: "More than one ledger row could be this payment — or a food order wants the same row — so none was chosen. Pick one below if you know which.",
+  none: "No ledger row found. That is normal for a ride paid with another card, or when the statement covering this date is not imported yet.",
+  outside: "Paid in full by discounts, so there is no card row."
 } as const;

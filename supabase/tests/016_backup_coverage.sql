@@ -16,7 +16,7 @@ select plan(2);
 -- checks grants the same way, against `information_schema`, not through the API.
 
 create temporary table backup_table_kinds (kind text primary key);
--- Kept in sync by hand with `lib/backup-contract.ts`'s `BACKUP_TABLE_KINDS` (v11). There is no
+-- Kept in sync by hand with `lib/backup-contract.ts`'s `BACKUP_TABLE_KINDS` (v12). There is no
 -- way to import the TypeScript array into pgTAP, so this list is the SQL side of the same
 -- contract the restore's own `v_expected_kinds` and `restore_chunks_v2_binding` CHECK already
 -- restate — a drift between any of them is exactly the class of bug this test exists to catch
@@ -35,7 +35,8 @@ insert into backup_table_kinds(kind) values
   ('receipts'),('receipt_items'),('receipt_discounts'),
   ('receipt_match_overlays'),('receipt_match_revisions'),
   ('deliveries'),('delivery_items'),('delivery_adjustments'),
-  ('delivery_match_overlays'),('delivery_match_revisions');
+  ('delivery_match_overlays'),('delivery_match_revisions'),
+  ('rides'),('ride_adjustments'),('ride_match_overlays'),('ride_match_revisions');
 
 create temporary table backup_exclusions (kind text primary key, reason text not null);
 -- The backup machinery itself, deliberately never carried by a backup of itself. Excluding a

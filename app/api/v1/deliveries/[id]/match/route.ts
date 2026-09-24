@@ -12,6 +12,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     noun: "order",
     notOwned: "delivery not owned",
     decisionSchema: deliveryMatchDecisionSchema,
-    extraRefusals: [["paid outside the platform", "This order was paid outside Grab, so it has no card row to link.", 422]]
+    extraRefusals: [
+      ["paid outside the platform", "This order was paid outside Grab, so it has no card row to link.", 422],
+      ["already claimed by a ride", "A ride is already linked to that ledger row. Undo that link first.", 409]
+    ]
   });
 }

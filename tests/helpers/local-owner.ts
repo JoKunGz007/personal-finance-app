@@ -212,6 +212,10 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     -- removes them; match decisions, items and discounts first, for the FK reason every block
     -- above gives (a match decision also references a transaction, removed further down).
     -- Deliveries hang off nothing either (migration 032); items and discounts before the order.
+    delete from public.ride_match_revisions where owner_id = '${owner}';
+    delete from public.ride_match_overlays where owner_id = '${owner}';
+    delete from public.ride_adjustments where owner_id = '${owner}';
+    delete from public.rides where owner_id = '${owner}';
     delete from public.delivery_match_revisions where owner_id = '${owner}';
     delete from public.delivery_match_overlays where owner_id = '${owner}';
     delete from public.delivery_adjustments where owner_id = '${owner}';

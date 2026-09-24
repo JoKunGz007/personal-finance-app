@@ -23,7 +23,7 @@ import {
 } from "@/lib/transactions";
 import { categoryListSchema, type Category } from "@/lib/categories";
 import { receiptListSchema, receiptsOnRows, type StoredReceipt } from "@/lib/receipts";
-import { deliveriesOnRows, deliveryListSchema, type StoredDelivery } from "@/lib/deliveries";
+import { deliveriesOnRows, deliveryListSchema, ridesOnRows, type StoredDelivery, type StoredRide } from "@/lib/deliveries";
 import {
   deeperPages,
   emptyWindow,
@@ -199,6 +199,8 @@ export function TransactionsView() {
   const [receiptByRow, setReceiptByRow] = useState<Map<string, StoredReceipt>>(new Map());
   // The same for delivery orders (D-220's match, computed by the deliveries route).
   const [deliveryByRow, setDeliveryByRow] = useState<Map<string, StoredDelivery>>(new Map());
+  // And rides (D-222), from the same read.
+  const [rideByRow, setRideByRow] = useState<Map<string, StoredRide>>(new Map());
   // The category/note write's own error line, on the same convention as `reportingError` and
   // `correctionError` — cleared by `toggleCorrecting`, so a stale refusal from a previous panel
   // is never read as belonging to the one just opened.
@@ -997,6 +999,7 @@ export function TransactionsView() {
       const deliveriesResult = await deliveriesRequest;
       if (superseded()) return;
       setDeliveryByRow(new Map(deliveriesResult.ok ? deliveriesOnRows(deliveriesResult.data.deliveries) : []));
+      setRideByRow(new Map(deliveriesResult.ok ? ridesOnRows(deliveriesResult.data.rides) : []));
 
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
@@ -1632,6 +1635,7 @@ export function TransactionsView() {
                         autoExcluded={autoExcluded.has(row.transaction.id)}
                         receipt={receiptByRow.get(row.transaction.id) ?? null}
                         delivery={deliveryByRow.get(row.transaction.id) ?? null}
+                        ride={rideByRow.get(row.transaction.id) ?? null}
                         actions={actions}
                       />
                     )];

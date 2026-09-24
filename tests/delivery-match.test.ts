@@ -3,7 +3,10 @@ import {
   DELIVERY_MATCH_WINDOW_MINUTES,
   deliveryMatchRequestSchema,
   proposeDeliveryMatches,
+  proposeGrabMatches,
   qualifiesAutomatically,
+  rideQualifiesAutomatically,
+  type RideLedgerCandidate,
   type DeliveryLedgerCandidate,
   type DeliveryMatchDecision,
   type DeliveryMatchState
@@ -138,5 +141,57 @@ describe("deliveriesOnRows", () => {
       stored("dddddddd-0000-4000-8000-000000000005", { status: "linked", row: null, options: [], revision: 1 })
     ]);
     expect(pairs.map(([transaction, delivery]) => [transaction, delivery.id])).toEqual([[T1, D1], [T2, D2]]);
+  });
+});
+
+describe("orders and rides decided together (D-222)", () => {
+  const R1 = "cccccccc-0000-4000-8000-000000000001";
+  const rideCandidate = (ride: string, transaction: string, lag: number | null): RideLedgerCandidate => {
+    const rest: Partial<DeliveryLedgerCandidate> = candidate(D1, transaction, lag);
+    delete rest.delivery_id;
+    return { ...(rest as Omit<DeliveryLedgerCandidate, "delivery_id">), ride_id: ride };
+  };
+
+  it("a ride takes a GRAB row around its drop-off, on its own window", () => {
+    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: 3 })).toBe(true);
+    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: -5 })).toBe(true);
+    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: 60 * 24 })).toBe(false);
+    expect(rideQualifiesAutomatically({ names_grab: false, lag_minutes: 3 })).toBe(false);
+    const { rides } = proposeGrabMatches([], [], [], [paid(R1)], [rideCandidate(R1, T1, 3)], []);
+    expect(rides.get(R1)).toMatchObject({ status: "matched", row: { transaction_id: T1 } });
+  });
+
+  it("a row an order and a ride both want goes to neither", () => {
+    const { orders, rides } = proposeGrabMatches(
+      [paid(D1)], [candidate(D1, T1, -8)], [],
+      [paid(R1)], [rideCandidate(R1, T1, 3)], []
+    );
+    expect(orders.get(D1)!.status).toBe("ambiguous");
+    expect(rides.get(R1)!.status).toBe("ambiguous");
+  });
+
+  it("an order's stored link takes its row off every ride", () => {
+    const { rides } = proposeGrabMatches(
+      [paid(D1)], [candidate(D1, T1, -8)], [decision(D1, T1)],
+      [paid(R1)], [rideCandidate(R1, T1, 3)], []
+    );
+    expect(rides.get(R1)).toMatchObject({ status: "none", options: [] });
+  });
+
+  it("a ride's stored link takes its row off every order", () => {
+    const { orders } = proposeGrabMatches(
+      [paid(D1)], [candidate(D1, T1, -8)], [],
+      [paid(R1)], [rideCandidate(R1, T1, 3)], [{ ride_id: R1, decision: "matched", transaction_id: T1, revision: 1 }]
+    );
+    expect(orders.get(D1)).toMatchObject({ status: "none", options: [] });
+  });
+
+  it("a ฿0 ride is outside and wants nothing", () => {
+    const { orders, rides } = proposeGrabMatches(
+      [paid(D1)], [candidate(D1, T1, -8)], [],
+      [{ id: R1, paidOutside: true }], [rideCandidate(R1, T1, 3)], []
+    );
+    expect(rides.get(R1)!.status).toBe("outside");
+    expect(orders.get(D1)!.status).toBe("matched");
   });
 });
