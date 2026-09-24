@@ -402,8 +402,19 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-220** — GrabFood orders match ledger rows on a measured two-hour window before the e-receipt, and backup moves to v11
 - **D-221** — A matched ledger row shows its GrabFood order, and the receipt and delivery match routes share one handler
 - **D-222** — Grab rides are read, stored with their places, and matched around the pickup; one ledger row is never claimed by both an order and a ride, and backup moves to v12
+- **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-225 — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
+
+- Date: 2026-09-25
+- Status: **Shipped as `152b03d`, migration 037 on hosted, confirmed live.** Task: `PLAN.md` 58. Precedents: D-160 (statistics in SQL, no division of money), D-214 (receipt statistics). Files: `supabase/migrations/202610020037_delivery_statistics.sql` (`public.delivery_statistics()`), `lib/delivery-statistics.ts`, `app/api/v1/deliveries/statistics/route.ts`, `app/delivery-statistics.tsx`, `supabase/tests/024_delivery_statistics.sql`, `tests/delivery-statistics.test.ts`.
+- **Asked for by the owner**, including that ไทยช่วยไทย orders count at their real cost (D-224). The figures were chosen by the agent while the owner checked D-224's numbers; they are a starting set to revise: orders, what they cost, the average order, delivery fees, printed discounts (the scheme's own line is the wallet, not a discount), what ไทยช่วยไทย paid; by app; the ten restaurants most spent at; by month with rides beside orders; rides with their average and platform fees; rides by type.
+- **Computed in SQL, D-160's rule**, although the order list is fully loaded today: the same reasons hold as for 031, and rides will reach PostgREST's row cap first. **The real-cost rule now lives twice**, in `lib/delivery-cost.ts` for the chip and in 037 for the totals. pgTAP 024 pins the same cases as `tests/delivery-cost.test.ts`, and the live check below recomputed every total from the list in the page and found them equal.
+- **Months are Bangkok months**, dated as the lists date them: an order by its order time (LINE MAN) or e-receipt send time (GrabFood), a ride by its drop-off. Averages are exact quotient/remainder pairs. Security invoker; a session without MFA sees nothing (asserted). No table, no column: **backup stays v13**.
+- **Hosted**: the backup read **466 / 466** before the push; `--dry-run` named only 037; pushed; read back: `authenticated` may execute, `anon` may not, sequence unchanged.
+- Gate: `pnpm supabase:reset` on 37 migrations; pgTAP **599 across 24 files**, `Result: PASS`; Vitest **1197 passed / 7 skipped across 61 files** (Docker up); `tsc` and `eslint` clean; `pnpm build` clean. **Confirmed live**: the panel loads with no error at desktop and 375px, with no sideways scroll, no target under 44px and no empty card label. Orders, cost, rides, ride cost, each app's cost and the month sums all equal a recount from the order list made in the page. Values not recorded.
 
 ## D-224 — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 
