@@ -121,3 +121,14 @@ Measured over the 276 stored rides against the hosted ledger, counts and lags on
 - **Grab charges at booking.** Of 183 rides with a `GRAB` row of the exact total within three days, 176 landed 1–15 minutes before pickup, 2 at 16–30 before, 2 within 15 after, and 2 over two hours before (booked ahead). The window is 30 minutes before pickup to 15 after, the owner's choice.
 - Inside that window no ride had two rows, no row was wanted by two rides, and none fell in an order's window.
 - Of the 93 rides with no row, 53 predate the first SCB statement; the rest were most likely paid with another card.
+
+## The LINE MAN order page's layout, measured 2026-09-24
+
+Measured over 7 real orders, 2 screenshots each, read once through the app's own Vision call (D-223). Read on the device by `lib/delivery-lineman.ts`; 7 of 7 read.
+
+- **Screenshot 1**: `Order No. LMF-YYMMDD-N…`, then the restaurant (one or two lines, sometimes ending `>` or `(...`), then the **order time** as `12 SEP 26 21:00`. The order number's date must equal the printed date. Then the status, the tip box, the owner's name, phone, both addresses and the note to the rider — **never read** — then `Menu`, sometimes a dish cut off at the screen's edge, and `Reorder`.
+- **Screenshot 2** opens part-way through the owner's block, then `Menu`, then the dishes: `[qty] name ฿ price` (the quantity `1` is sometimes dropped by OCR), then priceless option lines. Then `Food`, `Delivery fee`, each discount as `name - ฿ n`, one `Pay … with …` line, `Total`, and the payment method.
+- **Vision's quirks**: the baht sign reads `$`, `฿` or `B`; `Total` can carry a stray glyph (`Total ? $ 203.00`); Thai words come back spaced apart.
+- **The join**: a later screenshot must repeat one of the two lines above `Menu`, and any complete priced dish the earlier one showed must reappear, priced the same. Two orders to the same address share those lines, so one order per pick and the owner's check are the safety.
+- **Split payment** (2 of 7): `Pay delivery fee with mobile banking ฿ n` or `… with LINE Pay`, under a larger total, with the food paid through เป๋าตัง. The `Pay …` amount is the order's charged amount, and the only part matched to the ledger.
+- **Matching**: the lag is read from the order time, on the charged amount (migration 036). Automatic matching is off until the stored orders are measured.

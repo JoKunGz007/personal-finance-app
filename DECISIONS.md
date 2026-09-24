@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-212 … D-222** — the two open questions this file has
+This file carries **D-141, D-158 and D-212 … D-223** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the sixteenth boundary's own record of
 itself. **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -402,6 +402,20 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-220** — GrabFood orders match ledger rows on a measured two-hour window before the e-receipt, and backup moves to v11
 - **D-221** — A matched ledger row shows its GrabFood order, and the receipt and delivery match routes share one handler
 - **D-222** — Grab rides are read, stored with their places, and matched around the pickup; one ledger row is never claimed by both an order and a ride, and backup moves to v12
+- **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-223 — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+- Date: 2026-09-24
+- Status: **Shipped as `18ee369`, migration 036 on hosted, deployed; not yet used on real orders.** Task: `PLAN.md` 58 part 4. Precedents: D-210 (screenshots through Vision), D-219/D-220 (orders, matching), D-097 (new data in new tables). Files: `lib/delivery-lineman.ts`, `app/lineman-capture.tsx`, `supabase/migrations/202610010036_lineman_orders.sql`, `lib/deliveries.ts`, `lib/delivery-match.ts`, `app/api/v1/deliveries/route.ts` (`POST`), `app/deliveries-bench.tsx`, `supabase/tests/023_lineman_orders.sql`, `tests/delivery-lineman.test.ts`.
+- **Measured before building**, under the owner's real-data grant: the 14 screenshots in `receipts_sample/food_delivery/lineman/` (7 orders, 2 each) were sent once through the app's own Vision call, and the words were cached under the gitignored `.runtime/lineman-vision/`. The layout is in `docs/DELIVERY_CONTRACT.md`. **The reader read 7 of 7**; the dishes summed to Food and food + fee − discounts = total on every one; pairs picked in reverse were refused. The dump that found the layout showed the owner's name, phone and addresses in the session; none of it went into a file.
+- **The join's known limit.** Only the first screenshot carries the order number. A later screenshot is joined by a line repeated just above `Menu`, and by the first screenshot's priced dishes reappearing. For two orders to the same address those lines are identical: pairing one order's first screenshot with another's second read in 30 of 42 cross pairs. **The safety is D-218's: one order per pick**, with the parsed order shown for the owner to check before saving.
+- **Split payment, the owner's call.** In 2 of 7 orders the food was paid with เป๋าตัง and only the fee was charged (`Pay delivery fee with mobile banking`, or with LINE Pay). The `Pay …` line is the order's **charged** amount, and it alone is matched to the ledger; the rest was paid outside the app.
+- **Storage, the owner's call and D-097 together.** A LINE MAN order is a `deliveries` row (platform `lineman`), sharing the dishes, adjustments, matching and `/ledger` fold. The owner chose the same table; D-097's rule (new data in a new table, never a new column) put its own two facts, `ordered_at` and `charged_minor`, in **`lineman_order_details`**. `deliveries` only relaxes: the platform CHECK widens, and `receipt_sent_at` may be null for LINE MAN only, which a CHECK enforces. `capture_delivery`, `delivery_ledger_candidates()` and `set_delivery_match` work from the charged amount and the order time. **Backup v12 → v13**, one kind appended. The v12-into-v13 restore and a split LINE MAN order across a restore were proven against the recovery project.
+- **Capture.** The page reads each screenshot through `POST /api/v1/ocr/read`, parses on the device, and posts only the parse to `POST /api/v1/deliveries` (strict schema). `capture_delivery` re-checks the sums and the charge, and refuses a charge above the total.
+- **No automatic match yet**, from the finance review. The provisional rule (lag −5 to +30 minutes from the order time) had no bank-description filter, unlike the GrabFood and ride rules, so an unrelated payment of the same amount could have been proposed. `LINEMAN_AUTOMATIC_MATCH = false` until the stored orders are measured and the owner picks a window and what the bank row must name. The manual link still offers rows.
+- Gate: `pnpm supabase:reset` on 36 migrations; pgTAP **585 across 23 files**, `Result: PASS`; Vitest **1159 passed / 7 skipped across 56 files**, recovery rehearsal running; `tsc` clean; `eslint` 0 errors, 2 pre-existing warnings; `pnpm build` clean. After the auto-match change: the three affected test files (37 tests), `tsc` and `eslint` were re-run.
+- **Hosted**: the backup read **459 / 459** before the push; `--dry-run` named only 036; pushed. Live after deploy: `/deliveries` shows the LINE MAN picker, and orders (90 / 10 / 14) and rides (181 / 95) are unchanged. **No LINE MAN order is stored yet.**
 
 ## D-222 — Grab rides are read, stored with their places, and matched around the pickup; one ledger row is never claimed by both an order and a ride, and backup moves to v12
 
