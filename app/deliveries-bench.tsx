@@ -6,6 +6,7 @@ import { LedgerNote } from "@/app/ledger-note";
 import { LinemanCapture } from "@/app/lineman-capture";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { schemeRealCost } from "@/lib/delivery-cost";
+import { filterDeliveries, NO_DELIVERY_FILTER, type DeliveryFilter, type DeliveryLedgerFilter, type DeliveryShow } from "@/lib/delivery-filter";
 import { formatThb } from "@/lib/money";
 import {
   deliveryListSchema, deliverySyncReportSchema, deliveryTime, describeSyncReport,
@@ -56,6 +57,9 @@ export function DeliveriesBench() {
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<DeliveryFilter>(NO_DELIVERY_FILTER);
+  const shown = filterDeliveries(deliveries ?? [], rides ?? [], filter);
+  const filtered = filter.show !== "all" || filter.ledger !== "all" || filter.query.trim() !== "";
 
   const load = useCallback(async (automatic = false) => {
     setBusy(true);
@@ -155,7 +159,42 @@ export function DeliveriesBench() {
           <button type="button" className="secondary-button" disabled={busy} onClick={() => void load()}>
             {busy ? "Loading…" : deliveries ? "Reload" : "Show stored orders"}
           </button>
+          {deliveries === null ? null : (
+            <>
+              <label className="account-control">
+                <span>Show</span>
+                <select value={filter.show} onChange={(event) => setFilter({ ...filter, show: event.target.value as DeliveryShow })}>
+                  <option value="all">Orders and rides</option>
+                  <option value="grabfood">GrabFood orders</option>
+                  <option value="lineman">LINE MAN orders</option>
+                  <option value="rides">Grab rides</option>
+                </select>
+              </label>
+              <label className="account-control">
+                <span>Ledger</span>
+                <select value={filter.ledger} onChange={(event) => setFilter({ ...filter, ledger: event.target.value as DeliveryLedgerFilter })}>
+                  <option value="all">Any</option>
+                  <option value="on">On the ledger</option>
+                  <option value="none">No ledger row</option>
+                  <option value="pick">Pick a row</option>
+                  <option value="outside">Paid outside the app</option>
+                  <option value="scheme">ไทยช่วยไทย</option>
+                </select>
+              </label>
+              <label className="account-control ledger-filter">
+                <span>Search</span>
+                <input type="search" name="delivery-search" value={filter.query} placeholder="Restaurant, dish, place, booking…"
+                  onChange={(event) => setFilter({ ...filter, query: event.target.value })} />
+              </label>
+            </>
+          )}
         </div>
+        {filtered && deliveries !== null && rides !== null ? (
+          <p className="ledger-status" aria-live="polite">
+            Showing {shown.deliveries.length} of {deliveries.length} orders and {shown.rides.length} of {rides.length} rides.{" "}
+            <button type="button" className="secondary-button" onClick={() => setFilter(NO_DELIVERY_FILTER)}>Clear filters</button>
+          </p>
+        ) : null}
 
         {signInNote ? <p className="ledger-status" role="status">{signInNote}</p> : null}
         {error ? (
@@ -165,11 +204,13 @@ export function DeliveriesBench() {
           </div>
         ) : null}
 
-        {deliveries === null ? null : deliveries.length === 0 ? (
+        {deliveries === null || filter.show === "rides" ? null : deliveries.length === 0 ? (
           <p className="ledger-empty" role="status">No order has been stored on this ledger yet.</p>
+        ) : shown.deliveries.length === 0 ? (
+          <p className="ledger-empty">No order matches these filters.</p>
         ) : (
           <ul className="receipt-list">
-            {deliveries.map((delivery) => (
+            {shown.deliveries.map((delivery) => (
               <li key={delivery.id}>
                 <details>
                   <summary>
@@ -238,7 +279,7 @@ export function DeliveriesBench() {
         )}
       </section>
 
-      {rides === null ? null : (
+      {rides === null || (filtered && rides.length > 0 && shown.rides.length === 0 && filter.show !== "rides") ? null : (
         <section className="captured-slips" aria-labelledby="stored-rides-title">
           <div className="bench-heading">
             <p className="section-index">Rides</p>
@@ -255,9 +296,11 @@ export function DeliveriesBench() {
           </div>
           {rides.length === 0 ? (
             <p className="ledger-empty" role="status">No ride has been stored on this ledger yet.</p>
+          ) : shown.rides.length === 0 ? (
+            <p className="ledger-empty">No ride matches these filters.</p>
           ) : (
             <ul className="receipt-list">
-              {rides.map((ride) => (
+              {shown.rides.map((ride) => (
                 <li key={ride.id}>
                   <details>
                     <summary>
