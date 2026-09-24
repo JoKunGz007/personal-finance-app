@@ -29,25 +29,26 @@ import { ledgerMatchRequestSchema, proposeLedgerMatches, type LedgerMatchRequest
 export const DELIVERY_MATCH_WINDOW_MINUTES = 120;
 
 /**
- * A LINE MAN order is paid at checkout, so its row is expected just after the printed order time
- * (the lag read is from that time for LINE MAN, migration 036). **Provisional until measured** on
- * the stored orders, as D-220 measured GrabFood; the owner then picks the window. No description
- * filter yet either: what the bank prints for a LINE MAN payment is measured in the same pass.
+ * A LINE MAN order is paid at checkout, so its row lands just after the printed order time (the
+ * lag read is from that time for LINE MAN, migration 036). Measured then chosen by the owner
+ * (D-223, 2026-09-25): of 7 stored orders, 6 had exactly one row of the charged amount, 0–1
+ * minutes after the order time; the only other equal-amount row was a BTS fare 22 hours away.
  */
 export const LINEMAN_MATCH_BEFORE_MINUTES = 5;
 export const LINEMAN_MATCH_AFTER_MINUTES = 30;
 
 /**
- * Off until measured (finance review, D-223): with no description filter, an unrelated payment of
- * the same amount minutes after an order would be proposed, which neither the GrabFood nor the
- * ride rule allows. Until the stored orders are measured and the owner chooses a window and what
- * the bank row must name, a LINE MAN order proposes nothing and the manual link covers it.
+ * What the bank row must name. All 6 measured rows read `LINE PAY` (bill payment); `LINE MAN` is
+ * the mobile-banking QR form. A BTS fare paid through LINE Pay prints `LINEPAY*`, with no space,
+ * and must not match.
  */
-export const LINEMAN_AUTOMATIC_MATCH = false;
+const LINEMAN_BANK_WORDING = /LINE (PAY|MAN)/i;
 
 /** Whether a LINE MAN candidate satisfies the rule on its own, before uniqueness. */
-export function linemanQualifiesAutomatically(candidate: Pick<DeliveryLedgerCandidate, "lag_minutes">): boolean {
-  return LINEMAN_AUTOMATIC_MATCH
+export function linemanQualifiesAutomatically(
+  candidate: Pick<DeliveryLedgerCandidate, "lag_minutes" | "description" | "transaction_label">
+): boolean {
+  return LINEMAN_BANK_WORDING.test(`${candidate.description} ${candidate.transaction_label}`)
     && candidate.lag_minutes !== null
     && candidate.lag_minutes >= -LINEMAN_MATCH_BEFORE_MINUTES
     && candidate.lag_minutes <= LINEMAN_MATCH_AFTER_MINUTES;

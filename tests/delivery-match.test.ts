@@ -199,8 +199,30 @@ describe("orders and rides decided together (D-222)", () => {
 });
 
 describe("LINE MAN orders (D-223)", () => {
-  it("propose no automatic match until the window and the bank's wording are measured, but still offer rows to link", () => {
-    const states = proposeGrabMatches([{ id: D1, paidOutside: false, platform: "lineman" }], [candidate(D1, T1, 2)], [], [], [], []);
-    expect(states.orders.get(D1)).toMatchObject({ status: "none", options: [{ transaction_id: T1 }] });
+  const lineman = (transaction: string, lag: number | null, description: string): DeliveryLedgerCandidate =>
+    ({ ...candidate(D1, transaction, lag, false), description });
+  const propose = (...candidates: DeliveryLedgerCandidate[]) =>
+    proposeGrabMatches([{ id: D1, paidOutside: false, platform: "lineman" }], candidates, [], [], [], []).orders.get(D1)!;
+
+  it("match a LINE PAY or LINE MAN row from 5 minutes before the order time to 30 after", () => {
+    expect(propose(lineman(T1, 1, "จ่ายบิล LINE PAY NOTE : -"))).toMatchObject({ status: "matched", row: { transaction_id: T1 } });
+    expect(propose(lineman(T1, -5, "จ่ายบิล LINE MAN (QR BY TTB)")).status).toBe("matched");
+    expect(propose(lineman(T1, 30, "จ่ายบิล line pay")).status).toBe("matched");
+  });
+
+  it("propose nothing outside the window, but still offer the row to link", () => {
+    for (const lag of [-6, 31, null]) {
+      expect(propose(lineman(T1, lag, "จ่ายบิล LINE PAY"))).toMatchObject({ status: "none", options: [{ transaction_id: T1 }] });
+    }
+  });
+
+  it("never match a row that names neither LINE PAY nor LINE MAN, including a BTS fare paid through LINE Pay", () => {
+    expect(propose(lineman(T1, 1, "LINEPAY*LP_BTS NOTE : -")).status).toBe("none");
+    expect(propose(lineman(T1, 1, "Invented other merchant")).status).toBe("none");
+    expect(propose(candidate(D1, T1, 1)).status).toBe("none");
+  });
+
+  it("call two qualifying rows ambiguous", () => {
+    expect(propose(lineman(T1, 0, "LINE PAY"), lineman(T2, 2, "LINE PAY")).status).toBe("ambiguous");
   });
 });
