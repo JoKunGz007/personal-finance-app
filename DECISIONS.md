@@ -402,7 +402,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-220** — GrabFood orders match ledger rows on a measured two-hour window before the e-receipt, and backup moves to v11
 - **D-221** — A matched ledger row shows its GrabFood order, and the receipt and delivery match routes share one handler
 - **D-222** — Grab rides are read, stored with their places, and matched around the pickup; one ledger row is never claimed by both an order and a ride, and backup moves to v12
+- **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-224 — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
+
+- Date: 2026-09-25
+- Status: **Shipped as `bcec3ac`, confirmed live.** Task: `PLAN.md` 58 part 2. Files: `lib/delivery-cost.ts`, `tests/delivery-cost.test.ts`, `app/deliveries-bench.tsx`.
+- **Why not a link.** Part 2 was to link a ฿0 order to its เป๋าตัง payment. The owner: the wallet has no statement, and a payment made inside Grab or LINE MAN leaves no slip, only a line in the เป๋าตัง app's history, which refuses screenshots and screen recording. Getting past that would mean rooting or defeating the app's protection, which a banking app detects, so it was not proposed. A photo taken with a second device would work and was offered; the owner chose the rule below instead. The ledger's balance is already right, because the wallet top-up is a bank row.
+- **The rule, the owner's, 2026-09-25.** ไทยช่วยไทย pays 60% of the food and none of the delivery fee. Of what the wallet covered, the food share costs 40% and the fee share all of it; promo codes and delivery promos reduce the fee only (the owner's answer when asked). A ฿0 GrabFood order's wallet amount is its one discount line named like `TH…GF…ALL` (all 14 ฿0 orders carry exactly one, measured on hosted, masked names only); a split LINE MAN order's is its total less what the bank was charged, which is added back. Integer satang; 40% rounds to the nearest satang, and 4 × a whole satang count is even, so there is never a tie.
+- **Display only**, as an order is never money (D-209): a chip on `/deliveries` reading ไทยช่วยไทย and the real cost. The owner asked that it also count in statistics; there are no delivery statistics yet, and when they are built they take `schemeRealCost` for these orders.
+- Gate: Vitest **1090 passed / 106 skipped** (Docker off), `tsc` and `eslint` clean. **Confirmed live**: 16 orders carry the chip (the 14 ฿0 GrabFood orders and the 2 split LINE MAN orders), and no ฿0 order lacks it. The owner offered to check a few against the เป๋าตัง history.
 
 ## D-223 — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
 
