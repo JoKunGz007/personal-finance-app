@@ -316,25 +316,24 @@ const MATCH_CHIP = {
   outside: { label: "paid outside the app", tone: "quiet" }
 } as const;
 
-const MATCH_SENTENCE = {
-  matched: "Paid by this ledger row, found automatically:",
-  linked: "You linked this order to:",
-  declined: "You said no ledger row pays for this order.",
-  ambiguous: "More than one ledger row could be this payment, so none was chosen. Pick one below if you know which.",
-  none: "No ledger row found. That is normal for an order paid with another card, or when the statement covering this date is not imported yet.",
-  outside: "Paid outside the app, so there is no card row."
-} as const;
+// What each match status says, for an order or a ride: the same sentences but for the noun, the
+// ride's ambiguity (a food order can want its row) and what paid outside means.
+function matchSentences(noun: "order" | "ride", ambiguousBecause: string, outside: string) {
+  return {
+    matched: "Paid by this ledger row, found automatically:",
+    linked: `You linked this ${noun} to:`,
+    declined: `You said no ledger row pays for this ${noun}.`,
+    ambiguous: `More than one ledger row could be this payment${ambiguousBecause} so none was chosen. Pick one below if you know which.`,
+    none: `No ledger row found. That is normal for ${noun === "order" ? "an order" : "a ride"} paid with another card, or when the statement covering this date is not imported yet.`,
+    outside
+  } as const;
+}
+
+const MATCH_SENTENCE = matchSentences("order", ",", "Paid outside the app, so there is no card row.");
 
 const RIDE_CHIP = {
   ...MATCH_CHIP,
   outside: { label: "paid by discounts", tone: "quiet" }
 } as const;
 
-const RIDE_SENTENCE = {
-  matched: "Paid by this ledger row, found automatically:",
-  linked: "You linked this ride to:",
-  declined: "You said no ledger row pays for this ride.",
-  ambiguous: "More than one ledger row could be this payment — or a food order wants the same row — so none was chosen. Pick one below if you know which.",
-  none: "No ledger row found. That is normal for a ride paid with another card, or when the statement covering this date is not imported yet.",
-  outside: "Paid in full by discounts, so there is no card row."
-} as const;
+const RIDE_SENTENCE = matchSentences("ride", " — or a food order wants the same row —", "Paid in full by discounts, so there is no card row.");
