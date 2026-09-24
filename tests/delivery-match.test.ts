@@ -152,10 +152,12 @@ describe("orders and rides decided together (D-222)", () => {
     return { ...(rest as Omit<DeliveryLedgerCandidate, "delivery_id">), ride_id: ride };
   };
 
-  it("a ride takes a GRAB row around its drop-off, on its own window", () => {
+  it("a ride takes a GRAB row from 30 minutes before its pickup to 15 after, the chosen window", () => {
     expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: 3 })).toBe(true);
-    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: -5 })).toBe(true);
-    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: 60 * 24 })).toBe(false);
+    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: -30 })).toBe(true);
+    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: 15 })).toBe(true);
+    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: -31 })).toBe(false);
+    expect(rideQualifiesAutomatically({ names_grab: true, lag_minutes: 16 })).toBe(false);
     expect(rideQualifiesAutomatically({ names_grab: false, lag_minutes: 3 })).toBe(false);
     const { rides } = proposeGrabMatches([], [], [], [paid(R1)], [rideCandidate(R1, T1, 3)], []);
     expect(rides.get(R1)).toMatchObject({ status: "matched", row: { transaction_id: T1 } });

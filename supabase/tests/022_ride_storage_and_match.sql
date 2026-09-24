@@ -8,7 +8,7 @@ select plan(31);
 -- What this proves: the four tables are select-only to `authenticated` with RLS forced;
 -- `capture_ride` stores a ride with its breakdown, audits it and bumps the sequence; a second
 -- copy is a no-op and a disagreeing one is refused; the server re-checks the sum; the rows are
--- append-only; the candidate read keys its lag on the drop-off; `set_ride_match` holds the amount,
+-- append-only; the candidate read keys its lag on the pickup (migration 035); `set_ride_match` holds the amount,
 -- the revision and one claim per row; and a row an order holds cannot go to a ride, nor the
 -- reverse. Every value below is invented.
 
@@ -38,7 +38,7 @@ delete from auth.mfa_factors where user_id = '11111111-1111-4111-8111-1111111111
 insert into public.accounts(id, owner_id, bank_code, label, account_type, last_four, currency, timezone)
 values ('cccccccc-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', 'SCB', 'Invented SCB', 'savings', '4242', 'THB', 'Asia/Bangkok');
 
--- T1: a GRAB row of ฿81 three minutes after the ride's 20:22 drop-off.
+-- T1: a GRAB row of ฿81 twenty minutes after the ride's 20:05 pickup.
 -- T2: a GRAB row of ฿95, held by an order below.
 -- T3: a GRAB row of ฿81 on the next day — a second candidate, outside any window the page uses.
 insert into public.source_transactions(id, owner_id, account_id, fingerprint_version, fingerprint,
@@ -174,8 +174,8 @@ set local role authenticated;
 select is(
   (select string_agg(right(c.transaction_id::text, 1) || ':' || c.lag_minutes || ':' || c.names_grab, ',' order by c.transaction_id)
      from public.ride_ledger_candidates() c join public.rides r on r.id = c.ride_id where r.booking_id = 'A-INVENTEDRIDE1'),
-  '1:3:true,3:758:true',
-  'a ride''s candidates are the equal-amount rows within three days, lag after the drop-off in Bangkok time'
+  '1:20:true,3:775:true',
+  'a ride''s candidates are the equal-amount rows within three days, lag from the pickup in Bangkok time'
 );
 reset role;
 

@@ -370,7 +370,7 @@ export type ParsedRide = {
   readonly rideType: string;
   /** Pickup date plus pickup time, Bangkok (ISO, +07:00). */
   readonly pickedUpAt: string;
-  /** The pickup date plus the drop-off time, a day later when that time is earlier than pickup's. */
+  /** The pickup date plus the drop-off time, a day later when that time is earlier than pickup's. The match keys on the pickup (migration 035). */
   readonly droppedOffAt: string;
   readonly pickupPlace: string;
   readonly dropoffPlace: string;

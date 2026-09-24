@@ -236,8 +236,8 @@ export function DeliveriesBench() {
               <div className="heading-note">
                 <LedgerNote label="About stored rides">
                   Every ride stored here, newest first, dated when it ended. A ride itemizes a card
-                  payment the ledger already holds, found by its exact total on a GRAB row around the
-                  drop-off time. A row that both an order and a ride could be is left for you to pick.
+                  payment the ledger already holds, found by its exact total on a GRAB row from 30
+                  minutes before pickup to 15 after — Grab charges when the ride is booked. A row that both an order and a ride could be is left for you to pick.
                 </LedgerNote>
               </div>
             </div>

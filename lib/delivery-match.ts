@@ -99,13 +99,15 @@ export function qualifiesAutomatically(candidate: Pick<DeliveryLedgerCandidate, 
 // ---------------------------------------------------------------------------------------------
 // Rides (migration 034, D-222)
 //
-// A ride's card row is charged when the trip ends, so the window is around the drop-off time, not
-// before a send time. **Provisional until measured** on the stored rides, as D-220 measured orders:
-// the owner picks the window from the lag distribution, then these two constants move.
+// Grab charges a ride's card at booking, so the window is around the **pickup** (migration 035).
+// Measured on the 276 real rides, then chosen by the owner (D-222, 2026-09-24): of 183 rides with a
+// GRAB row of their exact total, 176 landed 1–15 minutes before pickup, two 16–30 before, two
+// within 15 after, and two over two hours before (booked ahead, left to a manual link). Inside
+// this window no ride had two rows, no row was wanted by two rides, and none fell in an order's.
 // ---------------------------------------------------------------------------------------------
 
 export const RIDE_MATCH_BEFORE_MINUTES = 30;
-export const RIDE_MATCH_AFTER_MINUTES = 120;
+export const RIDE_MATCH_AFTER_MINUTES = 15;
 
 export const rideLedgerCandidateSchema = deliveryLedgerCandidateSchema.omit({ delivery_id: true }).extend({ ride_id: z.string().uuid() }).strict();
 
