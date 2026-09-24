@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { DeliveryStatisticsPanel } from "@/app/delivery-statistics";
 import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { LedgerNote } from "@/app/ledger-note";
 import { LinemanCapture } from "@/app/lineman-capture";
@@ -58,6 +59,8 @@ export function DeliveriesBench() {
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [filter, setFilter] = useState<DeliveryFilter>(NO_DELIVERY_FILTER);
+  // Counts Syncs and LINE MAN saves, so the statistics reload when what is stored changes.
+  const [changes, setChanges] = useState(0);
   const shown = filterDeliveries(deliveries ?? [], rides ?? [], filter);
   const filtered = filter.show !== "all" || filter.ledger !== "all" || filter.query.trim() !== "";
 
@@ -109,6 +112,7 @@ export function DeliveriesBench() {
         ? ` Not read: ${refused.map(([code, count]) => `${count} ${code.toLowerCase().replaceAll("_", " ")}`).join(", ")}.`
         : ""}${total.truncated ? " More mail is waiting; sync again." : ""}`);
     }
+    setChanges((count) => count + 1);
     await load();
   }
 
@@ -134,7 +138,9 @@ export function DeliveriesBench() {
         </div>
       </section>
 
-      <LinemanCapture onSaved={() => void load()} />
+      <LinemanCapture onSaved={() => { setChanges((count) => count + 1); void load(); }} />
+
+      <DeliveryStatisticsPanel changes={changes} />
 
       <section className="captured-slips" aria-labelledby="stored-deliveries-title">
         <div className="bench-heading">
