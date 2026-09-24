@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { canonicalJson } from "@/lib/canonical";
 import { decryptBackup, encryptBackup } from "@/lib/backup";
 import {
-  backupSnapshotSchema, backupSnapshotSchemaV4, backupSnapshotSchemaV5, backupSnapshotSchemaV6, backupSnapshotSchemaV7, backupSnapshotSchemaV8, backupSnapshotSchemaV9, backupSnapshotSchemaV10, backupSnapshotSchemaV11,
+  backupSnapshotSchema, backupSnapshotSchemaV4, backupSnapshotSchemaV5, backupSnapshotSchemaV6, backupSnapshotSchemaV7, backupSnapshotSchemaV8, backupSnapshotSchemaV9, backupSnapshotSchemaV10, backupSnapshotSchemaV11, backupSnapshotSchemaV12,
   BACKUP_SCHEMA_VERSION,
-  BACKUP_TABLE_KINDS, BACKUP_TABLE_KINDS_V4, BACKUP_TABLE_KINDS_V5, BACKUP_TABLE_KINDS_V6, BACKUP_TABLE_KINDS_V7, BACKUP_TABLE_KINDS_V8, BACKUP_TABLE_KINDS_V9, BACKUP_TABLE_KINDS_V10, BACKUP_TABLE_KINDS_V11
+  BACKUP_TABLE_KINDS, BACKUP_TABLE_KINDS_V4, BACKUP_TABLE_KINDS_V5, BACKUP_TABLE_KINDS_V6, BACKUP_TABLE_KINDS_V7, BACKUP_TABLE_KINDS_V8, BACKUP_TABLE_KINDS_V9, BACKUP_TABLE_KINDS_V10, BACKUP_TABLE_KINDS_V11, BACKUP_TABLE_KINDS_V12
 } from "@/lib/backup-contract";
 import { buildRestorePlan } from "@/lib/restore-plan";
 import {
@@ -256,10 +256,38 @@ commit;
   if (!result.ok) throw new Error(`source ride populate failed: ${result.output}`);
 }
 
+// A LINE MAN order with a split payment — the one v13 table, and a `deliveries` row with no send
+// time. Written directly for the reason the delivery above is.
+const LINEMAN_ID = ID(52);
+function populateSourceLineman(): void {
+  const result = psql(`
+begin;
+set local session_replication_role = replica;
+insert into public.deliveries(id, owner_id, platform, booking_id, restaurant, payment_method, receipt_sent_at,
+  food_minor, delivery_fee_minor, total_minor)
+values ('${LINEMAN_ID}', '${SOURCE_OWNER}', 'lineman', 'LMF-260102-000000001', 'Rehearsal LINE MAN kitchen',
+  'Pay delivery fee with mobile banking', null, 10000, 3000, 11500);
+insert into public.lineman_order_details(delivery_id, owner_id, ordered_at, charged_minor)
+values ('${LINEMAN_ID}', '${SOURCE_OWNER}', '2026-01-02T18:00:00+07:00', 1500);
+insert into public.delivery_items(id, owner_id, delivery_id, position, quantity, name, options, amount_minor)
+values ('${ID(53)}', '${SOURCE_OWNER}', '${LINEMAN_ID}', 1, 1, 'Rehearsal LINE MAN dish', '{}', 10000);
+insert into public.delivery_adjustments(id, owner_id, delivery_id, position, kind, name, amount_minor)
+values ('${ID(54)}', '${SOURCE_OWNER}', '${LINEMAN_ID}', 1, 'discount', 'Rehearsal delivery discount', 1500);
+update public.mutation_sequences set sequence = sequence + 1, updated_at = now() where owner_id = '${SOURCE_OWNER}';
+set local session_replication_role = origin;
+commit;
+`);
+  if (!result.ok) throw new Error(`source LINE MAN populate failed: ${result.output}`);
+}
+
 function cleanSourceReceipt(): void {
   psql(`
 begin;
 set local session_replication_role = replica;
+delete from public.lineman_order_details where delivery_id = '${LINEMAN_ID}';
+delete from public.delivery_adjustments where delivery_id = '${LINEMAN_ID}';
+delete from public.delivery_items where delivery_id = '${LINEMAN_ID}';
+delete from public.deliveries where id = '${LINEMAN_ID}';
 delete from public.ride_match_revisions where ride_id = '${RIDE_ID}';
 delete from public.ride_match_overlays where ride_id = '${RIDE_ID}';
 delete from public.ride_adjustments where ride_id = '${RIDE_ID}';
@@ -335,6 +363,7 @@ const NEWER_THAN_V8 = newerThan(BACKUP_TABLE_KINDS_V8);
 const NEWER_THAN_V9 = newerThan(BACKUP_TABLE_KINDS_V9);
 const NEWER_THAN_V10 = newerThan(BACKUP_TABLE_KINDS_V10);
 const NEWER_THAN_V11 = newerThan(BACKUP_TABLE_KINDS_V11);
+const NEWER_THAN_V12 = newerThan(BACKUP_TABLE_KINDS_V12);
 
 /**
  * Turns a current export into the file an older ledger would have written.
@@ -915,7 +944,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
   // v9's own two tables, carried at v9: a receipt linked to a ledger row, and the revision that
   // recorded it. The v8 test above proves the receipt rows travel; this proves the decision does,
   // with its owner rebound inside the snapshot jsonb as well as in its columns.
-  it("carries a receipt's match decision, a matched delivery order and a declined ride across projects at the current version", async () => {
+  it("carries a receipt's match decision, a matched delivery order and a declined ride and a split LINE MAN order across projects at the current version", async () => {
     assertOnlyDisposableLedgerData([ID(1)]);
 
     clearFactors(CONTAINER, SOURCE_OWNER);
@@ -933,6 +962,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       populateSourceDelivery();
       populateSourceDeliveryMatch();
       populateSourceRide();
+      populateSourceLineman();
 
       const exported = await rpc(API, sourceSession, "export_backup_snapshot");
       expect(exported.status, exported.body).toBe(200);
@@ -960,12 +990,13 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const reExported = await rpc(DESTINATION_API, destinationSession, "export_backup_snapshot");
       expect(reExported.status, reExported.body).toBe(200);
       const landed = reExported.json() as Snapshot;
-      expect(current.tableCounts.deliveries).toBe(1);
+      expect(current.tableCounts.deliveries, "a GrabFood order and a LINE MAN one").toBe(2);
       expect(current.tableCounts.delivery_match_revisions).toBe(1);
       expect(current.tableCounts.ride_match_revisions).toBe(1);
+      expect(current.tableCounts.lineman_order_details).toBe(1);
       for (const kind of ["receipts", "receipt_match_overlays", "receipt_match_revisions", "deliveries", "delivery_items",
         "delivery_adjustments", "delivery_match_overlays", "delivery_match_revisions",
-        "rides", "ride_adjustments", "ride_match_overlays", "ride_match_revisions"] as const) {
+        "rides", "ride_adjustments", "ride_match_overlays", "ride_match_revisions", "lineman_order_details"] as const) {
         const rebound = canonicalJson(current.data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the restore`).toBe(rebound);
       }
@@ -1174,6 +1205,78 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       }
       expect(landed.tableCounts.deliveries, "the delivery order must have travelled").toBe(1);
       expect(landed.tableCounts.delivery_match_overlays, "its match decision must have travelled").toBe(1);
+    } finally {
+      cleanSourceReceipt();
+      cleanSource();
+      clearFactors(CONTAINER, SOURCE_OWNER);
+      clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
+    }
+  }, 180_000);
+
+  // A v12 file — what the owner's hosted backups are written at until migration 036 lands —
+  // restored into a v13 destination, the same method: a genuine v12 artifact made by dropping the
+  // one LINE MAN table v12 predates, which must be empty for that to be lossless.
+  it("restores a v12 file into a v13 destination, leaving the LINE MAN table empty", async () => {
+    assertOnlyDisposableLedgerData([ID(1)]);
+
+    clearFactors(CONTAINER, SOURCE_OWNER);
+    clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
+    const sourceSession = await sessionAt(API, OWNER_EMAIL, OWNER_PASSWORD);
+    const destinationSession = await sessionAt(DESTINATION_API, DESTINATION_EMAIL, DESTINATION_PASSWORD);
+
+    emptyDestination();
+    expect(sourceOwnerTraces(), "the destination must not already hold source-owned rows").toBe(0);
+
+    try {
+      populateSource();
+      populateSourceReceipt();
+      populateSourceReceiptMatch();
+      populateSourceDelivery();
+      populateSourceDeliveryMatch();
+      populateSourceRide();
+
+      const exported = await rpc(API, sourceSession, "export_backup_snapshot");
+      expect(exported.status, exported.body).toBe(200);
+      const current = exported.json() as Snapshot;
+      expect(current.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
+      for (const kind of NEWER_THAN_V12) {
+        expect(current.tableCounts[kind], `${kind} must be empty for the downgrade to be lossless`).toBe(0);
+      }
+
+      const v12 = downgradeTo(current, 12, BACKUP_TABLE_KINDS_V12);
+      const validated = backupSnapshotSchemaV12.safeParse(v12);
+      expect(validated.success, JSON.stringify(validated.error?.issues?.slice(0, 3))).toBe(true);
+
+      const envelope = await encryptBackup(v12, "v12 into v13 rehearsal passphrase 2026");
+      const carried = await decryptBackup(envelope, "v12 into v13 rehearsal passphrase 2026");
+      const plan = await buildRestorePlan(carried);
+      expect(plan.stage.schemaVersion).toBe(12);
+      expect(plan.chunks.map((chunk) => chunk.chunk.kind)).toEqual([...BACKUP_TABLE_KINDS_V12]);
+
+      const staged = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "stage", p_request: plan.stage });
+      expect(staged.status, staged.body).toBe(200);
+      for (const chunk of plan.chunks) {
+        const sent = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "chunk", p_request: chunk });
+        expect(sent.status, `chunk ${chunk.chunk.kind}: ${sent.body}`).toBe(200);
+      }
+      const committed = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "commit", p_request: plan.commit });
+      expect(committed.status, committed.body).toBe(200);
+      expect(sourceOwnerTraces()).toBe(0);
+
+      const reExported = await rpc(DESTINATION_API, destinationSession, "export_backup_snapshot");
+      expect(reExported.status, reExported.body).toBe(200);
+      const landed = reExported.json() as Snapshot;
+      expect(landed.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
+      for (const kind of BACKUP_TABLE_KINDS_V12.filter((table) => table !== "mutation_sequences")) {
+        const rebound = canonicalJson((v12 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
+      }
+      for (const kind of NEWER_THAN_V12) {
+        expect(landed.tableCounts[kind], `${kind} must be present and empty in the re-export`).toBe(0);
+      }
+      expect(landed.tableCounts.deliveries, "the delivery order must have travelled").toBe(1);
+      expect(landed.tableCounts.delivery_match_overlays, "its match decision must have travelled").toBe(1);
+      expect(landed.tableCounts.rides, "the ride must have travelled").toBe(1);
     } finally {
       cleanSourceReceipt();
       cleanSource();

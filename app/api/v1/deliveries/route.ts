@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
-import { paidOutsidePlatform } from "@/lib/deliveries";
+import { deliveryTime, linemanCaptureRequestSchema, paidOutsidePlatform } from "@/lib/deliveries";
 import {
   deliveryLedgerCandidateSchema, deliveryMatchDecisionSchema, proposeGrabMatches,
   rideLedgerCandidateSchema, rideMatchDecisionSchema
@@ -9,7 +9,7 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * Stored delivery orders and Grab rides, newest first, with their breakdowns (migrations 032 and
+ * Stored delivery orders (GrabFood and LINE MAN) and Grab rides, newest first, with their breakdowns (migrations 032 and
  * 034), and each one's match to the ledger (migration 033, D-220; migration 034, D-222). Orders
  * and rides are matched **together**, so a row both want is claimed by neither.
  */
@@ -22,8 +22,7 @@ export async function GET() {
   const [orders, rides, orderCandidates, rideCandidates, orderDecisions, rideDecisions] = await Promise.all([
     auth.supabase
       .from("deliveries")
-      .select("id,platform,booking_id,restaurant,payment_method,receipt_sent_at,food_minor,delivery_fee_minor,total_minor,items:delivery_items(position,quantity,name,options,amount_minor),adjustments:delivery_adjustments(position,kind,name,amount_minor)")
-      .order("receipt_sent_at", { ascending: false }),
+      .select("id,platform,booking_id,restaurant,payment_method,receipt_sent_at,food_minor,delivery_fee_minor,total_minor,items:delivery_items(position,quantity,name,options,amount_minor),adjustments:delivery_adjustments(position,kind,name,amount_minor),lineman:lineman_order_details(ordered_at,charged_minor)"),
     auth.supabase
       .from("rides")
       .select("id,booking_id,ride_type,picked_up_at,dropped_off_at,pickup_place,dropoff_place,distance_meters,duration_minutes,payment_method,fare_minor,platform_fee_minor,total_minor,adjustments:ride_adjustments(position,kind,name,amount_minor)")
@@ -48,14 +47,19 @@ export async function GET() {
   }
 
   // bigint arrives as a JS number from PostgREST, so every money column is stringified here (D-018).
-  const deliveries = (orders.data ?? []).map((delivery) => ({
+  // A LINE MAN order's own facts arrive embedded (one row, or none for GrabFood); PostgREST sends
+  // a one-to-one embed as an object, and an array is tolerated in case it ever does not.
+  const deliveries = (orders.data ?? []).map(({ lineman, ...delivery }) => {
+    const detail = (Array.isArray(lineman) ? lineman[0] : lineman) as { ordered_at: string; charged_minor: number | string } | null | undefined;
+    return { ...delivery, ordered_at: detail?.ordered_at ?? null, charged_minor: detail ? String(detail.charged_minor) : null };
+  }).map((delivery) => ({
     ...delivery,
     food_minor: String(delivery.food_minor),
     delivery_fee_minor: delivery.delivery_fee_minor === null ? null : String(delivery.delivery_fee_minor),
     total_minor: String(delivery.total_minor),
     items: [...delivery.items].sort((a, b) => a.position - b.position).map((item) => ({ ...item, amount_minor: String(item.amount_minor) })),
     adjustments: [...delivery.adjustments].sort((a, b) => a.position - b.position).map((row) => ({ ...row, amount_minor: String(row.amount_minor) }))
-  }));
+  })).sort((a, b) => deliveryTime(b).localeCompare(deliveryTime(a)) || a.id.localeCompare(b.id));
   const storedRides = (rides.data ?? []).map((ride) => ({
     ...ride,
     fare_minor: String(ride.fare_minor),
@@ -64,7 +68,7 @@ export async function GET() {
     adjustments: [...ride.adjustments].sort((a, b) => a.position - b.position).map((row) => ({ ...row, amount_minor: String(row.amount_minor) }))
   }));
   const matches = proposeGrabMatches(
-    deliveries.map((delivery) => ({ id: delivery.id, paidOutside: paidOutsidePlatform(delivery) })),
+    deliveries.map((delivery) => ({ id: delivery.id, paidOutside: paidOutsidePlatform(delivery), platform: delivery.platform })),
     parsedOrderCandidates.data,
     parsedOrderDecisions.data,
     // A ฿0 ride was paid in full by discounts: no card row, so it is never matched.
@@ -76,4 +80,29 @@ export async function GET() {
     deliveries: deliveries.map((delivery) => ({ ...delivery, match: matches.orders.get(delivery.id)! })),
     rides: storedRides.map((ride) => ({ ...ride, match: matches.rides.get(ride.id)! }))
   }, { headers: noStoreHeaders });
+}
+
+/**
+ * Stores a LINE MAN order read from its screenshots on the device (D-223). Only the parse arrives —
+ * never an image or a line of the owner's block — and `capture_delivery` re-checks its sums, its
+ * charge and its idempotency under the owner's own session.
+ */
+export async function POST(request: Request) {
+  const auth = await strongOwnerClient();
+  if (!auth.ok) return routeError(auth.message, auth.status);
+  const parsed = linemanCaptureRequestSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return routeError("The order is not in the shape this ledger stores.", 422, parsed.error.flatten());
+  // The schema is `captureLinemanRequest`'s shape exactly, so the checked body is the RPC request.
+  const { data, error } = await auth.supabase.rpc("capture_delivery", { p_request: parsed.data });
+  if (error) {
+    // The database's message is never echoed: it can name a stored value.
+    if (error.message.includes("disagrees with the stored copy")) {
+      return routeError("This order is already stored with different amounts. Check the screenshots.", 409);
+    }
+    if (error.message.includes("does not equal") || error.message.includes("do not sum") || error.message.includes("charged more")) {
+      return routeError("The order's amounts do not add up, so it was not stored.", 422);
+    }
+    return routeError("The order could not be stored.", 400);
+  }
+  return Response.json(data, { headers: noStoreHeaders });
 }

@@ -3,10 +3,11 @@
 import { useCallback, useState } from "react";
 import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { LedgerNote } from "@/app/ledger-note";
+import { LinemanCapture } from "@/app/lineman-capture";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { formatThb } from "@/lib/money";
 import {
-  deliveryListSchema, deliverySyncReportSchema, describeSyncReport,
+  deliveryListSchema, deliverySyncReportSchema, deliveryTime, describeSyncReport,
   type DeliverySyncReport, type StoredDelivery, type StoredRide
 } from "@/lib/deliveries";
 import { deliveryMatchResponseSchema, rideMatchResponseSchema } from "@/lib/delivery-match";
@@ -128,6 +129,8 @@ export function DeliveriesBench() {
         </div>
       </section>
 
+      <LinemanCapture onSaved={() => void load()} />
+
       <section className="captured-slips" aria-labelledby="stored-deliveries-title">
         <div className="bench-heading">
           <p className="section-index">Stored</p>
@@ -135,10 +138,11 @@ export function DeliveriesBench() {
             <h2 id="stored-deliveries-title">On this ledger</h2>
             <div className="heading-note">
               <LedgerNote label="About stored orders">
-                Every order stored here, newest first, dated when its e-receipt was sent. An order
-                itemizes a card payment the ledger already holds, found by its exact total on a GRAB
-                row up to two hours before the e-receipt. A ฿0 order was paid outside Grab, under
-                the co-payment scheme, and is never a card payment.
+                Every order stored here, newest first. A GrabFood order is dated when its e-receipt
+                was sent, and matches a GRAB row of its exact total up to two hours before. A LINE MAN
+                order is dated when it was placed, and matches a row of what was charged just after.
+                An order paid with เป๋าตัง was paid outside the app, in full or for its food, and
+                only what was charged is ever a ledger row.
               </LedgerNote>
             </div>
           </div>
@@ -166,15 +170,17 @@ export function DeliveriesBench() {
               <li key={delivery.id}>
                 <details>
                   <summary>
-                    <span className="receipt-when"><time dateTime={delivery.receipt_sent_at}>{bangkokTime(delivery.receipt_sent_at)}</time></span>
+                    <span className="receipt-when"><time dateTime={deliveryTime(delivery)}>{bangkokTime(deliveryTime(delivery))}</time></span>
                     <span className="receipt-branch">{delivery.restaurant}</span>
                     <span className="receipt-count">{delivery.items.reduce((sum, item) => sum + item.quantity, 0)} dishes</span>
                     <span className={`receipt-chip ${MATCH_CHIP[delivery.match.status].tone}`}>{MATCH_CHIP[delivery.match.status].label}</span>
                     {delivery.adjustments.some((row) => row.kind === "unprinted") ? <span className="receipt-chip warn">not all on the e-receipt</span> : null}
+                    {delivery.charged_minor !== null && delivery.charged_minor !== delivery.total_minor && delivery.charged_minor !== "0"
+                      ? <span className="receipt-chip quiet">{formatThb(delivery.charged_minor)} charged, food paid outside</span> : null}
                     <span className="receipt-amount numeric">{formatThb(delivery.total_minor)}</span>
                   </summary>
                   <p className="ledger-status">
-                    GrabFood {delivery.booking_id}{delivery.payment_method ? ` · ${delivery.payment_method}` : ""}
+                    {PLATFORM_LABEL[delivery.platform]} {delivery.booking_id}{delivery.payment_method ? ` · ${delivery.payment_method}` : ""}
                   </p>
                   {delivery.match.status === "outside" ? null : (
                     <LedgerMatchPanel
@@ -297,6 +303,8 @@ export function DeliveriesBench() {
   );
 }
 
+const PLATFORM_LABEL = { grabfood: "GrabFood", lineman: "LINE MAN" } as const;
+
 // The summary's chip, the receipts page's tones: green for a row on the ledger, amber for
 // something the owner can act on, muted otherwise.
 const MATCH_CHIP = {
@@ -305,7 +313,7 @@ const MATCH_CHIP = {
   declined: { label: "no ledger row", tone: "quiet" },
   ambiguous: { label: "pick a row", tone: "warn" },
   none: { label: "no ledger row", tone: "quiet" },
-  outside: { label: "paid outside Grab", tone: "quiet" }
+  outside: { label: "paid outside the app", tone: "quiet" }
 } as const;
 
 const MATCH_SENTENCE = {
@@ -314,7 +322,7 @@ const MATCH_SENTENCE = {
   declined: "You said no ledger row pays for this order.",
   ambiguous: "More than one ledger row could be this payment, so none was chosen. Pick one below if you know which.",
   none: "No ledger row found. That is normal for an order paid with another card, or when the statement covering this date is not imported yet.",
-  outside: "Paid outside Grab, so there is no card row."
+  outside: "Paid outside the app, so there is no card row."
 } as const;
 
 const RIDE_CHIP = {

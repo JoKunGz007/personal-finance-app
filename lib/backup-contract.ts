@@ -80,9 +80,17 @@ export const BACKUP_TABLE_KINDS_V11 = [
 
 // v12 appends Grab rides and the owner's ride match decisions (migration 034, D-222), parent
 // first. Indices 0..33 keep meaning what they meant in v11.
-export const BACKUP_TABLE_KINDS = [
+export const BACKUP_TABLE_KINDS_V12 = [
   ...BACKUP_TABLE_KINDS_V11,
   "rides", "ride_adjustments", "ride_match_overlays", "ride_match_revisions"
+] as const;
+
+// v13 appends a LINE MAN order's own facts, its order time and charged amount (migration 036,
+// D-223): a table of their own rather than columns on `deliveries` (D-097). Indices 0..37 keep
+// meaning what they meant in v12.
+export const BACKUP_TABLE_KINDS = [
+  ...BACKUP_TABLE_KINDS_V12,
+  "lineman_order_details"
 ] as const;
 
 export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
@@ -93,8 +101,8 @@ export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
 // been refused at every version since. Nothing about that arithmetic weakens with age: the
 // files the owner holds now span v2 to v5, and each stops being restorable only if this list
 // stops naming it.
-export const BACKUP_SCHEMA_VERSION = 12;
-export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+export const BACKUP_SCHEMA_VERSION = 13;
+export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] as const;
 
 export function backupTableKindsFor(schemaVersion: number): readonly BackupTableKind[] {
   if (schemaVersion === 2) return BACKUP_TABLE_KINDS_V2;
@@ -107,6 +115,7 @@ export function backupTableKindsFor(schemaVersion: number): readonly BackupTable
   if (schemaVersion === 9) return BACKUP_TABLE_KINDS_V9;
   if (schemaVersion === 10) return BACKUP_TABLE_KINDS_V10;
   if (schemaVersion === 11) return BACKUP_TABLE_KINDS_V11;
+  if (schemaVersion === 12) return BACKUP_TABLE_KINDS_V12;
   return BACKUP_TABLE_KINDS;
 }
 
@@ -545,11 +554,12 @@ const receiptMatchRevisionRowSchema = z.object({
 const deliveryRowSchema = z.object({
   id: uuidSchema,
   owner_id: uuidSchema,
-  platform: z.literal("grabfood"),
+  // Widened for LINE MAN by migration 036 — relaxations only, so every older file still reads.
+  platform: z.enum(["grabfood", "lineman"]),
   booking_id: z.string().min(1),
   restaurant: z.string().min(1),
   payment_method: nullableText,
-  receipt_sent_at: timestampSchema,
+  receipt_sent_at: timestampSchema.nullable(),
   food_minor: minorUnitStringSchema,
   delivery_fee_minor: minorUnitStringSchema.nullable(),
   total_minor: minorUnitStringSchema,
@@ -643,6 +653,13 @@ const rideMatchOverlayRowSchema = z.object({
   }
 });
 
+const linemanOrderDetailRowSchema = z.object({
+  delivery_id: uuidSchema,
+  owner_id: uuidSchema,
+  ordered_at: timestampSchema,
+  charged_minor: minorUnitStringSchema
+}).strict();
+
 const rideMatchRevisionRowSchema = z.object({
   id: uuidSchema,
   owner_id: uuidSchema,
@@ -728,12 +745,17 @@ const v11DataShape = {
   delivery_match_revisions: z.array(deliveryMatchRevisionRowSchema)
 } as const;
 export const backupDataSchemaV11 = z.object(v11DataShape).strict();
-export const backupDataSchema = z.object({
+const v12DataShape = {
   ...v11DataShape,
   rides: z.array(rideRowSchema),
   ride_adjustments: z.array(rideAdjustmentRowSchema),
   ride_match_overlays: z.array(rideMatchOverlayRowSchema),
   ride_match_revisions: z.array(rideMatchRevisionRowSchema)
+} as const;
+export const backupDataSchemaV12 = z.object(v12DataShape).strict();
+export const backupDataSchema = z.object({
+  ...v12DataShape,
+  lineman_order_details: z.array(linemanOrderDetailRowSchema)
 }).strict();
 
 function chunkSchema<const Kind extends (typeof BACKUP_TABLE_KINDS)[number], Row extends z.ZodType>(
@@ -781,7 +803,8 @@ export const backupChunkSchema = z.discriminatedUnion("kind", [
   chunkSchema("rides", rideRowSchema),
   chunkSchema("ride_adjustments", rideAdjustmentRowSchema),
   chunkSchema("ride_match_overlays", rideMatchOverlayRowSchema),
-  chunkSchema("ride_match_revisions", rideMatchRevisionRowSchema)
+  chunkSchema("ride_match_revisions", rideMatchRevisionRowSchema),
+  chunkSchema("lineman_order_details", linemanOrderDetailRowSchema)
 ]);
 
 function tableCountsFor(kinds: readonly BackupTableKind[]) {
@@ -824,6 +847,7 @@ export const restoreManifestSchemaV8 = manifestFor(BACKUP_TABLE_KINDS_V8);
 export const restoreManifestSchemaV9 = manifestFor(BACKUP_TABLE_KINDS_V9);
 export const restoreManifestSchemaV10 = manifestFor(BACKUP_TABLE_KINDS_V10);
 export const restoreManifestSchemaV11 = manifestFor(BACKUP_TABLE_KINDS_V11);
+export const restoreManifestSchemaV12 = manifestFor(BACKUP_TABLE_KINDS_V12);
 export const restoreManifestSchema = manifestFor(BACKUP_TABLE_KINDS);
 
 // Version is part of the request rather than a constant, and the manifest that travels
@@ -846,6 +870,7 @@ const baseV9 = z.object({ ...identity, schemaVersion: z.literal(9) }).strict();
 const baseV10 = z.object({ ...identity, schemaVersion: z.literal(10) }).strict();
 const baseV11 = z.object({ ...identity, schemaVersion: z.literal(11) }).strict();
 const baseV12 = z.object({ ...identity, schemaVersion: z.literal(12) }).strict();
+const baseV13 = z.object({ ...identity, schemaVersion: z.literal(13) }).strict();
 
 // Each version keeps its own kind list, so a v2 request is still checked against eleven
 // chunks and a v3 against twelve. Widening the union is not the same as relaxing it.
@@ -861,7 +886,8 @@ function actionUnion<Shape extends z.ZodRawShape>(extend: (kinds: readonly Backu
     baseV9.extend(extend(BACKUP_TABLE_KINDS_V9)).strict(),
     baseV10.extend(extend(BACKUP_TABLE_KINDS_V10)).strict(),
     baseV11.extend(extend(BACKUP_TABLE_KINDS_V11)).strict(),
-    baseV12.extend(extend(BACKUP_TABLE_KINDS)).strict()
+    baseV12.extend(extend(BACKUP_TABLE_KINDS_V12)).strict(),
+    baseV13.extend(extend(BACKUP_TABLE_KINDS)).strict()
   ]);
 }
 
@@ -872,8 +898,8 @@ export const restoreActionSchemas = {
     chunkDigest: digestSchema,
     chunk: backupChunkSchema
   })),
-  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12]),
-  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12])
+  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13]),
+  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13])
 } as const;
 
 function snapshotFor<Data extends z.ZodType>(
@@ -912,7 +938,8 @@ export const backupSnapshotSchemaV8 = snapshotFor(8, BACKUP_TABLE_KINDS_V8, back
 export const backupSnapshotSchemaV9 = snapshotFor(9, BACKUP_TABLE_KINDS_V9, backupDataSchemaV9);
 export const backupSnapshotSchemaV10 = snapshotFor(10, BACKUP_TABLE_KINDS_V10, backupDataSchemaV10);
 export const backupSnapshotSchemaV11 = snapshotFor(11, BACKUP_TABLE_KINDS_V11, backupDataSchemaV11);
-export const backupSnapshotSchemaV12 = snapshotFor(12, BACKUP_TABLE_KINDS, backupDataSchema);
+export const backupSnapshotSchemaV12 = snapshotFor(12, BACKUP_TABLE_KINDS_V12, backupDataSchemaV12);
+export const backupSnapshotSchemaV13 = snapshotFor(13, BACKUP_TABLE_KINDS, backupDataSchema);
 
 // What a restore accepts. A snapshot read off disk is one of these and nothing else — the
 // union discriminates on the payload's own declared version rather than sniffing for a
@@ -928,7 +955,8 @@ export const backupSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   backupSnapshotSchemaV9,
   backupSnapshotSchemaV10,
   backupSnapshotSchemaV11,
-  backupSnapshotSchemaV12
+  backupSnapshotSchemaV12,
+  backupSnapshotSchemaV13
 ]);
 
 /**

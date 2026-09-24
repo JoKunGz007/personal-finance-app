@@ -16,7 +16,8 @@ const reads = vi.hoisted(() => ({
   candidates: { data: [] as unknown, error: null as unknown },
   decisions: { data: [] as unknown, error: null as unknown },
   rideCandidates: { data: [] as unknown, error: null as unknown },
-  rides: { data: [] as unknown, error: null as unknown }
+  rides: { data: [] as unknown, error: null as unknown },
+  captured: [] as unknown[]
 }));
 
 function ride(id: string, total: number) {
@@ -32,7 +33,7 @@ function order(id: string, total: number) {
   return {
     id, platform: "grabfood", booking_id: `A-${id.slice(-6)}`, restaurant: "Invented kitchen", payment_method: null,
     receipt_sent_at: "2026-09-01T12:10:00+00:00", food_minor: total, delivery_fee_minor: null, total_minor: total,
-    items: [{ position: 1, quantity: 1, name: "Invented dish", options: [], amount_minor: total }], adjustments: []
+    items: [{ position: 1, quantity: 1, name: "Invented dish", options: [], amount_minor: total }], adjustments: [], lineman: null
   };
 }
 
@@ -43,11 +44,14 @@ vi.mock("@/lib/server/supabase", () => ({
     ok: true,
     supabase: {
       from: (table: string) => table === "deliveries"
-        ? { select: () => ({ order: async () => ({ data: [order(ORDER, 14100), order(FREE, 0)], error: null }) }) }
+        ? { select: async () => ({ data: [order(ORDER, 14100), order(FREE, 0)], error: null }) }
         : table === "rides"
           ? { select: () => ({ order: async () => reads.rides }) }
           : { select: async () => (table === "delivery_match_overlays" ? reads.decisions : { data: [], error: null }) },
-      rpc: async (name: string) => (name === "ride_ledger_candidates" ? reads.rideCandidates : reads.candidates)
+      rpc: async (name: string, args?: { p_request?: unknown }) => {
+        if (name === "capture_delivery") { reads.captured.push(args?.p_request); return { data: { captured: true, id: ORDER }, error: null }; }
+        return name === "ride_ledger_candidates" ? reads.rideCandidates : reads.candidates;
+      }
     }
   })
 }));
@@ -112,5 +116,34 @@ describe("GET /api/v1/deliveries with rides (D-222)", () => {
   it("refuses the whole list when the ride candidate read fails", async () => {
     reads.rideCandidates = { data: null, error: { message: "invented failure" } };
     expect((await list()).status).toBe(500);
+  });
+});
+
+describe("POST /api/v1/deliveries (a LINE MAN order, D-223)", () => {
+  const order = {
+    platform: "lineman", bookingId: "LMF-260912-000000001", restaurant: "Invented kitchen",
+    paymentMethod: "Pay delivery fee with mobile banking", orderedAt: "2026-09-12T21:00:00+07:00",
+    foodMinor: "18000", deliveryFeeMinor: "3000", totalMinor: "19500", chargedMinor: "1500",
+    items: [{ position: 1, quantity: 1, name: "Invented dish", options: [], amountMinor: "18000" }],
+    adjustments: [{ position: 1, kind: "discount", name: "Invented delivery discount", amountMinor: "1500" }]
+  };
+  const post = async (body: unknown) => {
+    const { POST } = await import("@/app/api/v1/deliveries/route");
+    return POST(new Request("http://localhost/api/v1/deliveries", { method: "POST", body: JSON.stringify(body) }));
+  };
+
+  it("passes a well-formed parse to capture_delivery unchanged", async () => {
+    reads.captured = [];
+    const response = await post(order);
+    expect(response.status).toBe(200);
+    expect(reads.captured).toEqual([order]);
+  });
+
+  it("refuses money as a number, an extra key, or another platform before the database sees it", async () => {
+    reads.captured = [];
+    expect((await post({ ...order, chargedMinor: 1500 })).status).toBe(422);
+    expect((await post({ ...order, address: "Invented" })).status).toBe(422);
+    expect((await post({ ...order, platform: "grabfood" })).status).toBe(422);
+    expect(reads.captured).toEqual([]);
   });
 });

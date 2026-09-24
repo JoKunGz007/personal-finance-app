@@ -1,14 +1,16 @@
 // The wire contract for food delivery orders and Grab rides (PLAN task 58, migrations 032 and 034).
 //
-// Unlike receipts, no order is posted by the page: the server reads the e-receipt email, parses
-// it and captures it itself (`app/api/v1/deliveries/sync/route.ts`). The page posts only the
-// owner's match decision (`lib/delivery-match.ts`).
+// A GrabFood order is never posted by the page: the server reads the e-receipt email, parses it
+// and captures it itself (`app/api/v1/deliveries/sync/route.ts`). A LINE MAN order is read from
+// screenshots on the device and posted as its parse (`POST /api/v1/deliveries`, D-223), as a
+// 7-Eleven screenshot receipt is. The page also posts the owner's match decision.
 // This module holds the capture request the server builds, the stored shape the list returns, and
 // the sync report.
 
 import { z } from "zod";
 import { minorUnitStringSchema } from "@/lib/money";
 import type { ParsedDelivery, ParsedRide } from "@/lib/delivery-grab";
+import type { ParsedLinemanOrder } from "@/lib/delivery-lineman";
 import { deliveryMatchStateSchema } from "@/lib/delivery-match";
 
 /** The `capture_delivery` request: camelCase keys, money as canonical int64 text. */
@@ -28,6 +30,55 @@ export function captureDeliveryRequest(order: ParsedDelivery) {
     adjustments: order.adjustments.map((row) => ({ position: row.position, kind: row.kind, name: row.name, amountMinor: row.amountMinor }))
   };
 }
+
+/** The `capture_delivery` request for a LINE MAN order (migration 036): no send time, an order time and a charged amount. */
+export function captureLinemanRequest(order: ParsedLinemanOrder) {
+  return {
+    platform: order.platform,
+    bookingId: order.bookingId,
+    restaurant: order.restaurant,
+    paymentMethod: order.paymentMethod,
+    orderedAt: order.orderedAt,
+    foodMinor: order.foodMinor,
+    deliveryFeeMinor: order.deliveryFeeMinor,
+    totalMinor: order.totalMinor,
+    chargedMinor: order.chargedMinor,
+    items: order.items.map((item) => ({
+      position: item.position, quantity: item.quantity, name: item.name, options: item.options, amountMinor: item.amountMinor
+    })),
+    adjustments: order.adjustments.map((row) => ({ position: row.position, kind: row.kind, name: row.name, amountMinor: row.amountMinor }))
+  };
+}
+
+const orderLine = z.object({
+  position: z.number().int().positive(),
+  quantity: z.number().int().positive(),
+  name: z.string().min(1).max(300),
+  options: z.array(z.string().max(300)).max(40),
+  amountMinor: minorUnitStringSchema
+}).strict();
+
+/** What the page may post: a LINE MAN order's parse, checked again by `capture_delivery`. */
+export const linemanCaptureRequestSchema = z.object({
+  platform: z.literal("lineman"),
+  bookingId: z.string().regex(/^[A-Z]{2,4}-\d{6}-\d{6,}$/u),
+  restaurant: z.string().min(1).max(300),
+  paymentMethod: z.string().min(1).max(120),
+  orderedAt: z.string().datetime({ offset: true }),
+  foodMinor: minorUnitStringSchema,
+  deliveryFeeMinor: minorUnitStringSchema.nullable(),
+  totalMinor: minorUnitStringSchema,
+  chargedMinor: minorUnitStringSchema,
+  items: z.array(orderLine).min(1).max(60),
+  adjustments: z.array(z.object({
+    position: z.number().int().positive(),
+    kind: z.enum(["discount", "charge"]),
+    name: z.string().min(1).max(300),
+    amountMinor: minorUnitStringSchema
+  }).strict()).max(20)
+}).strict();
+
+export const deliveryCaptureResultSchema = z.object({ captured: z.boolean(), id: z.string().uuid() }).strict();
 
 /** The `capture_ride` request (migration 034): camelCase keys, money as canonical int64 text. */
 export function captureRideRequest(ride: ParsedRide) {
@@ -51,11 +102,16 @@ export function captureRideRequest(ride: ParsedRide) {
 
 export const storedDeliverySchema = z.object({
   id: z.string().uuid(),
-  platform: z.literal("grabfood"),
+  platform: z.enum(["grabfood", "lineman"]),
   booking_id: z.string(),
   restaurant: z.string(),
   payment_method: z.string().nullable(),
-  receipt_sent_at: z.string(),
+  /** GrabFood only: when the e-receipt was sent. */
+  receipt_sent_at: z.string().nullable(),
+  /** LINE MAN only: when the order was placed (migration 036). */
+  ordered_at: z.string().nullable(),
+  /** LINE MAN only: what was charged, below the total when the food was paid outside. */
+  charged_minor: minorUnitStringSchema.nullable(),
   food_minor: minorUnitStringSchema,
   delivery_fee_minor: minorUnitStringSchema.nullable(),
   total_minor: minorUnitStringSchema,
@@ -104,12 +160,23 @@ export type StoredRide = z.infer<typeof storedRideSchema>;
 
 export const deliveryListSchema = z.object({ deliveries: z.array(storedDeliverySchema), rides: z.array(storedRideSchema) }).strict();
 
+/** What reached a bank or wallet: the total for GrabFood, the `Pay …` line for LINE MAN (D-223). */
+export function chargedAmount(delivery: Pick<StoredDelivery, "total_minor" | "charged_minor">): string {
+  return delivery.charged_minor ?? delivery.total_minor;
+}
+
 /**
- * A ฿0 order was paid outside the platform — the co-payment scheme prints the whole food price as
- * a discount (`docs/DELIVERY_CONTRACT.md`). Never a free meal, and never matched to a card row.
+ * Nothing charged means paid outside the platform — the co-payment scheme prints the whole food
+ * price as a discount (`docs/DELIVERY_CONTRACT.md`). Never a free meal, and never matched to a
+ * card row. A LINE MAN order whose food alone went to เป๋าตัง is still matched, on what was charged.
  */
-export function paidOutsidePlatform(delivery: Pick<StoredDelivery, "total_minor">): boolean {
-  return delivery.total_minor === "0";
+export function paidOutsidePlatform(delivery: Pick<StoredDelivery, "total_minor" | "charged_minor">): boolean {
+  return chargedAmount(delivery) === "0";
+}
+
+/** When the order happened, for sorting and display: the order time, else the e-receipt's. */
+export function deliveryTime(delivery: Pick<StoredDelivery, "receipt_sent_at" | "ordered_at">): string {
+  return delivery.ordered_at ?? delivery.receipt_sent_at ?? "";
 }
 
 /**

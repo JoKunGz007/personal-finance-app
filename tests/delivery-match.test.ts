@@ -197,3 +197,10 @@ describe("orders and rides decided together (D-222)", () => {
     expect(orders.get(D1)!.status).toBe("matched");
   });
 });
+
+describe("LINE MAN orders (D-223)", () => {
+  it("propose no automatic match until the window and the bank's wording are measured, but still offer rows to link", () => {
+    const states = proposeGrabMatches([{ id: D1, paidOutside: false, platform: "lineman" }], [candidate(D1, T1, 2)], [], [], [], []);
+    expect(states.orders.get(D1)).toMatchObject({ status: "none", options: [{ transaction_id: T1 }] });
+  });
+});

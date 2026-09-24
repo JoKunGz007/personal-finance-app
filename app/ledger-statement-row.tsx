@@ -561,7 +561,7 @@ function LedgerDelivery({ delivery }: { delivery: StoredDelivery }) {
   const dishes = delivery.items.reduce((sum, item) => sum + item.quantity, 0);
   return (
     <details className="ledger-receipt">
-      <summary>GrabFood · {delivery.restaurant} · {dishes} dish{dishes === 1 ? "" : "es"}</summary>
+      <summary>{delivery.platform === "lineman" ? "LINE MAN" : "GrabFood"} · {delivery.restaurant} · {dishes} dish{dishes === 1 ? "" : "es"}</summary>
       <ul>
         {delivery.items.map((item) => (
           <li key={item.position}>

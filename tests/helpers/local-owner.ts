@@ -218,6 +218,7 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     delete from public.rides where owner_id = '${owner}';
     delete from public.delivery_match_revisions where owner_id = '${owner}';
     delete from public.delivery_match_overlays where owner_id = '${owner}';
+    delete from public.lineman_order_details where owner_id = '${owner}';
     delete from public.delivery_adjustments where owner_id = '${owner}';
     delete from public.delivery_items where owner_id = '${owner}';
     delete from public.deliveries where owner_id = '${owner}';

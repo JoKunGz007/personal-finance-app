@@ -28,6 +28,31 @@ import { ledgerMatchRequestSchema, proposeLedgerMatches, type LedgerMatchRequest
  */
 export const DELIVERY_MATCH_WINDOW_MINUTES = 120;
 
+/**
+ * A LINE MAN order is paid at checkout, so its row is expected just after the printed order time
+ * (the lag read is from that time for LINE MAN, migration 036). **Provisional until measured** on
+ * the stored orders, as D-220 measured GrabFood; the owner then picks the window. No description
+ * filter yet either: what the bank prints for a LINE MAN payment is measured in the same pass.
+ */
+export const LINEMAN_MATCH_BEFORE_MINUTES = 5;
+export const LINEMAN_MATCH_AFTER_MINUTES = 30;
+
+/**
+ * Off until measured (finance review, D-223): with no description filter, an unrelated payment of
+ * the same amount minutes after an order would be proposed, which neither the GrabFood nor the
+ * ride rule allows. Until the stored orders are measured and the owner chooses a window and what
+ * the bank row must name, a LINE MAN order proposes nothing and the manual link covers it.
+ */
+export const LINEMAN_AUTOMATIC_MATCH = false;
+
+/** Whether a LINE MAN candidate satisfies the rule on its own, before uniqueness. */
+export function linemanQualifiesAutomatically(candidate: Pick<DeliveryLedgerCandidate, "lag_minutes">): boolean {
+  return LINEMAN_AUTOMATIC_MATCH
+    && candidate.lag_minutes !== null
+    && candidate.lag_minutes >= -LINEMAN_MATCH_BEFORE_MINUTES
+    && candidate.lag_minutes <= LINEMAN_MATCH_AFTER_MINUTES;
+}
+
 export const deliveryLedgerCandidateSchema = z.object({
   delivery_id: z.string().uuid(),
   transaction_id: z.string().uuid(),
@@ -127,7 +152,7 @@ export function rideQualifiesAutomatically(candidate: Pick<RideLedgerCandidate, 
     && candidate.lag_minutes <= RIDE_MATCH_AFTER_MINUTES;
 }
 
-type Tagged = DeliveryLedgerCandidate & { readonly document: string; readonly ride: boolean };
+type Tagged = DeliveryLedgerCandidate & { readonly document: string; readonly rule: (candidate: DeliveryLedgerCandidate) => boolean };
 
 /**
  * Every order's and every ride's match state, **decided together** (D-222): a `GRAB` row that an
@@ -138,7 +163,7 @@ type Tagged = DeliveryLedgerCandidate & { readonly document: string; readonly ri
  * whatever the candidates say, and wants no row.
  */
 export function proposeGrabMatches(
-  orders: readonly { id: string; paidOutside: boolean }[],
+  orders: readonly { id: string; paidOutside: boolean; platform?: "grabfood" | "lineman" }[],
   orderCandidates: readonly DeliveryLedgerCandidate[],
   orderDecisions: readonly DeliveryMatchDecision[],
   rides: readonly { id: string; paidOutside: boolean }[],
@@ -150,11 +175,17 @@ export function proposeGrabMatches(
   const rideKey = (id: string) => `ride:${id}`;
   const matchableOrders = new Set(orders.filter((order) => !order.paidOutside).map((order) => order.id));
   const matchableRides = new Set(rides.filter((ride) => !ride.paidOutside).map((ride) => ride.id));
+  // Each document keeps its own window: GrabFood before the send time, LINE MAN after the order
+  // time, a ride around its pickup.
+  const lineman = new Set(orders.filter((order) => order.platform === "lineman").map((order) => order.id));
   const candidates: Tagged[] = [
     ...orderCandidates.filter((candidate) => matchableOrders.has(candidate.delivery_id))
-      .map((candidate) => ({ ...candidate, document: orderKey(candidate.delivery_id), ride: false })),
+      .map((candidate) => ({
+        ...candidate, document: orderKey(candidate.delivery_id),
+        rule: lineman.has(candidate.delivery_id) ? linemanQualifiesAutomatically : qualifiesAutomatically
+      })),
     ...rideCandidates.filter((candidate) => matchableRides.has(candidate.ride_id))
-      .map(({ ride_id, ...candidate }) => ({ ...candidate, delivery_id: ride_id, document: rideKey(ride_id), ride: true }))
+      .map(({ ride_id, ...candidate }) => ({ ...candidate, delivery_id: ride_id, document: rideKey(ride_id), rule: rideQualifiesAutomatically }))
   ];
   const decisions = [
     ...orderDecisions.filter((decision) => matchableOrders.has(decision.delivery_id))
@@ -168,7 +199,7 @@ export function proposeGrabMatches(
     decisions,
     {
       documentOf: (candidate) => candidate.document,
-      qualifies: (candidate) => (candidate.ride ? rideQualifiesAutomatically(candidate) : qualifiesAutomatically(candidate)),
+      qualifies: (candidate) => candidate.rule(candidate),
       toRow
     }
   );
