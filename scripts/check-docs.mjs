@@ -85,6 +85,7 @@ const RETIRED_PATHS = {
   "app/api/v1/notification-cards/read/route.ts": "moved to app/api/v1/ocr/read/route.ts (D-129)",
   "lib/notification-card-vision.ts": "renamed to lib/vision-ocr.ts (D-129)",
   "tests/notification-card-vision.test.ts": "renamed to tests/vision-ocr.test.ts (D-129)",
+  "app/deliveries/page.tsx": "moved to app/orders/page.tsx; /deliveries redirects there (D-230)",
 };
 
 const failures = [];

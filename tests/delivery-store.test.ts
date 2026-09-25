@@ -3,18 +3,18 @@ import type { ParsedDelivery, ParsedRide } from "@/lib/delivery-grab";
 import { orderStore, rideStore } from "@/lib/server/delivery-store";
 
 // Sync's store layer over a stubbed client (D-222's open review item): which table and filter it
-// reads, what it compares, how a repeat in one message is answered, and that rides overlap at most
-// four at a time. The database's side is pgTAP's. Every value is invented.
+// reads, what it compares, how a repeat in one message is answered, and that new documents go to
+// the batch RPC 25 to a call (D-230). The database's side is pgTAP's. Every value is invented.
 
 type Stub = {
   stored: Record<string, unknown>[];
   readError: unknown;
-  /** The RPC's answer per booking ID; `captured: true` when absent. */
-  answers: Map<string, { data: unknown; error: { message: string } | null }>;
+  /** The batch RPC's outcome per booking ID; `captured` when absent. */
+  answers: Map<string, string>;
+  /** Replaces the batch RPC's whole answer when set. */
+  reply: { data: unknown; error: unknown } | null;
   reads: { table: string; columns: string; eq: [string, unknown][]; in: [string, string[]] | null }[];
-  captures: { rpc: string; bookingId: string }[];
-  inFlight: number;
-  maxInFlight: number;
+  captures: { rpc: string; bookingIds: string[] }[];
 };
 
 let stub: Stub;
@@ -35,19 +35,16 @@ function client() {
         return builder;
       }
     }),
-    rpc: async (rpc: string, args: { p_request: { bookingId: string } }) => {
-      stub.captures.push({ rpc, bookingId: args.p_request.bookingId });
-      stub.inFlight += 1;
-      stub.maxInFlight = Math.max(stub.maxInFlight, stub.inFlight);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      stub.inFlight -= 1;
-      return stub.answers.get(args.p_request.bookingId) ?? { data: { captured: true }, error: null };
+    rpc: async (rpc: string, args: { p_requests: { bookingId: string }[] }) => {
+      const bookingIds = args.p_requests.map((request) => request.bookingId);
+      stub.captures.push({ rpc, bookingIds });
+      return stub.reply ?? { data: bookingIds.map((id) => stub.answers.get(id) ?? "captured"), error: null };
     }
   } as unknown as Parameters<typeof rideStore>[0];
 }
 
 beforeEach(() => {
-  stub = { stored: [], readError: null, answers: new Map(), reads: [], captures: [], inFlight: 0, maxInFlight: 0 };
+  stub = { stored: [], readError: null, answers: new Map(), reply: null, reads: [], captures: [] };
 });
 
 function ride(bookingId: string, overrides: Partial<ParsedRide> = {}): ParsedRide {
@@ -92,13 +89,27 @@ describe("rideStore (D-222)", () => {
     expect(stub.captures).toEqual([]);
   });
 
-  it("captures new rides through capture_ride and translates its answers", async () => {
-    stub.answers.set("A-2", { data: { captured: false }, error: null });
-    stub.answers.set("A-3", { data: null, error: { message: "ride disagrees with the stored copy" } });
-    stub.answers.set("A-4", { data: null, error: { message: "anything else" } });
+  it("captures new rides in one capture_rides call and takes its outcomes by position", async () => {
+    stub.answers.set("A-2", "alreadyStored");
+    stub.answers.set("A-3", "disagrees");
+    stub.answers.set("A-4", "refused");
     const outcomes = await rideStore(client())([ride("A-1"), ride("A-2"), ride("A-3"), ride("A-4")]);
     expect(outcomes).toEqual(["captured", "alreadyStored", "disagrees", "storeRefused"]);
-    expect(new Set(stub.captures.map((capture) => capture.rpc))).toEqual(new Set(["capture_ride"]));
+    expect(stub.captures).toEqual([{ rpc: "capture_rides", bookingIds: ["A-1", "A-2", "A-3", "A-4"] }]);
+  });
+
+  it("refuses a batch whose answer is an error, off-contract, or the wrong length", async () => {
+    for (const reply of [
+      { data: null, error: { message: "anything" } },
+      { data: { captured: true }, error: null },
+      { data: ["captured"], error: null }
+    ]) {
+      stub.reply = reply;
+      expect(await rideStore(client())([ride("A-1"), ride("A-2")])).toEqual(["storeRefused", "storeRefused"]);
+    }
+    // An unknown outcome refuses only its own position; the one beside it was stored.
+    stub.reply = { data: ["captured", "invented"], error: null };
+    expect(await rideStore(client())([ride("A-1"), ride("A-2")])).toEqual(["captured", "storeRefused"]);
   });
 
   it("captures a booking printed twice once, and compares the repeat with the first", async () => {
@@ -108,14 +119,16 @@ describe("rideStore (D-222)", () => {
   });
 
   it("gives a repeat its first copy's refusal", async () => {
-    stub.answers.set("A-1", { data: null, error: { message: "anything else" } });
+    stub.answers.set("A-1", "refused");
     expect(await rideStore(client())([ride("A-1"), ride("A-1")])).toEqual(["storeRefused", "storeRefused"]);
   });
 
-  it("overlaps captures at most four at a time", async () => {
-    const outcomes = await rideStore(client())(Array.from({ length: 10 }, (_, index) => ride(`A-${index}`)));
-    expect(outcomes).toEqual(new Array(10).fill("captured"));
-    expect(stub.maxInFlight).toBe(4);
+  it("sends a hundred new rides as four calls of 25, skipping the stored one", async () => {
+    stub.stored = [storedRide("A-0")];
+    const outcomes = await rideStore(client())(Array.from({ length: 101 }, (_, index) => ride(`A-${index}`)));
+    expect(outcomes).toEqual(["alreadyStored", ...new Array(100).fill("captured")]);
+    expect(stub.captures.map((capture) => capture.bookingIds.length)).toEqual([25, 25, 25, 25]);
+    expect(stub.captures.flatMap((capture) => capture.bookingIds)).not.toContain("A-0");
   });
 
   it("refuses the whole message when the stored read fails, capturing nothing", async () => {
@@ -126,12 +139,11 @@ describe("rideStore (D-222)", () => {
 });
 
 describe("orderStore (D-219)", () => {
-  it("reads GrabFood orders only, compares money, and captures one at a time", async () => {
+  it("reads GrabFood orders only, compares money, and captures the new ones in one call", async () => {
     stub.stored = [{ booking_id: "A-1", food_minor: 14100, delivery_fee_minor: null, total_minor: 14100 }];
     const outcomes = await orderStore(client())([order("A-1"), order("A-2"), order("A-3"), order("A-2", { totalMinor: "1" })]);
     expect(stub.reads[0]).toMatchObject({ table: "deliveries", eq: [["platform", "grabfood"]] });
     expect(outcomes).toEqual(["alreadyStored", "captured", "captured", "disagrees"]);
-    expect(stub.captures.map((capture) => capture.rpc)).toEqual(["capture_delivery", "capture_delivery"]);
-    expect(stub.maxInFlight).toBe(1);
+    expect(stub.captures).toEqual([{ rpc: "capture_deliveries", bookingIds: ["A-2", "A-3"] }]);
   });
 });

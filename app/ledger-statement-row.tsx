@@ -582,7 +582,7 @@ function LedgerDelivery({ delivery }: { delivery: StoredDelivery }) {
           </li>
         ))}
       </ul>
-      <a href="/deliveries">Open on Deliveries</a>
+      <a href="/orders">Open on Orders</a>
     </details>
   );
 }
@@ -608,7 +608,7 @@ function LedgerRide({ ride }: { ride: StoredRide }) {
           </li>
         ))}
       </ul>
-      <a href="/deliveries">Open on Deliveries</a>
+      <a href="/orders">Open on Orders</a>
     </details>
   );
 }

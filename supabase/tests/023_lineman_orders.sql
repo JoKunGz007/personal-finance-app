@@ -118,7 +118,7 @@ select throws_ok(
 
 set local role authenticated;
 select is(
-  (select string_agg(right(transaction_id::text, 1) || ':' || lag_minutes, ',') from public.delivery_ledger_candidates()),
+  (select string_agg(right(transaction_id::text, 1) || ':' || lag_minutes, ',') from jsonb_to_recordset(public.delivery_ledger_candidates()) as c(delivery_id uuid, transaction_id uuid, lag_minutes integer, names_grab boolean)),
   '1:2',
   'the candidate read matches the charged amount, not the total, timed from the order'
 );

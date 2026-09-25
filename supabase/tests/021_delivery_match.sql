@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(24);
+select plan(25);
 
 -- The owner's say over an order's ledger row, and the candidate read beneath the automatic rule
 -- (migration 033, PLAN task 58 part 3, D-220).
@@ -104,21 +104,22 @@ select ok(
 set local role authenticated;
 select is(
   (select string_agg(right(transaction_id::text, 1) || ':' || lag_minutes || ':' || names_grab, ',' order by transaction_id)
-     from public.delivery_ledger_candidates() where delivery_id = 'ffffffff-0000-4000-8000-000000000001'),
+     from jsonb_to_recordset(public.delivery_ledger_candidates()) as c(delivery_id uuid, transaction_id uuid, lag_minutes integer, names_grab boolean) where delivery_id = 'ffffffff-0000-4000-8000-000000000001'),
   '1:-8:true,2:-5:false',
   'order one''s candidates are the equal-amount rows within three days, lag in Bangkok time, and whether they name GRAB'
 );
 select is(
   (select string_agg(right(transaction_id::text, 1) || ':' || lag_minutes, ',' order by transaction_id)
-     from public.delivery_ledger_candidates() where delivery_id = 'ffffffff-0000-4000-8000-000000000002'),
+     from jsonb_to_recordset(public.delivery_ledger_candidates()) as c(delivery_id uuid, transaction_id uuid, lag_minutes integer, names_grab boolean) where delivery_id = 'ffffffff-0000-4000-8000-000000000002'),
   '1:-58,2:-55',
   'a second order of the same total sees the same rows, so the rule can refuse the contest'
 );
 select is(
-  (select count(*)::integer from public.delivery_ledger_candidates() where delivery_id = 'ffffffff-0000-4000-8000-000000000003'),
+  (select count(*)::integer from jsonb_to_recordset(public.delivery_ledger_candidates()) as c(delivery_id uuid, transaction_id uuid, lag_minutes integer, names_grab boolean) where delivery_id = 'ffffffff-0000-4000-8000-000000000003'),
   0,
   'a ฿0 order has no candidates'
 );
+select is(jsonb_typeof(public.delivery_ledger_candidates()), 'array', 'one JSON array, which the row cap cannot cut (041)');
 reset role;
 
 select is(

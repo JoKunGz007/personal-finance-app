@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(31);
+select plan(32);
 
 -- Grab rides: storage, the write path, matching, and the one-payment-one-document guard across
 -- orders and rides (migration 034, PLAN task 58 part 5, D-222).
@@ -173,10 +173,11 @@ select is(
 set local role authenticated;
 select is(
   (select string_agg(right(c.transaction_id::text, 1) || ':' || c.lag_minutes || ':' || c.names_grab, ',' order by c.transaction_id)
-     from public.ride_ledger_candidates() c join public.rides r on r.id = c.ride_id where r.booking_id = 'A-INVENTEDRIDE1'),
+     from jsonb_to_recordset(public.ride_ledger_candidates()) as c(ride_id uuid, transaction_id uuid, lag_minutes integer, names_grab boolean) join public.rides r on r.id = c.ride_id where r.booking_id = 'A-INVENTEDRIDE1'),
   '1:20:true,3:775:true',
   'a ride''s candidates are the equal-amount rows within three days, lag from the pickup in Bangkok time'
 );
+select is(jsonb_typeof(public.ride_ledger_candidates()), 'array', 'one JSON array, which the row cap cannot cut (041)');
 reset role;
 
 select is(

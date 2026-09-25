@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(27);
+select plan(28);
 
 -- The owner's say over a receipt's ledger row, and the candidate read beneath the automatic
 -- rule (migration 030, PLAN task 56, D-212).
@@ -103,16 +103,17 @@ select ok(
 set local role authenticated;
 select is(
   (select string_agg(right(transaction_id::text, 1) || ':' || lag_minutes || ':' || names_true_money, ',' order by transaction_id)
-     from public.receipt_ledger_candidates() where receipt_id = 'ffffffff-0000-4000-8000-000000000001'),
+     from jsonb_to_recordset(public.receipt_ledger_candidates()) as c(receipt_id uuid, transaction_id uuid, lag_minutes integer, names_true_money boolean) where receipt_id = 'ffffffff-0000-4000-8000-000000000001'),
   '1:2:true,2:1:false',
   'receipt one''s candidates are the equal-amount rows within three days, with lag and whether they name TRUE MONEY'
 );
 select is(
   (select string_agg(right(transaction_id::text, 1) || ':' || lag_minutes, ',' order by transaction_id)
-     from public.receipt_ledger_candidates() where receipt_id = 'ffffffff-0000-4000-8000-000000000002'),
+     from jsonb_to_recordset(public.receipt_ledger_candidates()) as c(receipt_id uuid, transaction_id uuid, lag_minutes integer, names_true_money boolean) where receipt_id = 'ffffffff-0000-4000-8000-000000000002'),
   '1:-58,2:-59',
   'a row before the receipt still reads, with a negative lag, so the rule can refuse it rather than never see it'
 );
+select is(jsonb_typeof(public.receipt_ledger_candidates()), 'array', 'one JSON array, which the row cap cannot cut (041)');
 reset role;
 
 select is(

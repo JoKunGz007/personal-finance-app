@@ -20,7 +20,8 @@ const READ_BUDGET_MS = 20_000;
  * gets back counts only.
  *
  * Same gate as statement Sync: `strongOwnerClient()`, and every write goes through
- * `capture_delivery` or `capture_ride` under the owner's own session (`lib/server/delivery-store.ts`).
+ * `capture_deliveries` or `capture_rides` (migration 041), which call `capture_delivery` or
+ * `capture_ride` per document, under the owner's own session (`lib/server/delivery-store.ts`).
  */
 export async function POST() {
   const started = Date.now();
