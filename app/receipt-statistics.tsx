@@ -121,10 +121,9 @@ export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
           <h2 id="receipt-stats-title">What the receipts show</h2>
           <div className="heading-note">
             <LedgerNote label="About receipt statistics">
-              Computed over every stored receipt. These purchases are already in the ledger as the
-              payments that made them, so none of these figures is added to a ledger total. Every
-              receipt&rsquo;s total counts; item figures read only receipts whose item list is
-              complete, and leave out stamps, promotions and zero-priced lines.
+              Every stored receipt. They&apos;re already on the ledger as payments, so nothing here
+              adds to a ledger total. Item figures use only receipts with a complete item list, and
+              skip stamps, promotions and ฿0 lines.
             </LedgerNote>
           </div>
         </div>

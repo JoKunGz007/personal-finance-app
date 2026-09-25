@@ -89,17 +89,14 @@ export function LedgerControls({
           <h2 id="ledger-title">Transactions</h2>
           <div className="heading-note">
             <LedgerNote label="About these transactions">
-              Everything committed to the ledger, and every slip still waiting for the statement
-              that will confirm it. Source facts are immutable here — the one thing this view
-              writes is your say over a match, which is stored beside them and never in them.
+              Everything on the ledger, plus slips still waiting for their statement. Bank records
+              here never change; only your match decisions are saved, beside them.
               {" "}
               {/* Folded here rather than repeated on each excluded row (PLAN task 48, D-156's
                   rule). It explains a principle and never changes, so a row wears the chip and
                   this says once what the chip means. */}
-              A row marked <strong>Excluded</strong>{" "}
-              isn&apos;t counted as income or spending, but
-              the money still moved — it stays in every balance. Only the totals above and
-              Statistics change.
+              An <strong>Excluded</strong> row isn&apos;t counted as income or spending, but the
+              money still moved, so balances include it. Only the totals above and Statistics change.
             </LedgerNote>
           </div>
         </div>

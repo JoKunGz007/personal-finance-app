@@ -36,9 +36,8 @@ export function CapturedSlips({ slips, decided, busy, error, onLoad }: {
           <h2 id="captured-title">On this ledger</h2>
           <div className="heading-note">
             <LedgerNote label="About captured slips">
-            Every slip stored here, newest first. A slip is a provisional entry: it counts as
-            money that moved, and the statement is what confirms it. Whether one has been
-            matched to a statement row is shown in the ledger, not here.
+              Newest first. A slip counts as money that moved until its statement confirms it.
+              Whether it matched a statement row shows on the ledger.
             </LedgerNote>
           </div>
         </div>

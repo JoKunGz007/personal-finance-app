@@ -17,10 +17,8 @@ export default function CategoriesPage() {
           <h1 id="page-title">Categories</h1>
           <div className="heading-note">
             <LedgerNote label="About categories">
-              A category is a label you type once here and then attach to a statement row&rsquo;s
-              overlay from the ledger. Renaming one here renames it everywhere it is attached;
-              archiving one takes it out of the picker without touching any row that already
-              carries it.
+              Type a category once here, then attach it to rows on the ledger. Renaming changes it
+              everywhere. Archiving hides it from the picker; rows that have it keep it.
             </LedgerNote>
           </div>
         </div>

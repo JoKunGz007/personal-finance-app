@@ -426,11 +426,10 @@ export function SlipBatch({ onCaptured }: { onCaptured?: () => void } = {}) {
           <h2 id="slip-batch-title">Upload a backlog of slips</h2>
           <div className="heading-note">
             <LedgerNote label="About bulk slip upload">
-            Choose many slip images at once. Each QR is read on-device for bank and reference;
-            reading the amount sends the image to Google Cloud Vision (nothing stored, either
-            side). A slip auto-captures only when the amount read cleanly <b>and</b>{" "}
-            the date came from the QR or slip — never today&apos;s date, since a backlog dated today can&apos;t
-            pair with a statement. Everything else needs your input below.
+              Pick many slip images at once. The QR (bank, reference) is read on this device; the
+              amount is read by Google Cloud Vision (nothing stored either side). A slip saves
+              itself only when the amount read cleanly <b>and</b>{" "}the date came from the slip,
+              never today&apos;s date. The rest need your input below.
             </LedgerNote>
           </div>
         </div>

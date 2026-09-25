@@ -445,8 +445,8 @@ export function StatisticsView() {
         <h2 id="balance-chart-title">Balance over time</h2>
         <p className="field-help">
           {accountId === null
-            ? "Your combined position across every account, derived over the whole ledger."
-            : "This account's own closing balance for each day, as its statements printed it."}
+            ? "All your accounts combined."
+            : "This account's closing balance each day, as its statements printed it."}
         </p>
         <BalanceChart points={dailyBalances} />
       </section>

@@ -513,10 +513,9 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
         <span>
           <b>Bind automatically when the account is unambiguous.</b>
           <LedgerNote label="About automatic binding">
-            Binds when exactly one account matches the statement&apos;s bank and last four digits,
-            straight to review. A mismatch is still refused, every balance is still shown, and
-            nothing reaches the ledger until you confirm. Turn off to choose manually — the
-            matching account stays preselected.
+            Goes straight to review when exactly one account matches the statement&apos;s bank and
+            last four digits. Mismatches are still refused, and nothing is saved until you confirm.
+            Turn off to choose yourself; the match stays preselected.
           </LedgerNote>
         </span>
       </label>

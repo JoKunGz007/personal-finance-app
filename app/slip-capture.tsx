@@ -382,9 +382,9 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
           <h2 id="slip-title">Capture a transfer slip</h2>
           <div className="heading-note">
             <LedgerNote label="About slip capture">
-            The QR names the bank and transaction; you confirm the amount. Slips are
-            provisional — the statement remains the authority. QR read is local; reading the
-            amount sends the image to Google Cloud Vision (stores nothing, either side).
+              The QR gives the bank and transaction; you confirm the amount. A slip is provisional
+              until the statement confirms it. The QR is read on this device; the amount is read by
+              Google Cloud Vision (nothing stored either side).
             </LedgerNote>
           </div>
         </div>

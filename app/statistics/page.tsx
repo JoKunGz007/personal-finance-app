@@ -22,13 +22,11 @@ export default function StatisticsPage() {
           <h1 id="page-title">Statistics</h1>
           <div className="heading-note">
             <LedgerNote label="About these figures">
-              Every figure is computed in the database over every row in the selected window, never
-              over the rows a page happened to hold, and every one is exact to the satang. The
-              window is All time until you narrow it, and whatever it resolves to is printed above
-              the figures with its day count — so an average is always over the days named there.
-              Averages are integer division that keeps its remainder, so nothing is lost or rounded
-              into place. Cash entries are not counted yet, and rows marked as excluded from
-              reporting are left out of the totals but still move the balance line.
+              Computed in the database over every row in the window, exact to the satang. The window
+              starts at All time; its dates and day count show above the figures, and averages are
+              over those days, keeping their remainder rather than rounding. Cash entries
+              aren&apos;t counted yet. Excluded rows are left out of totals but still move the
+              balance line.
             </LedgerNote>
           </div>
         </div>

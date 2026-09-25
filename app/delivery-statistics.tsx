@@ -90,11 +90,10 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
           <h2 id="delivery-stats-title">What the orders and rides cost</h2>
           <div className="heading-note">
             <LedgerNote label="About delivery statistics">
-              Computed over every stored order and ride. They are already in the ledger as the
-              payments that made them, so none of these figures is added to a ledger total. An order
-              counts at what it really cost you: a co-payment order at your share of the food the wallet
-              paid (50% in 2025, 40% from 2026, the government paying at most ฿200 a day), plus the
-              fee in full. Months are Bangkok months, dated as the lists below date them.
+              Every stored order and ride. They&apos;re already on the ledger as payments, so
+              nothing here adds to a ledger total. Co-payment orders count at your share (50% in
+              2025, 40% from 2026; the government pays at most ฿200 a day) plus the fee. Months are
+              Bangkok time.
             </LedgerNote>
           </div>
         </div>

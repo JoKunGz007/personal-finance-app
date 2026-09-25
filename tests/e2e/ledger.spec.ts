@@ -115,7 +115,7 @@ test("keeps the disclosure out of the name of the heading and the landmark", asy
   // And still exact with the panel open, which is the case that was worst: the paragraph itself
   // was being read back as the name of the region.
   await page.getByRole("button", { name: "About these transactions" }).click();
-  await expect(page.getByText(/Source facts are immutable here/)).toBeVisible();
+  await expect(page.getByText(/Bank records here never change/)).toBeVisible();
   await expect(heading).toHaveCount(1);
   await expect(region).toHaveCount(1);
 });

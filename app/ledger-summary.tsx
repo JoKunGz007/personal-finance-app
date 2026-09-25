@@ -173,10 +173,9 @@ export function LedgerSummary({
         <p className="ledger-status">
           <b>Slips: {matches.bySlip.size} verified · {slipCount - matches.bySlip.size - matches.needsReview.size} awaiting a statement{matches.needsReview.size > 0 ? ` · ${matches.needsReview.size} needing review` : ""}</b>
           <LedgerNote label="How slips are matched">
-            A slip is matched to a statement row only when the bank, the exact amount and a date
-            within one day identify one row and no other slip claims it. No layout prints the
-            slip&apos;s reference, so a match is a proposal from those three facts rather than an
-            identifier the two records share.
+            A slip matches a statement row when the bank, the exact amount and a date within one day
+            point to one row no other slip claims. Statements don&apos;t print the slip&apos;s
+            reference, so this is a best match, not a shared ID.
           </LedgerNote>
         </p>
       ) : null}
@@ -189,11 +188,9 @@ export function LedgerSummary({
             {cardMatches.balanceConflict.size > 0 ? ` · ${cardMatches.balanceConflict.size} whose balance disagrees` : ""}
           </b>
           <LedgerNote label="How notification cards are matched">
-            A card matches on the account it was bound to, the exact amount, a date within one day,
-            and the balance it printed being equal to the row&apos;s. The balance is what a slip
-            does not have: it breaks a tie between two rows of the same amount, and a card that
-            fits on everything else while contradicting the balance refuses to pair rather than
-            guessing. Recomputed on every load, and nothing about a card&apos;s match is stored yet.
+            A card matches on its account, the exact amount, a date within one day, and its printed
+            balance equalling the row&apos;s. The balance breaks ties; a card whose balance
+            disagrees stays unmatched rather than guessed. Rechecked on every load, not stored yet.
           </LedgerNote>
         </p>
       ) : null}

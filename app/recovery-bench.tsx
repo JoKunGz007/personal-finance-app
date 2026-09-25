@@ -139,8 +139,9 @@ export function RecoveryBench() {
           <h2 id="recovery-title">Back up and restore the ledger</h2>
           <div className="heading-note">
             <LedgerNote label="About backup and restore">
-            The real ledger backup (not the import route&apos;s synthetic preview) — your full snapshot, encrypted in-browser with a password the server never sees.
-            Keep the file and password apart: either alone is useless, and losing both makes the ledger unrecoverable.
+              Your full ledger, encrypted in this browser with a password the server never sees.
+              Keep the file and the password apart: either alone is useless, and losing both loses
+              the ledger.
             </LedgerNote>
           </div>
         </div>

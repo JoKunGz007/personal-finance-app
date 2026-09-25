@@ -64,6 +64,11 @@ export function DeliveriesBench() {
   const shown = filterDeliveries(deliveries ?? [], rides ?? [], filter);
   // Over every stored order, not the filtered ones: the daily cap depends on the day's other orders.
   const scheme = useMemo(() => schemeCosts(deliveries ?? []), [deliveries]);
+  // The newest 20 of each list until asked: all 121 orders and 276 rides made the page 59,000px tall
+  // on a phone (/ux-review, D-228). A filter or search shows every match, so an order waiting for
+  // you to pick its row is never hidden past the cut.
+  const [allOrders, setAllOrders] = useState(false);
+  const [allRides, setAllRides] = useState(false);
   const filtered = filter.show !== "all" || filter.ledger !== "all" || filter.query.trim() !== "";
 
   const load = useCallback(async (automatic = false) => {
@@ -151,15 +156,12 @@ export function DeliveriesBench() {
             <h2 id="stored-deliveries-title">Food orders</h2>
             <div className="heading-note">
               <LedgerNote label="About stored orders">
-                Every order stored here, newest first. A GrabFood order is dated when its e-receipt
-                was sent, and matches a GRAB row of its exact total up to two hours before. A LINE MAN
-                order is dated when it was placed, and matches a LINE PAY or LINE MAN row of what was
-                charged, from 5 minutes before that time to 30 after.
-                An order paid with เป๋าตัง was paid outside the app, in full or for its food, and
-                only what was charged is ever a ledger row. Its real cost is your share of the food
-                the wallet paid (50% in 2025 under คนละครึ่ง, 40% from 2026 under ไทยช่วยไทย, the
-                government paying at most ฿200 a day), plus the fee in full. Only delivery orders
-                count toward that ฿200, so a day you also used the scheme in a shop reads low.
+                Newest first. GrabFood is dated by its e-receipt and matches a GRAB row of the exact
+                total up to 2 hours before. LINE MAN is dated by its order time and matches a LINE
+                PAY or LINE MAN row of what was charged, 5 minutes before to 30 after. What เป๋าตัง
+                paid has no ledger row. Real cost = your share of that food (50% in 2025, 40% from
+                2026; the government pays at most ฿200 a day) plus the fee. Scheme spending in shops
+                isn&apos;t seen here, so such a day reads low.
               </LedgerNote>
             </div>
           </div>
@@ -219,8 +221,9 @@ export function DeliveriesBench() {
         ) : shown.deliveries.length === 0 ? (
           <p className="ledger-empty">No order matches these filters.</p>
         ) : (
+          <>
           <ul className="receipt-list">
-            {shown.deliveries.map((delivery) => (
+            {(allOrders || filtered ? shown.deliveries : shown.deliveries.slice(0, LIST_LIMIT)).map((delivery) => (
               <li key={delivery.id}>
                 <details>
                   <summary>
@@ -254,7 +257,7 @@ export function DeliveriesBench() {
                       <tbody>
                         {delivery.items.map((item) => (
                           <tr key={item.position}>
-                            <td data-label="Dish">{item.name}{item.options.length > 0 ? <small> · {item.options.join(", ")}</small> : null}</td>
+                            <td data-label="Dish">{item.name}{item.options.length > 0 ? <small> · {optionText(delivery.platform, item.options)}</small> : null}</td>
                             <td data-label="Qty" className="numeric">{item.quantity}</td>
                             <td data-label="Amount" className="numeric">{formatThb(item.amount_minor)}</td>
                           </tr>
@@ -284,6 +287,8 @@ export function DeliveriesBench() {
               </li>
             ))}
           </ul>
+          <MoreButton count={filtered ? 0 : shown.deliveries.length} open={allOrders} noun="orders" onToggle={() => setAllOrders((open) => !open)} />
+          </>
         )}
       </section>
 
@@ -295,9 +300,9 @@ export function DeliveriesBench() {
               <h2 id="stored-rides-title">Grab rides</h2>
               <div className="heading-note">
                 <LedgerNote label="About stored rides">
-                  Every ride stored here, newest first, dated when it ended. A ride itemizes a card
-                  payment the ledger already holds, found by its exact total on a GRAB row from 30
-                  minutes before pickup to 15 after — Grab charges when the ride is booked. A row that both an order and a ride could be is left for you to pick.
+                  Newest first, dated when the ride ended. Matches a GRAB row of the exact total, 30
+                  minutes before pickup to 15 after (Grab charges at booking). A row that could be
+                  an order or a ride is left for you to pick.
                 </LedgerNote>
               </div>
             </div>
@@ -307,8 +312,9 @@ export function DeliveriesBench() {
           ) : shown.rides.length === 0 ? (
             <p className="ledger-empty">No ride matches these filters.</p>
           ) : (
+            <>
             <ul className="receipt-list">
-              {shown.rides.map((ride) => (
+              {(allRides || filtered ? shown.rides : shown.rides.slice(0, LIST_LIMIT)).map((ride) => (
                 <li key={ride.id}>
                   <details>
                     <summary>
@@ -352,6 +358,8 @@ export function DeliveriesBench() {
                 </li>
               ))}
             </ul>
+            <MoreButton count={filtered ? 0 : shown.rides.length} open={allRides} noun="rides" onToggle={() => setAllRides((open) => !open)} />
+            </>
           )}
         </section>
       )}
@@ -372,6 +380,23 @@ function SchemeChip({ cost }: { cost: SchemeCost | undefined }) {
       {cost.scheme} · real cost {formatThb(cost.cost)}{parts}{cost.capped ? " · ฿200 daily cap reached" : ""}
     </span>
   );
+}
+
+const LIST_LIMIT = 20;
+
+function MoreButton({ count, open, noun, onToggle }: { count: number; open: boolean; noun: string; onToggle: () => void }) {
+  if (count <= LIST_LIMIT) return null;
+  return (
+    <button type="button" className="secondary-button list-more" aria-expanded={open} onClick={onToggle}>
+      {open ? `Show the newest ${LIST_LIMIT}` : `Show all ${count} ${noun}`}
+    </button>
+  );
+}
+
+// GrabFood prints one option per line. LINE MAN prints them as one comma-separated run that the
+// screenshot wraps mid-phrase ("… 50" / "กรัม (1)"), so its lines are rejoined with a space.
+function optionText(platform: "grabfood" | "lineman", options: readonly string[]): string {
+  return options.join(platform === "lineman" ? " " : ", ");
 }
 
 function dishCount(delivery: { items: readonly { quantity: number }[] }): string {

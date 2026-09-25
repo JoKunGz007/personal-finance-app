@@ -231,9 +231,8 @@ export function ReceiptsBench() {
         </div>
         <div className="slip-form">
           <p className="field-help">
-            PDFs are read on this device. Screenshots of the 7-Eleven app are sent to Google Cloud
-            Vision to be read (stored nowhere, either side); pick every screenshot of a long receipt
-            together and they are joined into one.
+            PDFs are read on this device; app screenshots are read by Google Cloud Vision (stored
+            nowhere). Pick all screenshots of a long receipt together to join them.
           </p>
           <label className="account-control">
             <span>7-Eleven e-tax PDFs or app screenshots</span>
@@ -301,9 +300,9 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
           <h2 id="stored-receipts-title">On this ledger</h2>
           <div className="heading-note">
             <LedgerNote label="About stored receipts">
-              Every receipt stored here, newest first, with the forms it was read from. A partial
-              receipt&rsquo;s total is trusted and its item list is not; saving the other form of
-              the same purchase can complete it.
+              Newest first, with the forms each was read from. A partial receipt&apos;s total is
+              right but its item list is incomplete; saving the other form of the same purchase
+              completes it.
             </LedgerNote>
           </div>
         </div>
