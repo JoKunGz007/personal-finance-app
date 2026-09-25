@@ -18,15 +18,15 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and D-212 … D-219**
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and D-223 … D-227**
 in full, with fourteen archive files beside it under [docs/decisions/](docs/decisions/) — the index
 at the top of `DECISIONS.md` lists every entry in all of them, so **read the index rather than
 opening an archive to find something**. **The gaps in the archived ranges are the rule, not an
 accident** — a boundary excludes every open question and steps over one rather than stopping short
 (D-133, D-154, D-164, D-167, D-171, D-187). **What is left in the maintained file is the two open
-questions, the newest entries (D-212, D-214 … D-218) and the boundary's own record of itself (D-213)** — the mailbox archive (D-141), deferred by
+questions, the newest entries (D-223 … D-226) and the boundary's own record of itself (D-227)** — the mailbox archive (D-141), deferred by
 the owner, and `list_match_candidates`' unbounded scan (D-158), recorded in its own migration and
-unfixed; nothing else here is unanswered. **The sixteenth boundary (D-213, 2026-09-23) took the file
+unfixed; nothing else here is unanswered. **The seventeenth boundary (D-227, 2026-09-25) moved D-212 … D-222 to `docs/decisions/ARCHIVE-D-212-D-222.md` on the owner's word; the sixteenth (D-213, 2026-09-23) took the file
 from 94% to 53%**, moving D-198 … D-211 to `docs/decisions/ARCHIVE-D-198-D-211.md` on the owner's word; the fifteenth (D-198) had taken it
 from 96% to 49% — the first boundary taken on the owner's
 direct word rather than an argument closing or a reading landing, because nothing in the range it
