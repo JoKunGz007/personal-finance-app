@@ -58,7 +58,7 @@ export function ImportBench() {
   const [stage, setStage] = useState<Stage>("select");
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("No PDF selected. Try the synthetic statement to review the complete flow safely.");
+  const [status, setStatus] = useState("No PDF selected.");
   const [statement, setStatement] = useState<ImportPayload | null>(null);
   // From the reconciliation that produced the payload, not from re-reconciling the payload.
   // The payload's rows are already in applied order, so it reconciles clean and would
@@ -578,7 +578,7 @@ export function ImportBench() {
     if (!statement) return;
     setStage("confirmed");
     setPreviewStale(true);
-    setStatus("Synthetic batch confirmed in this browser preview. Start local Supabase to persist authenticated imports.");
+    setStatus("Synthetic batch confirmed in this preview only. Nothing was saved to the ledger.");
   }
 
   async function downloadBackup() {

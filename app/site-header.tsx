@@ -133,7 +133,7 @@ export function SiteHeader({ font, theme }: { font: FontChoice; theme: ThemeChoi
           hides. Nothing here is a landmark, so flattening it costs no semantics. */}
       <div className="header-panel" id="header-panel" data-open={panelOpen}>
       <div className="header-side">
-        <span className="privacy-chip"><i aria-hidden="true" /> Documents stay on this device</span>
+        <span className="privacy-chip"><i aria-hidden="true" /> Statements unlock on this device</span>
         <FontPicker value={font} />
         <ThemePicker value={theme} />
         {/* Local acceptance only, and opt-in. The bundler inlines the flag at build time, so

@@ -13,7 +13,7 @@ export default function RecoveryPage() {
           re-reading on every visit. */}
       <section className="intro" aria-labelledby="page-title">
         <div>
-          <p className="eyebrow">Recovery · encrypted artifacts</p>
+          <p className="eyebrow">Recovery · encrypted backups</p>
           <h1 id="page-title">Recovery</h1>
           <div className="heading-note">
             <LedgerNote label="About recovery">

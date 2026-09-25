@@ -10,7 +10,7 @@ export default function OrdersPage() {
     <>
       <section className="intro" aria-labelledby="page-title">
         <div>
-          <p className="eyebrow">Orders · food orders and rides</p>
+          <p className="eyebrow">Orders · food and rides</p>
           <h1 id="page-title">Orders</h1>
           <div className="heading-note">
             <LedgerNote label="About orders">

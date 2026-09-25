@@ -61,13 +61,13 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
     setSignInNote(null);
     const result = await ledgerRequest("/api/v1/deliveries/statistics", deliveryStatisticsSchema, {
       fallback: "Delivery statistics could not be loaded.",
-      unreachable: "The ledger could not be reached, so delivery statistics are not shown.",
-      offContract: "The delivery statistics did not match their contract, so none are shown."
+      unreachable: "The ledger could not be reached, so order statistics are not shown.",
+      offContract: "The order statistics did not match their contract, so none are shown."
     });
     setBusy(false);
     if (!result.ok) {
       if (automatic && (result.status === 401 || result.status === 403)) {
-        setSignInNote(result.status === 401 ? "Sign in to see delivery statistics." : result.why);
+        setSignInNote(result.status === 401 ? "Sign in to see order statistics." : result.why);
         return;
       }
       setError(result.why);
@@ -89,7 +89,7 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
         <div>
           <h2 id="delivery-stats-title">What the orders and rides cost</h2>
           <div className="heading-note">
-            <LedgerNote label="About delivery statistics">
+            <LedgerNote label="About order statistics">
               Every stored order and ride. They&apos;re already on the ledger as payments, so
               nothing here adds to a ledger total. Co-payment orders count at your share (50% in
               2025, 40% from 2026; the government pays at most ฿200 a day) plus the fee. Months are
@@ -101,7 +101,7 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
 
       <div className="ledger-controls">
         <button type="button" className="secondary-button" disabled={busy} onClick={() => void load()}>
-          {busy ? "Loading…" : stats ? "Reload" : "Show delivery statistics"}
+          {busy ? "Loading…" : stats ? "Reload" : "Show statistics"}
         </button>
       </div>
 
@@ -120,6 +120,7 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
         <>
           <p className="field-help">
             {totals.firstDate} to {totals.lastDate} · {totals.orders} order{totals.orders === 1 ? "" : "s"}
+            {" "}· {stats.rides.rides} ride{stats.rides.rides === 1 ? "" : "s"}
           </p>
           <dl className="statement-strip">
             <div><dt>Orders</dt><dd>{totals.orders}</dd></div>
@@ -137,12 +138,16 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
           <Table id="delivery-months" title="By month" columns={["Month", "Orders", "Food cost", "Rides", "Ride cost"]}
             rows={stats.months.map((m) => ({ key: m.month, cells: [m.month, m.orders, formatThb(m.spent), m.rides, formatThb(m.rideSpent)] }))} />
 
-          <dl className="statement-strip">
-            <div><dt>Rides</dt><dd>{stats.rides.rides}</dd></div>
-            <div><dt>Ride cost</dt><dd>{formatThb(stats.rides.spent)}</dd></div>
-            <div><dt>Average ride</dt><dd>{stats.rides.averageSpent ? formatThb(stats.rides.averageSpent.quotient) : "—"}</dd></div>
-            <div><dt>Platform fees</dt><dd>{formatThb(stats.rides.platformFees)}</dd></div>
-          </dl>
+          {/* Its own heading: without one the ride totals read as part of "By month" above them. */}
+          <section className="stats-section" aria-labelledby="delivery-rides-title">
+            <h2 id="delivery-rides-title">Rides</h2>
+            <dl className="statement-strip">
+              <div><dt>Rides</dt><dd>{stats.rides.rides}</dd></div>
+              <div><dt>Ride cost</dt><dd>{formatThb(stats.rides.spent)}</dd></div>
+              <div><dt>Average ride</dt><dd>{stats.rides.averageSpent ? formatThb(stats.rides.averageSpent.quotient) : "—"}</dd></div>
+              <div><dt>Platform fees</dt><dd>{formatThb(stats.rides.platformFees)}</dd></div>
+            </dl>
+          </section>
           <Table id="delivery-ride-types" title="By ride type" columns={["Ride type", "Rides", "Cost"]}
             rows={stats.rideTypes.map((t) => ({ key: t.rideType, cells: [t.rideType, t.rides, formatThb(t.spent)] }))} />
         </>
