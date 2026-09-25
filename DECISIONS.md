@@ -408,6 +408,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-231** — A fifth /ux-review: the header chip claims only what is true, ride totals get a heading, and /import drops developer wording
 - **D-230** — The three older candidate reads return one JSON array, Sync captures in batches, and `/deliveries` becomes `/orders`
 - **D-229** — A Grab ride paid in two parts matches both rows, and an unnamed KBANK card spend counts as Grab's
 - **D-228** — A fourth /ux-review over every page: shorter notes and labels, /deliveries lists capped at 20, and /import fitting a 1024px laptop
@@ -416,6 +417,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-231 — A fifth /ux-review: the header chip claims only what is true, ride totals get a heading, and /import drops developer wording
+
+- Date: 2026-09-25
+- Status: **Shipped as `dc1c210`, confirmed live.** Asked for by the owner, who pre-approved every recommended fix. Files: `app/site-header.tsx`, `app/delivery-statistics.tsx`, `app/import-bench.tsx`, `app/orders/page.tsx`, `app/recovery/page.tsx`.
+- **Measured over all eight pages at 1440px and 375px** in the signed-in pane: no sideways scroll, no missing names, no skipped headings, no contrast failure, no digit outside the figures font, no console error; every target under 44px is a known exception (the desktop header, and the 26px (i) toggles, which grow to 44px on a phone). Keyboard: focus is visible, and Escape closes a note and keeps focus on its toggle.
+- **Revisits D-129's chip call.** The header chip read "Documents stay on this device" on every page. D-129 kept it because statement import was then the only path, and it was true of that path. It no longer describes the app: slip, receipt and LINE MAN screenshots go to Google Cloud Vision, and Grab mail is read on the server. It now reads **"Statements unlock on this device"**, which stays true: a mailbox-synced statement reaches the browser still encrypted.
+- **`/orders` statistics:** the ride totals had no heading and sat under "By month", so they read as part of it. They are now under their own **Rides** heading, and the range line counts rides as well as orders. Leftover "delivery statistics" wording became "order statistics".
+- **`/import`:** the idle status line no longer pushes the synthetic demo, and confirming the demo says "Nothing was saved to the ledger" instead of "Start local Supabase to persist authenticated imports". The demo button stays, because the isolated Playwright suite drives it; it never writes to the database.
+- **Not taken:** a back-to-top control on the phone ledger (about 34,000px for its first page of rows). "Load older" paging and the filters already bound it, and a floating control would cost screen on every page.
+- Gate: `tsc` clean; `eslint` 0 errors on the touched files; Vitest **1209 / 7 skipped**. Live: the chip, both eyebrows, the Rides heading and the range line read as intended at 1440px and 375px, with no sideways scroll.
 
 ## D-230 — The three older candidate reads return one JSON array, Sync captures in batches, and `/deliveries` becomes `/orders`
 
