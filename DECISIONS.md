@@ -402,9 +402,21 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-220** — GrabFood orders match ledger rows on a measured two-hour window before the e-receipt, and backup moves to v11
 - **D-221** — A matched ledger row shows its GrabFood order, and the receipt and delivery match routes share one handler
 - **D-222** — Grab rides are read, stored with their places, and matched around the pickup; one ledger row is never claimed by both an order and a ride, and backup moves to v12
+- **D-226** — The co-payment real cost uses the year's rate and a ฿200 daily cap, checked against the owner's เป๋าตัง history
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-226 — The co-payment real cost uses the year's rate and a ฿200 daily cap, checked against the owner's เป๋าตัง history
+
+- Date: 2026-09-25
+- Status: **Migration 038 on hosted; code committed with it.** Task: `PLAN.md` 58 part 2. Amends D-224 and D-225. Files: `lib/delivery-cost.ts` (`schemeCosts`, `schemeWallet`), `supabase/migrations/202610030038_scheme_daily_cap.sql`, `app/deliveries-bench.tsx`, `app/delivery-statistics.tsx`, `tests/delivery-cost.test.ts`, `supabase/tests/024_delivery_statistics.sql`.
+- **The owner checked 9 of the 16 orders against the เป๋าตัง app.** 6 agreed. The two split LINE MAN orders differed by exactly the ฿16 fee the bank was charged: the เป๋าตัง app shows only the wallet part, so the chip now shows both (real cost = เป๋าตัง amount + delivery fee by bank). One more differed: 60% of its food was over ฿200, and the government pays at most ฿200 a day.
+- **The rule now, confirmed against the published terms:** the government pays 50% of the food in 2025 (คนละครึ่งพลัส, 29 Oct to 31 Dec 2025) and 60% from 2026 (ไทยช่วยไทยพลัส). In both years it pays at most ฿200 per Bangkok day, and the owner says the cap is per day. The cap is a running total over the day's orders, in time order with ties broken by id. The owner's share rounds to the nearest satang, and 50% rounds half up. 2025 means a Bangkok date before 2026-01-01. The 7 orders the owner could not check are all from Nov–Dec 2025, because the 2025 history is gone from the app.
+- **Known limits, both reading low:** the ฿200 is shared with scheme spending no table holds (a shop, a market), and each campaign's total limit is not modelled.
+- **The same rule lives in two places**, the TS chip and 038's SQL, and each side's tests pin the same cases. The chip is computed over every stored order, not the filtered list, because the cap depends on the day's other orders. The new pgTAP cases were red-proved against 037's function (3 of 17 fail).
+- Hosted: the backup read **466 / 466** before the push, `--dry-run` named only 038, and it was pushed. Afterwards `anon` still may not execute, `authenticated` may, and the sequence is unchanged. **Backup stays v13.**
+- Gate: `pnpm supabase:reset` on 38 migrations; pgTAP `Result: PASS`; Vitest **1200 passed / 7 skipped**; `tsc` clean; `eslint` 0 errors (2 pre-existing warnings); `check:docs --strict` clean. Both Playwright suites green: isolated 70 / 8 skipped, owner 34 / 34. The run also found `font-picker.spec.ts` red since the Deliveries nav link (`6dd867d`): at 390px, three faces wrapped the nav to 3 rows against the system face's 2. The owner chose a 3-column grid from screenshots, and the suite is green again. `/code-review high`: 6 findings; 3 fixed (two stale help notes, the fee label), 2 recorded as the limits above, 1 not needed.
 
 ## D-225 — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 

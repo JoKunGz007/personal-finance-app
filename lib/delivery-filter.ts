@@ -1,5 +1,5 @@
 import type { StoredDelivery, StoredRide } from "@/lib/deliveries";
-import { schemeRealCost } from "@/lib/delivery-cost";
+import { schemeWallet } from "@/lib/delivery-cost";
 import type { DeliveryMatchState } from "@/lib/delivery-match";
 
 /**
@@ -47,7 +47,7 @@ export function filterDeliveries(
     deliveries: showOrders
       ? deliveries.filter((delivery) =>
         (filter.show === "all" || delivery.platform === filter.show)
-        && matchesLedger(filter.ledger, delivery.match.status, schemeRealCost(delivery) !== null)
+        && matchesLedger(filter.ledger, delivery.match.status, schemeWallet(delivery) !== null)
         && matchesQuery(filter.query, [
           delivery.restaurant, delivery.booking_id, delivery.payment_method,
           ...delivery.items.flatMap((item) => [item.name, ...item.options])

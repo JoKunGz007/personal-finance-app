@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { DeliveryStatisticsPanel } from "@/app/delivery-statistics";
 import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { LedgerNote } from "@/app/ledger-note";
 import { LinemanCapture } from "@/app/lineman-capture";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
-import { schemeRealCost } from "@/lib/delivery-cost";
+import { schemeCosts, type SchemeCost } from "@/lib/delivery-cost";
 import { filterDeliveries, NO_DELIVERY_FILTER, type DeliveryFilter, type DeliveryLedgerFilter, type DeliveryShow } from "@/lib/delivery-filter";
 import { formatThb } from "@/lib/money";
 import {
@@ -62,6 +62,8 @@ export function DeliveriesBench() {
   // Counts Syncs and LINE MAN saves, so the statistics reload when what is stored changes.
   const [changes, setChanges] = useState(0);
   const shown = filterDeliveries(deliveries ?? [], rides ?? [], filter);
+  // Over every stored order, not the filtered ones: the daily cap depends on the day's other orders.
+  const scheme = useMemo(() => schemeCosts(deliveries ?? []), [deliveries]);
   const filtered = filter.show !== "all" || filter.ledger !== "all" || filter.query.trim() !== "";
 
   const load = useCallback(async (automatic = false) => {
@@ -154,8 +156,10 @@ export function DeliveriesBench() {
                 order is dated when it was placed, and matches a LINE PAY or LINE MAN row of what was
                 charged, from 5 minutes before that time to 30 after.
                 An order paid with เป๋าตัง was paid outside the app, in full or for its food, and
-                only what was charged is ever a ledger row. Its real cost under ไทยช่วยไทย is 40% of
-                the food the wallet paid, plus the fee in full.
+                only what was charged is ever a ledger row. Its real cost is your share of the food
+                the wallet paid (50% in 2025 under คนละครึ่ง, 40% from 2026 under ไทยช่วยไทย, the
+                government paying at most ฿200 a day), plus the fee in full. Only delivery orders
+                count toward that ฿200, so a day you also used the scheme in a shop reads low.
               </LedgerNote>
             </div>
           </div>
@@ -184,7 +188,7 @@ export function DeliveriesBench() {
                   <option value="none">No ledger row</option>
                   <option value="pick">Pick a row</option>
                   <option value="outside">Paid outside the app</option>
-                  <option value="scheme">ไทยช่วยไทย</option>
+                  <option value="scheme">ไทยช่วยไทย / คนละครึ่ง</option>
                 </select>
               </label>
               <label className="account-control ledger-filter">
@@ -226,9 +230,7 @@ export function DeliveriesBench() {
                     {delivery.platform === "lineman" ? <span className="receipt-chip quiet">LINE MAN</span> : null}
                     <span className={`receipt-chip ${MATCH_CHIP[delivery.match.status].tone}`}>{MATCH_CHIP[delivery.match.status].label}</span>
                     {delivery.adjustments.some((row) => row.kind === "unprinted") ? <span className="receipt-chip warn">not all on the e-receipt</span> : null}
-                    {delivery.charged_minor !== null && delivery.charged_minor !== delivery.total_minor && delivery.charged_minor !== "0"
-                      ? <span className="receipt-chip quiet">{formatThb(delivery.charged_minor)} charged, food paid outside</span> : null}
-                    <SchemeChip delivery={delivery} />
+                    <SchemeChip cost={scheme.get(delivery.id)} />
                     <span className="receipt-amount numeric">{formatThb(delivery.total_minor)}</span>
                   </summary>
                   <p className="ledger-status">
@@ -357,10 +359,19 @@ export function DeliveriesBench() {
   );
 }
 
-// What a ไทยช่วยไทย order really cost, beside the printed total it does not change.
-function SchemeChip({ delivery }: { delivery: Parameters<typeof schemeRealCost>[0] }) {
-  const cost = schemeRealCost(delivery);
-  return cost === null ? null : <span className="receipt-chip quiet">ไทยช่วยไทย · real cost {formatThb(cost)}</span>;
+// What a co-payment order really cost, beside the printed total it does not change. The เป๋าตัง
+// figure is the one its history shows, so the owner can check it; a split LINE MAN order's delivery
+// fee went to a bank and is named apart from it.
+function SchemeChip({ cost }: { cost: SchemeCost | undefined }) {
+  if (cost === undefined) return null;
+  const parts = cost.charged === "0"
+    ? `, all from เป๋าตัง`
+    : ` = ${formatThb(cost.wallet)} from เป๋าตัง + ${formatThb(cost.charged)} ${cost.chargedIsFee ? "delivery fee " : ""}by bank`;
+  return (
+    <span className="receipt-chip quiet">
+      {cost.scheme} · real cost {formatThb(cost.cost)}{parts}{cost.capped ? " · ฿200 daily cap reached" : ""}
+    </span>
+  );
 }
 
 function dishCount(delivery: { items: readonly { quantity: number }[] }): string {

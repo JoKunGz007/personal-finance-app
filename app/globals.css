@@ -1348,6 +1348,13 @@ footer p { margin: 0; }
     wrong on the screen.
   */
   .site-nav a { min-height: 44px; padding: 11px 12px; display: flex; align-items: center; font-size: 13px; }
+  /* **Three even columns, so the nav's row count is the link count and never the face's width.**
+     Wrapped by width, the eighth link (Deliveries) took Pixelify Sans, Press Start 2P and Silkscreen
+     to three ragged rows and the system face to two — measured at 390px, 136px against 90px — so
+     switching the typeface moved the whole page (`font-picker.spec.ts`). Every face's longest label
+     fits a third of 350px; the owner chose this over a one-row scrolling strip, 2026-09-25. */
+  .site-nav ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .site-nav a { justify-content: center; padding-inline: 6px; }
   /* **The result banner's controls are 36px by a base rule and the audit has never seen them**, because
      it only appears after a capture and no automated run captures a card. Raised here rather than in
      the base rule, which is deliberately compact on a desktop where a pointer is doing the aiming. */

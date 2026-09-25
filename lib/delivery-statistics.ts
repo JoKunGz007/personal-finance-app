@@ -5,11 +5,11 @@ import { exactAverageSchema } from "@/lib/statistics";
 
 /**
  * Wire contract for `GET /api/v1/deliveries/statistics`, which returns `public.delivery_statistics()`
- * verbatim (migration 037, PLAN task 58).
+ * verbatim (migrations 037 and 038, PLAN task 58).
  *
  * **These figures are never ledger totals**: every order and ride already reached the ledger as the
- * payment that made it. An order counts at its real cost, a ไทยช่วยไทย order at 40% of the wallet's
- * food share plus the rest (D-224). Strict throughout, like `lib/receipt-statistics.ts`.
+ * payment that made it. An order counts at its real cost, a co-payment order at the owner's share of
+ * the wallet's food plus the rest (D-224, D-226; `lib/delivery-cost.ts`). Strict throughout, like `lib/receipt-statistics.ts`.
  */
 export const deliveryStatisticsSchema = z.object({
   totals: z.object({

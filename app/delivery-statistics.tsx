@@ -92,8 +92,9 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
             <LedgerNote label="About delivery statistics">
               Computed over every stored order and ride. They are already in the ledger as the
               payments that made them, so none of these figures is added to a ledger total. An order
-              counts at what it really cost you: a ไทยช่วยไทย order at 40% of the food the wallet paid,
-              plus the fee in full. Months are Bangkok months, dated as the lists below date them.
+              counts at what it really cost you: a co-payment order at your share of the food the wallet
+              paid (50% in 2025, 40% from 2026, the government paying at most ฿200 a day), plus the
+              fee in full. Months are Bangkok months, dated as the lists below date them.
             </LedgerNote>
           </div>
         </div>

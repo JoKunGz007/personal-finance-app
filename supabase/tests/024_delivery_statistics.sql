@@ -1,9 +1,10 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(14);
+select plan(17);
 
--- Delivery statistics (migration 037, PLAN task 58). The contract: an order counts at what it
--- really cost — a ไทยช่วยไทย order at 40% of the wallet's food share plus the rest (D-224), the same
+-- Delivery statistics (migrations 037 and 038, PLAN task 58). The contract: an order counts at what it
+-- really cost — a co-payment order at the owner's share of the wallet's food (50% in 2025, 40% from
+-- 2026, the government's share capped at ฿200 a Bangkok day) plus the rest (D-224, D-226), the same
 -- cases `tests/delivery-cost.test.ts` pins on `lib/delivery-cost.ts`; averages are an exact
 -- quotient and remainder; months are Bangkok months; nothing is visible without strong access.
 -- Every value is invented.
@@ -97,6 +98,39 @@ select is((select v->'rides' from s),
 select is((select v->'rideTypes' from s),
   '[{"rideType":"Invented Car","rides":1,"spent":"7001"},{"rideType":"Invented Bike","rides":1,"spent":"5000"}]'::jsonb,
   'ride types are grouped, most rides first, then most spent');
+
+-- The year's rate and the daily cap (038), on five more ฿0 GrabFood orders:
+-- E1 23:59 on 31 Dec 2025 in Bangkok, ฿300 at 50%: costs 15000, the government 15000.
+-- E2, E3 one Bangkok day, ฿150 then ฿200: the government pays 9000, then 11000 of its 12000.
+-- E4 00:30 the next Bangkok day, ฿200: a fresh cap, the government 12000.
+-- E5 3 satang in 2025: half rounds up, costs 2, the government 1.
+reset role;
+set local session_replication_role = replica;
+insert into public.deliveries(id, owner_id, platform, booking_id, restaurant, receipt_sent_at, food_minor, delivery_fee_minor, total_minor)
+values
+  ('dddddddd-0000-4000-8000-000000000251', '11111111-1111-4111-8111-111111111111', 'grabfood', 'A-000251', 'Invented E', '2025-12-31T16:59:00Z', 30000, 0, 0),
+  ('dddddddd-0000-4000-8000-000000000252', '11111111-1111-4111-8111-111111111111', 'grabfood', 'A-000252', 'Invented E', '2026-09-10T02:00:00Z', 15000, 0, 0),
+  ('dddddddd-0000-4000-8000-000000000253', '11111111-1111-4111-8111-111111111111', 'grabfood', 'A-000253', 'Invented E', '2026-09-10T12:00:00Z', 20000, 0, 0),
+  ('dddddddd-0000-4000-8000-000000000254', '11111111-1111-4111-8111-111111111111', 'grabfood', 'A-000254', 'Invented E', '2026-09-10T17:30:00Z', 20000, 0, 0),
+  ('dddddddd-0000-4000-8000-000000000255', '11111111-1111-4111-8111-111111111111', 'grabfood', 'A-000255', 'Invented E', '2025-11-02T05:00:00Z', 3, 0, 0);
+insert into public.delivery_adjustments(owner_id, delivery_id, position, kind, name, amount_minor)
+values
+  ('11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000251', 1, 'discount', 'TH25GF0001ALL', 30000),
+  ('11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000252', 1, 'discount', 'TH26GF0001ALL', 15000),
+  ('11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000253', 1, 'discount', 'TH26GF0001ALL', 20000),
+  ('11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000254', 1, 'discount', 'TH26GF0001ALL', 20000),
+  ('11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000255', 1, 'discount', 'TH25GF0001ALL', 3);
+set local session_replication_role = origin;
+set local role authenticated;
+
+create temporary table s2 on commit drop as select public.delivery_statistics() as v;
+select is((select v->'totals'->>'spent' from s2), '80803',
+  'the year''s rate and the daily cap: 42801 + 15000 + 6000 + 9000 + 8000 + 2');
+select is((select v->'totals'->>'schemePaid' from s2), '90803',
+  'the government paid 43802 + 15000 + 9000 + 11000 + 12000 + 1');
+select is((select jsonb_path_query_array(v->'months', '$[0 to 1]') from s2),
+  '[{"month":"2025-11","orders":1,"spent":"2","rides":0,"rideSpent":"0"},{"month":"2025-12","orders":1,"spent":"15000","rides":0,"rideSpent":"0"}]'::jsonb,
+  '2025 orders cost half their food, dated in Bangkok');
 
 reset role;
 select set_config(
