@@ -1,12 +1,13 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(5);
+select plan(6);
 
--- The rows a ride paid in two parts can be (migration 039, D-229). What this proves: only
--- `authenticated` may read it; it returns GRAB-named charges and unnamed KBANK card spends from a
--- day before pickup to a day after, and POS REFUND deposits up to eight days after, with their
--- signed amounts and lag from pickup; nothing else; and nothing without strong access. Every
--- value below is invented.
+-- The rows a ride paid in two parts can be (migrations 039 and 040, D-229). What this proves: only
+-- `authenticated` may read it; it is one JSON array, so PostgREST's row cap cannot cut it (040);
+-- it holds GRAB-named charges and unnamed KBANK card spends from 30 minutes before pickup to 60
+-- after, and POS REFUND deposits from the pickup day to eight days after, with their signed
+-- amounts and lag from pickup; nothing else; and nothing without strong access. Every value below
+-- is invented.
 
 set local session_replication_role = replica;
 delete from public.ride_match_revisions;
@@ -39,7 +40,7 @@ values ('bbbbbbbb-0000-4000-8000-000000000391', '11111111-1111-4111-8111-1111111
 
 -- T1 GRAB −฿30 at 20:00; T2 GRAB −฿10 at 20:13; T3 POS REFUND +฿5 three days on; T4 an unnamed KBANK
 -- card spend at 20:01. Left out: T5 an unnamed shop; T6 GRAB three days on (a charge, too late);
--- T7 a POS REFUND ten days on.
+-- T7 a POS REFUND ten days on; T8 GRAB at 21:10, 65 minutes after pickup.
 insert into public.source_transactions(id, owner_id, account_id, fingerprint_version, fingerprint,
   source_date, source_time, effective_date, transaction_label, description, post_balance_minor, currency)
 values
@@ -49,7 +50,8 @@ values
   ('dddddddd-0000-4000-8000-000000000394', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000391', 'fingerprint-v1', repeat('4', 64), '2026-09-12', '20:01', '2026-09-12', 'Debit Card Spending', 'Ref Code EDC00001', '497500', 'THB'),
   ('dddddddd-0000-4000-8000-000000000395', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000391', 'fingerprint-v1', repeat('5', 64), '2026-09-12', '20:10', '2026-09-12', 'Card payment', 'Invented shop', '496500', 'THB'),
   ('dddddddd-0000-4000-8000-000000000396', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000391', 'fingerprint-v1', repeat('6', 64), '2026-09-15', '09:00', '2026-09-15', 'Card payment', 'INVENTED GRAB MERCHANT', '495500', 'THB'),
-  ('dddddddd-0000-4000-8000-000000000397', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000391', 'fingerprint-v1', repeat('7', 64), '2026-09-22', '13:30', '2026-09-22', 'ATS', 'POS REFUND NOTE : -', '496000', 'THB');
+  ('dddddddd-0000-4000-8000-000000000397', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000391', 'fingerprint-v1', repeat('7', 64), '2026-09-22', '13:30', '2026-09-22', 'ATS', 'POS REFUND NOTE : -', '496000', 'THB'),
+  ('dddddddd-0000-4000-8000-000000000398', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000391', 'fingerprint-v1', repeat('8', 64), '2026-09-12', '21:10', '2026-09-12', 'Card payment', 'INVENTED GRAB MERCHANT', '495000', 'THB');
 insert into public.source_components(id, owner_id, transaction_id, position, kind, amount_minor, currency)
 values
   ('eeeeeeee-0000-4000-8000-000000000391', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000391', 1, 'withdrawal', -3000, 'THB'),
@@ -58,7 +60,8 @@ values
   ('eeeeeeee-0000-4000-8000-000000000394', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000394', 1, 'withdrawal', -2000, 'THB'),
   ('eeeeeeee-0000-4000-8000-000000000395', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000395', 1, 'withdrawal', -1000, 'THB'),
   ('eeeeeeee-0000-4000-8000-000000000396', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000396', 1, 'withdrawal', -1000, 'THB'),
-  ('eeeeeeee-0000-4000-8000-000000000397', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000397', 1, 'deposit', 500, 'THB');
+  ('eeeeeeee-0000-4000-8000-000000000397', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000397', 1, 'deposit', 500, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000398', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000398', 1, 'withdrawal', -1000, 'THB');
 set local session_replication_role = origin;
 
 insert into auth.mfa_factors(id, user_id, friendly_name, factor_type, status, secret, created_at, updated_at)
@@ -74,18 +77,21 @@ select ok(
     and has_function_privilege('authenticated', 'public.ride_split_candidates()', 'execute'),
   'authenticated may read two-part ride candidates and anon may not'
 );
+create temporary table c on commit drop as
+  select e from jsonb_array_elements(public.ride_split_candidates()) e;
+select is(jsonb_typeof(public.ride_split_candidates()), 'array', 'one JSON array, which the row cap cannot cut');
 select is(
-  (select array_agg(right(transaction_id::text, 3) order by transaction_id) from public.ride_split_candidates()),
+  (select array_agg(right(e->>'transaction_id', 3) order by e->>'transaction_id') from c),
   array['391', '392', '393', '394'],
-  'GRAB and unnamed KBANK charges near pickup and a POS REFUND within eight days; nothing else'
+  'GRAB and unnamed KBANK charges within the window and a POS REFUND within eight days; nothing else'
 );
 select is(
-  (select array_agg(lag_minutes order by transaction_id) from public.ride_split_candidates() where source_date = '2026-09-12'),
+  (select array_agg((e->>'lag_minutes')::integer order by e->>'transaction_id') from c where e->>'source_date' = '2026-09-12'),
   array[-5, 8, -4],
   'lag is minutes from the Bangkok pickup'
 );
 select is(
-  (select array_agg(amount_minor order by transaction_id) from public.ride_split_candidates()),
+  (select array_agg((e->>'amount_minor')::bigint order by e->>'transaction_id') from c),
   array[-3000, -1000, 500, -2000]::bigint[],
   'amounts are signed: charges negative, the refund positive'
 );
@@ -94,7 +100,7 @@ reset role;
 select set_config('request.jwt.claims',
   '{"sub":"11111111-1111-4111-8111-111111111111","role":"authenticated","aal":"aal1"}', true);
 set local role authenticated;
-select is((select count(*) from public.ride_split_candidates()), 0::bigint, 'a session that has not passed MFA sees nothing');
+select is(public.ride_split_candidates(), '[]'::jsonb, 'a session that has not passed MFA sees nothing');
 reset role;
 
 select * from finish();

@@ -82,7 +82,8 @@ export function LedgerMatchPanel({ endpoint, match, sentence, outsideRange, resp
   return (
     <div className="receipt-match">
       <p className="ledger-status">
-        {sentence}
+        {/* A ride paid in two parts (D-229) is paid by two rows, not one. */}
+        {showsRow && (match.also ?? []).length > 0 ? sentence.replace("this ledger row", "these ledger rows") : sentence}
         {showsRow ? <> <span>{match.row ? describeRow(match.row) : outsideRange}</span></> : null}
         {showsRow ? (match.also ?? []).map((row) => <span key={row.transaction_id}> and <span>{describeRow(row)}</span></span>) : null}
       </p>

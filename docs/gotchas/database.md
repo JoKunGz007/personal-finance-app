@@ -148,3 +148,10 @@ the top of `GOTCHAS.md`.
 - Cause: withdrawals are stored negative, so spending 15,000 after 10,000 gives `-15000 - (-10000) = -5000`. As money that is "5,000 more went out"; as a label beside a percentage it reads as a decrease.
 - Avoid: compare **magnitudes** for any change label — `abs(current) - abs(previous)` — so growth reads as growth in both directions, and let the column the reader is looking at carry the direction. Emit the previous figure and compute the comparison in one tested place rather than emitting a delta whose sign means different things per column.
 - Verify: `magnitudeChange` in `lib/statistics.ts` and its "reads a rise in spending as a rise" case in `tests/statistics.test.ts`. Dated 2026-08-27 (D-161).
+
+## A table-returning RPC is cut at 1,000 rows by PostgREST, silently
+
+- Symptom: a route built on a `returns table` function works in every test, then on the real ledger some documents read "no row" although the rows are there. There is no error, and the response is a valid array that is just shorter.
+- Cause: `max_rows = 1000` (`supabase/config.toml`, and hosted's default) caps what PostgREST returns from a set-returning RPC, and nothing tells the caller. `ride_split_candidates()` (039) returned 1,181 rows on hosted, so 5 rides lost theirs (D-229). Tests never see it, because their fixtures hold a handful of rows.
+- Avoid: have a read that grows with the ledger return **one `jsonb` array** (`jsonb_agg` in the function), which the cap does not touch, and keep its windows to what the caller uses. Before shipping any `returns table` RPC, count its rows on hosted.
+- Verify: `supabase/migrations/202610050040_ride_split_candidates_json.sql` and the "one JSON array" assertion in `supabase/tests/025_ride_split_candidates.sql`. The older candidate reads returned 241, 107 and 13 rows on 2026-09-25, so they are under the cap but not safe from it. Dated 2026-09-25 (D-229).
