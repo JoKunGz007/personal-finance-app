@@ -4,9 +4,11 @@ import {
   deliveryMatchRequestSchema,
   proposeDeliveryMatches,
   proposeGrabMatches,
+  proposeRideSplits,
   qualifiesAutomatically,
   rideQualifiesAutomatically,
   type RideLedgerCandidate,
+  type RideSplitCandidate,
   type DeliveryLedgerCandidate,
   type DeliveryMatchDecision,
   type DeliveryMatchState
@@ -224,5 +226,63 @@ describe("LINE MAN orders (D-223)", () => {
 
   it("call two qualifying rows ambiguous", () => {
     expect(propose(lineman(T1, 0, "LINE PAY"), lineman(T2, 2, "LINE PAY")).status).toBe("ambiguous");
+  });
+});
+
+describe("an unnamed KBANK card spend counts as Grab's (D-229)", () => {
+  const kbank = { names_grab: false, transaction_label: "Debit Card Spending", description: "Ref Code EDC00001" };
+  it("qualifies an order and a ride inside their windows, and nothing else unnamed does", () => {
+    expect(qualifiesAutomatically({ ...kbank, lag_minutes: -10 })).toBe(true);
+    expect(rideQualifiesAutomatically({ ...kbank, lag_minutes: -10 })).toBe(true);
+    expect(rideQualifiesAutomatically({ ...kbank, lag_minutes: -31 })).toBe(false);
+    expect(qualifiesAutomatically({ ...kbank, description: "Invented shop", lag_minutes: -10 })).toBe(false);
+    expect(qualifiesAutomatically({ ...kbank, transaction_label: "Transfer Withdrawal", lag_minutes: -10 })).toBe(false);
+  });
+});
+
+describe("proposeRideSplits (D-229)", () => {
+  const R = "cccccccc-0000-4000-8000-000000000101";
+  const R2 = "cccccccc-0000-4000-8000-000000000102";
+  const none: DeliveryMatchState = { status: "none", row: null, options: [], revision: 0 };
+  const row = (ride: string, transaction: string, lag: number | null, amount: number, date = "2026-09-01", description = "INVENTED GRAB MERCHANT"): RideSplitCandidate => ({
+    ride_id: ride, transaction_id: `eeeeeeee-0000-4000-8000-${transaction.padStart(12, "0")}`, account_id: ACCOUNT,
+    source_date: date, source_time: "19:00:00", transaction_label: "Card payment", description, lag_minutes: lag, amount_minor: amount
+  });
+  const propose = (candidates: RideSplitCandidate[], held: string[] = [], states = new Map([[R, none]]), rides = [{ id: R, total_minor: "4000" }]) =>
+    proposeRideSplits(rides, states, new Set(held), candidates);
+
+  it("matches two charges summing to the total, the second after pickup", () => {
+    expect(propose([row(R, "1", -5, -3000), row(R, "2", 8, -1000)]).get(R)).toMatchObject({
+      status: "matched", row: { transaction_id: row(R, "1", 0, 0).transaction_id }, also: [{ transaction_id: row(R, "2", 0, 0).transaction_id }]
+    });
+  });
+
+  it("matches one overcharge and a POS REFUND of exactly the difference within a week", () => {
+    const refund = (date: string) => row(R, "2", null, 1500, date, "POS REFUND NOTE : -");
+    expect(propose([row(R, "1", -5, -5500), refund("2026-09-04")]).get(R)).toMatchObject({ status: "matched", also: [{ description: "POS REFUND NOTE : -" }] });
+    expect(propose([row(R, "1", -5, -5500), refund("2026-09-09")]).get(R)!.status).toBe("none");
+    expect(propose([row(R, "1", -5, -5500), { ...refund("2026-09-04"), amount_minor: 1400 }]).get(R)!.status).toBe("none");
+  });
+
+  it("refuses a second charge before pickup or over an hour after, and a first charge outside the window", () => {
+    expect(propose([row(R, "1", -20, -3000), row(R, "2", -5, -1000)]).get(R)!.status).toBe("none");
+    expect(propose([row(R, "1", -5, -3000), row(R, "2", 61, -1000)]).get(R)!.status).toBe("none");
+    expect(propose([row(R, "1", -31, -3000), row(R, "2", 8, -1000)]).get(R)!.status).toBe("none");
+  });
+
+  it("refuses when two pairs fit, when a row is held, or when another ride's pair wants a row", () => {
+    expect(propose([row(R, "1", -5, -3000), row(R, "2", 8, -1000), row(R, "3", 9, -1000)]).get(R)!.status).toBe("none");
+    expect(propose([row(R, "1", -5, -3000), row(R, "2", 8, -1000)], [row(R, "2", 0, 0).transaction_id]).get(R)!.status).toBe("none");
+    const both = propose(
+      [row(R, "1", -5, -3000), row(R, "2", 8, -1000), row(R2, "3", -5, -3000), { ...row(R2, "2", 8, -1000) }],
+      [], new Map([[R, none], [R2, none]]), [{ id: R, total_minor: "4000" }, { id: R2, total_minor: "4000" }]
+    );
+    expect(both.get(R)!.status).toBe("none");
+    expect(both.get(R2)!.status).toBe("none");
+  });
+
+  it("never touches a ride the owner decided or one already matched", () => {
+    const declined: DeliveryMatchState = { status: "declined", row: null, options: [], revision: 2 };
+    expect(propose([row(R, "1", -5, -3000), row(R, "2", 8, -1000)], [], new Map([[R, declined]])).get(R)).toEqual(declined);
   });
 });

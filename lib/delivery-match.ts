@@ -10,7 +10,7 @@ import { ledgerMatchRequestSchema, proposeLedgerMatches, type LedgerMatchRequest
  *
  * The automatic rule:
  *
- * - the row's bank description names `GRAB`;
+ * - the row's bank description names `GRAB`, or it is an unnamed KBANK card spend (D-229);
  * - its movement is the order's printed total, negated, **to the minor unit** — the candidate
  *   read (`public.delivery_ledger_candidates()`) returns only such rows;
  * - it falls **at or before** the e-receipt's send time, within `DELIVERY_MATCH_WINDOW_MINUTES`:
@@ -99,6 +99,8 @@ export type DeliveryLedgerRow = z.infer<typeof deliveryLedgerRowSchema>;
 export const deliveryMatchStateSchema = z.object({
   status: z.enum(["linked", "declined", "matched", "ambiguous", "none", "outside"]),
   row: deliveryLedgerRowSchema.nullable(),
+  /** A ride paid in two parts (D-229): the second charge, or the refund, beside `row`. */
+  also: z.array(deliveryLedgerRowSchema).optional(),
   options: z.array(deliveryLedgerRowSchema),
   revision: z.number().int().nonnegative()
 }).strict();
@@ -111,12 +113,23 @@ export type DeliveryMatchRequest = LedgerMatchRequest;
 
 export const deliveryMatchResponseSchema = z.object({ match: deliveryMatchDecisionSchema }).strict();
 
+/**
+ * A KBANK debit card prints no merchant: every card payment reads `Debit Card Spending` with a
+ * `Ref Code EDC…` description. Measured 2026-09-25 (D-229): 7 such rows on the whole ledger, every one
+ * inside a Grab order's or ride's window, so accepting them as Grab's collides with nothing.
+ */
+function unnamedCardSpend(candidate: { transaction_label?: string; description?: string }): boolean {
+  return candidate.transaction_label === "Debit Card Spending" && (candidate.description ?? "").startsWith("Ref Code EDC");
+}
+
+type GrabWording = Pick<DeliveryLedgerCandidate, "names_grab" | "lag_minutes"> & Partial<Pick<DeliveryLedgerCandidate, "transaction_label" | "description">>;
+
 const toRow = ({ transaction_id, source_date, source_time, transaction_label, description, lag_minutes }: DeliveryLedgerCandidate): DeliveryLedgerRow =>
   ({ transaction_id, source_date, source_time, transaction_label, description, lag_minutes });
 
 /** Whether one candidate satisfies the automatic rule on its own, before uniqueness. */
-export function qualifiesAutomatically(candidate: Pick<DeliveryLedgerCandidate, "names_grab" | "lag_minutes">): boolean {
-  return candidate.names_grab
+export function qualifiesAutomatically(candidate: GrabWording): boolean {
+  return (candidate.names_grab || unnamedCardSpend(candidate))
     && candidate.lag_minutes !== null
     && candidate.lag_minutes <= 0
     && candidate.lag_minutes >= -DELIVERY_MATCH_WINDOW_MINUTES;
@@ -146,8 +159,8 @@ export type RideMatchDecision = z.infer<typeof rideMatchDecisionSchema>;
 export const rideMatchResponseSchema = z.object({ match: rideMatchDecisionSchema }).strict();
 
 /** Whether one ride candidate satisfies the automatic rule on its own, before uniqueness. */
-export function rideQualifiesAutomatically(candidate: Pick<RideLedgerCandidate, "names_grab" | "lag_minutes">): boolean {
-  return candidate.names_grab
+export function rideQualifiesAutomatically(candidate: GrabWording): boolean {
+  return (candidate.names_grab || unnamedCardSpend(candidate))
     && candidate.lag_minutes !== null
     && candidate.lag_minutes >= -RIDE_MATCH_BEFORE_MINUTES
     && candidate.lag_minutes <= RIDE_MATCH_AFTER_MINUTES;
@@ -209,6 +222,89 @@ export function proposeGrabMatches(
     orders: new Map(orders.map((order) => [order.id, order.paidOutside ? outside : states.get(orderKey(order.id))!])),
     rides: new Map(rides.map((ride) => [ride.id, ride.paidOutside ? outside : states.get(rideKey(ride.id))!]))
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rides paid in two parts (migration 039, D-229)
+//
+// Measured on the hosted ledger 2026-09-25, of the 43 rides inside statement coverage that no single
+// row of their total paid: 34 were charged twice (the first 2–25 minutes before pickup, the rest
+// 4–22 minutes after, once 51), summing to the total; 6 were charged once for more and refunded the
+// difference 2–5 days later on a `POS REFUND` row; 3 were a KBANK card, which the wording rule above
+// now covers.
+// ---------------------------------------------------------------------------------------------
+
+/** The second charge lands after pickup, up to an hour after (measured: 4–22 minutes, once 51). */
+export const RIDE_SECOND_CHARGE_AFTER_MINUTES = 60;
+/** The refund of an overcharge lands within a week of the charge (measured: 2–5 days). */
+export const RIDE_REFUND_DAYS = 7;
+
+export const rideSplitCandidateSchema = rideLedgerCandidateSchema.omit({ names_grab: true })
+  .extend({ amount_minor: z.number().int() }).strict();
+
+export type RideSplitCandidate = z.infer<typeof rideSplitCandidateSchema>;
+
+const splitRow = ({ transaction_id, source_date, source_time, transaction_label, description, lag_minutes }: RideSplitCandidate): DeliveryLedgerRow =>
+  ({ transaction_id, source_date, source_time, transaction_label, description, lag_minutes });
+
+const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+
+/**
+ * A ride that no single row paid (`none`, with no decision of the owner's) is matched to **two**
+ * rows when exactly one pair fits:
+ *
+ * - two charges, the first in the ride's usual window and the second from pickup to
+ *   `RIDE_SECOND_CHARGE_AFTER_MINUTES` after, summing to the total to the satang; or
+ * - one charge in the usual window for more than the total, and a `POS REFUND` of exactly the
+ *   difference on the same day or up to `RIDE_REFUND_DAYS` after.
+ *
+ * Fail closed as the single-row rule is: a row any document already holds, or one another ride's
+ * pair also wants, is used by neither. The owner's "Not this row" stores a decline, as for any match.
+ */
+export function proposeRideSplits(
+  rides: readonly { id: string; total_minor: string }[],
+  states: ReadonlyMap<string, DeliveryMatchState>,
+  held: ReadonlySet<string>,
+  candidates: readonly RideSplitCandidate[]
+): Map<string, DeliveryMatchState> {
+  const byRide = new Map<string, RideSplitCandidate[]>();
+  for (const candidate of candidates) {
+    if (held.has(candidate.transaction_id)) continue;
+    byRide.set(candidate.ride_id, [...(byRide.get(candidate.ride_id) ?? []), candidate]);
+  }
+  const proposals = new Map<string, [RideSplitCandidate, RideSplitCandidate]>();
+  for (const ride of rides) {
+    if (states.get(ride.id)?.status !== "none") continue;
+    const total = Number(ride.total_minor);
+    const rows = byRide.get(ride.id) ?? [];
+    const charges = rows.filter((row) => row.amount_minor < 0 && row.lag_minutes !== null);
+    const first = charges.filter((row) => row.lag_minutes! >= -RIDE_MATCH_BEFORE_MINUTES && row.lag_minutes! <= RIDE_MATCH_AFTER_MINUTES);
+    const pairs: [RideSplitCandidate, RideSplitCandidate][] = [];
+    for (const a of first) {
+      for (const b of charges) {
+        if (b.transaction_id !== a.transaction_id && b.lag_minutes! >= 0 && b.lag_minutes! <= RIDE_SECOND_CHARGE_AFTER_MINUTES
+          && (b.lag_minutes! > a.lag_minutes! || (b.lag_minutes === a.lag_minutes && b.transaction_id > a.transaction_id))
+          && a.amount_minor + b.amount_minor === -total) pairs.push([a, b]);
+      }
+      if (-a.amount_minor > total) {
+        for (const refund of rows) {
+          const days = daysBetween(a.source_date, refund.source_date);
+          if (refund.amount_minor === -a.amount_minor - total && days >= 0 && days <= RIDE_REFUND_DAYS) pairs.push([a, refund]);
+        }
+      }
+    }
+    if (pairs.length === 1) proposals.set(ride.id, pairs[0]!);
+  }
+  // A row two rides' pairs both want is taken by neither.
+  const wanted = new Map<string, number>();
+  for (const pair of proposals.values()) for (const row of pair) wanted.set(row.transaction_id, (wanted.get(row.transaction_id) ?? 0) + 1);
+  const result = new Map(states);
+  for (const [rideId, [primary, second]] of proposals) {
+    if (wanted.get(primary.transaction_id)! > 1 || wanted.get(second.transaction_id)! > 1) continue;
+    const state = states.get(rideId)!;
+    result.set(rideId, { ...state, status: "matched", row: splitRow(primary), also: [splitRow(second)] });
+  }
+  return result;
 }
 
 /** Orders alone: `proposeGrabMatches` with no rides. */

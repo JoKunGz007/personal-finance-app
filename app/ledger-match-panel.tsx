@@ -16,6 +16,8 @@ export interface MatchPanelRow {
 export interface MatchPanelState {
   status: "linked" | "declined" | "matched" | "ambiguous" | "none" | "outside";
   row: MatchPanelRow | null;
+  /** A ride paid in two parts (D-229): its second charge or refund. */
+  also?: MatchPanelRow[];
   options: MatchPanelRow[];
   revision: number;
 }
@@ -23,11 +25,13 @@ export interface MatchPanelState {
 /** A ledger row in one line: when it posted, how far from the document's time, and what the bank called it. */
 export function describeRow(row: MatchPanelRow): string {
   const when = row.source_time ? `${row.source_date} ${row.source_time.slice(0, 5)}` : row.source_date;
+  // A refund lands days later (D-229), so a gap of a day or more reads in days.
+  const span = (minutes: number) => minutes >= 1440 ? `${Math.round(minutes / 1440)} day${Math.round(minutes / 1440) === 1 ? "" : "s"}` : `${minutes} min`;
   const lag = row.lag_minutes === null
     ? ""
     : row.lag_minutes >= 0
-      ? ` (${row.lag_minutes} min after)`
-      : ` (${-row.lag_minutes} min before)`;
+      ? ` (${span(row.lag_minutes)} after)`
+      : ` (${span(-row.lag_minutes)} before)`;
   return `${when}${lag} · ${row.description}`;
 }
 
@@ -80,6 +84,7 @@ export function LedgerMatchPanel({ endpoint, match, sentence, outsideRange, resp
       <p className="ledger-status">
         {sentence}
         {showsRow ? <> <span>{match.row ? describeRow(match.row) : outsideRange}</span></> : null}
+        {showsRow ? (match.also ?? []).map((row) => <span key={row.transaction_id}> and <span>{describeRow(row)}</span></span>) : null}
       </p>
       <div className="slip-actions">
         {showsRow ? (

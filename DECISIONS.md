@@ -408,12 +408,31 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-229** — A Grab ride paid in two parts matches both rows, and an unnamed KBANK card spend counts as Grab's
 - **D-228** — A fourth /ux-review over every page: shorter notes and labels, /deliveries lists capped at 20, and /import fitting a 1024px laptop
 - **D-227** — The seventeenth boundary moves D-212 … D-222 on the owner's word
 - **D-226** — The co-payment real cost uses the year's rate and a ฿200 daily cap, checked against the owner's เป๋าตัง history
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-229 — A Grab ride paid in two parts matches both rows, and an unnamed KBANK card spend counts as Grab's
+
+- Date: 2026-09-25
+- Status: **Migration 039 on hosted; code committed with it.** Task: `PLAN.md` 58 part 5. Extends D-222 (rides) and D-220 (orders). Files: `supabase/migrations/202610040039_ride_split_candidates.sql` (`public.ride_split_candidates()`), `lib/delivery-match.ts` (`proposeRideSplits`, the unnamed-card rule), `app/api/v1/deliveries/route.ts`, `lib/deliveries.ts` (`ridesOnRows`), `app/ledger-match-panel.tsx`, `supabase/tests/025_ride_split_candidates.sql`, `tests/delivery-match.test.ts`, `tests/deliveries-route.test.ts`.
+- **Asked for by the owner**, who suspected a cancelled-and-rebooked ride shows as two bank rows. **Measured on hosted (counts, lags and masked wording; values shown in chat only):** of 95 rides with no row, 52 predate the first SCB statement. The other 43 are all explained:
+  - **34 were charged twice**: first 2–25 minutes before pickup, the rest 4–22 minutes after (once 51), summing to the total. The second charge is after pickup, so this is not a rebooking. It is not only tolls either: it rarely equals the printed toll, and most are bike rides.
+  - **6 were charged once for more than the total**, and the difference came back as `POS REFUND` 2–5 days later. The refund names no merchant.
+  - **3 were a KBANK debit card** (Visa 1105, the owner's KBANK account), whose rows read `Debit Card Spending` with no merchant. The same card paid 3 GrabFood orders on those days.
+- **The rules:**
+  - **Unnamed KBANK card spends count as Grab's wording**, for orders and rides alike. The whole ledger holds 7 such rows, all inside Grab windows, so nothing collides.
+  - **Two-part match**, only for a ride that no single row paid and the owner has not decided: either
+    - two charges, the first in the usual window (30 before to 15 after pickup) and the second from pickup to 60 minutes after, summing to the total; or
+    - one charge in the usual window for more than the total, plus a `POS REFUND` of exactly the difference within 7 days.
+  - **Fail-closed like the rest:** exactly one pair must fit; no row may be held or contested by another document; a row two rides' pairs want goes to neither.
+- **Read-time only, so no table and no column: backup stays v13.** The automatic match is a proposal, as every other is; "Not this row" stores a decline as before. **Not built: a manual two-row link.** `set_ride_match` still holds one row to the exact total. The match panel names both rows, and a row's time gap reads in days once it passes a day. `/ledger` folds the ride under both rows.
+- **Other findings from the same look, recorded only:** the 11 no-row food orders are 7 from before SCB coverage, 3 on KBANK (now matched by the card rule), and 1 LINE MAN fee paid from the LINE Pay balance, which has no bank row by nature. The owner is fine with that.
+- Gate: `pnpm supabase:reset` on 39 migrations; pgTAP `Result: PASS` (025 new, 5 tests); Vitest **1208 / 7 skipped** (the rule red-proved by loosening uniqueness); `tsc` clean; `eslint` 0 errors; Playwright isolated **70 / 8 skipped**, owner **34 / 34**. Hosted: backup **466 / 466** before the push, `--dry-run` named only 039, pushed; `anon` may not execute, `authenticated` may; sequence unchanged.
 
 ## D-228 — A fourth /ux-review over every page: shorter notes and labels, /deliveries lists capped at 20, and /import fitting a 1024px laptop
 

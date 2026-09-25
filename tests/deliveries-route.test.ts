@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { deliveryListSchema } from "@/lib/deliveries";
+import { deliveryListSchema, ridesOnRows } from "@/lib/deliveries";
 
 // The list route's own layer over its three reads (D-220): the match computed on the server, a
 // ฿0 order read as `outside` from a total PostgREST sends as a number, and a refusal — never
@@ -17,6 +17,7 @@ const reads = vi.hoisted(() => ({
   decisions: { data: [] as unknown, error: null as unknown },
   rideCandidates: { data: [] as unknown, error: null as unknown },
   rides: { data: [] as unknown, error: null as unknown },
+  splitCandidates: { data: [] as unknown, error: null as unknown },
   captured: [] as unknown[]
 }));
 
@@ -50,6 +51,7 @@ vi.mock("@/lib/server/supabase", () => ({
           : { select: async () => (table === "delivery_match_overlays" ? reads.decisions : { data: [], error: null }) },
       rpc: async (name: string, args?: { p_request?: unknown }) => {
         if (name === "capture_delivery") { reads.captured.push(args?.p_request); return { data: { captured: true, id: ORDER }, error: null }; }
+        if (name === "ride_split_candidates") return reads.splitCandidates;
         return name === "ride_ledger_candidates" ? reads.rideCandidates : reads.candidates;
       }
     }
@@ -66,6 +68,7 @@ beforeEach(() => {
   reads.decisions = { data: [], error: null };
   reads.rideCandidates = { data: [], error: null };
   reads.rides = { data: [], error: null };
+  reads.splitCandidates = { data: [], error: null };
 });
 
 async function list() {
@@ -115,6 +118,32 @@ describe("GET /api/v1/deliveries with rides (D-222)", () => {
 
   it("refuses the whole list when the ride candidate read fails", async () => {
     reads.rideCandidates = { data: null, error: { message: "invented failure" } };
+    expect((await list()).status).toBe(500);
+  });
+  it("matches a ride paid in two charges to both rows, and the /ledger fold finds it on each (D-229)", async () => {
+    reads.rides = { data: [ride(RIDE, 4000)], error: null };
+    const split = (transaction: string, lag: number, amount: number) => ({
+      ride_id: RIDE, transaction_id: transaction, account_id: ACCOUNT, source_date: "2026-09-01", source_time: "19:00:00",
+      transaction_label: "Card payment", description: "INVENTED GRAB MERCHANT", lag_minutes: lag, amount_minor: amount
+    });
+    reads.splitCandidates = {
+      data: [split("eeeeeeee-0000-4000-8000-000000000061", -5, -3000), split("eeeeeeee-0000-4000-8000-000000000062", 8, -1000)],
+      error: null
+    };
+    const { rides } = deliveryListSchema.parse(await (await list()).json());
+    expect(rides[0]!.match).toMatchObject({
+      status: "matched",
+      row: { transaction_id: "eeeeeeee-0000-4000-8000-000000000061" },
+      also: [{ transaction_id: "eeeeeeee-0000-4000-8000-000000000062" }]
+    });
+    expect(ridesOnRows(rides).map(([transaction]) => transaction))
+      .toEqual(["eeeeeeee-0000-4000-8000-000000000061", "eeeeeeee-0000-4000-8000-000000000062"]);
+  });
+
+  it("refuses the whole list when the two-part read fails or is off-contract", async () => {
+    reads.splitCandidates = { data: null, error: { message: "invented failure" } };
+    expect((await list()).status).toBe(500);
+    reads.splitCandidates = { data: [{ ride_id: RIDE }], error: null };
     expect((await list()).status).toBe(500);
   });
 });

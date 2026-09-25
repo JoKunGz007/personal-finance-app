@@ -2,8 +2,8 @@ import { z } from "zod";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { deliveryTime, linemanCaptureRequestSchema, paidOutsidePlatform } from "@/lib/deliveries";
 import {
-  deliveryLedgerCandidateSchema, deliveryMatchDecisionSchema, proposeGrabMatches,
-  rideLedgerCandidateSchema, rideMatchDecisionSchema
+  deliveryLedgerCandidateSchema, deliveryMatchDecisionSchema, proposeGrabMatches, proposeRideSplits,
+  rideLedgerCandidateSchema, rideMatchDecisionSchema, rideSplitCandidateSchema
 } from "@/lib/delivery-match";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +17,9 @@ export async function GET() {
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
 
-  // Six independent reads, started together: each kind's documents, candidate rows and the
-  // owner's stored decisions.
-  const [orders, rides, orderCandidates, rideCandidates, orderDecisions, rideDecisions] = await Promise.all([
+  // Seven independent reads, started together: each kind's documents, candidate rows and the
+  // owner's stored decisions, and the rows a ride paid in two parts can be (migration 039).
+  const [orders, rides, orderCandidates, rideCandidates, orderDecisions, rideDecisions, splitCandidates] = await Promise.all([
     auth.supabase
       .from("deliveries")
       .select("id,platform,booking_id,restaurant,payment_method,receipt_sent_at,food_minor,delivery_fee_minor,total_minor,items:delivery_items(position,quantity,name,options,amount_minor),adjustments:delivery_adjustments(position,kind,name,amount_minor),lineman:lineman_order_details(ordered_at,charged_minor)"),
@@ -30,7 +30,8 @@ export async function GET() {
     auth.supabase.rpc("delivery_ledger_candidates"),
     auth.supabase.rpc("ride_ledger_candidates"),
     auth.supabase.from("delivery_match_overlays").select("delivery_id,decision,transaction_id,revision"),
-    auth.supabase.from("ride_match_overlays").select("ride_id,decision,transaction_id,revision")
+    auth.supabase.from("ride_match_overlays").select("ride_id,decision,transaction_id,revision"),
+    auth.supabase.rpc("ride_split_candidates")
   ]);
   if (orders.error || rides.error) return routeError("Delivery orders could not be loaded.", 400);
 
@@ -40,9 +41,10 @@ export async function GET() {
   const parsedRideCandidates = z.array(rideLedgerCandidateSchema).safeParse(rideCandidates.data);
   const parsedOrderDecisions = z.array(deliveryMatchDecisionSchema).safeParse(orderDecisions.data);
   const parsedRideDecisions = z.array(rideMatchDecisionSchema).safeParse(rideDecisions.data);
-  if (orderCandidates.error || rideCandidates.error || orderDecisions.error || rideDecisions.error
+  const parsedSplitCandidates = z.array(rideSplitCandidateSchema).safeParse(splitCandidates.data);
+  if (orderCandidates.error || rideCandidates.error || orderDecisions.error || rideDecisions.error || splitCandidates.error
     || !parsedOrderCandidates.success || !parsedRideCandidates.success
-    || !parsedOrderDecisions.success || !parsedRideDecisions.success) {
+    || !parsedOrderDecisions.success || !parsedRideDecisions.success || !parsedSplitCandidates.success) {
     return routeError("Orders could not be matched to the ledger, so none are shown.", 500);
   }
 
@@ -76,9 +78,14 @@ export async function GET() {
     parsedRideCandidates.data,
     parsedRideDecisions.data
   );
+  // A row any document holds, or any undecided one could be, is off the table for a two-part pair.
+  const held = new Set([...matches.orders.values(), ...matches.rides.values()].flatMap((state) =>
+    state.status === "ambiguous" ? state.options.map((row) => row.transaction_id)
+      : (state.status === "matched" || state.status === "linked") && state.row ? [state.row.transaction_id] : []));
+  const rideMatches = proposeRideSplits(storedRides, matches.rides, held, parsedSplitCandidates.data);
   return Response.json({
     deliveries: deliveries.map((delivery) => ({ ...delivery, match: matches.orders.get(delivery.id)! })),
-    rides: storedRides.map((ride) => ({ ...ride, match: matches.rides.get(ride.id)! }))
+    rides: storedRides.map((ride) => ({ ...ride, match: rideMatches.get(ride.id)! }))
   }, { headers: noStoreHeaders });
 }
 

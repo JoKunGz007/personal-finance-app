@@ -191,11 +191,14 @@ export function deliveriesOnRows(deliveries: readonly StoredDelivery[]): [string
       : []);
 }
 
-/** The same for rides (D-222). A row holds at most one order or one ride, never both (migration 034). */
+/**
+ * The same for rides (D-222). A row holds at most one order or one ride, never both (migration 034).
+ * A ride paid in two parts sits on both its rows (D-229).
+ */
 export function ridesOnRows(rides: readonly StoredRide[]): [string, StoredRide][] {
   return rides.flatMap((ride) =>
     (ride.match.status === "matched" || ride.match.status === "linked") && ride.match.row
-      ? [[ride.match.row.transaction_id, ride] as [string, StoredRide]]
+      ? [ride.match.row, ...(ride.match.also ?? [])].map((row) => [row.transaction_id, ride] as [string, StoredRide])
       : []);
 }
 
