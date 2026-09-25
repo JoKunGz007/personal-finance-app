@@ -408,6 +408,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-230** — The three older candidate reads return one JSON array, Sync captures in batches, and `/deliveries` becomes `/orders`
 - **D-229** — A Grab ride paid in two parts matches both rows, and an unnamed KBANK card spend counts as Grab's
 - **D-228** — A fourth /ux-review over every page: shorter notes and labels, /deliveries lists capped at 20, and /import fitting a 1024px laptop
 - **D-227** — The seventeenth boundary moves D-212 … D-222 on the owner's word
@@ -416,6 +417,18 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
 
+## D-230 — The three older candidate reads return one JSON array, Sync captures in batches, and `/deliveries` becomes `/orders`
+
+- Date: 2026-09-25
+- Status: **Shipped as `4198dcb`, migration 041 on hosted, confirmed live.** Task: `PLAN.md` 58 (part 1's open item, and D-229's open row-cap exposure). Files: `supabase/migrations/202610060041_candidates_json_and_batch_capture.sql`, `lib/server/delivery-store.ts`, `app/orders/page.tsx` (was `app/deliveries/page.tsx`), `app/site-header.tsx`, `app/ledger-statement-row.tsx`, `next.config.ts`, `supabase/tests/026_batch_capture.sql`, `tests/delivery-store.test.ts`.
+- **Asked for by the owner**, choosing two of four open items after they were explained.
+- **The row cap, closed for every candidate read.** `receipt_ledger_candidates()`, `delivery_ledger_candidates()` and `ride_ledger_candidates()` now return one `jsonb` array of the same elements, as 040 did for the two-part read. Same rows and windows; only the envelope changed, so the routes needed no edit (supabase-js hands back the array either way). This is why the push could precede the deploy: the old build parsed the new shape, and was checked doing so on the live site before the new build arrived.
+- **Batch capture.** `capture_deliveries` and `capture_rides` take up to 50 requests and call the single function for each in its own subtransaction, so a refused document never undoes the one beside it. Outcomes come back by position (`captured`, `alreadyStored`, `disagrees`, `refused`) and name no value. The single functions stay the only write path, with every check, the ledger lock, the audit event and the sequence bump. Sync sends 25 per call, so a hundred-ride bundle is four round trips rather than a hundred. Security invoker, so the gate is the single functions'. An unknown outcome refuses only its own position.
+- **The page is now Orders, at `/orders`**, because it holds rides and the owner plans to add Shopee (e-commerce). The name was the agent's recommendation after the owner asked for one. `/deliveries` redirects there, **not permanently**, so a browser does not cache it if the page is renamed again. The API stays at `/api/v1/deliveries`.
+- **`/code-review high`** found three: a stale comment (fixed), the permanent redirect (made temporary), and the two batch functions sharing a body (kept, since plpgsql dispatch would cost more clarity than it saves).
+- **Not exercised live: a real batch capture.** The live Sync read the mailbox and found no new mail, so nothing was captured. The path is proven in pgTAP as `authenticated` at `aal2`, and hosted holds both functions with `anon` refused and `authenticated` allowed.
+- Gate: `pnpm supabase:reset` on 41 migrations; pgTAP **619 across 26 files**, `Result: PASS`; Vitest **1209 / 7 skipped**; `tsc` clean after `pnpm build`; `eslint` 0 errors. Hosted: backup **466 / 466** before the push, `--dry-run` named only 041; the three reads returned **13, 107 and 241** before and after; sequence unchanged. Live: `/deliveries` redirects to `/orders`, nav and heading read Orders, orders 99 matched / 8 no row / 14 outside, rides 224 / 52, receipts 11 / 2, all as before; no sideways scroll at 375px.
+
 ## D-229 — A Grab ride paid in two parts matches both rows, and an unnamed KBANK card spend counts as Grab's
 
 - Date: 2026-09-25
@@ -423,7 +436,7 @@ a reason to keep it rather than a reason it cannot ever move.
 - **Asked for by the owner**, who suspected a cancelled-and-rebooked ride shows as two bank rows. **Measured on hosted (counts, lags and masked wording; values shown in chat only):** of 95 rides with no row, 52 predate the first SCB statement. The other 43 are all explained:
   - **34 were charged twice**: first 2–25 minutes before pickup, the rest 4–22 minutes after (once 51), summing to the total. The second charge is after pickup, so this is not a rebooking. It is not only tolls either: it rarely equals the printed toll, and most are bike rides.
   - **6 were charged once for more than the total**, and the difference came back as `POS REFUND` 2–5 days later. The refund names no merchant.
-  - **3 were a KBANK debit card** (Visa 1105, the owner's KBANK account), whose rows read `Debit Card Spending` with no merchant. The same card paid 3 GrabFood orders on those days.
+  - **3 were a KBANK debit card** (the owner's KBANK account), whose rows read `Debit Card Spending` with no merchant. The same card paid 3 GrabFood orders on those days.
 - **The rules:**
   - **Unnamed KBANK card spends count as Grab's wording**, for orders and rides alike. The whole ledger holds 7 such rows, all inside Grab windows, so nothing collides.
   - **Two-part match**, only for a ride that no single row paid and the owner has not decided: either
