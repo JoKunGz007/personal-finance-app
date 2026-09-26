@@ -21,6 +21,14 @@ let loaded: Promise<PdfJs> | null = null;
  */
 export function loadPdfJs(): Promise<PdfJs> {
   loaded ??= (async () => {
+    // pdf.js builds one `DOMMatrix` when its module loads, and otherwise needs it only to draw.
+    // Under Node it borrows one from the optional `@napi-rs/canvas`, which the serverless bundle
+    // does not carry, so the import failed on Vercel with "DOMMatrix is not defined" (D-232). Text
+    // extraction never draws: a bare placeholder satisfies the load, and any drawing path reaching
+    // it throws, which reads that PDF as unreadable — refused and retried, never marked done.
+    if (!("DOMMatrix" in globalThis)) {
+      (globalThis as { DOMMatrix?: unknown }).DOMMatrix = class ServerTextOnlyDOMMatrix {};
+    }
     // @ts-expect-error -- the worker build ships no types; it is imported only for its side effect.
     await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
     return import("pdfjs-dist/legacy/build/pdf.mjs");
