@@ -14,7 +14,9 @@ export default function ReceiptsPage() {
           <h1 id="page-title">Receipts</h1>
           <div className="heading-note">
             <LedgerNote label="About receipts">
-              7-Eleven PDFs are read on this device; only items and totals are sent. Receipts only
+              A 7-Eleven PDF you pick is read on this device and only items and totals are sent;
+              mailed invoices are read on the server by Sync. Your name and tax ID on a full invoice
+              are never stored. Receipts only
               itemize money already on the ledger, so they never change a balance. The short receipt
               and the full tax invoice for one purchase merge into one.
             </LedgerNote>

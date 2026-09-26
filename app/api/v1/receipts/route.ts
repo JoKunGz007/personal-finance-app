@@ -1,7 +1,7 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { z } from "zod";
 import { proposeReceiptMatches, receiptLedgerCandidateSchema, receiptMatchDecisionSchema } from "@/lib/receipt-match";
-import { captureReceiptRequest, receiptCaptureSchema } from "@/lib/receipts";
+import { captureReceipt } from "@/lib/server/receipt-store";
 
 export const dynamic = "force-dynamic";
 
@@ -50,24 +50,19 @@ export async function POST(request: Request) {
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
 
-  const parsed = receiptCaptureSchema.safeParse(await request.json().catch(() => null));
-  // The first issue's message is static text from `lib/receipts.ts`, never a value, so it is
-  // safe to say — and "outside the plausible window" is one the owner can act on.
-  if (!parsed.success) return routeError(`The receipt is invalid: ${parsed.error.issues[0]?.message ?? "unknown field"}`, 422, parsed.error.flatten());
-
-  const { data, error } = await auth.supabase.rpc("capture_receipt", { p_request: captureReceiptRequest(parsed.data) });
-  if (error) {
+  const captured = await captureReceipt(auth.supabase, await request.json().catch(() => null));
+  if (!captured.ok) {
+    // "Outside the plausible window" is one the owner can act on.
+    if (captured.reason === "invalid") return routeError(`The receipt is invalid: ${captured.message}`, 422, captured.details);
     // Rule 2's refusal is the one a caller can act on: two readings of one purchase disagree
-    // about money, so one of them is misread. Everything else is a contract violation and its
-    // message is deliberately not echoed — it can name a stored value.
-    if (error.message.includes("disagrees with the stored value")) {
+    // about money, so one of them is misread. Everything else is a contract violation.
+    if (captured.reason === "disagrees") {
       return routeError("This receipt's figures disagree with the copy already stored for the same purchase, so nothing was changed.", 409);
     }
     return routeError("The receipt could not be captured.", 400);
   }
 
-  const result = data as { captured: boolean };
   // 201 for a new receipt, 200 when it merged into one already stored — capturing the other form
   // of the same purchase is the design (migration 027), not a duplicate to apologise for.
-  return Response.json(data, { status: result.captured ? 201 : 200, headers: noStoreHeaders });
+  return Response.json(captured.data, { status: captured.data.captured ? 201 : 200, headers: noStoreHeaders });
 }

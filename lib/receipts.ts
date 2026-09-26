@@ -199,3 +199,32 @@ export const receiptCaptureResultSchema = z.object({
   itemsReplaced: z.boolean().optional(),
   receipt: z.object({ id: z.string().uuid() }).passthrough()
 }).strict();
+
+/** What one mailbox Sync did (D-232), in counts only: nothing here names an item, a branch or an amount. */
+export const receiptSyncReportSchema = z.object({
+  /** Messages whose unread invoices were examined this run. */
+  messages: z.number().int().nonnegative(),
+  /** Receipts stored for the first time. */
+  captured: z.number().int().nonnegative(),
+  /** Invoices for a purchase already stored: the other form of it, or a re-read. */
+  alreadyStored: z.number().int().nonnegative(),
+  /** PDFs that are not a 7-Eleven e-tax receipt this app reads. */
+  notReceipts: z.number().int().nonnegative(),
+  /** Refusal code to count. */
+  refused: z.record(z.string(), z.number().int().nonnegative()),
+  /** More mail is waiting than one request could read; the page asks again. */
+  truncated: z.boolean()
+}).strict();
+
+export type ReceiptSyncReport = z.infer<typeof receiptSyncReportSchema>;
+
+export function describeReceiptSyncReport(report: ReceiptSyncReport): string {
+  const refused = Object.values(report.refused).reduce((sum, count) => sum + count, 0);
+  const parts = [
+    `${report.captured} new receipt${report.captured === 1 ? "" : "s"}`,
+    `${report.alreadyStored} already stored`
+  ];
+  if (report.notReceipts > 0) parts.push(`${report.notReceipts} other PDF${report.notReceipts === 1 ? "" : "s"}`);
+  if (refused > 0) parts.push(`${refused} not read`);
+  return `${parts.join(", ")}.`;
+}

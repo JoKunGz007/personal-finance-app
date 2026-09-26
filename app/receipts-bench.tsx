@@ -11,7 +11,10 @@ import { receiptMatchResponseSchema } from "@/lib/receipt-match";
 import type { ReceiptForm } from "@/lib/receipt-pdf";
 import { groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
-import { receiptCaptureBody, receiptCaptureResultSchema, receiptListSchema, type CaptureForm, type StoredReceipt } from "@/lib/receipts";
+import {
+  describeReceiptSyncReport, receiptCaptureBody, receiptCaptureResultSchema, receiptListSchema, receiptSyncReportSchema,
+  type CaptureForm, type ReceiptSyncReport, type StoredReceipt
+} from "@/lib/receipts";
 import { ledgerRequest } from "@/lib/wire";
 
 type WorkerReply =
@@ -25,6 +28,22 @@ type Picked =
   | { key: string; file: string; state: "saving"; form: CaptureForm; receipt: ParsedReceipt }
   | { key: string; file: string; state: "saved"; form: CaptureForm; receipt: ParsedReceipt; outcome: string }
   | { key: string; file: string; state: "failed"; form: CaptureForm; receipt: ParsedReceipt; message: string };
+
+// A backfill bundle takes a few rounds; this bound only stops a runaway loop.
+const MAX_SYNC_ROUNDS = 20;
+
+function addReports(total: ReceiptSyncReport, next: ReceiptSyncReport): ReceiptSyncReport {
+  const refused = { ...total.refused };
+  for (const [code, count] of Object.entries(next.refused)) refused[code] = (refused[code] ?? 0) + count;
+  return {
+    messages: total.messages + next.messages,
+    captured: total.captured + next.captured,
+    alreadyStored: total.alreadyStored + next.alreadyStored,
+    notReceipts: total.notReceipts + next.notReceipts,
+    refused,
+    truncated: next.truncated
+  };
+}
 
 const FORM_LABEL: Record<CaptureForm, string> = { condensed: "Short receipt", full: "Full tax invoice", screenshot: "Screenshot" };
 
@@ -220,10 +239,67 @@ export function ReceiptsBench() {
     setSaves((count) => count + 1);
   }
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  // Mailbox Sync (D-232): the server reads each invoice and answers in counts; the page asks again
+  // while it reports more mail waiting, then reloads what is stored.
+  async function sync() {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncNote("Reading the mailbox…");
+    let total: ReceiptSyncReport | null = null;
+    for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
+      const result = await ledgerRequest("/api/v1/receipts/sync", receiptSyncReportSchema, {
+        fallback: "The mailbox could not be read.",
+        offContract: "The sync response did not match its contract."
+      }, { method: "POST" });
+      if (!result.ok) {
+        setSyncError(result.why);
+        break;
+      }
+      total = total ? addReports(total, result.data) : result.data;
+      setSyncNote(`${describeReceiptSyncReport(total)}${total.truncated ? " Still reading…" : ""}`);
+      if (!total.truncated) break;
+    }
+    setSyncing(false);
+    if (total) {
+      const refused = Object.entries(total.refused);
+      setSyncNote(`${describeReceiptSyncReport(total)}${refused.length > 0
+        ? ` Not read: ${refused.map(([code, count]) => `${count} ${code.toLowerCase().replaceAll("_", " ")}`).join(", ")}.`
+        : ""}${total.truncated ? " More mail is waiting; sync again." : ""}`);
+      if (total.captured + total.alreadyStored > 0) {
+        setSaves((count) => count + 1);
+        await load();
+      }
+    }
+  }
+
   const ready = picked.filter((entry): entry is Extract<Picked, { state: "ready" | "failed" }> => entry.state === "ready" || entry.state === "failed");
 
   return (
     <>
+      <section className="cash-bench compact" aria-labelledby="receipt-sync-title">
+        <div className="cash-heading">
+          <p className="section-index">Sync</p>
+          <h2 id="receipt-sync-title">From the mailbox</h2>
+        </div>
+        <div className="slip-form">
+          <p className="field-help">
+            Reads the 7-Eleven e-tax invoices in the statement mailbox, on the server. Nothing is
+            stored twice.
+          </p>
+          <div className="slip-actions">
+            <button type="button" className="primary-button" disabled={syncing} onClick={() => void sync()}>
+              {syncing ? "Syncing…" : "Sync 7-Eleven invoices"}
+            </button>
+          </div>
+          {syncNote ? <p className="ledger-status" role="status">{syncNote}</p> : null}
+          {syncError ? <p className="status error" role="alert">{syncError}</p> : null}
+        </div>
+      </section>
+
       <section className="cash-bench compact" aria-labelledby="receipt-add-title">
         <div className="cash-heading">
           <p className="section-index">Add</p>
@@ -231,7 +307,7 @@ export function ReceiptsBench() {
         </div>
         <div className="slip-form">
           <p className="field-help">
-            PDFs are read on this device; app screenshots are read by Google Cloud Vision (stored
+            PDFs you pick are read on this device; app screenshots are read by Google Cloud Vision (stored
             nowhere). Pick all screenshots of a long receipt together to join them.
           </p>
           <label className="account-control">
