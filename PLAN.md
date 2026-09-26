@@ -4,6 +4,8 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
+**7-Eleven invoices sync from the mailbox, live 2026-09-26** (D-232, `85dc2e9`, `64f51a6`, `c7f9e0f`, no migration). "Sync 7-Eleven invoices" on `/receipts` reads forwarded `e_tax@cpall.co.th` mail and "7-11" backfill bundles on the server; the first live run stored 2 new receipts and found 1 already stored. **The backup is stale (469 against 466): export before the next `db push`.** Open: the plain table reads behind `/orders` and `/receipts` under PostgREST's 1,000-row cap (rides at 276; GOTCHAS).
+
 **A fifth `/ux-review`, live 2026-09-25** (D-231, `dc1c210`). All eight pages passed the automated checks at 1440px and 375px. Fixed: the header chip now reads "Statements unlock on this device" (revisits D-129), the ride totals on `/orders` have their own heading, and `/import` dropped developer wording.
 
 **Every candidate read is one JSON array, Sync captures in batches, and the page is Orders, live 2026-09-25** (D-230, `4198dcb`, migration 041, backup stays v13). The receipt, delivery and ride candidate reads can no longer be cut by PostgREST's 1,000-row cap; hosted returned the same 13, 107 and 241 elements before and after. Sync stores up to 25 new orders or rides per call through `capture_deliveries` / `capture_rides`. `/deliveries` is now `/orders` (a temporary redirect keeps old links), named for the owner's planned Shopee orders. pgTAP 619 / 26 files, Vitest 1209 / 7 skipped. A real batch capture has not yet run live: the Sync after deploy found no new mail. Open: the plain table reads behind `/orders` and `/receipts` are under the same cap once any nears 1,000 rows (GOTCHAS); a manual two-row ride link.
@@ -720,7 +722,7 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
     **A matched ledger row shows its receipt, 2026-09-23** (D-216). `/ledger` reads the receipts route and folds the items under the row. `/receipts` was restyled by colour for meaning on the owner's request (D-215). A `/ux-review` of both followed; its three recommended fixes shipped (D-217).
 
-    Follow-ups, all independent: discount names (`receipt_discounts.name` is always null); `completeness` being overwritten by a lower-ranked source in `capture_receipt` (D-214; harmless now that nothing reads it for trust); the mailbox path for full invoices (deferred by the owner).
+    Follow-ups, all independent: discount names (`receipt_discounts.name` is always null); `completeness` being overwritten by a lower-ranked source in `capture_receipt` (D-214; harmless now that nothing reads it for trust); the mailbox path for full invoices, **done and live (D-232)**.
 
     **Matching is built, 2026-09-23 (D-212)** — migration **030**, `lib/receipt-match.ts`, `PUT /api/v1/receipts/[id]/match`, and a match panel on each stored receipt. The lag window was **measured**: 0–2 minutes for the 7-Eleven app wallet (10 of 10) and 47 for the TrueMoney wallet (1). The owner chose **two hours**. The automatic rule is a read-time proposal; the owner's link or decline is stored, and a link may name any row whose amount agrees, which covers the PromptPay-reimbursement case. Backup **v9**. Local gate green; hosted state in `HANDOFF.md`.
 

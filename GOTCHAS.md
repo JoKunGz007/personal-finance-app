@@ -36,6 +36,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A PowerShell `;` chain does not propagate exit codes, so a truncated log plus a later command's zero reads as a green suite
 - A scripted replacement's escape sequences survive one layer of quoting and not two, and land real newlines inside string literals
 - A `\uXXXX` escape written through the agent's file tools lands as the literal character, invisible ones included
+- pdf.js loads under `next start` and fails on Vercel with "DOMMatrix is not defined"
 
 ### Docker and the local Supabase projects
 

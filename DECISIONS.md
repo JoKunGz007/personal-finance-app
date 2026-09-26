@@ -408,6 +408,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-232** — 7-Eleven e-tax invoices are read from the statement mailbox, on the server, by a Sync on /receipts
 - **D-231** — A fifth /ux-review: the header chip claims only what is true, ride totals get a heading, and /import drops developer wording
 - **D-230** — The three older candidate reads return one JSON array, Sync captures in batches, and `/deliveries` becomes `/orders`
 - **D-229** — A Grab ride paid in two parts matches both rows, and an unnamed KBANK card spend counts as Grab's
@@ -417,6 +418,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-232 — 7-Eleven e-tax invoices are read from the statement mailbox, on the server, by a Sync on /receipts
+
+- Date: 2026-09-26
+- Status: **Shipped as `85dc2e9`, `64f51a6`, `c7f9e0f`, confirmed live.** Closes PLAN task 56's deferred mailbox path. Files: `lib/server/receipt-mailbox.ts`, `lib/server/receipt-pdf-node.ts`, `lib/server/receipt-store.ts`, `app/api/v1/receipts/sync/route.ts`, `app/api/v1/receipts/route.ts`, `app/receipts-bench.tsx`, `app/receipts/page.tsx`, `lib/receipts.ts`, `tests/receipt-mailbox.test.ts`.
+- **The mail.** The owner showed one invoice email: sender `e_tax@cpall.co.th`, the invoice a PDF attachment that opens without a password. They set a Gmail filter forwarding that sender to the statement mailbox, and sent a backfill bundle of invoices as attached `.eml` files with "7-11" in its subject. The search is that sender OR that subject word; **the PDF decides what it is**, as for Grab.
+- **Read on the server, the owner's choice** over reading on the device the way statements are. It mirrors Grab Sync: one button, counts back, every capture through the same schema and `capture_receipt` as the page's upload (`lib/server/receipt-store.ts`, now shared by both). The full invoice's name and tax-ID block is dropped by the reader, as before; the Receipts note now says mailed invoices are read on the server. The header chip ("Statements unlock on this device", D-231) stays true.
+- **Marking done:** `PLReceipt` once every PDF in a message is stored, already stored, or not a 7-Eleven form. Any refusal, an unopenable PDF or a failed download leaves it to be read again. **pdf.js failing to load is an error, never "not a receipt"**, which would mark every message done for good.
+- **The first deploy failed on Vercel only**: every request got a 500 before any code ran, while a local production build answered 401. Loading pdf.js inside the request made it report `DOMMatrix is not defined` (the optional `@napi-rs/canvas` is not in the serverless bundle), and a text-only placeholder fixed it. See GOTCHAS.
+- **Confirmed live**: the first Sync read one message (the bundle) and stored **2 new receipts, 1 already stored**, none refused; a second Sync examined 0 messages. `/receipts` lists 15 receipts, all with complete items; the 2 new ones have no ledger row yet, likely because they are newer than the last imported statement. Hosted sequence went **466 → 469** (backup now stale by 3). No migration.
+- Gate: `tsc` clean; `eslint` 0 errors; Vitest **1216 / 7 skipped** (`tests/receipt-mailbox.test.ts` new, 7 tests: outcomes, flagging, bundle part paths, and pdf.js under Node); `pnpm build` clean.
 
 ## D-231 — A fifth /ux-review: the header chip claims only what is true, ride totals get a heading, and /import drops developer wording
 
