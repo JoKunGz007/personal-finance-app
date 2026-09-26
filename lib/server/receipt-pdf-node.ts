@@ -8,21 +8,35 @@
 // address, telephone and taxpayer number, and the reader drops that block by never matching it.
 // Only the parse, or a refusal built from static text, is returned.
 
-// Registers `globalThis.pdfjsWorker`, so pdf.js parses in this process instead of loading a worker
-// file by path, which a serverless bundle would not carry. Imported first, before pdf.js reads it.
-import "pdfjs-dist/legacy/build/pdf.worker.mjs";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { readReceiptPdfText, type ReceiptPdfRead, type ReceiptTextItem } from "@/lib/receipt-pdf";
+
+type PdfJs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
+let loaded: Promise<PdfJs> | null = null;
+
+/**
+ * pdf.js, loaded on first use. The worker module goes first: it registers `globalThis.pdfjsWorker`,
+ * so pdf.js parses in this process instead of loading a worker file by path, which a serverless
+ * bundle would not carry. **A failure to load throws** (and is retried next request), so the route
+ * reports it rather than reading every PDF as "not a receipt" and marking the mail done for good.
+ */
+export function loadPdfJs(): Promise<PdfJs> {
+  loaded ??= (async () => {
+    // @ts-expect-error -- the worker build ships no types; it is imported only for its side effect.
+    await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    return import("pdfjs-dist/legacy/build/pdf.mjs");
+  })().catch((error: unknown) => {
+    loaded = null;
+    throw error;
+  });
+  return loaded;
+}
 
 /** A PDF this reader could not open: refused and retried next Sync, never marked done. */
 export type ReceiptPdfBytesRead = ReceiptPdfRead | { ok: false; code: "UNREADABLE_PDF"; message: string };
 
-/**
- * Only a PDF that will not open is caught, as a refusal. If pdf.js itself cannot load, the import
- * above fails the route, which the page reports as an error: were that read as "not a receipt",
- * every message would be marked done and the mail skipped for good.
- */
+/** Only a PDF that will not open is caught, as a refusal; pdf.js failing to load throws. */
 export async function readReceiptPdfBytes(bytes: Uint8Array): Promise<ReceiptPdfBytesRead> {
+  const { getDocument } = await loadPdfJs();
   try {
     const document = await getDocument({ data: bytes, useSystemFonts: false, verbosity: 0 }).promise;
     try {

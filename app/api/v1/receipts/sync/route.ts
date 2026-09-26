@@ -1,5 +1,5 @@
 import type { ReceiptSyncReport } from "@/lib/receipts";
-import { readReceiptPdfBytes } from "@/lib/server/receipt-pdf-node";
+import { loadPdfJs, readReceiptPdfBytes } from "@/lib/server/receipt-pdf-node";
 import { syncReceiptMail, type StoreReceipt } from "@/lib/server/receipt-mailbox";
 import { captureReceipt } from "@/lib/server/receipt-store";
 import { mailboxConfig, openMailbox } from "@/lib/server/statement-mailbox-session";
@@ -24,6 +24,15 @@ export async function POST() {
   const started = Date.now();
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
+
+  // The PDF reader first, before the mailbox is opened: if it cannot load here, say so. The error
+  // is a module or runtime message and carries no mail or receipt content.
+  try {
+    await loadPdfJs();
+  } catch (error) {
+    const detail = error instanceof Error ? `${error.name}: ${error.message}`.slice(0, 300) : "unknown";
+    return routeError(`The PDF reader could not load on the server (${detail}).`, 500);
+  }
 
   // Senders are statement sync's filter; this reads invoices by content, so it does not need them.
   const settings = mailboxConfig({ requireSenders: false });
