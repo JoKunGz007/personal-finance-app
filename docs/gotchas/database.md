@@ -155,3 +155,10 @@ the top of `GOTCHAS.md`.
 - Cause: `max_rows = 1000` (`supabase/config.toml`, and hosted's default) caps what PostgREST returns from a set-returning RPC, and nothing tells the caller. `ride_split_candidates()` (039) returned 1,181 rows on hosted, so 5 rides lost theirs (D-229). Tests never see it, because their fixtures hold a handful of rows.
 - Avoid: have a read that grows with the ledger return **one `jsonb` array** (`jsonb_agg` in the function), which the cap does not touch, and keep its windows to what the caller uses. Before shipping any `returns table` RPC, count its rows on hosted.
 - Verify: `supabase/migrations/202610050040_ride_split_candidates_json.sql` and the "one JSON array" assertion in `supabase/tests/025_ride_split_candidates.sql`. The three older candidate reads were converted the same way by migration 041 (D-230), asserted in `018`, `021` and `022`. **The cap also applies to a plain table select.** Every unbounded select in `app/api/v1/` now sends `count: "exact"` and refuses through `isComplete` (`lib/server/row-cap.ts`) when rows are missing (D-234). A new unbounded select must do the same. Dated 2026-09-25, extended 2026-09-30 (D-229, D-230, D-234).
+
+## A SQL `delete from storage.objects` is refused by a trigger, whatever the policies say
+
+- Symptom: a delete that the `inbox_owner_delete` policy allows raises "Direct deletion from storage tables is not allowed".
+- Cause: Supabase Storage's `protect_delete` trigger refuses a delete unless `storage.allow_delete_query` is `'true'`, a setting the Storage API sets for its own deletes. RLS still applies on top.
+- Avoid: the app deletes Inbox files through the Storage API (`supabase.storage.from('inbox').remove(...)`), never by SQL. Only a pgTAP test sets the flag, with a comment saying why.
+- Verify: `supabase/tests/027_inbox_bucket.sql`, the delete assertion. Dated 2026-09-30 (D-235).
