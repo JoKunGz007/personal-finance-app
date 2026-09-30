@@ -18,13 +18,13 @@ Do not prepend to it.**
 ## Where to start reading
 
 [SPEC.md](SPEC.md) (scope, invariants, gates) → [PLAN.md](PLAN.md) (checkpoint and next actions) →
-[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and D-223 … D-232**
+[DECISIONS.md](DECISIONS.md) (append-only; indexed at the top, carrying **D-141, D-158 and D-223 … D-235**
 in full, with fourteen archive files beside it under [docs/decisions/](docs/decisions/) — the index
 at the top of `DECISIONS.md` lists every entry in all of them, so **read the index rather than
 opening an archive to find something**. **The gaps in the archived ranges are the rule, not an
 accident** — a boundary excludes every open question and steps over one rather than stopping short
 (D-133, D-154, D-164, D-167, D-171, D-187). **What is left in the maintained file is the two open
-questions, the newest entries (D-223 … D-226, D-228 … D-232) and the boundary's own record of itself (D-227)** — the mailbox archive (D-141), deferred by
+questions, the newest entries (D-223 … D-226, D-228 … D-235) and the boundary's own record of itself (D-227)** — the mailbox archive (D-141), deferred by
 the owner, and `list_match_candidates`' unbounded scan (D-158), recorded in its own migration and
 unfixed; nothing else here is unanswered. **The seventeenth boundary (D-227, 2026-09-25) moved D-212 … D-222 to `docs/decisions/ARCHIVE-D-212-D-222.md` on the owner's word; the sixteenth (D-213, 2026-09-23) took the file
 from 94% to 53%**, moving D-198 … D-211 to `docs/decisions/ARCHIVE-D-198-D-211.md` on the owner's word; the fifteenth (D-198) had taken it
@@ -70,7 +70,7 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
-- **Commit, push, `db push`, real-data read and hosted web use: GRANTED, 2026-09-30 (the D-234 session)**, in one line from the owner. Spent so far on `1a130ef`, `f2eba4d`, `1112249`, `8393c56`, `155b2b9` and their pushes, `db push` of 042 after 472 / 472, live upload and drain checks with invented images only, a live read of five routes' row counts, one live "Sync all mail" in the signed-in pane (stored 2 orders and 1 receipt, so the backup sequence moved), and the docs commits. **None of this survives into a new session.**
+- **Commit, push, `db push`, real-data read and hosted web use: GRANTED, 2026-09-30 (the D-234 session)**, in one line from the owner. Spent so far on `1a130ef`, `f2eba4d`, `1112249`, `8393c56`, `155b2b9` and their pushes, `db push` of 042 after 472 / 472, live upload and drain checks with invented images only, a live read of five routes' row counts, one live "Sync all mail" in the signed-in pane (stored 2 orders and 1 receipt; the owner then re-exported, and hosted read 472 / 472 before the 042 push), and the docs commits. **CARRIED OVER, 2026-09-30, at the owner's explicit request at handoff**: the next session may commit, push, `db push` (after re-reading the backup against the sequence, as always), read real data and use the hosted web without asking again. The carry-over covers that one session only, and the rule above applies again after it.
 - **Real-data read, commit, push, `db push` and hosted web use (the pane and Claude in Chrome): GRANTED and SPENT, 2026-09-25 (the D-230 session)**, in one line from the owner. Spent on hosted reads of counts and function grants only, `db push` of 041 after 466 / 466, `4198dcb`, `dc1c210` (D-231), `85dc2e9` … `c7f9e0f` (D-232) and their docs commits, two live receipt Syncs that stored 2 receipts (sequence 466 → 469), their pushes, and a live check plus one Sync in the signed-in pane (no new mail). **None of this survives into a new session.**
 - **Commit, push, `db push`, real-data read and hosted web use (Claude in Chrome): GRANTED and SPENT, 2026-09-25 (the D-226 … D-229 session)**, in one line from the owner. Spent on hosted reads shown in chat only (the 16 scheme orders, dish options, unmatched orders' cards, ride charges and refunds), `db push` of 038, 039 and 040, each after 466 / 466, the commits `9fa1896` … `96e86f3` and their pushes, and live checks in the pane and in Chrome. **None of this survives into a new session.**
 - **Commit, push, `db push`, real-data read and hosted web use: GRANTED and SPENT, 2026-09-24 (the D-220 session)**, in one line from the owner. Spent on hosted reads returning counts and lag minutes only, the push of 033 after the owner's fresh export read 183 / 183, `f2d4f82`, `4a7aee9` (D-221, asked for the same session) and their docs commits, and live count reads of `/deliveries` and `/ledger` in the signed-in pane. None of this survives into a new session.
@@ -386,6 +386,7 @@ migration history that was here lives in `git log` and `DECISIONS.md`, which is 
 
 ### Where the code is
 
+- **Reading 2026-09-30 (the D-234/D-235 session):** the newest live change is D-235 step 2c-i (`155b2b9`, the Inbox imports 7-Eleven receipts and LINE MAN orders), and all of `main` is pushed. Hosted: migration 042 applied, the `inbox` bucket empty after the invented-image checks, backup 472 / 472 at the push. **Docker Desktop and the local Supabase stack were started this session** (for pgTAP) and left running, with 042 applied locally. The older bullets below are history.
 - **As of the D-201 session, read `git log` — this line cannot record the commit that carries it.**
   D-207's code (`f2aba04`, auto-excluded transfers, migration 026) is the newest change to what the app serves, **confirmed live**.
   Beneath it, D-206's (`32970b4`, notes as a layer), also confirmed live.
