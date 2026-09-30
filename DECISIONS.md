@@ -408,6 +408,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-234** — Plain table reads ask for an exact count and refuse when the 1,000-row cap cuts them
 - **D-233** — The Claude session works as an orchestrator: a read-only investigator joins the subagents, and every delegation is kept short
 - **D-232** — 7-Eleven e-tax invoices are read from the statement mailbox, on the server, by a Sync on /receipts
 - **D-231** — A fifth /ux-review: the header chip claims only what is true, ride totals get a heading, and /import drops developer wording
@@ -419,6 +420,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-234 — Plain table reads ask for an exact count and refuse when the 1,000-row cap cuts them
+
+- Date: 2026-09-30
+- Status: **Shipped as `1a130ef`, confirmed live.** No migration, backup unaffected. Files: `lib/server/row-cap.ts` (new, `isComplete`), the GET handlers of `app/api/v1/{deliveries,receipts,slips,cash,notification-cards}/route.ts`, `tests/row-cap.test.ts`, `tests/deliveries-route.test.ts`.
+- **Why.** PostgREST's `max_rows = 1000` cuts a plain select as silently as it cut a set-returning RPC (D-229, D-230). 15 unbounded reads had no guard: the documents and owner decisions behind matching on `/orders` and `/receipts`, and the slips, cash entries, notification cards and their overlays that feed the ledger's reconciliation and totals.
+- **What changed.** Each read sends `count: "exact"`, which PostgREST computes in the same statement as the rows, and the route refuses with "… could not be loaded in full, so none are shown." (500) when fewer rows arrive or no count comes back. A cut decision read on `/orders` or `/receipts` joins the existing "could not be matched" refusal. Never a shorter list.
+- **Rejected for now:** a `.range()` paging loop (a capture landing mid-read can skip or repeat a row) and moving these reads into jsonb RPCs like D-230 (a migration for tables that are far from the cap). **Revisit** the jsonb RPC for whichever table nears 1,000 rows, because until then the refusal is the page going blank.
+- **Evidence:** Vitest 1125 passed / 106 skipped, including a red-proof (the comparison inverted fails 4 of 5). The DB-backed route tests for receipts, slips, cash and cards were skipped locally, so the live check stands in: all five routes returned 200 on hosted after the deploy (deliveries 121, rides 276, receipts 15, cards 7, slips 1, cash 0).
 
 ## D-233 — The Claude session works as an orchestrator: a read-only investigator joins the subagents, and every delegation is kept short
 
