@@ -96,3 +96,23 @@ export async function readImageWords(encoded: Blob): Promise<ImageWordsRead> {
   if (!Array.isArray(words)) return { ok: false, why: READER_UNAVAILABLE };
   return { ok: true, words };
 }
+
+/**
+ * An image file's words: decoded, re-encoded to PNG and read, in one step (D-235). **Extracted from
+ * `app/receipts-bench.tsx` and `app/lineman-capture.tsx`, which ran these same four steps with the
+ * same two sentences**, so the Inbox's queue reads an image exactly as those pages do. Always
+ * resolves; the bitmap is released either way.
+ */
+export async function readImageFileWords(file: Blob): Promise<ImageWordsRead> {
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(file);
+    const encoded = await encodeForReader(bitmap);
+    if (!encoded) return { ok: false, why: "This image could not be prepared for the reader." };
+    return await readImageWords(encoded);
+  } catch {
+    return { ok: false, why: "This image could not be opened on this device." };
+  } finally {
+    bitmap?.close();
+  }
+}

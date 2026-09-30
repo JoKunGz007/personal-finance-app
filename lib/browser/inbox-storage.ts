@@ -58,6 +58,12 @@ export async function listWaiting(supabase: Client, uid: string): Promise<Outcom
   return { ok: true, value: files };
 }
 
+/** One waiting file's bytes, by name within the owner's folder. */
+export async function downloadFromInbox(supabase: Client, uid: string, name: string): Promise<Outcome<Blob>> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(`${uid}/${name}`);
+  return error || !data ? { ok: false, why: "This file could not be downloaded from the inbox." } : { ok: true, value: data };
+}
+
 /** Removes files by name within the owner's folder, through the Storage API. */
 export async function removeFromInbox(supabase: Client, uid: string, names: readonly string[]): Promise<Outcome<number>> {
   if (names.length === 0) return { ok: true, value: 0 };

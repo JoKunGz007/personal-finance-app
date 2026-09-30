@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { LedgerNote } from "@/app/ledger-note";
-import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
-import { captureLinemanRequest, deliveryCaptureResultSchema } from "@/lib/deliveries";
+import { postLinemanCapture } from "@/lib/browser/capture-client";
+import { readImageFileWords } from "@/lib/browser/ocr-reader";
 import { readLinemanOrder, readLinemanPage, type LinemanPage, type ParsedLinemanOrder } from "@/lib/delivery-lineman";
 import { formatThb } from "@/lib/money";
-import { ledgerRequest } from "@/lib/wire";
 
 /**
  * Adding a LINE MAN order from its order-page screenshots (PLAN task 58 part 4, D-223).
@@ -25,19 +24,13 @@ type Entry =
   | { key: string; files: string; state: "saved"; order: ParsedLinemanOrder; outcome: string };
 
 async function readPage(file: File): Promise<{ ok: true; page: LinemanPage } | { ok: false; message: string }> {
-  let bitmap: ImageBitmap | null = null;
   try {
-    bitmap = await createImageBitmap(file);
-    const encoded = await encodeForReader(bitmap);
-    if (!encoded) return { ok: false, message: "This image could not be prepared for the reader." };
-    const read = await readImageWords(encoded);
+    const read = await readImageFileWords(file);
     if (!read.ok) return { ok: false, message: read.why };
     const page = readLinemanPage(read.words);
     return page.ok ? { ok: true, page: page.value } : { ok: false, message: page.message };
   } catch {
     return { ok: false, message: "This image could not be opened on this device." };
-  } finally {
-    bitmap?.close();
   }
 }
 
@@ -80,14 +73,7 @@ export function LinemanCapture({ onSaved }: { onSaved: () => void }) {
 
   async function save(entry: { key: string; files: string; order: ParsedLinemanOrder }) {
     update(entry.key, { key: entry.key, files: entry.files, state: "saving", order: entry.order });
-    const result = await ledgerRequest("/api/v1/deliveries", deliveryCaptureResultSchema, {
-      fallback: "The order could not be saved.",
-      unreachable: "The ledger could not be reached, so the order was not saved."
-    }, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(captureLinemanRequest(entry.order))
-    });
+    const result = await postLinemanCapture(entry.order);
     if (!result.ok) {
       update(entry.key, { key: entry.key, files: entry.files, state: "failed", order: entry.order, message: result.why });
       return;

@@ -30,8 +30,8 @@ workerScope.onmessage = async (event: MessageEvent<ReadMessage>) => {
     const read = readReceiptPdfText(pages);
     workerScope.postMessage(read.ok
       ? { type: "receipt", form: read.form, receipt: read.receipt }
-      : { type: "error", message: read.message });
+      : { type: "error", message: read.message, code: read.code });
   } catch {
-    workerScope.postMessage({ type: "error", message: "This file could not be opened as a PDF." });
+    workerScope.postMessage({ type: "error", message: "This file could not be opened as a PDF.", code: "UNREADABLE_PDF" });
   }
 };

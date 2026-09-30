@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   listWaiting, ownerUid, removeExpired, removeFromInbox, uploadToInbox, type WaitingFile
 } from "@/lib/browser/inbox-storage";
+import { browserDrainDeps, drainInbox } from "@/lib/browser/inbox-importer";
 import { encodeForReader } from "@/lib/browser/ocr-reader";
 import { browserSupabase } from "@/lib/browser/supabase";
 import { addedLabel, kindOfObject, planFile, sizeLabel, type InboxPlan } from "@/lib/inbox-queue";
@@ -30,8 +31,9 @@ async function toPng(file: File): Promise<Blob | null> {
 
 /**
  * "Add files": pick images and PDFs, which wait in the private inbox bucket until they are imported
- * (D-235). Nothing is read or imported here yet. Files older than seven days are removed when the
- * page opens.
+ * (D-235). When the page opens and after each batch, the queue is drained: 7-Eleven receipts and LINE
+ * MAN orders are imported and leave the queue, and anything else waits with a reason. Files older
+ * than seven days are removed when the page opens.
  */
 export function InboxFiles() {
   const [supabase] = useState(browserSupabase);
@@ -40,30 +42,73 @@ export function InboxFiles() {
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [drainLine, setDrainLine] = useState<string | null>(null);
   const counter = useRef(0);
+  // Who owns `busy`. Only the run that claimed it may release it, so a second run that finds it taken
+  // (React's double effect in development, a press during a drain) neither starts nor clears it.
+  const claimed = useRef(false);
+  const claim = useCallback(() => {
+    if (claimed.current) return false;
+    claimed.current = true;
+    setBusy(true);
+    return true;
+  }, []);
+  const release = useCallback(() => {
+    claimed.current = false;
+    setBusy(false);
+  }, []);
 
-  const refresh = useCallback(async () => {
-    if (!supabase) return;
+  /** Lists the queue, oldest first; null when it could not be listed. */
+  const refresh = useCallback(async (): Promise<WaitingFile[] | null> => {
+    if (!supabase) return null;
     const uid = await ownerUid(supabase);
-    if (!uid.ok) { setError(uid.why); setWaiting(null); return; }
+    if (!uid.ok) { setError(uid.why); setWaiting(null); return null; }
     const listed = await listWaiting(supabase, uid.value);
-    if (!listed.ok) { setError(listed.why); return; }
+    if (!listed.ok) { setError(listed.why); return null; }
     setError(null);
     setWaiting(listed.value);
+    return listed.value;
   }, [supabase]);
 
-  // On open: remove what has waited more than seven days, say how many, then list what is left.
+  /** Imports what the queue holds, then lists it again. Called only by a run that holds the claim. */
+  const drain = useCallback(async (files: WaitingFile[]) => {
+    if (!supabase || files.length === 0) return;
+    let failed = false;
+    try {
+      const uid = await ownerUid(supabase);
+      if (!uid.ok) { setError(uid.why); return; }
+      const result = await drainInbox(files, setDrainLine, browserDrainDeps(supabase, uid.value));
+      setReasons(result.reasons);
+      setDrainLine(result.summary);
+    } catch {
+      // Nothing is removed unless a capture answered and Storage confirmed, so a failure here loses nothing.
+      failed = true;
+    }
+    await refresh();
+    if (failed) {
+      setDrainLine(null);
+      setError("The inbox could not finish importing. Try again.");
+    }
+  }, [supabase, refresh]);
+
+  // On open: remove what has waited more than seven days, say how many, list what is left, then drain it.
   useEffect(() => {
     void (async () => {
-      if (!supabase) return;
-      const uid = await ownerUid(supabase);
-      if (uid.ok) {
-        const removed = await removeExpired(supabase, uid.value, new Date());
-        if (removed.ok) setExpired(removed.value);
+      if (!supabase || !claim()) return;
+      try {
+        const uid = await ownerUid(supabase);
+        if (uid.ok) {
+          const removed = await removeExpired(supabase, uid.value, new Date());
+          if (removed.ok) setExpired(removed.value);
+        }
+        const listed = await refresh();
+        if (listed) await drain(listed);
+      } finally {
+        release();
       }
-      await refresh();
     })();
-  }, [supabase, refresh]);
+  }, [supabase, refresh, drain, claim, release]);
 
   const setStatus = (key: number, status: Status) =>
     setPicked((current) => current.map((entry) => (entry.key === key ? { ...entry, status } : entry)));
@@ -81,8 +126,16 @@ export function InboxFiles() {
   }
 
   async function choose(files: FileList | null) {
-    if (!files || files.length === 0 || !supabase) return;
-    setBusy(true);
+    if (!files || files.length === 0 || !supabase || !claim()) return;
+    try {
+      await addAndDrain(files);
+    } finally {
+      release();
+    }
+  }
+
+  async function addAndDrain(files: FileList) {
+    if (!supabase) return;
     const chosen = [...files].map((file) => ({ file, key: counter.current++, plan: planFile(file) }));
     setPicked((current) => [
       ...current,
@@ -98,18 +151,20 @@ export function InboxFiles() {
       if (!uid.ok) { setStatus(key, { state: "refused", reason: uid.why }); continue; }
       await addOne(uid.value, key, file, plan);
     }
-    await refresh();
-    setBusy(false);
+    const listed = await refresh();
+    if (listed) await drain(listed);
   }
 
   async function remove(name: string) {
-    if (!supabase) return;
-    setBusy(true);
-    const uid = await ownerUid(supabase);
-    const removed = uid.ok ? await removeFromInbox(supabase, uid.value, [name]) : uid;
-    if (!removed.ok) setError(removed.why);
-    await refresh();
-    setBusy(false);
+    if (!supabase || !claim()) return;
+    try {
+      const uid = await ownerUid(supabase);
+      const removed = uid.ok ? await removeFromInbox(supabase, uid.value, [name]) : uid;
+      if (!removed.ok) setError(removed.why);
+      await refresh();
+    } finally {
+      release();
+    }
   }
 
   const now = new Date();
@@ -123,7 +178,8 @@ export function InboxFiles() {
       <div className="slip-form">
         <p className="field-help">
           Pick screenshots, photos or PDFs. They are kept privately until they are imported, and for at
-          most 7 days. Nothing is imported from them yet.
+          most 7 days. 7-Eleven receipts and LINE MAN orders are imported automatically; slips and
+          statements will be soon.
         </p>
         <label className="account-control">
           <span>Images and PDFs</span>
@@ -156,6 +212,7 @@ export function InboxFiles() {
         <h2 id="inbox-waiting-title">Waiting</h2>
       </div>
       <div className="slip-form">
+        {drainLine ? <p className="field-help" role="status">{drainLine}</p> : null}
         {expired > 0 ? (
           <p className="field-help" role="status">
             {expired} file{expired === 1 ? "" : "s"} removed after waiting more than 7 days.
@@ -174,6 +231,7 @@ export function InboxFiles() {
                 <span>
                   {file.size === null ? "size unknown" : sizeLabel(file.size)} · added {addedLabel(file.created_at, now)}
                 </span>
+                {reasons[file.name] ? <span className="field-help">{reasons[file.name]}</span> : null}
                 <span className="slip-actions">
                   <button type="button" className="secondary-button" disabled={busy} onClick={() => void remove(file.name)}>
                     Remove

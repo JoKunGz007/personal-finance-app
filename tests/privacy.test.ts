@@ -171,7 +171,10 @@ describe("privacy guardrails", () => {
     expect(withoutLiterals).not.toMatch(/postMessage\([^;]*\b(bytes|pages|content|items|text|document)\b/su);
     expect(withoutLiterals.match(/postMessage\(/gu) ?? []).toHaveLength(2);
     expect(worker).toMatch(/\{ type: "receipt", form: read\.form, receipt: read\.receipt \}/u);
-    expect(worker).toMatch(/\{ type: "error", message: read\.message \}/u);
+    // D-235: the refusal also carries its code, a fixed word from `readReceiptPdfText` (or the
+    // static "UNREADABLE_PDF"), so the Inbox can tell "not a 7-Eleven form" from a real failure.
+    expect(worker).toMatch(/\{ type: "error", message: read\.message, code: read\.code \}/u);
+    expect(worker).toMatch(/\{ type: "error", message: "[^"]*", code: "UNREADABLE_PDF" \}/u);
   });
 
   it("keeps every client request same-origin and limited to the import contract", () => {

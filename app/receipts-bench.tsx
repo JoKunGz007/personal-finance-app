@@ -6,21 +6,15 @@ import { LedgerNote } from "@/app/ledger-note";
 import { ReceiptStatisticsPanel } from "@/app/receipt-statistics";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { describeSevenElevenOutcome, describeSevenElevenProgress, syncSevenElevenMail } from "@/lib/browser/mail-sync";
-import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
+import { postReceiptCapture } from "@/lib/browser/capture-client";
+import { readImageFileWords } from "@/lib/browser/ocr-reader";
+import { readReceiptPdf } from "@/lib/browser/receipt-reader";
 import { formatThb } from "@/lib/money";
 import { receiptMatchResponseSchema } from "@/lib/receipt-match";
-import type { ReceiptForm } from "@/lib/receipt-pdf";
 import { groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
-import {
-  receiptCaptureBody, receiptCaptureResultSchema, receiptListSchema,
-  type CaptureForm, type StoredReceipt
-} from "@/lib/receipts";
+import { receiptListSchema, type CaptureForm, type StoredReceipt } from "@/lib/receipts";
 import { ledgerRequest } from "@/lib/wire";
-
-type WorkerReply =
-  | { type: "receipt"; form: ReceiptForm; receipt: ParsedReceipt }
-  | { type: "error"; message: string };
 
 type Picked =
   | { key: string; file: string; state: "reading" }
@@ -32,53 +26,18 @@ type Picked =
 
 const FORM_LABEL: Record<CaptureForm, string> = { condensed: "Short receipt", full: "Full tax invoice", screenshot: "Screenshot" };
 
-// A receipt is a page or two; a worker silent for this long is not going to answer.
-const READ_TIMEOUT_MS = 60_000;
-
-/**
- * One PDF, one worker: the bytes are transferred in and only the parse comes back. **Always
- * resolves** — an unreadable file, a worker error and a worker that never answers all become a
- * refusal — so one bad file cannot leave itself and every file after it stuck on "Reading".
- */
-async function readReceiptPdf(file: File): Promise<WorkerReply> {
-  let bytes: ArrayBuffer;
-  try {
-    bytes = await file.arrayBuffer();
-  } catch {
-    return { type: "error", message: "This file could not be opened on this device." };
-  }
-  return new Promise<WorkerReply>((resolve) => {
-    const worker = new Worker(new URL("../workers/receipt.worker.ts", import.meta.url), { type: "module" });
-    const timer = setTimeout(() => finish({ type: "error", message: "Reading this PDF took too long, so it was stopped." }), READ_TIMEOUT_MS);
-    function finish(reply: WorkerReply) {
-      clearTimeout(timer);
-      worker.terminate();
-      resolve(reply);
-    }
-    worker.onmessage = (event: MessageEvent<WorkerReply>) => finish(event.data);
-    worker.onerror = () => finish({ type: "error", message: "This PDF could not be read on this device." });
-    worker.postMessage({ type: "read", bytes }, [bytes]);
-  });
-}
-
 /**
  * One screenshot's header and item lines, read through the app's Vision route — the image leaves
  * the device here, and the page says so above the picker. Always resolves.
  */
 async function readScreenshotFile(file: File): Promise<{ ok: true; page: ScreenshotPage } | { ok: false; message: string }> {
-  let bitmap: ImageBitmap | null = null;
   try {
-    bitmap = await createImageBitmap(file);
-    const encoded = await encodeForReader(bitmap);
-    if (!encoded) return { ok: false, message: "This image could not be prepared for the reader." };
-    const read = await readImageWords(encoded);
+    const read = await readImageFileWords(file);
     if (!read.ok) return { ok: false, message: read.why };
     const page = readScreenshotPage(read.words);
     return page.ok ? { ok: true, page: page.value } : { ok: false, message: page.message };
   } catch {
     return { ok: false, message: "This image could not be opened on this device." };
-  } finally {
-    bitmap?.close();
   }
 }
 
@@ -202,14 +161,7 @@ export function ReceiptsBench() {
 
   async function saveOnce(entry: Extract<Picked, { state: "ready" | "failed" }>) {
     update(entry.key, { key: entry.key, file: entry.file, state: "saving", form: entry.form, receipt: entry.receipt });
-    const result = await ledgerRequest("/api/v1/receipts", receiptCaptureResultSchema, {
-      fallback: "The receipt could not be saved.",
-      unreachable: "The ledger could not be reached, so the receipt was not saved."
-    }, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(receiptCaptureBody(entry.form, entry.receipt))
-    });
+    const result = await postReceiptCapture(entry.form, entry.receipt);
     if (!result.ok) {
       update(entry.key, { key: entry.key, file: entry.file, state: "failed", form: entry.form, receipt: entry.receipt, message: result.why });
       return;
