@@ -408,6 +408,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
 - **D-234** — Plain table reads ask for an exact count and refuse when the 1,000-row cap cuts them
 - **D-233** — The Claude session works as an orchestrator: a read-only investigator joins the subagents, and every delegation is kept short
 - **D-232** — 7-Eleven e-tax invoices are read from the statement mailbox, on the server, by a Sync on /receipts
@@ -420,6 +421,23 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-235 — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
+
+- Date: 2026-09-30
+- Status: **Step 1 shipped as `f2eba4d`, confirmed live.** Later steps are agreed but not built. Files: `app/inbox/page.tsx`, `app/inbox-bench.tsx`, `lib/browser/mail-sync.ts` (the Grab and 7-Eleven loops, moved unchanged from `deliveries-bench.tsx` / `receipts-bench.tsx`), `app/statement-sync.tsx` (`/import?sync=1` starts the mailbox download once), `tests/mail-sync.test.ts`.
+- **Why.** The owner imports from too many places: statements, slips, 7-Eleven PDFs and screenshots, LINE MAN screenshots, Grab mail. He wants to drop everything in one place, mostly from the iPhone, and have it import itself.
+- **No LLM** (the owner's call). He only uploads kinds of file the app already parses, so each file goes to an existing deterministic parser. The Claude API was rejected on cost. A local OCR model is a **side experiment in a separate repo**, with a handoff written outside this one; Vision stays unless that experiment clearly wins, because its first 1,000 units a month are free.
+- **Step 1 (shipped):** "Sync all mail" runs the Grab, then the 7-Eleven, mailbox syncs **one after another** (Gmail limits concurrent IMAP logins), then counts the statement PDFs not yet downloaded and links to `/import?sync=1`. The password and each confirmation stay on `/import`. First live run: 14 s, 2 new orders, 1 new receipt (the first from the owner's 7-Eleven filter, and the first live batch capture since D-230), no statements waiting.
+- **Agreed next (not built):**
+  - Files dropped on `/inbox` go to a **private storage bucket** and are **processed in the browser when the Inbox is next opened on any device**, using today's parsers unchanged. This **reverses D-050**: images are stored, deleted once imported, and held ones kept for at most 7 days. Phones convert HEIC to PNG before upload.
+  - 7-Eleven PDFs import at upload, through the server reader that already exists.
+  - Fully unattended server processing was **rejected**: it would mean porting the QR and crop readers to Node, re-measuring them, and giving the server a credential with no session present (D-141).
+  - Recognition uses signals the parsers already use: the slip QR, the 7-Eleven headings, LINE MAN's "Order details" plus "Menu", the 7-Eleven PDF form, and an encrypted PDF for a statement.
+  - Notification cards are held and sent to their own page until a bank recogniser exists (later).
+  - Two LINE MAN orders dropped together are held, because only the first screenshot has the order number.
+  - **Statements confirm automatically when they reconcile with no warning**, and any warning stops for review. This revisits D-141 and D-055. The password is still typed once per run and never stored.
+- **Shopee is postponed** (the owner).
 
 ## D-234 — Plain table reads ask for an exact count and refuse when the 1,000-row cap cuts them
 
