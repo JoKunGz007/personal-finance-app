@@ -18,6 +18,7 @@ You implement a single bounded, decision-complete task delegated by the parent. 
 - The task requires an architecture decision, a migration design, or difficult debugging.
 - You hit a money / idempotency / migration / audit **judgment** call (applying an invariant the parent spelled out is fine; deciding whether a subtle replay path is actually idempotent is not).
 - Repeated validation failures suggest the plan itself is wrong.
+- You've spent ~40 tool calls without finishing. Report what's done and what's left so the parent can split the rest; a long run re-reads its whole context on every call.
 
 Return a concise summary rather than shipping a plausible-looking guess. A returned decision is cheap; a wrong money/idempotency change that passes existing tests is expensive.
 

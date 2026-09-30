@@ -408,6 +408,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-233** — The Claude session works as an orchestrator: a read-only investigator joins the subagents, and every delegation is kept short
 - **D-232** — 7-Eleven e-tax invoices are read from the statement mailbox, on the server, by a Sync on /receipts
 - **D-231** — A fifth /ux-review: the header chip claims only what is true, ride totals get a heading, and /import drops developer wording
 - **D-230** — The three older candidate reads return one JSON array, Sync captures in batches, and `/deliveries` becomes `/orders`
@@ -418,6 +419,16 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-233 — The Claude session works as an orchestrator: a read-only investigator joins the subagents, and every delegation is kept short
+
+- Date: 2026-09-30
+- Status: **In effect, not yet measured.** Builds on D-011, which it keeps: the implementer and reviewer stay on Sonnet. Files: `CLAUDE.md` § Subagents, `.claude/agents/finance-investigator.md` (new), `.claude/agents/finance-implementer.md` (a ~40-call stop).
+- **Why.** Plan limits are the constraint, and most of a session's cost is every call re-reading the whole context. In the eleven Opus 5.5 sessions from 2026-09-22 to 09-25 the main session did nearly everything: 123–217 calls each, mean context 185–358K. The implementer never ran, and the reviewer ran four times. The measurements live in the separate `claude-usage` project.
+- **What changed.** The session now delegates by kind of work (`CLAUDE.md` § Subagents). `finance-investigator` is new: it answers "why / does it hold" questions on the session model, is read-only, and returns ≤300 words. D-049's parent-only reading of `shared-statements/` applies to it too.
+- **Short runs matter as much as delegating.** Past implementer runs of 75–103 calls reached 190–286K context and cost as much as the main session would have. Hence the ~20–40-call scope and the implementer's ~40-call stop.
+- **Rejected:** handing off to a fresh session at ~150K. A new session starts at 50–65K before any work, which leaves too little room to finish a task.
+- **Measure:** after 5–8 normal sessions, compare against this repo's Opus 5.5 baseline of about $16 per session, 179 main calls and 266K median context. A frequent Sonnet re-run on Opus would argue for moving the implementer off Sonnet.
 
 ## D-232 — 7-Eleven e-tax invoices are read from the statement mailbox, on the server, by a Sync on /receipts
 
