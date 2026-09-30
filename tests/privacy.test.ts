@@ -1158,6 +1158,50 @@ describe("privacy guardrails", () => {
     expect(route).toMatch(/process\.env\.GOOGLE_VISION_KEY/u);
   });
 
+  // D-235 reverses D-050 **for the inbox queue only**: dropped files wait in the private `inbox`
+  // bucket until imported, at most seven days. That is the whole exception, so it is pinned at both
+  // ends — no record the owner can capture carries an image, and exactly one module may touch
+  // Storage, for exactly one bucket.
+  it("keeps capture records image-free and lets only the inbox module touch Storage", () => {
+    const captureSchemas: Array<[string, string]> = [
+      ["lib/slips.ts", "slipCaptureSchema"],
+      ["lib/notification-cards.ts", "notificationCardCaptureSchema"],
+      ["lib/cash.ts", "cashCaptureSchema"],
+      ["lib/receipts.ts", "receiptCaptureSchema"],
+      ["lib/deliveries.ts", "linemanCaptureRequestSchema"]
+    ];
+    for (const [file, name] of captureSchemas) {
+      const source = readFileSync(file, "utf8");
+      const start = source.indexOf(`export const ${name} = z.object(`);
+      expect(start, `${file}: ${name} must exist for this test to mean anything`).toBeGreaterThan(-1);
+      const end = source.indexOf("\n}).strict()", start);
+      expect(end, `${file}: ${name} must stay .strict()`).toBeGreaterThan(start);
+      // Matched on object keys, not words: a receipt's `form` may legitimately be "screenshot".
+      expect(source.slice(start, end), `${file}: ${name} must carry no image field`)
+        .not.toMatch(/\b(?:image|photo|blob|bytes|storagePath|file|screenshot)\w*\s*:/iu);
+    }
+
+    const walk = (directory: string, found: string[] = []): string[] => {
+      if (!existsSync(directory)) return found;
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const full = path.join(directory, entry.name);
+        if (entry.isDirectory()) walk(full, found);
+        else if (/\.(?:ts|tsx|js|mjs)$/u.test(entry.name)) found.push(full.split(path.sep).join("/"));
+      }
+      return found;
+    };
+    const sources = ["app", "lib", "workers", "scripts", "public"].flatMap((directory) => walk(directory));
+    expect(sources.length, "no sources found — the walk is looking in the wrong place").toBeGreaterThan(50);
+    const storageUsers = sources.filter((file) => /\.storage\b/u.test(readFileSync(file, "utf8")));
+    expect(storageUsers, "only the inbox module may use Supabase Storage").toEqual(["lib/browser/inbox-storage.ts"]);
+
+    const inbox = readFileSync("lib/browser/inbox-storage.ts", "utf8");
+    const buckets = [...inbox.matchAll(/\.storage\.from\(([^)]*)\)/gu)].map((match) => match[1]);
+    expect(buckets.length, "the inbox module must reach its bucket through .storage.from(").toBeGreaterThan(0);
+    expect(new Set(buckets), "the only bucket is `inbox`").toEqual(new Set(["BUCKET"]));
+    expect(inbox).toContain('const BUCKET = "inbox";');
+  });
+
   it("keeps the session in cookies, which is the only client storage this app has", () => {
     const browser = readFileSync("lib/browser/supabase.ts", "utf8");
     const access = readFileSync("app/owner-access.tsx", "utf8");
