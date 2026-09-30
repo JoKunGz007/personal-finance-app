@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
+import { isComplete } from "@/lib/server/row-cap";
 import { deliveryTime, linemanCaptureRequestSchema, paidOutsidePlatform } from "@/lib/deliveries";
 import {
   deliveryLedgerCandidateSchema, deliveryMatchDecisionSchema, proposeGrabMatches, proposeRideSplits,
@@ -22,18 +23,20 @@ export async function GET() {
   const [orders, rides, orderCandidates, rideCandidates, orderDecisions, rideDecisions, splitCandidates] = await Promise.all([
     auth.supabase
       .from("deliveries")
-      .select("id,platform,booking_id,restaurant,payment_method,receipt_sent_at,food_minor,delivery_fee_minor,total_minor,items:delivery_items(position,quantity,name,options,amount_minor),adjustments:delivery_adjustments(position,kind,name,amount_minor),lineman:lineman_order_details(ordered_at,charged_minor)"),
+      .select("id,platform,booking_id,restaurant,payment_method,receipt_sent_at,food_minor,delivery_fee_minor,total_minor,items:delivery_items(position,quantity,name,options,amount_minor),adjustments:delivery_adjustments(position,kind,name,amount_minor),lineman:lineman_order_details(ordered_at,charged_minor)", { count: "exact" }),
     auth.supabase
       .from("rides")
-      .select("id,booking_id,ride_type,picked_up_at,dropped_off_at,pickup_place,dropoff_place,distance_meters,duration_minutes,payment_method,fare_minor,platform_fee_minor,total_minor,adjustments:ride_adjustments(position,kind,name,amount_minor)")
+      .select("id,booking_id,ride_type,picked_up_at,dropped_off_at,pickup_place,dropoff_place,distance_meters,duration_minutes,payment_method,fare_minor,platform_fee_minor,total_minor,adjustments:ride_adjustments(position,kind,name,amount_minor)", { count: "exact" })
       .order("dropped_off_at", { ascending: false }),
     auth.supabase.rpc("delivery_ledger_candidates"),
     auth.supabase.rpc("ride_ledger_candidates"),
-    auth.supabase.from("delivery_match_overlays").select("delivery_id,decision,transaction_id,revision"),
-    auth.supabase.from("ride_match_overlays").select("ride_id,decision,transaction_id,revision"),
+    auth.supabase.from("delivery_match_overlays").select("delivery_id,decision,transaction_id,revision", { count: "exact" }),
+    auth.supabase.from("ride_match_overlays").select("ride_id,decision,transaction_id,revision", { count: "exact" }),
     auth.supabase.rpc("ride_split_candidates")
   ]);
   if (orders.error || rides.error) return routeError("Delivery orders could not be loaded.", 400);
+  // PostgREST cuts a plain select at max_rows without saying so; a cut list is a refusal, never a shorter one.
+  if (!isComplete(orders) || !isComplete(rides)) return routeError("Delivery orders could not be loaded in full, so none are shown.", 500);
 
   // Off-contract any read is a refusal, never a document shown as unmatched — "no row" is a
   // claim the page would then be making about the ledger without having read it.
@@ -43,6 +46,7 @@ export async function GET() {
   const parsedRideDecisions = z.array(rideMatchDecisionSchema).safeParse(rideDecisions.data);
   const parsedSplitCandidates = z.array(rideSplitCandidateSchema).safeParse(splitCandidates.data);
   if (orderCandidates.error || rideCandidates.error || orderDecisions.error || rideDecisions.error || splitCandidates.error
+    || !isComplete(orderDecisions) || !isComplete(rideDecisions)
     || !parsedOrderCandidates.success || !parsedRideCandidates.success
     || !parsedOrderDecisions.success || !parsedRideDecisions.success || !parsedSplitCandidates.success) {
     return routeError("Orders could not be matched to the ledger, so none are shown.", 500);

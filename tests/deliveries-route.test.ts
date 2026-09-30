@@ -18,8 +18,14 @@ const reads = vi.hoisted(() => ({
   rideCandidates: { data: [] as unknown, error: null as unknown },
   rides: { data: [] as unknown, error: null as unknown },
   splitCandidates: { data: [] as unknown, error: null as unknown },
-  captured: [] as unknown[]
+  captured: [] as unknown[],
+  orderCount: null as number | null
 }));
+
+// PostgREST's exact count: the row count unless a test says the list was cut.
+const withCount = (read: { data: unknown; error: unknown; count?: number }) => ({
+  count: Array.isArray(read.data) ? read.data.length : 0, ...read
+});
 
 function ride(id: string, total: number) {
   return {
@@ -45,10 +51,10 @@ vi.mock("@/lib/server/supabase", () => ({
     ok: true,
     supabase: {
       from: (table: string) => table === "deliveries"
-        ? { select: async () => ({ data: [order(ORDER, 14100), order(FREE, 0)], error: null }) }
+        ? { select: async () => ({ data: [order(ORDER, 14100), order(FREE, 0)], count: reads.orderCount ?? 2, error: null }) }
         : table === "rides"
-          ? { select: () => ({ order: async () => reads.rides }) }
-          : { select: async () => (table === "delivery_match_overlays" ? reads.decisions : { data: [], error: null }) },
+          ? { select: () => ({ order: async () => withCount(reads.rides) }) }
+          : { select: async () => withCount(table === "delivery_match_overlays" ? reads.decisions : { data: [], error: null }) },
       rpc: async (name: string, args?: { p_request?: unknown }) => {
         if (name === "capture_delivery") { reads.captured.push(args?.p_request); return { data: { captured: true, id: ORDER }, error: null }; }
         if (name === "ride_split_candidates") return reads.splitCandidates;
@@ -69,6 +75,7 @@ beforeEach(() => {
   reads.rideCandidates = { data: [], error: null };
   reads.rides = { data: [], error: null };
   reads.splitCandidates = { data: [], error: null };
+  reads.orderCount = null;
 });
 
 async function list() {
@@ -99,6 +106,25 @@ describe("GET /api/v1/deliveries", () => {
 
   it("refuses the whole list when a decision is off-contract", async () => {
     reads.decisions = { data: [{ delivery_id: ORDER, decision: "maybe", transaction_id: null, revision: 1 }], error: null };
+    expect((await list()).status).toBe(500);
+  });
+});
+
+describe("GET /api/v1/deliveries when PostgREST cuts a read at max_rows", () => {
+  it("refuses the whole list when the orders were cut", async () => {
+    reads.orderCount = 1181;
+    const response = await list();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "Delivery orders could not be loaded in full, so none are shown." });
+  });
+
+  it("refuses the whole list when the rides were cut", async () => {
+    reads.rides = { data: [ride(RIDE, 14100)], count: 1181, error: null } as typeof reads.rides;
+    expect((await list()).status).toBe(500);
+  });
+
+  it("refuses the whole list when the decisions were cut", async () => {
+    reads.decisions = { data: [], count: 1181, error: null } as typeof reads.decisions;
     expect((await list()).status).toBe(500);
   });
 });

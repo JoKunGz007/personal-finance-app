@@ -1,4 +1,5 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
+import { isComplete } from "@/lib/server/row-cap";
 import { slipCaptureSchema } from "@/lib/slips";
 
 export const dynamic = "force-dynamic";
@@ -6,12 +7,15 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
-  const { data, error } = await auth.supabase
+  const read = await auth.supabase
     .from("slips")
-    .select("id,bank_code,slip_reference,kind,amount_minor,currency,occurred_on,occurred_at_time,counterparty,category_id,note,captured_at")
+    .select("id,bank_code,slip_reference,kind,amount_minor,currency,occurred_on,occurred_at_time,counterparty,category_id,note,captured_at", { count: "exact" })
     .order("occurred_on", { ascending: false })
     .order("captured_at", { ascending: false });
+  const { data, error } = read;
   if (error) return routeError("Slips could not be loaded.", 400);
+  // PostgREST cuts a plain select at max_rows without saying so; a cut list is a refusal, never a shorter one.
+  if (!isComplete(read)) return routeError("Slips could not be loaded in full, so none are shown.", 500);
 
   // The owner's stored decisions, on the same response as the slips they are about (D-067).
   // A decision that failed to arrive on its own would leave the ledger showing a pairing the
@@ -19,8 +23,9 @@ export async function GET() {
   // whole read rather than silently downgrading it to the rule.
   const matches = await auth.supabase
     .from("slip_match_overlays")
-    .select("slip_id,decision,transaction_id,revision");
+    .select("slip_id,decision,transaction_id,revision", { count: "exact" });
   if (matches.error) return routeError("Slips could not be loaded.", 400);
+  if (!isComplete(matches)) return routeError("Slips could not be loaded in full, so none are shown.", 500);
 
   // Corrections travel with the slips for a sharper version of the same argument (migration
   // 013). A slip whose correction failed to arrive shows its **original** amount, and the
@@ -28,8 +33,9 @@ export async function GET() {
   // read-side twin of the defect migration 014 had to fix.
   const corrections = await auth.supabase
     .from("slip_correction_overlays")
-    .select("slip_id,kind,amount_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision,updated_at");
+    .select("slip_id,kind,amount_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision,updated_at", { count: "exact" });
   if (corrections.error) return routeError("Slips could not be loaded.", 400);
+  if (!isComplete(corrections)) return routeError("Slips could not be loaded in full, so none are shown.", 500);
 
   // bigint arrives as a JS number from PostgREST unless it is cast, so the amount is
   // stringified here rather than trusted to survive JSON. Every money value in this app

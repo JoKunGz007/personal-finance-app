@@ -1,5 +1,6 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { z } from "zod";
+import { isComplete } from "@/lib/server/row-cap";
 import { proposeReceiptMatches, receiptLedgerCandidateSchema, receiptMatchDecisionSchema } from "@/lib/receipt-match";
 import { captureReceipt } from "@/lib/server/receipt-store";
 
@@ -12,22 +13,25 @@ export async function GET() {
   if (!auth.ok) return routeError(auth.message, auth.status);
   // Three independent reads, started together: the receipts, the candidate rows (migration 030)
   // and the owner's stored decisions.
-  const [{ data, error }, candidates, decisions] = await Promise.all([auth.supabase
+  const [receiptRead, candidates, decisions] = await Promise.all([auth.supabase
     .from("receipts")
-    .select("id,store_code,branch_name,receipt_number,purchased_on,purchased_at_time,payment_method,subtotal_minor,net_minor,unit_count,completeness,failed_checks,sources,items_source,items_complete,updated_at,items:receipt_items(position,quantity,name,display_name,amount_minor,is_promotion,vat_exempt),discounts:receipt_discounts(position,amount_minor)")
+    .select("id,store_code,branch_name,receipt_number,purchased_on,purchased_at_time,payment_method,subtotal_minor,net_minor,unit_count,completeness,failed_checks,sources,items_source,items_complete,updated_at,items:receipt_items(position,quantity,name,display_name,amount_minor,is_promotion,vat_exempt),discounts:receipt_discounts(position,amount_minor)", { count: "exact" })
     .order("purchased_on", { ascending: false })
     .order("purchased_at_time", { ascending: false, nullsFirst: false }),
     auth.supabase.rpc("receipt_ledger_candidates"),
-    auth.supabase.from("receipt_match_overlays").select("receipt_id,decision,transaction_id,revision")
+    auth.supabase.from("receipt_match_overlays").select("receipt_id,decision,transaction_id,revision", { count: "exact" })
   ]);
+  const { data, error } = receiptRead;
   if (error) return routeError("Receipts could not be loaded.", 400);
+  // PostgREST cuts a plain select at max_rows without saying so; a cut list is a refusal, never a shorter one.
+  if (!isComplete(receiptRead)) return routeError("Receipts could not be loaded in full, so none are shown.", 500);
 
   // The match state is computed here rather than on the device. Off-contract either read is a
   // refusal, never a receipt shown as unmatched — "no row" is a claim the page would then be
   // making about the ledger without having read it.
   const parsedCandidates = z.array(receiptLedgerCandidateSchema).safeParse(candidates.data);
   const parsedDecisions = z.array(receiptMatchDecisionSchema).safeParse(decisions.data);
-  if (candidates.error || decisions.error || !parsedCandidates.success || !parsedDecisions.success) {
+  if (candidates.error || decisions.error || !isComplete(decisions) || !parsedCandidates.success || !parsedDecisions.success) {
     return routeError("Receipts could not be matched to the ledger, so none are shown.", 500);
   }
   const matches = proposeReceiptMatches((data ?? []).map((receipt) => receipt.id), parsedCandidates.data, parsedDecisions.data);

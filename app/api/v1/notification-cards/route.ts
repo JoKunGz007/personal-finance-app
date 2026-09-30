@@ -1,5 +1,6 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { layoutForChannel, matchAccountDigits } from "@/lib/notification-card";
+import { isComplete } from "@/lib/server/row-cap";
 import { notificationCardCaptureSchema, notificationCardSchema } from "@/lib/notification-cards";
 
 export const dynamic = "force-dynamic";
@@ -18,25 +19,31 @@ export async function GET() {
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
 
-  const { data, error } = await auth.supabase
+  const read = await auth.supabase
     .from("notification_cards")
     .select(
-      "id,account_id,channel,printed_account_digits,kind,amount_minor,currency,occurred_on,occurred_at_time,balance_minor,counterparty,category_id,note,captured_at"
+      "id,account_id,channel,printed_account_digits,kind,amount_minor,currency,occurred_on,occurred_at_time,balance_minor,counterparty,category_id,note,captured_at",
+      { count: "exact" }
     )
     .order("occurred_on", { ascending: false })
     .order("occurred_at_time", { ascending: false })
     .order("captured_at", { ascending: false });
+  const { data, error } = read;
   if (error) return routeError("Notification cards could not be loaded.", 400);
+  // PostgREST cuts a plain select at max_rows without saying so; a cut list is a refusal, never a shorter one.
+  if (!isComplete(read)) return routeError("Notification cards could not be loaded in full, so none are shown.", 500);
 
   const corrections = await auth.supabase
     .from("notification_card_correction_overlays")
-    .select("card_id,kind,amount_minor,balance_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision,updated_at");
+    .select("card_id,kind,amount_minor,balance_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision,updated_at", { count: "exact" });
   if (corrections.error) return routeError("Notification cards could not be loaded.", 400);
+  if (!isComplete(corrections)) return routeError("Notification cards could not be loaded in full, so none are shown.", 500);
 
   const decisions = await auth.supabase
     .from("notification_card_decision_overlays")
-    .select("card_id,decision,transaction_id,accepted_balance_mismatch,revision,updated_at");
+    .select("card_id,decision,transaction_id,accepted_balance_mismatch,revision,updated_at", { count: "exact" });
   if (decisions.error) return routeError("Notification cards could not be loaded.", 400);
+  if (!isComplete(decisions)) return routeError("Notification cards could not be loaded in full, so none are shown.", 500);
 
   // Every bigint arrives as a JS number from PostgREST unless it is cast, so each is stringified
   // here rather than trusted to survive JSON (D-018). The balance is money and is held to that

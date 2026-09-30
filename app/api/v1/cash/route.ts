@@ -1,4 +1,5 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
+import { isComplete } from "@/lib/server/row-cap";
 import { cashCaptureSchema, cashEntrySchema } from "@/lib/cash";
 
 export const dynamic = "force-dynamic";
@@ -15,17 +16,21 @@ export async function GET() {
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
 
-  const { data, error } = await auth.supabase
+  const read = await auth.supabase
     .from("cash_entries")
-    .select("id,kind,amount_minor,currency,occurred_on,occurred_at_time,counterparty,category_id,note,created_at")
+    .select("id,kind,amount_minor,currency,occurred_on,occurred_at_time,counterparty,category_id,note,created_at", { count: "exact" })
     .order("occurred_on", { ascending: false })
     .order("created_at", { ascending: false });
+  const { data, error } = read;
   if (error) return routeError("Cash entries could not be loaded.", 400);
+  // PostgREST cuts a plain select at max_rows without saying so; a cut list is a refusal, never a shorter one.
+  if (!isComplete(read)) return routeError("Cash entries could not be loaded in full, so none are shown.", 500);
 
   const corrections = await auth.supabase
     .from("cash_entry_overlays")
-    .select("cash_entry_id,kind,amount_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision,updated_at");
+    .select("cash_entry_id,kind,amount_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision,updated_at", { count: "exact" });
   if (corrections.error) return routeError("Cash entries could not be loaded.", 400);
+  if (!isComplete(corrections)) return routeError("Cash entries could not be loaded in full, so none are shown.", 500);
 
   // bigint arrives as a JS number from PostgREST unless it is cast, so both amounts are
   // stringified here rather than trusted to survive JSON (D-018). A correction's amount is
