@@ -19,6 +19,7 @@ import { announceOwnerReady } from "@/lib/owner-ready";
 const ROUTES = [
   { href: "/ledger", label: "Ledger" },
   { href: "/statistics", label: "Statistics" },
+  { href: "/inbox", label: "Inbox" },
   { href: "/import", label: "Import" },
   { href: "/slips", label: "Slips" },
   { href: "/receipts", label: "Receipts" },

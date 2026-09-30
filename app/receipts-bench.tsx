@@ -5,6 +5,7 @@ import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { LedgerNote } from "@/app/ledger-note";
 import { ReceiptStatisticsPanel } from "@/app/receipt-statistics";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
+import { describeSevenElevenOutcome, describeSevenElevenProgress, syncSevenElevenMail } from "@/lib/browser/mail-sync";
 import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
 import { formatThb } from "@/lib/money";
 import { receiptMatchResponseSchema } from "@/lib/receipt-match";
@@ -12,8 +13,8 @@ import type { ReceiptForm } from "@/lib/receipt-pdf";
 import { groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import {
-  describeReceiptSyncReport, receiptCaptureBody, receiptCaptureResultSchema, receiptListSchema, receiptSyncReportSchema,
-  type CaptureForm, type ReceiptSyncReport, type StoredReceipt
+  receiptCaptureBody, receiptCaptureResultSchema, receiptListSchema,
+  type CaptureForm, type StoredReceipt
 } from "@/lib/receipts";
 import { ledgerRequest } from "@/lib/wire";
 
@@ -28,22 +29,6 @@ type Picked =
   | { key: string; file: string; state: "saving"; form: CaptureForm; receipt: ParsedReceipt }
   | { key: string; file: string; state: "saved"; form: CaptureForm; receipt: ParsedReceipt; outcome: string }
   | { key: string; file: string; state: "failed"; form: CaptureForm; receipt: ParsedReceipt; message: string };
-
-// A backfill bundle takes a few rounds; this bound only stops a runaway loop.
-const MAX_SYNC_ROUNDS = 20;
-
-function addReports(total: ReceiptSyncReport, next: ReceiptSyncReport): ReceiptSyncReport {
-  const refused = { ...total.refused };
-  for (const [code, count] of Object.entries(next.refused)) refused[code] = (refused[code] ?? 0) + count;
-  return {
-    messages: total.messages + next.messages,
-    captured: total.captured + next.captured,
-    alreadyStored: total.alreadyStored + next.alreadyStored,
-    notReceipts: total.notReceipts + next.notReceipts,
-    refused,
-    truncated: next.truncated
-  };
-}
 
 const FORM_LABEL: Record<CaptureForm, string> = { condensed: "Short receipt", full: "Full tax invoice", screenshot: "Screenshot" };
 
@@ -249,26 +234,11 @@ export function ReceiptsBench() {
     setSyncing(true);
     setSyncError(null);
     setSyncNote("Reading the mailbox…");
-    let total: ReceiptSyncReport | null = null;
-    for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
-      const result = await ledgerRequest("/api/v1/receipts/sync", receiptSyncReportSchema, {
-        fallback: "The mailbox could not be read.",
-        offContract: "The sync response did not match its contract."
-      }, { method: "POST" });
-      if (!result.ok) {
-        setSyncError(result.why);
-        break;
-      }
-      total = total ? addReports(total, result.data) : result.data;
-      setSyncNote(`${describeReceiptSyncReport(total)}${total.truncated ? " Still reading…" : ""}`);
-      if (!total.truncated) break;
-    }
+    const { total, error } = await syncSevenElevenMail((running) => setSyncNote(describeSevenElevenProgress(running)));
+    if (error) setSyncError(error);
     setSyncing(false);
     if (total) {
-      const refused = Object.entries(total.refused);
-      setSyncNote(`${describeReceiptSyncReport(total)}${refused.length > 0
-        ? ` Not read: ${refused.map(([code, count]) => `${count} ${code.toLowerCase().replaceAll("_", " ")}`).join(", ")}.`
-        : ""}${total.truncated ? " More mail is waiting; sync again." : ""}`);
+      setSyncNote(describeSevenElevenOutcome(total));
       if (total.captured + total.alreadyStored > 0) {
         setSaves((count) => count + 1);
         await load();

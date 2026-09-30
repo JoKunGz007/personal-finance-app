@@ -9,31 +9,10 @@ import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { schemeCosts, type SchemeCost } from "@/lib/delivery-cost";
 import { filterDeliveries, NO_DELIVERY_FILTER, type DeliveryFilter, type DeliveryLedgerFilter, type DeliveryShow } from "@/lib/delivery-filter";
 import { formatThb } from "@/lib/money";
-import {
-  deliveryListSchema, deliverySyncReportSchema, deliveryTime, describeSyncReport,
-  type DeliverySyncReport, type StoredDelivery, type StoredRide
-} from "@/lib/deliveries";
+import { describeGrabOutcome, describeGrabProgress, syncGrabMail } from "@/lib/browser/mail-sync";
+import { deliveryListSchema, deliveryTime, type StoredDelivery, type StoredRide } from "@/lib/deliveries";
 import { deliveryMatchResponseSchema, rideMatchResponseSchema } from "@/lib/delivery-match";
 import { ledgerRequest } from "@/lib/wire";
-
-// One request reads until its time budget and says `truncated`; the page asks again. A backfill of
-// four hundred-receipt bundles takes a few rounds; this bound only stops a runaway loop.
-const MAX_SYNC_ROUNDS = 20;
-
-function addReports(total: DeliverySyncReport, next: DeliverySyncReport): DeliverySyncReport {
-  const refused = { ...total.refused };
-  for (const [code, count] of Object.entries(next.refused)) refused[code] = (refused[code] ?? 0) + count;
-  return {
-    messages: total.messages + next.messages,
-    captured: total.captured + next.captured,
-    alreadyStored: total.alreadyStored + next.alreadyStored,
-    ridesCaptured: total.ridesCaptured + next.ridesCaptured,
-    ridesAlreadyStored: total.ridesAlreadyStored + next.ridesAlreadyStored,
-    notReceipts: total.notReceipts + next.notReceipts,
-    refused,
-    truncated: next.truncated
-  };
-}
 
 /** "4.2 km · 17 min" from stored metres and minutes. */
 function tripLength(ride: StoredRide): string {
@@ -98,27 +77,10 @@ export function DeliveriesBench() {
     setSyncing(true);
     setSyncError(null);
     setSyncNote("Reading the mailbox…");
-    let total: DeliverySyncReport | null = null;
-    for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
-      const result = await ledgerRequest("/api/v1/deliveries/sync", deliverySyncReportSchema, {
-        fallback: "The mailbox could not be read.",
-        offContract: "The sync response did not match its contract."
-      }, { method: "POST" });
-      if (!result.ok) {
-        setSyncError(result.why);
-        break;
-      }
-      total = total ? addReports(total, result.data) : result.data;
-      setSyncNote(`${describeSyncReport(total)}${total.truncated ? " Still reading…" : ""}`);
-      if (!total.truncated) break;
-    }
+    const { total, error } = await syncGrabMail((running) => setSyncNote(describeGrabProgress(running)));
+    if (error) setSyncError(error);
     setSyncing(false);
-    if (total) {
-      const refused = Object.entries(total.refused);
-      setSyncNote(`${describeSyncReport(total)}${refused.length > 0
-        ? ` Not read: ${refused.map(([code, count]) => `${count} ${code.toLowerCase().replaceAll("_", " ")}`).join(", ")}.`
-        : ""}${total.truncated ? " More mail is waiting; sync again." : ""}`);
-    }
+    if (total) setSyncNote(describeGrabOutcome(total));
     setChanges((count) => count + 1);
     await load();
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   attachmentPath, describeManifest,
   type MailboxFile, type SyncAttachment, type SyncManifest
@@ -202,6 +202,18 @@ export function StatementSync({ busy, room, onFetched, onWorkingChange }: {
       failed.length > 0 ? `${failed.length} could not be downloaded.` : ""
     ].filter((part) => part !== "").join(" "));
   }
+
+  // `/import?sync=1` (the Inbox page's "Import N statements" link) starts this sync once, exactly as
+  // pressing the button below would. The document password and each confirmation stay manual.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (autoStarted.current) return;
+    autoStarted.current = true;
+    // Deferred a tick: the lint rule against setting state in an effect body is about exactly this.
+    if (new URLSearchParams(window.location.search).get("sync") === "1") void Promise.resolve().then(sync);
+    // Once, on arrival: `sync` is re-created every render and must not restart itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="sync-band">

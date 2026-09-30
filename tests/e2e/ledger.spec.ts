@@ -31,6 +31,7 @@ test("reaches every route from the header, without a signed-in owner", async ({ 
   const nav = page.getByRole("navigation", { name: "Sections" });
   for (const [label, path, heading] of [
     ["Statistics", "/statistics", "Statistics"],
+    ["Inbox", "/inbox", "Inbox"],
     ["Import", "/import", "Open a statement locally"],
     ["Slips", "/slips", "Capture a transfer slip"],
     ["Categories", "/categories", "Categories"],
