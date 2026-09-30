@@ -4,7 +4,7 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
-**Plain table reads refuse when the row cap cuts them, live 2026-09-30** (D-234, `1a130ef`, no migration). 15 unbounded selects across `/orders`, `/receipts`, slips, cash and notification cards now check an exact count; all five routes returned 200 on hosted. Next: the owner's **Inbox** idea (drop any file from the phone, imported automatically), under discussion; Shopee gets its own parser first, then joins the Inbox.
+**Plain table reads refuse when the row cap cuts them, live 2026-09-30** (D-234, `1a130ef`, no migration). 15 unbounded selects across `/orders`, `/receipts`, slips, cash and notification cards now check an exact count; all five routes returned 200 on hosted. Next: the owner's **Inbox** (drop any file from the phone, imported automatically through the existing parsers). Agreed 2026-09-30: **no LLM** (the owner never uploads unrecognised files), phone uploads to temporary private storage, import is automatic. Shopee is postponed. Vision stays the OCR if its free 1,000 units a month hold after the trial (ends 2026-11-15).
 
 **7-Eleven invoices sync from the mailbox, live 2026-09-26** (D-232, `85dc2e9`, `64f51a6`, `c7f9e0f`, no migration). "Sync 7-Eleven invoices" on `/receipts` reads forwarded `e_tax@cpall.co.th` mail and "7-11" backfill bundles on the server; the first live run stored 2 new receipts and found 1 already stored. The owner reported a fresh backup export on 2026-09-30 (not yet checked against the sequence).
 
