@@ -8,6 +8,7 @@ import { downloadFile } from "@/lib/download";
 import { sha256HexBytes } from "@/lib/canonical";
 import { assembleImportPayload } from "@/lib/import-assembly";
 import type { StatementFrame } from "@/lib/statement-frame";
+import { soleMatchingAccount } from "@/lib/statement-binding";
 import { addMinor, formatThb } from "@/lib/money";
 import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
@@ -18,6 +19,10 @@ import {
 import { ledgerRequest } from "@/lib/wire";
 import { StatementBatch, type BatchHandoff } from "@/app/statement-batch";
 import { attachmentPath, type MailboxRef } from "@/lib/statement-sync";
+import { INBOX_STATEMENT_NAME, readInboxStatement } from "@/lib/browser/inbox-statement-client";
+import { ownerUid, removeFromInbox } from "@/lib/browser/inbox-storage";
+import { browserSupabase } from "@/lib/browser/supabase";
+import { statementHeldReason } from "@/lib/inbox-drain";
 import { LedgerNote } from "@/app/ledger-note";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
@@ -68,6 +73,9 @@ export function ImportBench() {
   // Set only from a mailbox-sourced batch entry (D-189); null for a chosen file or a synthetic
   // statement, both of which never call the mailbox and have nothing to report back to it.
   const [mailboxRef, setMailboxRef] = useState<MailboxRef | null>(null);
+  // The Inbox object being reviewed (`/import?inbox=<uuid>.pdf`); removed from the Inbox after a
+  // successful confirm. Null for every other source.
+  const [inboxName, setInboxName] = useState<string | null>(null);
   const [artifactDigest, setArtifactDigest] = useState("");
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
   const [chosenAccountId, setChosenAccountId] = useState("");
@@ -135,8 +143,13 @@ export function ImportBench() {
    * a second click before it can be used.
    */
   useEffect(() => {
-    void loadAccounts();
+    void (async () => {
+      const loaded = await loadAccounts();
+      const requested = new URLSearchParams(window.location.search).get("inbox");
+      if (requested !== null) await openInboxStatement(requested, loaded);
+    })();
     // Once, on mount. Re-running it on every render would put a request behind every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const reconciliation = useMemo(
@@ -214,6 +227,7 @@ export function ImportBench() {
     // misdirection one path had already fixed. Found by the guard in `tests/import-flow.test.ts`.
     setChosenAccountId("");
     setCreateAccountError(null);
+    setInboxName(null);
   }
 
   async function loadSynthetic() {
@@ -232,6 +246,7 @@ export function ImportBench() {
     }
     setExtracted(null);
     setMailboxRef(null);
+    setInboxName(null);
     setBoundAccount(null);
     setBindingError(null);
     setWorklist(null);
@@ -267,6 +282,7 @@ export function ImportBench() {
         setStructure([]);
         setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
         setMailboxRef(null);
+        setInboxName(null);
         setStatement(null);
         setAssemblyWarnings([]);
         setBoundAccount(null);
@@ -316,7 +332,8 @@ export function ImportBench() {
    * same review table, same confirmation, same route. Nothing downstream needs to know a batch
    * exists, which is what keeps bulk import from becoming a second way to reach the ledger.
    */
-  function workBatchEntry(handoff: BatchHandoff) {
+  function workBatchEntry(handoff: BatchHandoff, from?: { accounts: LedgerAccount[] | null; inbox: boolean }) {
+    setInboxName(null);
     // The worklist value is replaced outright further down, once binding has resolved — which is
     // also what clears any banner about the *previous* entry. One sitting above the chooser for
     // this one reads as though this one had already been confirmed.
@@ -339,7 +356,7 @@ export function ImportBench() {
     setLabelCandidates([]);
     setValueLabels([]);
     setStructure([]);
-    const match = soleMatchingAccount(handoff.frame);
+    const match = soleMatchingAccount(handoff.frame, from ? from.accounts : accounts);
     const source: Extracted = { frame: handoff.frame, rows: handoff.rows, pageCount: handoff.pageCount };
 
     // **Before the auto-bind branch, because a refused automatic bind lands in the chooser too.**
@@ -364,14 +381,52 @@ export function ImportBench() {
       `${handoff.label}: read ${handoff.rows.length} rows across ${handoff.pageCount} page(s) as a `
       + `${handoff.frame.bankCode} statement, for account ending ${handoff.frame.accountLastFour}, `
       + `${handoff.frame.periodStart} to ${handoff.frame.periodEnd}. `
-      + "Nothing has left this device. "
+      + (from?.inbox ? "The server read it from your Inbox. " : "Nothing has left this device. ")
       + (match
         ? "The account it prints is selected below — check it and bind."
         : "Choose the ledger account it belongs to.")
     );
   }
 
-  async function loadAccounts() {
+  /**
+   * Opens a statement waiting in the Inbox (`/import?inbox=<uuid>.pdf`): the server opens the PDF with
+   * its stored passwords and returns what it read, which then takes the same path as a batch entry
+   * (auto-bind, review, Confirm). The artifact digest is the server's, so duplicate detection matches
+   * the device path. Nothing is imported until the owner confirms.
+   */
+  async function openInboxStatement(name: string, loaded: LedgerAccount[] | null) {
+    if (!INBOX_STATEMENT_NAME.test(name)) {
+      setStatus("That Inbox link is not a statement file name.");
+      return;
+    }
+    setStatus("Opening the statement from your Inbox…");
+    const read = await readInboxStatement(name);
+    if (!read.ok) {
+      setStatus(read.held === null ? read.why : statementHeldReason(read.held));
+      return;
+    }
+    const pageCount = Math.max(1, ...read.rows.map((row) => row.provenance.page));
+    workBatchEntry(
+      { artifactDigest: read.artifactDigest, label: "Inbox statement", frame: read.frame, rows: read.rows, pageCount, mailboxRef: null },
+      { accounts: loaded, inbox: true }
+    );
+    setInboxName(name);
+  }
+
+  /** Removes a confirmed statement from the Inbox; says in words whether that worked. A failure never undoes the import. */
+  async function removeInboxObject(name: string): Promise<string> {
+    try {
+      const supabase = browserSupabase();
+      const uid = supabase ? await ownerUid(supabase) : null;
+      const removed = supabase && uid?.ok ? await removeFromInbox(supabase, uid.value, [name]) : null;
+      if (removed?.ok && removed.value === 1) return " The PDF was removed from the Inbox.";
+    } catch {
+      // Falls through to the same sentence: the import itself already succeeded.
+    }
+    return " The PDF could not be removed from the Inbox; remove it there.";
+  }
+
+  async function loadAccounts(): Promise<LedgerAccount[] | null> {
     setStatus("Loading your ledger accounts…");
     // This had written out `readError`'s body by hand rather than importing it — the same four
     // lines, a second time, where a bug fixed in one copy would not reach the other.
@@ -382,12 +437,13 @@ export function ImportBench() {
     if (!result.ok) {
       setAccounts(null);
       setStatus(result.why);
-      return;
+      return null;
     }
     setAccounts(result.data.accounts);
     setStatus(result.data.accounts.length === 0
       ? "No ledger accounts exist yet. One must be created before a statement can be bound."
       : `${result.data.accounts.length} ledger account${result.data.accounts.length === 1 ? "" : "s"} available. Each statement must match its account and currency.`);
+    return result.data.accounts;
   }
 
   // Creating an account is the way out of a real dead end. A statement prints an account
@@ -437,25 +493,6 @@ export function ImportBench() {
   // Binding is a user decision, and assembleImportPayload refuses to act on it
   // blindly: the chosen account's last four digits and currency must match what the
   // statement printed, so a mis-click cannot post one account's rows into another.
-  /**
-   * The one account a statement can belong to, or null.
-   *
-   * **Exact, and unique by construction.** `public.accounts` is unique on
-   * `(owner_id, bank_code, last_four)`, so a bank code and four printed digits identify at most one
-   * account — this is a lookup on a compound key, not a guess. It still returns null rather than a
-   * best effort when the match is not exactly one, which is the case the chooser exists for.
-   *
-   * Currency is deliberately **not** matched here. `assembleImportPayload` checks it and refuses
-   * with its own message; filtering on it would turn a statement in the wrong currency into
-   * "no account found", which sends the owner to create an account that already exists.
-   */
-  function soleMatchingAccount(frame: StatementFrame): LedgerAccount | null {
-    const matches = (accounts ?? []).filter(
-      (item) => item.bank_code === frame.bankCode && item.last_four === frame.accountLastFour
-    );
-    return matches.length === 1 ? matches[0]! : null;
-  }
-
   /**
    * Binds `account` to the extracted statement, or reports why it cannot be bound.
    *
@@ -533,6 +570,14 @@ export function ImportBench() {
     if (mailboxRef) {
       void fetch(attachmentPath(mailboxRef.uid, mailboxRef.part), { method: "POST", cache: "no-store" }).catch(() => {});
     }
+    // An Inbox statement leaves the Inbox only now, after the ledger answered. A failed removal is
+    // reported but is never an error: the import is done, and a repeat would be refused as a duplicate.
+    const inboxNote = inboxName ? await removeInboxObject(inboxName) : "";
+    if (inboxName) {
+      setInboxName(null);
+      // The object is gone, so a reload must not ask the server for it again.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     // **One transition, so the binding banner cannot outlive the confirmation.** `confirmed`
     // returns null unchanged off the worklist, and `bannerFor` returns null on a confirmed phase —
     // so the worklist's own banner takes over and this one goes, without either being cleared by
@@ -545,7 +590,7 @@ export function ImportBench() {
     // The ledger has moved, so whatever backup exists no longer covers it. Said here rather
     // than shown on the recovery route: the two are separate routes now and share no state,
     // and the authoritative check is the sequence `confirm_backup_custody` compares anyway.
-    setStatus(`Confirmed ${statement.rows.length} rows into ${boundAccount.label} as batch ${String(record.batchId)}. The last backup is now stale — export a new one from Recovery.`);
+    setStatus(`Confirmed ${statement.rows.length} rows into ${boundAccount.label} as batch ${String(record.batchId)}. The last backup is now stale — export a new one from Recovery.${inboxNote}`);
   }
 
   /**

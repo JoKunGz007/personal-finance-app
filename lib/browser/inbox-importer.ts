@@ -6,8 +6,9 @@ import { detectAtScale, resolveDetector, type SlipQrReader } from "@/lib/browser
 import { readReceiptPdf } from "@/lib/browser/receipt-reader";
 import type { browserSupabase } from "@/lib/browser/supabase";
 import type { LinemanPage, ParsedLinemanOrder } from "@/lib/delivery-lineman";
+import { postStatementImport, type StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import {
-  describeDrain, NOT_YET, planLinemanOrders, planPdf, planReceiptScreenshots, progressLine, recogniseImage,
+  describeDrain, needsStatementRoute, NOT_YET, planLinemanOrders, planPdf, planReceiptScreenshots, planStatement, progressLine, recogniseImage,
   SLIP_AMOUNT_REASON, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON, SLIP_WAITING_REASON, slipPostBody, slipReviewReason,
   type PdfReply, type ReadySlip, type RememberedKind, type SlipPostBody
 } from "@/lib/inbox-drain";
@@ -65,6 +66,8 @@ export type DrainDeps = {
   readonly postReceipt: (form: CaptureForm, receipt: ParsedReceipt) => Promise<Posted>;
   readonly postOrder: (order: ParsedLinemanOrder) => Promise<Posted>;
   readonly postSlip: (body: SlipPostBody) => Promise<SlipPosted>;
+  /** Asks the server to open and import a statement PDF waiting in the queue; never throws. */
+  readonly postStatement: (name: string) => Promise<StatementImportPosted>;
   readonly memory: {
     readonly load: () => Map<string, RememberedKind>;
     readonly save: (remembered: ReadonlyMap<string, RememberedKind>, inQueue: readonly string[]) => void;
@@ -124,6 +127,7 @@ export function browserDrainDeps(supabase: Client, uid: string): DrainDeps {
     postReceipt: async (form, receipt) => posted(await postReceiptCapture(form, receipt)),
     postOrder: async (order) => posted(await postLinemanCapture(order)),
     postSlip: postSlipCapture,
+    postStatement: postStatementImport,
     memory: { load: loadRemembered, save: saveRemembered }
   };
 }
@@ -133,6 +137,10 @@ export type DrainResult = {
   readonly reasons: Record<string, string>;
   readonly receipts: number;
   readonly orders: number;
+  /** Statement PDFs the server imported (or already held) and that left the queue. */
+  readonly statements: number;
+  /** Names of held statements the owner can open on the Import page. */
+  readonly reviewable: readonly string[];
   /** Slips read exactly and held for the owner's money in or out; their files are still in the queue. */
   readonly slips: readonly ReadySlip[];
   readonly waiting: number;
@@ -159,6 +167,8 @@ export async function drainInbox(
   const slips: ReadySlip[] = [];
   let receipts = 0;
   let orders = 0;
+  let statements = 0;
+  const reviewable: string[] = [];
 
   /**
    * Removes files whose capture succeeded and says whether **every** one went. Files Storage did not
@@ -190,7 +200,22 @@ export async function drainInbox(
     if (!downloaded.ok) { reasons[file.name] = downloaded.why; continue; }
 
     if (kind === "pdf") {
-      const plan = planPdf(await deps.readPdf(downloaded.value));
+      const reply = await deps.readPdf(downloaded.value);
+      if (needsStatementRoute(reply)) {
+        // An encrypted statement: the server holds the passwords and opens it. A failed or unanswered
+        // request keeps the file with the technical reason and is simply asked again next open.
+        const answered = await deps.postStatement(file.name);
+        if (!answered.ok) { reasons[file.name] = answered.why; continue; }
+        const statementPlan = planStatement(answered.answer);
+        if (statementPlan.action === "keep") {
+          reasons[file.name] = statementPlan.reason;
+          if (statementPlan.review) reviewable.push(file.name);
+          continue;
+        }
+        if (await release([file.name])) statements += 1;
+        continue;
+      }
+      const plan = planPdf(reply);
       if (plan.action === "keep") { reasons[file.name] = plan.reason; continue; }
       const saved = await deps.postReceipt(plan.value.form, plan.value.receipt);
       if (!saved.ok) { reasons[file.name] = saved.why; continue; }
@@ -276,7 +301,10 @@ export async function drainInbox(
   for (const name of removed) delete reasons[name];
   deps.memory.save(remembered, files.filter((file) => !removed.has(file.name)).map((file) => file.name));
   const waiting = files.length - removed.size;
-  return { reasons, receipts, orders, slips, waiting, summary: describeDrain({ receipts, orders, slips: slips.length }) };
+  return {
+    reasons, receipts, orders, statements, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
+    summary: describeDrain({ receipts, orders, statements, slips: slips.length })
+  };
 }
 
 export type SlipCaptureResult = {

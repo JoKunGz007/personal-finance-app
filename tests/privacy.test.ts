@@ -122,7 +122,9 @@ describe("privacy guardrails", () => {
     // at the wrong file — or, as it did, failed for a reason that says nothing about privacy.
     const headers = new Map(securityHeaders("http://127.0.0.1:54321").map((header) => [header.key, header.value]));
     expect(headers.get("Cache-Control")).toBe("no-store");
+    // The confirm logic moved to lib/server/confirm-import.ts; the ban covers the route and the core.
     expect(readFileSync("app/api/v1/imports/confirm/route.ts", "utf8")).not.toMatch(/password|pdfBytes|ArrayBuffer/);
+    expect(readFileSync("lib/server/confirm-import.ts", "utf8")).not.toMatch(/password|pdfBytes|ArrayBuffer/);
   });
 
   it("routes financial boundaries through owner-bound RPCs", () => {
@@ -210,7 +212,14 @@ describe("privacy guardrails", () => {
 
     // Matched on both halves of the identity, never the digits alone: one owner can hold accounts
     // ending in the same four digits at three banks (D-041).
-    const matcher = section(ui, "function soleMatchingAccount(");
+    // The matcher now lives in lib/statement-binding.ts (pure, no request) and the bench imports it.
+    const bindingSource = readFileSync("lib/statement-binding.ts", "utf8");
+    expect(ui).toContain('import { soleMatchingAccount } from "@/lib/statement-binding"');
+    expect(ui).not.toContain("function soleMatchingAccount(");
+    const bindingImports = [...bindingSource.matchAll(/^import[^;]*from\s+"([^"]+)"/gmu)].map((match) => match[1]!);
+    bindingImports.forEach((specifier) => expect(specifier).toMatch(/^@\/lib\/(accounts|statement-frame)$/u));
+    expect(bindingSource).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|sendBeacon|WebSocket|postMessage/u);
+    const matcher = section(bindingSource, "export function soleMatchingAccount(");
     expect(matcher, "soleMatchingAccount must exist for this test to mean anything").toContain("filter(");
     expect(matcher).toContain("item.bank_code === frame.bankCode");
     expect(matcher).toContain("item.last_four === frame.accountLastFour");
@@ -1196,7 +1205,8 @@ describe("privacy guardrails", () => {
     const sources = ["app", "lib", "workers", "scripts", "public"].flatMap((directory) => walk(directory));
     expect(sources.length, "no sources found — the walk is looking in the wrong place").toBeGreaterThan(50);
     const storageUsers = sources.filter((file) => /\.storage\b/u.test(readFileSync(file, "utf8")));
-    expect(storageUsers, "only the inbox module may use Supabase Storage").toEqual(["lib/browser/inbox-storage.ts"]);
+    // The server reads a dropped statement from the same bucket to decrypt it (D-237), through one module.
+    expect(storageUsers.sort(), "only the inbox modules may use Supabase Storage").toEqual(["lib/browser/inbox-storage.ts", "lib/server/inbox-object.ts"]);
 
     const inbox = readFileSync("lib/browser/inbox-storage.ts", "utf8");
     const buckets = [...inbox.matchAll(/\.storage\.from\(([^)]*)\)/gu)].map((match) => match[1]);
@@ -1270,5 +1280,53 @@ describe("privacy guardrails", () => {
     for (const reader of ["lib/krungthai-layout.ts", "lib/statement-layout.ts"]) {
       expect(readFileSync(reader, "utf8"), reader).toMatch(/slice\(-4\)/);
     }
+  });
+
+  it("keeps the stored statement passwords inside one server module and out of every response (D-235)", () => {
+    const walk = (directory: string, found: string[] = []): string[] => {
+      if (!existsSync(directory)) return found;
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const full = path.join(directory, entry.name);
+        if (entry.isDirectory()) walk(full, found);
+        else if (/\.(?:ts|tsx|js|mjs)$/u.test(entry.name)) found.push(full.split(path.sep).join("/"));
+      }
+      return found;
+    };
+    const sources = ["app", "lib", "workers", "scripts", "public"].flatMap((directory) => walk(directory));
+    expect(sources.length, "no sources found: the walk is looking in the wrong place").toBeGreaterThan(50);
+
+    const named = sources.filter((file) => readFileSync(file, "utf8").includes("STATEMENT_PASSWORD_"));
+    expect(named, "only the passwords module may name the env vars").toEqual(["lib/server/statement-passwords.ts"]);
+
+    const importers = sources.filter((file) => /statement-passwords/u.test(readFileSync(file, "utf8")) && file !== "lib/server/statement-passwords.ts");
+    expect(importers, "only the PDF reader may import the passwords module").toEqual(["lib/server/statement-pdf-node.ts"]);
+
+    const serverFiles = [
+      "lib/server/statement-passwords.ts", "lib/server/statement-pdf-node.ts", "lib/server/inbox-statement.ts",
+      "lib/server/inbox-object.ts", "app/api/v1/inbox/statement/route.ts"
+    ];
+    for (const file of serverFiles) {
+      expect(readFileSync(file, "utf8"), file + " must not log").not.toMatch(/\bconsole\./u);
+    }
+
+    // The decision core and the route never read the passwords, so none can reach a response.
+    for (const file of ["lib/server/inbox-statement.ts", "app/api/v1/inbox/statement/route.ts"]) {
+      const source = readFileSync(file, "utf8");
+      expect(source, file + " must not import the passwords").not.toMatch(/statement-passwords|storedStatementPasswords|process\.env/u);
+      expect(source, file + " must not handle a password").not.toMatch(/\bpassword\s*[:=]/iu);
+    }
+    // The reader returns only a fixed shape: no result carries a password field.
+    const reader = readFileSync("lib/server/statement-pdf-node.ts", "utf8");
+    const result = /export type StatementPdfRead =[\s\S]*?;\n/u.exec(reader)?.[0] ?? "";
+    expect(result).toContain('"locked"');
+    expect(result).not.toMatch(/password\s*:/iu);
+
+    // Server-side Storage is one module, and it names only the inbox bucket.
+    const serverStorage = sources.filter((file) => file.startsWith("lib/server/") || file.startsWith("app/api/"))
+      .filter((file) => /\.storage\b/u.test(readFileSync(file, "utf8")));
+    expect(serverStorage).toEqual(["lib/server/inbox-object.ts"]);
+    const object = readFileSync("lib/server/inbox-object.ts", "utf8");
+    expect(object).toContain('const BUCKET = "inbox";');
+    expect([...object.matchAll(/\.storage\.from\(([^)]*)\)/gu)].map((match) => match[1])).toEqual(["BUCKET"]);
   });
 });

@@ -5,7 +5,8 @@ import {
   listWaiting, ownerUid, removeExpired, removeFromInbox, uploadToInbox, type WaitingFile
 } from "@/lib/browser/inbox-storage";
 import { captureSlips, browserDrainDeps, drainInbox } from "@/lib/browser/inbox-importer";
-import { describeSlipCapture, type ReadySlip } from "@/lib/inbox-drain";
+import Link from "next/link";
+import { describeSlipCapture, REVIEW_LINK_LABEL, reviewHref, type ReadySlip } from "@/lib/inbox-drain";
 import type { SlipKind } from "@/lib/slips";
 import { LedgerNote } from "@/app/ledger-note";
 import { encodeForReader } from "@/lib/browser/ocr-reader";
@@ -48,6 +49,7 @@ export function InboxFiles() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [drainLine, setDrainLine] = useState<string | null>(null);
   const [slips, setSlips] = useState<readonly ReadySlip[]>([]);
+  const [reviewable, setReviewable] = useState<readonly string[]>([]);
   const counter = useRef(0);
   // Who owns `busy`. Only the run that claimed it may release it, so a second run that finds it taken
   // (React's double effect in development, a press during a drain) neither starts nor clears it.
@@ -85,6 +87,7 @@ export function InboxFiles() {
       const result = await drainInbox(files, setDrainLine, browserDrainDeps(supabase, uid.value));
       setReasons(result.reasons);
       setSlips(result.slips);
+      setReviewable(result.reviewable);
       setDrainLine(result.summary);
     } catch {
       // Nothing is removed unless a capture answered and Storage confirmed, so a failure here loses nothing.
@@ -173,6 +176,7 @@ export function InboxFiles() {
           return rest;
         });
         setSlips((current) => current.filter((slip) => slip.name !== name));
+        setReviewable((current) => current.filter((held) => held !== name));
       }
       await refresh();
     } finally {
@@ -222,8 +226,8 @@ export function InboxFiles() {
       <div className="slip-form">
         <p className="field-help">
           Pick screenshots, photos or PDFs. They are kept privately until they are imported, and for at
-          most 7 days. 7-Eleven receipts, LINE MAN orders and bank slips are imported automatically;
-          statements will be soon.
+          most 7 days. 7-Eleven receipts, LINE MAN orders, bank slips and statements are imported
+          automatically; a statement that needs a check waits here with a link to review it.
         </p>
         <label className="account-control">
           <span>Images and PDFs</span>
@@ -296,6 +300,7 @@ export function InboxFiles() {
                 </span>
                 {reasons[file.name] ? <span className="field-help">{reasons[file.name]}</span> : null}
                 <span className="slip-actions">
+                  {reviewable.includes(file.name) ? <Link href={reviewHref(file.name)}>{REVIEW_LINK_LABEL}</Link> : null}
                   <button type="button" className="secondary-button" disabled={busy} onClick={() => void remove(file.name)}>
                     Remove
                   </button>

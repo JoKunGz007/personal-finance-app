@@ -408,6 +408,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-237** — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 - **D-236** — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 - **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
 - **D-234** — Plain table reads ask for an exact count and refuse when the 1,000-row cap cuts them
@@ -422,6 +423,16 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-237 — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
+
+- Date: 2026-10-02
+- Status: **Built and gated locally, not yet confirmed live** (needs the owner to set the two Vercel variables). Files: `lib/server/statement-passwords.ts`, `lib/server/statement-pdf-node.ts`, `lib/server/inbox-statement.ts`, `lib/server/inbox-object.ts`, `lib/server/confirm-import.ts` (the confirm route's core, extracted unchanged), `app/api/v1/inbox/statement/route.ts`, `lib/statement-binding.ts`, `lib/statement-page-text.ts`, `lib/inbox-drain.ts`, `lib/browser/inbox-statement-client.ts`, `lib/browser/inbox-importer.ts`, `app/inbox-files.tsx`, `app/import-bench.tsx`, `tests/inbox-statement.test.ts`, `tests/statement-pdf-node.test.ts`, `tests/statement-binding.test.ts`, `tests/inbox-drain.test.ts`, `tests/privacy.test.ts`.
+- **The owner's call (2026-10-02):** D-235 step 3, built in one go, mailbox statements included (built second). The password is stored on the server rather than typed. **A Vercel Sensitive environment variable was chosen over Google Cloud KMS**: KMS would need a Google service-account key in the same environment, which can decrypt anyway, so it added setup and an audit log but not protection. KMS stays the fallback. Variables: `STATEMENT_PASSWORD_KTB` and `STATEMENT_PASSWORD_KBANK_SCB` (KBANK and SCB share one). The owner types the values into Vercel; no agent ever sees them.
+- **What it reverses.** D-128/D-129 (statements are read only on the device) for the Inbox path; `/import` is unchanged. HANDOFF's "passwords: never" now reads: never in chat, a repo file or a CLI argument; the owner may hold them in Vercel. D-141's per-statement confirm becomes **confirm automatically only when clean**. D-141's other half holds: nothing runs with no one signed in, so the server never needs the TOTP seed; the route is `strongOwnerClient` (aal2) and runs only when the owner opens `/inbox`.
+- **The gate, exactly.** The server tries no password, then each stored one. It holds the file unless all of these hold: the artifact digest is new, exactly one account matches bank code and last four (`soleMatchingAccount`, unchanged), `assembleImportPayload` refuses nothing, and reconciliation returns **zero warnings** (so a `out-of-order-run` or `balance-gap` always stops for review, D-055). Then `confirmImport` runs with an idempotency key derived from the digest, so a retry is the same request. A held statement opens on `/import?inbox=<name>` in the unchanged review table; the file leaves the Inbox only after the ledger answered captured, duplicate or confirmed.
+- **Accepted limit.** `confirm_import` skips rows whose fingerprint already exists, so a statement overlapping an earlier one imports only its new rows. `/import` does the same; what is lost is only the owner seeing it happen. A held statement is read again on each `/inbox` open (cheap at personal volume).
+- **Review.** `finance-reviewer` found nothing high: the gate drops no warning, passwords reach no response or log (pinned in `tests/privacy.test.ts`: the variables are read in one module, imported by one module), retries and two tabs cannot double-import. `/code-review high`: 7 findings, 2 fixed (the `?inbox=` link survived a confirm; the file-name pattern was defined twice), 5 low ones accepted. Vitest 1245 passed / 106 skipped (Docker down), tsc, ESLint and `pnpm build` clean.
 
 ## D-236 — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 

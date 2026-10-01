@@ -51,6 +51,66 @@ export function planPdf(reply: PdfReply): Plan<{ form: ReceiptForm; receipt: Par
   return { action: "capture", value: { form: reply.form, receipt: reply.receipt } };
 }
 
+// --- Statement PDFs (read and imported by the server, which holds the passwords) ---
+
+/** True for a PDF the receipt reader could not open: an encrypted statement, or any file that is not a readable PDF. */
+export function needsStatementRoute(reply: PdfReply): boolean {
+  return reply.type === "error" && reply.code === "UNREADABLE_PDF";
+}
+
+/** What the statement route answered to an import, as the drain needs it. */
+export type StatementAnswer =
+  | { readonly kind: "captured" }
+  | { readonly kind: "duplicate" }
+  | { readonly kind: "held"; readonly reason: string };
+
+/** The Import page's address for a statement waiting in the Inbox, and the label of its link. */
+export const REVIEW_LINK_LABEL = "Review on Import";
+export function reviewHref(objectName: string): string {
+  return `/import?inbox=${encodeURIComponent(objectName)}`;
+}
+
+export const STATEMENT_LOCKED_REASON = "None of the stored statement passwords opens this PDF.";
+export const STATEMENT_NO_PASSWORDS_REASON = "No statement password is set on the server yet.";
+const STATEMENT_UNREADABLE_REASON = "This PDF could not be read as a statement.";
+const STATEMENT_NEEDS_ACCOUNT_REASON = "No account of yours matches this statement.";
+const STATEMENT_WARNINGS_REASON = "This statement needs a look before it is saved.";
+const STATEMENT_CONFIRM_FAILED_REASON = "The statement could not be saved automatically.";
+const STATEMENT_CHECKS_REASON = "This statement did not pass its checks, so it was not saved automatically.";
+
+/** A held statement's reason in plain words. Any code that is not one of the first three needs the owner's review. */
+export function statementHeldReason(reason: string): string {
+  switch (reason) {
+    case "locked": return STATEMENT_LOCKED_REASON;
+    case "no-passwords": return STATEMENT_NO_PASSWORDS_REASON;
+    case "unreadable": return STATEMENT_UNREADABLE_REASON;
+    case "needs-account": return STATEMENT_NEEDS_ACCOUNT_REASON;
+    case "warnings": return STATEMENT_WARNINGS_REASON;
+    case "confirm-failed": return STATEMENT_CONFIRM_FAILED_REASON;
+    default: return STATEMENT_CHECKS_REASON;
+  }
+}
+
+/** Whether the owner can do something about a held statement on the Import page. */
+export function statementNeedsReview(reason: string): boolean {
+  return reason !== "locked" && reason !== "no-passwords" && reason !== "unreadable";
+}
+
+export type StatementPlan =
+  | { readonly action: "capture"; readonly outcome: "captured" | "duplicate" }
+  | { readonly action: "keep"; readonly reason: string; readonly review: boolean };
+
+/**
+ * The server's answer to an import. Only `captured` and `duplicate` let the file go; a held statement
+ * stays with its reason (and a review link when the Import page can help).
+ */
+export function planStatement(answer: StatementAnswer): StatementPlan {
+  if (answer.kind === "held") {
+    return { action: "keep", reason: statementHeldReason(answer.reason), review: statementNeedsReview(answer.reason) };
+  }
+  return { action: "capture", outcome: answer.kind };
+}
+
 // --- Images: one OCR read, every recogniser ---
 
 export type ImageRecognition =
@@ -342,10 +402,12 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
  * "2 receipts and 1 LINE MAN order imported. 3 slips need money in or out." The count of files still
  * waiting is left out on purpose: the list shows it live, and a figure fixed here went stale after a Remove.
  */
-export function describeDrain(result: { receipts: number; orders: number; slips: number }): string {
+export function describeDrain(result: { receipts: number; orders: number; slips: number; statements?: number }): string {
+  const statements = result.statements ?? 0;
   const imported = [
     result.receipts > 0 ? count(result.receipts, "receipt", "receipts") : null,
-    result.orders > 0 ? count(result.orders, "LINE MAN order", "LINE MAN orders") : null
+    result.orders > 0 ? count(result.orders, "LINE MAN order", "LINE MAN orders") : null,
+    statements > 0 ? count(statements, "statement", "statements") : null
   ].filter((part): part is string => part !== null);
   const sentences = [
     imported.length > 0 ? `${imported.join(" and ")} imported.` : null,

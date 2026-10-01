@@ -10,6 +10,9 @@
 /** The bucket's own limit (migration 042); a bigger file would be refused after the upload began. */
 export const INBOX_MAX_BYTES = 40 * 1024 * 1024;
 
+/** The name the queue gives a statement: a random uuid and `.pdf`. No slash or dot-dot can match. */
+export const INBOX_STATEMENT_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/u;
+
 /** A queued file is removed this many days after it was added if nothing imported it. */
 export const INBOX_KEEP_DAYS = 7;
 

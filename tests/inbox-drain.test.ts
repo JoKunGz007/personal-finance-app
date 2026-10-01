@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { captureSlips, drainInbox, type DrainDeps, type SlipPosted, type SlipScanAttempt } from "@/lib/browser/inbox-importer";
+import type { StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import { readLinemanPage } from "@/lib/delivery-lineman";
 import {
+  planStatement, reviewHref, STATEMENT_LOCKED_REASON, STATEMENT_NO_PASSWORDS_REASON, statementHeldReason, type PdfReply,
   addedTogether, DIFFERENT_TIMES_REASON, describeDrain, describeSlipCapture, NOT_YET, parseRemembered, planLinemanOrders, planPdf,
   planReceiptScreenshots, progressLine, pruneRemembered, recogniseImage, REMEMBERED_KEY, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON,
   SLIP_WAITING_REASON, slipPostBody, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON, type ReadySlip, type RememberedKind
@@ -401,12 +403,16 @@ type FakeOptions = {
   remembered?: Record<string, RememberedKind>;
   /** An image's name to what the QR scan "found"; an image not listed has no QR. */
   scans?: Record<string, SlipScanAttempt>;
+  /** What the statement route answers; defaults to captured. */
+  statement?: StatementImportPosted;
+  /** What the receipt reader says about any PDF; defaults to "cannot open it" (an encrypted statement). */
+  pdf?: PdfReply;
 };
 
 /** Fakes for everything outside the drain; `words` maps an image's name to what Vision "read". */
 function fakes(options: FakeOptions = {}) {
   const calls = {
-    ocr: [] as string[], scans: [] as string[], downloads: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, slipPosts: 0,
+    statementPosts: [] as string[], ocr: [] as string[], scans: [] as string[], downloads: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, slipPosts: 0,
     // Every scan and read in the order it happened, to show the scan comes first.
     order: [] as string[],
     saved: undefined as undefined | ReadonlyMap<string, RememberedKind>
@@ -414,7 +420,7 @@ function fakes(options: FakeOptions = {}) {
   const deps: DrainDeps = {
     download: async (name) => { calls.downloads.push(name); return { ok: true, value: blobOf(name) }; },
     remove: async (names) => { calls.removed.push([...names]); return { ok: true, value: options.removes ? options.removes(names) : names.length }; },
-    readPdf: async () => { throw new Error("no PDFs in this test"); },
+    readPdf: async () => options.pdf ?? { type: "error", message: "This file could not be opened as a PDF.", code: "UNREADABLE_PDF" },
     readImage: async (blob) => {
       const name = labels.get(blob)!;
       calls.ocr.push(name);
@@ -428,6 +434,10 @@ function fakes(options: FakeOptions = {}) {
       return options.scans?.[name] ?? { ok: false, code: "NO_QR_DETECTED", message: "No QR code was found." };
     },
     postSlip: async () => { calls.slipPosts += 1; return { ok: true, outcome: "captured" }; },
+    postStatement: async (name) => {
+      calls.statementPosts.push(name);
+      return options.statement ?? { ok: true, answer: { kind: "captured" } };
+    },
     postReceipt: async () => {
       calls.receipts += 1;
       return options.fail === "receipt" ? { ok: false, why: "The ledger could not be reached, so the receipt was not saved." } : { ok: true };
@@ -527,6 +537,94 @@ describe("drainInbox", () => {
     const { deps, calls } = fakes({ words: { "r.png": wholeReceipt() } });
     await drainInbox([file("r.png")], status, deps);
     expect([...calls.saved!]).toEqual([]);
+  });
+});
+
+// --- Statement PDFs ---
+
+describe("planStatement", () => {
+  test("captured and already-stored statements let the file go", () => {
+    expect(planStatement({ kind: "captured" })).toEqual({ action: "capture", outcome: "captured" });
+    expect(planStatement({ kind: "duplicate" })).toEqual({ action: "capture", outcome: "duplicate" });
+  });
+
+  test("a locked or password-less statement stays, in plain words, with no review link", () => {
+    expect(planStatement({ kind: "held", reason: "locked" })).toEqual({ action: "keep", reason: STATEMENT_LOCKED_REASON, review: false });
+    expect(planStatement({ kind: "held", reason: "no-passwords" })).toEqual({ action: "keep", reason: STATEMENT_NO_PASSWORDS_REASON, review: false });
+    expect(STATEMENT_LOCKED_REASON).toBe("None of the stored statement passwords opens this PDF.");
+    expect(STATEMENT_NO_PASSWORDS_REASON).toBe("No statement password is set on the server yet.");
+    expect(planStatement({ kind: "held", reason: "unreadable" })).toMatchObject({ action: "keep", review: false });
+  });
+
+  test("needs-account, warnings, confirm-failed and assembly codes stay with a review link", () => {
+    for (const reason of ["needs-account", "warnings", "confirm-failed", "NOT_CROSS_CHECKED"]) {
+      const plan = planStatement({ kind: "held", reason });
+      expect(plan).toMatchObject({ action: "keep", review: true });
+      expect(statementHeldReason(reason)).not.toBe("");
+    }
+    expect(reviewHref("0b9f3c5e-1111-4222-8333-444455556666.pdf")).toBe("/import?inbox=0b9f3c5e-1111-4222-8333-444455556666.pdf");
+  });
+});
+
+describe("drainInbox with statement PDFs", () => {
+  const status = () => undefined;
+  const NAME = "0b9f3c5e-1111-4222-8333-444455556666.pdf";
+
+  test("a captured statement is removed only after the answer, and counted", async () => {
+    const { deps, calls } = fakes();
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(calls.statementPosts).toEqual([NAME]);
+    expect(calls.removed).toEqual([[NAME]]);
+    expect(result).toMatchObject({ statements: 1, waiting: 0, reasons: {}, reviewable: [], summary: "1 statement imported." });
+  });
+
+  test("a statement already in the ledger is removed too, and counted as imported", async () => {
+    const { deps, calls } = fakes({ statement: { ok: true, answer: { kind: "duplicate" } } });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(calls.removed).toEqual([[NAME]]);
+    expect(result.waiting).toBe(0);
+  });
+
+  test("a held statement stays with its reason and a review link when Import can help", async () => {
+    const { deps, calls } = fakes({ statement: { ok: true, answer: { kind: "held", reason: "needs-account" } } });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(calls.removed).toEqual([]);
+    expect(result).toMatchObject({ statements: 0, waiting: 1, reviewable: [NAME], summary: "Nothing was imported." });
+    expect(result.reasons[NAME]).toBe(statementHeldReason("needs-account"));
+  });
+
+  test("a locked statement stays with no link", async () => {
+    const { deps, calls } = fakes({ statement: { ok: true, answer: { kind: "held", reason: "locked" } } });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(calls.removed).toEqual([]);
+    expect(result.reasons[NAME]).toBe(STATEMENT_LOCKED_REASON);
+    expect(result.reviewable).toEqual([]);
+  });
+
+  test("a failed request keeps the file with the technical reason and is not remembered as unrecognised", async () => {
+    const { deps, calls } = fakes({ statement: { ok: false, why: "The statement could not be fetched. (LOOKUP_FAILED)" } });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(calls.removed).toEqual([]);
+    expect(result.reasons[NAME]).toMatch(/LOOKUP_FAILED/u);
+    expect([...calls.saved!]).toEqual([]);
+  });
+
+  test("a PDF the receipt reader refuses for another reason never reaches the statement route", async () => {
+    const { deps, calls } = fakes({ pdf: { type: "error", message: "This PDF is not a 7-Eleven e-tax receipt this app can read.", code: "UNKNOWN_FORM" } });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(calls.statementPosts).toEqual([]);
+    expect(result.reasons[NAME]).toBe(NOT_YET);
+  });
+
+  test("a captured statement whose removal fails is not counted and says so", async () => {
+    const { deps } = fakes({ removes: () => 0 });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(result).toMatchObject({ statements: 0, waiting: 1 });
+    expect(result.reasons[NAME]).toMatch(/could not be removed/u);
+  });
+
+  test("describeDrain names statements", () => {
+    expect(describeDrain({ receipts: 1, orders: 0, slips: 0, statements: 2 })).toBe("1 receipt and 2 statements imported.");
   });
 });
 

@@ -2,9 +2,10 @@
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 import {
   describeLabelGeometry, describeStructure, describeValueLabels,
-  type PageText, type TextItem
+  type PageText
 } from "@/lib/krungthai-layout";
 import { readStatement } from "@/lib/read-statement";
+import { buildPageText } from "@/lib/statement-page-text";
 
 // pdf.js needs its own worker, and it has to be handed over explicitly. Left unset it
 // falls back to loading that module inline, which throws a bare `Error` before any page
@@ -31,17 +32,7 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
-      const items: TextItem[] = [];
-      for (const item of content.items) {
-        if (!("str" in item) || item.str.trim() === "") continue;
-        // pdf.js transform is [a, b, c, d, e, f]; e and f are the device x and y.
-        const [, , , , x, y] = item.transform as number[];
-        // The run's width matters as much as its x: the money and branch columns are
-        // right-aligned, so a wider figure starts further left and its left edge alone
-        // cannot say which column it belongs to (D-030).
-        items.push({ str: item.str.normalize("NFKC"), x: x!, y: y!, width: item.width });
-      }
-      pages.push(items);
+      pages.push(buildPageText(content.items));
     }
 
     // Three layouts now, chosen by the document rather than by the caller.
