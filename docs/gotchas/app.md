@@ -193,9 +193,9 @@ the top of `GOTCHAS.md`.
 ## Cloud Vision answers "resource exhausted" (error 8) while every quota of the project reads 0%
 
 - Symptom: `/inbox` shows "The reader could not read this image (Vision error 8)" for most of a batch; a later read of the same image may succeed. The console's *Traffic by response code* shows only 200s and *Quotas & System Limits* shows 0% everywhere (1,800 requests a minute).
-- Cause: not found yet. Vision puts the refusal **inside a 200** (`responses[0].error.code = 8`), so it is not an HTTP error and not a project quota. Our requests are one at a time and small (`lib/vision-ocr.ts`, `DOCUMENT_TEXT_DETECTION` with `th`/`en` hints; the browser re-encodes each JPEG as a larger PNG). Unproven guess: Google-side capacity for that model.
+- Cause: **project-level on Google's side, not the app.** Vision puts the refusal **inside a 200** (`responses[0].error.code = 8`, "Resource has been exhausted (e.g. check quota)"), so it is not an HTTP error. From Cloud Shell with the owner's credentials, Google's public sample (`gs://cloud-samples-data/vision/text/screen.jpg`) got the same answer for `DOCUMENT_TEXT_DETECTION`, `TEXT_DETECTION` and `LABEL_DETECTION`, with and without language hints, while billing showed a healthy free trial (full credit) and the status page no incident. The same project read images normally earlier the same day. Still unexplained by Google.
 - Avoid: do not chase the project's quotas. Since D-236 the refusal names its status number (never Vision's message), and errors 8/13/14 are retried once after 1.5 s; one retry did not clear it on 2026-10-02.
-- Verify: 2026-10-02 (D-236), on real LINE MAN screenshots, before and after `f12456a`. The decisive test, Google's public sample through the same model from Cloud Shell, is still to run.
+- Verify: 2026-10-02 (D-236), on real LINE MAN screenshots, before and after `f12456a`, and on Google's public sample from Cloud Shell (all three features refused). To test the project without the app, run that sample from Cloud Shell; the owner must click Authorize there themselves.
 
 ## A source-grep test matches the comment that explains its own rule
 
