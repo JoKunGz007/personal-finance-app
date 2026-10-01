@@ -190,6 +190,13 @@ the top of `GOTCHAS.md`.
 - Avoid: quote **ratios** from that harness and not absolute counts, and never compare a count taken on one day against one taken on another as though the difference meant something changed. Where a number must be stable, derive it from something the app controls rather than from what the engine returned.
 - Verify: 2026-08-17 (D-123, D-118). 25 cards on 2026-08-16 and 28 on 2026-08-17, same images, same code.
 
+## Cloud Vision answers "resource exhausted" (error 8) while every quota of the project reads 0%
+
+- Symptom: `/inbox` shows "The reader could not read this image (Vision error 8)" for most of a batch; a later read of the same image may succeed. The console's *Traffic by response code* shows only 200s and *Quotas & System Limits* shows 0% everywhere (1,800 requests a minute).
+- Cause: not found yet. Vision puts the refusal **inside a 200** (`responses[0].error.code = 8`), so it is not an HTTP error and not a project quota. Our requests are one at a time and small (`lib/vision-ocr.ts`, `DOCUMENT_TEXT_DETECTION` with `th`/`en` hints; the browser re-encodes each JPEG as a larger PNG). Unproven guess: Google-side capacity for that model.
+- Avoid: do not chase the project's quotas. Since D-236 the refusal names its status number (never Vision's message), and errors 8/13/14 are retried once after 1.5 s; one retry did not clear it on 2026-10-02.
+- Verify: 2026-10-02 (D-236), on real LINE MAN screenshots, before and after `f12456a`. The decisive test, Google's public sample through the same model from Cloud Shell, is still to run.
+
 ## A source-grep test matches the comment that explains its own rule
 
 - Symptom: a test that forbids a pattern fails on a file that does not use it. The match is inside the comment written to explain why the pattern is forbidden.

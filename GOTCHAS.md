@@ -78,6 +78,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - `jsonb_agg` of a `sum` is a nested aggregate and PostgreSQL refuses it outright
 - A signed month-over-month delta inverts wherever the quantity is stored negative
 - A table-returning RPC is cut at 1,000 rows by PostgREST, silently
+- A SQL `delete from storage.objects` is refused by a trigger, whatever the policies say
 
 ### Backup, restore and recovery
 
@@ -231,6 +232,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A defect that only appears when a feature succeeds will not be in the gate
 - Pre-filling one half of a two-signal cross-check leaves a check that agrees with itself
 - Cloud Vision's output is not byte-identical between calls, so a harness card count is not a fixed number
+- Cloud Vision answers "resource exhausted" (error 8) while every quota of the project reads 0%
 - A source-grep test matches the comment that explains its own rule
 - A `Proxy` over a `Request` throws on `headers` unless the target is the receiver
 - A size bound checked after the body is read bounds nothing
