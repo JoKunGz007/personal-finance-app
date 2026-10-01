@@ -52,7 +52,7 @@ type VisionPage = { blocks?: VisionBlock[] };
 export type VisionAnnotateResponse = {
   responses?: Array<{
     fullTextAnnotation?: { pages?: VisionPage[] };
-    error?: { message?: string };
+    error?: { code?: number; message?: string };
   }>;
 };
 
@@ -141,7 +141,16 @@ export type VisionReadFailure =
 
 export type VisionReadResult =
   | { readonly ok: true; readonly words: OcrWord[] }
-  | { readonly ok: false; readonly code: VisionReadFailure };
+  | {
+    readonly ok: false;
+    readonly code: VisionReadFailure;
+    /**
+     * For a refusal, which kind: `HTTP 403`, `Vision error 3` or `unreadable answer`. **A status
+     * number only, never Vision's message**, which can quote the image; it lets the owner tell a
+     * quota from a bad image without anything about the image reaching a sentence or a log.
+     */
+    readonly reference?: string;
+  };
 
 /**
  * Reads every word on an image, or says which way it failed.
@@ -186,18 +195,22 @@ export async function readWordsWithVision(
     return { ok: false, code: "UNREACHABLE" };
   }
 
-  if (!response.ok) return { ok: false, code: "REFUSED" };
+  if (!response.ok) return { ok: false, code: "REFUSED", reference: `HTTP ${response.status}` };
 
   let parsed: VisionAnnotateResponse;
   try {
     parsed = (await response.json()) as VisionAnnotateResponse;
   } catch {
-    return { ok: false, code: "REFUSED" };
+    return { ok: false, code: "REFUSED", reference: "unreadable answer" };
   }
   // A 200 carrying a per-image error is Vision's normal way of refusing one image in a batch, so
   // the status alone is not the answer. The message is deliberately not returned or logged: it can
   // quote the image, and nothing about this card may reach a log.
-  if (parsed.responses?.[0]?.error) return { ok: false, code: "REFUSED" };
+  const refusal = parsed.responses?.[0]?.error;
+  if (refusal) {
+    const code = typeof refusal.code === "number" && Number.isInteger(refusal.code) ? refusal.code : null;
+    return { ok: false, code: "REFUSED", reference: code === null ? "Vision error" : `Vision error ${code}` };
+  }
 
   return { ok: true, words: wordsFromVision(parsed) };
 }

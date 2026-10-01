@@ -103,7 +103,8 @@ export async function POST(request: Request) {
     if (read.code === "UNREACHABLE") {
       return routeError("The reader could not be reached. Check your connection, or type the values yourself.", 503);
     }
-    return routeError("The reader could not read this image. Type the values yourself.", 502);
+    const reference = read.reference ? ` (${read.reference})` : "";
+    return routeError(`The reader could not read this image${reference}. Type the values yourself.`, 502);
   }
 
   return Response.json({ words: read.words }, { headers: noStoreHeaders });

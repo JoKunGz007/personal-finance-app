@@ -179,7 +179,7 @@ describe("which failures are told apart", () => {
 
     const rejected = vi.fn(async () => new Response("{}", { status: 403 }));
     expect(await readWordsWithVision(image, "k", rejected as unknown as typeof fetch))
-      .toEqual({ ok: false, code: "REFUSED" });
+      .toEqual({ ok: false, code: "REFUSED", reference: "HTTP 403" });
   });
 
   it("treats a 200 carrying a per-image error as a refusal", async () => {
@@ -187,17 +187,18 @@ describe("which failures are told apart", () => {
     // the status alone is not the answer — reading it as success would hand the grammar an empty
     // word list and report "no card found on this image", which is a different problem.
     const fetchImpl = vi.fn(async () => new Response(
-      JSON.stringify({ responses: [{ error: { message: "Bad image data" } }] }),
+      JSON.stringify({ responses: [{ error: { code: 3, message: "Bad image data" } }] }),
       { status: 200 }
     ));
+    // The status number only: Vision's message can quote the image, so it never travels.
     expect(await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
-      .toEqual({ ok: false, code: "REFUSED" });
+      .toEqual({ ok: false, code: "REFUSED", reference: "Vision error 3" });
   });
 
   it("refuses a body that is not the JSON it claims to be", async () => {
     const fetchImpl = vi.fn(async () => new Response("<html>gateway</html>", { status: 200 }));
     expect(await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
-      .toEqual({ ok: false, code: "REFUSED" });
+      .toEqual({ ok: false, code: "REFUSED", reference: "unreadable answer" });
   });
 
   it("counts an empty reading as a success, because it is one", async () => {

@@ -14,8 +14,11 @@ import type { ReceiptForm } from "@/lib/receipt-pdf";
 import { groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import type { OcrWord } from "@/lib/slip-ocr";
+import type { SlipIdentity } from "@/lib/slip-qr";
+import type { MinorUnitString } from "@/lib/money";
+import type { SlipKind } from "@/lib/slips";
 
-/** Slips, notification cards and statements come in a later step; they wait untouched. */
+/** Notification cards and statements come in a later step; they wait untouched. */
 export const NOT_YET = "Not imported automatically yet.";
 
 export const TWO_ORDERS_REASON = "Two orders are mixed here; add one order's screenshots at a time.";
@@ -125,6 +128,21 @@ function follows(group: readonly OrderPage[], page: OrderPage): boolean {
   return !(!read.ok && read.code === "NO_OVERLAP");
 }
 
+/** A page is not taken more than this many minutes before its own order's first page. */
+export const SHOT_WINDOW_MINUTES = 2;
+
+/**
+ * Whether an order's first page was shot **more than `SHOT_WINDOW_MINUTES` after** `page` (both clocks
+ * known), so `page` cannot belong to that order. Midnight wraps: a gap is "after" when it is over the
+ * window and at most 12 hours forward; anything else is at or before the page, which rules nothing out.
+ */
+function firstShotWellAfter(first: OrderPage, page: OrderPage): boolean {
+  const from = first.page.shotAt, to = page.page.shotAt;
+  if (from === null || to === null) return false;
+  const gap = (from - to + 1440) % 1440;
+  return gap > SHOT_WINDOW_MINUTES && gap <= 720;
+}
+
 function readGroup(entries: readonly OrderPage[]): LinemanGroup {
   const names = entries.map((entry) => entry.name);
   const read = readLinemanOrder(entries.map((entry) => entry.page));
@@ -144,6 +162,25 @@ function readGroup(entries: readonly OrderPage[]): LinemanGroup {
  * orders is kept as "mixed", and one that fits none is kept with its own sentence. With no numbered
  * page at all, the parser says to add the top of the order page. **An order is captured only if all
  * its pages were added within `ORDER_WINDOW_MINUTES` of each other** (`addedTogether`).
+ *
+ * **One tie-break, for orders to the same address.** Content cannot separate those: the lines above
+ * `Menu` are identical and a first page's only priced dish is its last line, which the parser skips,
+ * so a second page fits both. The phone's status-bar clock is the one thing that can: it is printed
+ * in the image, so it survives LINE, the picker and re-encoding. An unnumbered page that fits more
+ * than one order is first tried against the clock, **which only rules orders out**: with every clock
+ * involved readable, an order whose first page was shot more than `SHOT_WINDOW_MINUTES` **after**
+ * the page is dropped (a page is not taken well before its own order's top; midnight wraps). If
+ * exactly one order remains the page joins it, otherwise it is held as "mixed", as before. Any
+ * unreadable clock holds the page: it cannot rule that order out. The loop then lets content finish
+ * the job: once a page has joined its order, the next order's page no longer `follows` it. A page that
+ * fits only one order never consults the clock. (The phone prints a 24-hour clock. On a 12-hour one
+ * the 12:59 to 1:00 crossing reads as half a day apart, which drops the right order and so mostly
+ * holds the page, though a first page shot just after the crossing could take it.)
+ *
+ * **The remaining wrong-capture risk, plainly:** a second page shot more than `SHOT_WINDOW_MINUTES`
+ * *before* its own first page, while another, earlier order is also in reach, is joined to that
+ * earlier order (it is not dropped, and the page's own order is). Photographing the pages out of order
+ * by more than the window is the only way to get there.
  */
 export function planLinemanOrders(pages: readonly OrderPage[]): LinemanGroup[] {
   if (pages.length === 0) return [];
@@ -154,7 +191,13 @@ export function planLinemanOrders(pages: readonly OrderPage[]): LinemanGroup[] {
   for (let progress = true; progress && loose.length > 0;) {
     progress = false;
     for (const entry of [...loose]) {
-      const fits = groups.filter((group) => follows(group, entry));
+      let fits = groups.filter((group) => follows(group, entry));
+      // The clock only rules orders out; an unreadable one (a rival's included) rules nothing out.
+      if (fits.length > 1) {
+        fits = entry.page.shotAt === null || fits.some((group) => group[0]!.page.shotAt === null)
+          ? []
+          : fits.filter((group) => !firstShotWellAfter(group[0]!, entry));
+      }
       if (fits.length !== 1) continue;
       fits[0]!.push(entry);
       loose = loose.filter((other) => other !== entry);
@@ -174,32 +217,116 @@ export function planLinemanOrders(pages: readonly OrderPage[]): LinemanGroup[] {
   ];
 }
 
+// --- Bank slips ---
+
+/** The page that hosts the slip forms, named as the owner sees it. */
+const SLIPS_PAGE = "Slips";
+
+/** A slip whose amount and date were read exactly, held until the owner says money in or out. */
+export type ReadySlip = {
+  /** The queue's object name, which is how its file is removed after the capture. */
+  readonly name: string;
+  /** The QR text verbatim: the server re-derives the bank and reference from it. */
+  readonly payload: string;
+  readonly identity: SlipIdentity;
+  readonly occurredOn: string;
+  readonly occurredAtTime: string | null;
+  /** The **magnitude**, in minor units. The direction supplies the sign at capture. */
+  readonly amountMinor: MinorUnitString;
+};
+
+/** Why a ready slip's file is still in the queue while the owner has not yet answered. */
+export const SLIP_WAITING_REASON = "Waiting for money in or out.";
+
+/** Shown for a slip already found to need checking on an earlier drain (no download, no read). */
+export const SLIP_REVIEW_REMEMBERED_REASON = `This slip needs checking. Add it on the ${SLIPS_PAGE} page, then remove it here.`;
+
+/** The verdict's own reason, then where the owner can type the slip in. */
+export function slipReviewReason(reason: string): string {
+  const sentence = /[.!?]$/u.test(reason.trim()) ? reason.trim() : `${reason.trim()}.`;
+  return `${sentence} Add it on the ${SLIPS_PAGE} page, then remove it here.`;
+}
+
+/** The body of `POST /api/v1/slips`: the same one `app/slip-batch.tsx` sends for a slip it has read. */
+export type SlipPostBody = {
+  readonly qrPayload: string;
+  readonly bankCode: string;
+  readonly bankQrCode: string;
+  readonly slipReference: string;
+  readonly kind: SlipKind;
+  readonly amountMinor: MinorUnitString;
+  readonly currency: "THB";
+  readonly occurredOn: string;
+  readonly occurredAtTime: string | null;
+  readonly counterparty: null;
+  readonly categoryId: null;
+  readonly note: null;
+};
+
+/** A ready slip with the owner's direction applied. Counterparty, category and note are not on a slip. */
+export function slipPostBody(slip: ReadySlip, kind: SlipKind, signedAmountMinor: MinorUnitString): SlipPostBody {
+  return {
+    qrPayload: slip.payload,
+    bankCode: slip.identity.bankCode,
+    bankQrCode: slip.identity.bankQrCode,
+    slipReference: slip.identity.reference,
+    kind,
+    amountMinor: signedAmountMinor,
+    currency: "THB",
+    occurredOn: slip.occurredOn,
+    occurredAtTime: slip.occurredAtTime,
+    counterparty: null,
+    categoryId: null,
+    note: null
+  };
+}
+
+/** A capture that answered 2xx but whose confirmation could not be read: the slip may be stored, so its file stays. */
+export const SLIP_UNCONFIRMED_REASON =
+  "This slip was accepted but its confirmation could not be read. Check the ledger before capturing it again.";
+
+export const SLIP_AMOUNT_REASON = "This amount is not one this ledger can store. Add it on the Slips page, then remove it here.";
+
 // --- Images already found not to be any known screen ---
 
 /**
- * The names of files this device already found "not recognised" (a slip, a notification card), so
- * the next drain does not send the same image to Vision again. **Names only**: each is the random
- * `<id>.<ext>` the queue gave the file, which says nothing about it. Kept per device, in
- * `lib/browser/inbox-memory.ts`. The key is versioned: **a step that teaches the drain a new kind of
- * image must change the version**, or the files this memory skips would never be read by it.
+ * Why a queued image is remembered: "unrecognised" is no screen this step knows, "slip-review" is a
+ * slip that needs the owner (so Vision is not paid for it on every open). A slip waiting for a
+ * direction is **not** remembered, since the next drain must offer it again.
  */
-export const UNRECOGNISED_KEY = "inbox:unrecognised:v1";
+export type RememberedKind = "unrecognised" | "slip-review";
 
-/** The remembered names from stored text; anything that is not a list of strings is an empty memory. */
-export function parseRemembered(raw: string | null): Set<string> {
-  if (!raw) return new Set();
+/**
+ * The queue's object names this device already settled, by why, so the next drain does not send the
+ * same image to Vision again. **Names only**: each is the random `<id>.<ext>` the queue gave the
+ * file, which says nothing about it. Kept per device, in `lib/browser/inbox-memory.ts`. The key is
+ * versioned: **a step that teaches the drain a new kind of image must change the version**, or the
+ * files this memory skips would never be read by it (v2: bank slips; v1 held a bare list of names).
+ */
+export const REMEMBERED_KEY = "inbox:unrecognised:v2";
+
+/** The remembered names from stored text; anything that is not a name-to-kind object is an empty memory. */
+export function parseRemembered(raw: string | null): Map<string, RememberedKind> {
+  const remembered = new Map<string, RememberedKind>();
+  if (!raw) return remembered;
   try {
     const value: unknown = JSON.parse(raw);
-    return new Set(Array.isArray(value) ? value.filter((name): name is string => typeof name === "string") : []);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return remembered;
+    for (const [name, kind] of Object.entries(value)) {
+      if (kind === "unrecognised" || kind === "slip-review") remembered.set(name, kind);
+    }
+    return remembered;
   } catch {
-    return new Set();
+    return new Map();
   }
 }
 
 /** What to store: the remembered names that are still in the queue, so the memory cannot grow. */
-export function pruneRemembered(remembered: ReadonlySet<string>, inQueue: readonly string[]): string[] {
+export function pruneRemembered(
+  remembered: ReadonlyMap<string, RememberedKind>, inQueue: readonly string[]
+): Record<string, RememberedKind> {
   const present = new Set(inQueue);
-  return [...remembered].filter((name) => present.has(name)).sort();
+  return Object.fromEntries([...remembered].filter(([name]) => present.has(name)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
 }
 
 // --- What the owner reads ---
@@ -211,13 +338,28 @@ export function progressLine(done: number, total: number): string {
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** "2 receipts and 1 LINE MAN order imported; 3 files wait." */
-export function describeDrain(result: { receipts: number; orders: number; waiting: number }): string {
+/**
+ * "2 receipts and 1 LINE MAN order imported. 3 slips need money in or out." The count of files still
+ * waiting is left out on purpose: the list shows it live, and a figure fixed here went stale after a Remove.
+ */
+export function describeDrain(result: { receipts: number; orders: number; slips: number }): string {
   const imported = [
     result.receipts > 0 ? count(result.receipts, "receipt", "receipts") : null,
     result.orders > 0 ? count(result.orders, "LINE MAN order", "LINE MAN orders") : null
   ].filter((part): part is string => part !== null);
-  const waits = result.waiting === 0 ? "" : ` ${count(result.waiting, "file waits", "files wait")}.`;
-  if (imported.length === 0) return result.waiting === 0 ? "Nothing was waiting." : `Nothing was imported.${waits}`;
-  return `${imported.join(" and ")} imported${result.waiting === 0 ? "." : ";"}${waits}`;
+  const sentences = [
+    imported.length > 0 ? `${imported.join(" and ")} imported.` : null,
+    result.slips > 0 ? `${count(result.slips, "slip needs", "slips need")} money in or out.` : null
+  ].filter((part): part is string => part !== null);
+  return sentences.length === 0 ? "Nothing was imported." : sentences.join(" ");
+}
+
+/** After the owner's answer: "2 slips captured as money out. 1 slip stays in the queue." */
+export function describeSlipCapture(result: { captured: number; duplicates: number; kept: number }, kind: SlipKind): string {
+  const sentences = [
+    result.captured > 0 ? `${count(result.captured, "slip", "slips")} captured as money ${kind === "withdrawal" ? "out" : "in"}.` : null,
+    result.duplicates > 0 ? `${count(result.duplicates, "slip was", "slips were")} already in the ledger.` : null,
+    result.kept > 0 ? `${count(result.kept, "slip stays", "slips stay")} in the queue.` : null
+  ].filter((part): part is string => part !== null);
+  return sentences.length === 0 ? "No slips were captured." : sentences.join(" ");
 }

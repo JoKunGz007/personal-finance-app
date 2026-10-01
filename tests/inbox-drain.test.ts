@@ -1,12 +1,14 @@
 import { describe, expect, test } from "vitest";
-import { drainInbox, type DrainDeps } from "@/lib/browser/inbox-importer";
+import { captureSlips, drainInbox, type DrainDeps, type SlipPosted, type SlipScanAttempt } from "@/lib/browser/inbox-importer";
 import { readLinemanPage } from "@/lib/delivery-lineman";
 import {
-  addedTogether, DIFFERENT_TIMES_REASON, describeDrain, NOT_YET, parseRemembered, planLinemanOrders, planPdf, planReceiptScreenshots, progressLine,
-  pruneRemembered, recogniseImage, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON
+  addedTogether, DIFFERENT_TIMES_REASON, describeDrain, describeSlipCapture, NOT_YET, parseRemembered, planLinemanOrders, planPdf,
+  planReceiptScreenshots, progressLine, pruneRemembered, recogniseImage, REMEMBERED_KEY, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON,
+  SLIP_WAITING_REASON, slipPostBody, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON, type ReadySlip, type RememberedKind
 } from "@/lib/inbox-drain";
 import { readScreenshotPage, readScreenshotReceipt } from "@/lib/receipt-screenshot";
 import type { OcrWord } from "@/lib/slip-ocr";
+import type { SlipScanResult } from "@/lib/slip-scan";
 
 // Every value is invented (docs/FIXTURE_POLICY.md). The word layouts reuse the shapes of
 // tests/receipt-screenshot.test.ts and tests/delivery-lineman.test.ts; no real capture is involved.
@@ -235,6 +237,101 @@ describe("planLinemanOrders", () => {
   });
 });
 
+describe("planLinemanOrders: two orders to one address, told apart by the phone's clock", () => {
+  // The status-bar clock is the first line's first word; "" removes it.
+  const clocked = (lines: readonly string[], clock: string) => [`${clock} 4G 53`.trim(), ...lines.slice(1)];
+  // Order B's second page: a dearer second dish, so its sums (and total 175.00) differ from order A's 145.00.
+  const SECOND_B = () => LM_SECOND().map((line) => line
+    .replace("ก๋วยเตี๋ยว ทดสอบ $ 60.00", "ก๋วยเตี๋ยว ทดสอบ $ 90.00").replace("Food $ 180.00", "Food $ 210.00")
+    .replace("Pay with mobile banking $ 145.00", "Pay with mobile banking $ 175.00").replace("Total ? B145.00", "Total ? B175.00"));
+  const firstA = (clock = "01:54") => queued("a1.png", clocked(LM_FIRST("000000001"), clock));
+  const firstB = (clock = "01:59") => queued("b1.png", clocked(LM_FIRST("000000002"), clock));
+  const secondA = (clock = "01:54") => queued("a2.png", clocked(LM_SECOND(), clock));
+  const secondB = (clock = "01:59") => queued("b2.png", clocked(SECOND_B(), clock));
+  const byFirst = (groups: ReturnType<typeof planLinemanOrders>) => Object.fromEntries(groups.map((group) => [group.names[0]!, group]));
+
+  test("the live case: each order takes the second page shot at its own minute, however they were added", () => {
+    for (const pages of [
+      [firstA(), secondA(), firstB(), secondB()],
+      [secondB(), firstB(), secondA(), firstA()]
+    ]) {
+      const groups = byFirst(planLinemanOrders(pages));
+      const a = Object.values(groups).find((group) => group.names.includes("a1.png"))!;
+      const b = Object.values(groups).find((group) => group.names.includes("b1.png"))!;
+      expect([...a.names].sort()).toEqual(["a1.png", "a2.png"]);
+      expect([...b.names].sort()).toEqual(["b1.png", "b2.png"]);
+      expect(a.plan).toMatchObject({ action: "capture", value: { bookingId: "LMF-260912-000000001", totalMinor: "14500" } });
+      expect(b.plan).toMatchObject({ action: "capture", value: { bookingId: "LMF-260912-000000002", totalMinor: "17500" } });
+    }
+  });
+
+  test("a page within two minutes of both first pages stays mixed", () => {
+    const groups = planLinemanOrders([firstA("01:54"), firstB("01:55"), secondA("01:56")]);
+    expect(groups.find((group) => group.names.join() === "a2.png")?.plan).toEqual({ action: "keep", reason: TWO_ORDERS_REASON });
+    expect(groups.every((group) => group.plan.action === "keep")).toBe(true);
+  });
+
+  test("a missing clock, on the page or on a first page, holds the page as mixed", () => {
+    for (const pages of [
+      [firstA(), firstB(), secondA("")],
+      [firstA(""), firstB(), secondA()],
+      [firstA(), firstB(""), secondB()],
+      // A rival with no readable clock cannot be ruled out, even when the page's own match is clean.
+      [firstA(), firstB(""), secondA()]
+    ]) {
+      const groups = planLinemanOrders(pages);
+      const loose = groups.find((group) => group.names.length === 1 && group.names[0]!.endsWith("2.png"));
+      expect(loose?.plan).toEqual({ action: "keep", reason: TWO_ORDERS_REASON });
+    }
+  });
+
+  test("the window wraps midnight: an order that starts 23:59 takes a page shot at 00:01, and one starting 00:10 is ruled out", () => {
+    const groups = planLinemanOrders([firstA("23:59"), firstB("00:10"), secondA("00:01")]);
+    expect(groups.find((group) => group.names.includes("a1.png"))?.names.sort()).toEqual(["a1.png", "a2.png"]);
+  });
+
+  test("an order whose first page was shot more than two minutes after the page is ruled out; two minutes or less is not", () => {
+    // B's first page is 3 minutes after the page: B cannot be its order, so it joins A (clock 01:50 is before it).
+    const ruledOut = planLinemanOrders([firstA("01:50"), firstB("01:56"), secondA("01:53")]);
+    expect(ruledOut.find((group) => group.names.includes("a1.png"))?.names.sort()).toEqual(["a1.png", "a2.png"]);
+    // 2 minutes after: still in reach, so both remain and the page is held.
+    const inReach = planLinemanOrders([firstA("01:50"), firstB("01:55"), secondA("01:53")]);
+    expect(inReach.find((group) => group.names.join() === "a2.png")?.plan).toEqual({ action: "keep", reason: TWO_ORDERS_REASON });
+  });
+
+  test("the reviewer's timeline: A at 10:00, B at 10:05, then A's second page at 10:06 is never captured into B", () => {
+    for (const pages of [
+      [firstA("10:00"), firstB("10:05"), secondA("10:06"), secondB("10:05")],
+      [secondB("10:05"), secondA("10:06"), firstB("10:05"), firstA("10:00")]
+    ]) {
+      const groups = planLinemanOrders(pages);
+      const withA2 = groups.find((group) => group.names.includes("a2.png"))!;
+      expect(withA2.names).not.toContain("b1.png");
+      expect(withA2.names).not.toContain("b2.png");
+      for (const group of groups) {
+        // Whatever is captured must be one order's own pages.
+        if (group.plan.action === "capture") {
+          const order = group.plan.value.bookingId.endsWith("1") ? "a" : "b";
+          expect(group.names.every((name) => name.startsWith(order))).toBe(true);
+        }
+      }
+    }
+  });
+
+  test("known limit: a second page shot over two minutes BEFORE its own first page joins an earlier order in reach", () => {
+    // B's page was shot 5 minutes before B's first page, so B is ruled out and A remains. Pinned so a change to this is noticed.
+    const groups = planLinemanOrders([firstA("10:00"), firstB("10:10"), secondB("10:05")]);
+    expect(groups.find((group) => group.names.includes("b2.png"))?.names).toContain("a1.png");
+  });
+
+  test("the clock is read above the heading only: a time printed below it is not the clock", () => {
+    expect(orderPage(clocked(LM_FIRST(), "01:54")).shotAt).toBe(114);
+    expect(orderPage(clocked(LM_FIRST(), "")).shotAt).toBeNull();
+    // The first page prints its order time "21:00" and a later one "10:14" below the heading.
+    expect(orderPage([...clocked(LM_SECOND(), "").slice(0, -1), "10:14", "Reorder"]).shotAt).toBeNull();
+  });
+});
+
 describe("addedTogether", () => {
   test("within the window, at its edge, and past it", () => {
     expect(addedTogether([T0, minutesAfter(3), minutesAfter(10)])).toBe(true);
@@ -249,15 +346,21 @@ describe("addedTogether", () => {
   });
 });
 
-describe("the unrecognised-file memory", () => {
-  test("reads a stored list, and treats anything else as empty", () => {
-    expect([...parseRemembered('["a.png","b.jpg"]')]).toEqual(["a.png", "b.jpg"]);
-    expect([...parseRemembered('["a.png",3,null]')]).toEqual(["a.png"]);
-    for (const bad of [null, "", "not json", '{"a":1}', "3"]) expect(parseRemembered(bad).size).toBe(0);
+describe("the remembered-file memory", () => {
+  test("reads a stored name-to-kind object, and treats anything else as empty", () => {
+    expect([...parseRemembered('{"a.png":"unrecognised","b.jpg":"slip-review"}')]).toEqual([["a.png", "unrecognised"], ["b.jpg", "slip-review"]]);
+    expect([...parseRemembered('{"a.png":"unrecognised","b.png":3,"c.png":"other"}')]).toEqual([["a.png", "unrecognised"]]);
+    for (const bad of [null, "", "not json", '["a.png","b.jpg"]', "3", "null"]) expect(parseRemembered(bad).size).toBe(0);
+  });
+
+  test("the key is v2, so what v1 stored (a bare list of names, under the old key) is never read", () => {
+    expect(REMEMBERED_KEY).toBe("inbox:unrecognised:v2");
+    expect(parseRemembered('["a.png"]').size).toBe(0);
   });
 
   test("keeps only the names still in the queue", () => {
-    expect(pruneRemembered(new Set(["b.png", "gone.png", "a.png"]), ["a.png", "b.png", "c.png"])).toEqual(["a.png", "b.png"]);
+    const remembered = new Map<string, RememberedKind>([["b.png", "slip-review"], ["gone.png", "unrecognised"], ["a.png", "unrecognised"]]);
+    expect(pruneRemembered(remembered, ["a.png", "b.png", "c.png"])).toEqual({ "a.png": "unrecognised", "b.png": "slip-review" });
   });
 });
 
@@ -266,12 +369,21 @@ describe("what the owner reads", () => {
     expect(progressLine(3, 7)).toBe("Importing 3 of 7…");
   });
 
-  test("the summary counts what was imported and what waits", () => {
-    expect(describeDrain({ receipts: 2, orders: 1, waiting: 3 })).toBe("2 receipts and 1 LINE MAN order imported; 3 files wait.");
-    expect(describeDrain({ receipts: 1, orders: 0, waiting: 0 })).toBe("1 receipt imported.");
-    expect(describeDrain({ receipts: 0, orders: 2, waiting: 1 })).toBe("2 LINE MAN orders imported; 1 file waits.");
-    expect(describeDrain({ receipts: 0, orders: 0, waiting: 2 })).toBe("Nothing was imported. 2 files wait.");
-    expect(describeDrain({ receipts: 0, orders: 0, waiting: 0 })).toBe("Nothing was waiting.");
+  test("the summary counts what was imported and the slips held for money in or out, not the files waiting", () => {
+    expect(describeDrain({ receipts: 2, orders: 1, slips: 3 })).toBe("2 receipts and 1 LINE MAN order imported. 3 slips need money in or out.");
+    expect(describeDrain({ receipts: 1, orders: 0, slips: 0 })).toBe("1 receipt imported.");
+    expect(describeDrain({ receipts: 1, orders: 0, slips: 1 })).toBe("1 receipt imported. 1 slip needs money in or out.");
+    expect(describeDrain({ receipts: 0, orders: 2, slips: 0 })).toBe("2 LINE MAN orders imported.");
+    expect(describeDrain({ receipts: 0, orders: 0, slips: 2 })).toBe("2 slips need money in or out.");
+    expect(describeDrain({ receipts: 0, orders: 0, slips: 0 })).toBe("Nothing was imported.");
+  });
+
+  test("after the answer, the slips captured, already held and left in the queue", () => {
+    expect(describeSlipCapture({ captured: 2, duplicates: 0, kept: 0 }, "withdrawal")).toBe("2 slips captured as money out.");
+    expect(describeSlipCapture({ captured: 1, duplicates: 1, kept: 2 }, "deposit"))
+      .toBe("1 slip captured as money in. 1 slip was already in the ledger. 2 slips stay in the queue.");
+    expect(describeSlipCapture({ captured: 0, duplicates: 2, kept: 1 }, "deposit")).toBe("2 slips were already in the ledger. 1 slip stays in the queue.");
+    expect(describeSlipCapture({ captured: 0, duplicates: 0, kept: 0 }, "deposit")).toBe("No slips were captured.");
   });
 });
 
@@ -286,21 +398,36 @@ type FakeOptions = {
   words?: Record<string, OcrWord[]>;
   removes?: (names: readonly string[]) => number;
   fail?: "receipt" | "order";
-  remembered?: string[];
+  remembered?: Record<string, RememberedKind>;
+  /** An image's name to what the QR scan "found"; an image not listed has no QR. */
+  scans?: Record<string, SlipScanAttempt>;
 };
 
 /** Fakes for everything outside the drain; `words` maps an image's name to what Vision "read". */
 function fakes(options: FakeOptions = {}) {
-  const calls = { ocr: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, saved: undefined as undefined | ReadonlySet<string> };
+  const calls = {
+    ocr: [] as string[], scans: [] as string[], downloads: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, slipPosts: 0,
+    // Every scan and read in the order it happened, to show the scan comes first.
+    order: [] as string[],
+    saved: undefined as undefined | ReadonlyMap<string, RememberedKind>
+  };
   const deps: DrainDeps = {
-    download: async (name) => ({ ok: true, value: blobOf(name) }),
+    download: async (name) => { calls.downloads.push(name); return { ok: true, value: blobOf(name) }; },
     remove: async (names) => { calls.removed.push([...names]); return { ok: true, value: options.removes ? options.removes(names) : names.length }; },
     readPdf: async () => { throw new Error("no PDFs in this test"); },
     readImage: async (blob) => {
       const name = labels.get(blob)!;
       calls.ocr.push(name);
+      calls.order.push(`ocr:${name}`);
       return { ok: true, words: options.words?.[name] ?? [] };
     },
+    scanSlip: async (blob) => {
+      const name = labels.get(blob)!;
+      calls.scans.push(name);
+      calls.order.push(`scan:${name}`);
+      return options.scans?.[name] ?? { ok: false, code: "NO_QR_DETECTED", message: "No QR code was found." };
+    },
+    postSlip: async () => { calls.slipPosts += 1; return { ok: true, outcome: "captured" }; },
     postReceipt: async () => {
       calls.receipts += 1;
       return options.fail === "receipt" ? { ok: false, why: "The ledger could not be reached, so the receipt was not saved." } : { ok: true };
@@ -309,7 +436,7 @@ function fakes(options: FakeOptions = {}) {
       calls.orders += 1;
       return options.fail === "order" ? { ok: false, why: "The order could not be saved." } : { ok: true };
     },
-    memory: { load: () => new Set(options.remembered ?? []), save: (remembered) => { calls.saved = new Set(remembered); } }
+    memory: { load: () => new Map(Object.entries(options.remembered ?? {})), save: (remembered) => { calls.saved = new Map(remembered); } }
   };
   return { deps, calls };
 }
@@ -347,6 +474,17 @@ describe("drainInbox", () => {
     expect(result.reasons["bottom.png"]).toMatch(/could not be removed/u);
   });
 
+  test("an image the scan FAILED on is not remembered as unrecognised, but one the scan answered about is", async () => {
+    const failed = fakes({ scans: { "s.png": { ok: false, code: "SCAN_FAILED", message: "No QR reader could be loaded in this browser." } } });
+    const failedResult = await drainInbox([file("s.png")], status, failed.deps);
+    expect(failedResult.reasons["s.png"]).toBe(NOT_YET);
+    expect(failed.calls.saved?.has("s.png")).toBe(false);
+
+    const answered = fakes({});
+    await drainInbox([file("s.png")], status, answered.deps);
+    expect(answered.calls.saved?.get("s.png")).toBe("unrecognised");
+  });
+
   test("(c) one stuck LINE MAN order does not stop the next: B is imported, A is kept", async () => {
     const { deps, calls } = fakes({
       words: {
@@ -360,7 +498,7 @@ describe("drainInbox", () => {
     expect(calls.removed).toEqual([["b1.png", "b2.png"]]);
     expect(result).toMatchObject({ orders: 1, waiting: 1 });
     expect(Object.keys(result.reasons)).toEqual(["a1.png"]);
-    expect(result.summary).toBe("1 LINE MAN order imported; 1 file waits.");
+    expect(result.summary).toBe("1 LINE MAN order imported.");
   });
 
   test("LINE MAN pages added at different times are all kept, and nothing is posted", async () => {
@@ -374,18 +512,184 @@ describe("drainInbox", () => {
   test("(d) a file remembered as not recognised is not read by Vision again", async () => {
     const { deps, calls } = fakes({
       words: { "new.png": sentences(["Transfer successful", "Invented Sender"]), "old.png": wholeReceipt() },
-      remembered: ["old.png", "already-gone.png"]
+      remembered: { "old.png": "unrecognised", "already-gone.png": "unrecognised" }
     });
     const result = await drainInbox([file("old.png"), file("new.png")], status, deps);
     expect(calls.ocr).toEqual(["new.png"]);
+    expect(calls.downloads).toEqual(["new.png"]);
+    expect(calls.scans).toEqual(["new.png"]);
     expect(result.reasons).toEqual({ "old.png": NOT_YET, "new.png": NOT_YET });
     // Pruning to the queue is the memory's own job (`pruneRemembered`); the drain hands it the new name too.
-    expect([...calls.saved!].sort()).toEqual(["already-gone.png", "new.png", "old.png"]);
+    expect([...calls.saved!.keys()].sort()).toEqual(["already-gone.png", "new.png", "old.png"]);
   });
 
   test("a recognised file is not added to the memory", async () => {
     const { deps, calls } = fakes({ words: { "r.png": wholeReceipt() } });
     await drainInbox([file("r.png")], status, deps);
     expect([...calls.saved!]).toEqual([]);
+  });
+});
+
+// --- Bank slips ---
+
+const line = (top: number, entries: Array<[string, number, number]>): OcrWord[] =>
+  entries.map(([text, left, right]) => ({ text, left, right, top, bottom: top + 20 }));
+/** An invented SCB slip's words: the amount under its own label, and a fee below it to be ignored. */
+const slipWords = (amount = "1,250.00"): OcrWord[] => [
+  ...line(100, [["จำนวนเงิน", 10, 90], [amount, 300, 380], ["บาท", 390, 420]]),
+  ...line(140, [["ค่าธรรมเนียม", 10, 90], ["12.00", 300, 360], ["บาท", 390, 420]])
+];
+const identity = { bankCode: "SCB", bankQrCode: "014", reference: "202607141234567890AB" } as const;
+const slipScan = (reference = identity.reference): SlipScanResult =>
+  ({ ok: true, identity: { ...identity, reference }, payload: `INVENTED-PAYLOAD-${reference}`, scale: 1, candidates: 1 });
+
+describe("drainInbox with bank slips", () => {
+  const status = () => undefined;
+
+  test("a slip is told by its QR before any Vision read, is read once, and never reaches recogniseImage", async () => {
+    // Its words would be a whole receipt if the receipt recogniser were ever shown them.
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": [...slipWords(), ...wholeReceipt()] } });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.order).toEqual(["scan:s.png", "ocr:s.png"]);
+    expect(calls.ocr).toEqual(["s.png"]);
+    expect(calls.receipts).toBe(0);
+    expect(result.receipts).toBe(0);
+  });
+
+  test("a QR that is not a slip's falls through to the receipt path unchanged", async () => {
+    const { deps, calls } = fakes({
+      scans: { "r.png": { ok: false, code: "NO_SLIP_QR_DETECTED", message: "This QR code is not a slip's." } },
+      words: { "r.png": wholeReceipt() }
+    });
+    const result = await drainInbox([file("r.png")], status, deps);
+    expect(calls.order).toEqual(["scan:r.png", "ocr:r.png"]);
+    expect(calls.receipts).toBe(1);
+    expect(result).toMatchObject({ receipts: 1, slips: [] });
+  });
+
+  test("a ready slip is returned with what the capture needs, and is not removed or captured during the drain", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords() } });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(result.slips).toEqual([{
+      name: "s.png",
+      payload: `INVENTED-PAYLOAD-${identity.reference}`,
+      identity,
+      occurredOn: "2026-07-14",
+      occurredAtTime: null,
+      amountMinor: "125000"
+    }]);
+    expect(calls.removed).toEqual([]);
+    expect(calls.slipPosts).toBe(0);
+    expect(result.reasons).toEqual({ "s.png": SLIP_WAITING_REASON });
+    expect(result).toMatchObject({ waiting: 1, summary: "1 slip needs money in or out." });
+    // Waiting for a direction is not a verdict: the next drain must offer it again.
+    expect([...calls.saved!]).toEqual([]);
+  });
+
+  test("a slip needing checking is kept with the reason and where to type it, and remembered", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords("not-an-amount") } });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(result.slips).toEqual([]);
+    expect(calls.removed).toEqual([]);
+    expect(result.reasons["s.png"]).toMatch(/Add it on the Slips page, then remove it here\.$/u);
+    expect([...calls.saved!]).toEqual([["s.png", "slip-review"]]);
+  });
+
+  test("a slip remembered as needing checking is skipped without a download, a scan or a Vision read", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords() }, remembered: { "s.png": "slip-review" } });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.downloads).toEqual([]);
+    expect(calls.scans).toEqual([]);
+    expect(calls.ocr).toEqual([]);
+    expect(result.reasons).toEqual({ "s.png": SLIP_REVIEW_REMEMBERED_REASON });
+    expect(calls.saved!.get("s.png")).toBe("slip-review");
+  });
+
+  test("a reader that could not be reached is not remembered, so the next open reads the slip again", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() } });
+    const unreachable: DrainDeps = { ...deps, readImage: async () => ({ ok: false, why: "The reader could not be reached." }) };
+    const result = await drainInbox([file("s.png")], status, unreachable);
+    expect(result.reasons["s.png"]).toMatch(/^The reader could not be reached\./u);
+    expect([...calls.saved!]).toEqual([]);
+  });
+
+  test("a slip and a receipt in one drain are each handled by their own path", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords(), "r.png": wholeReceipt() } });
+    const result = await drainInbox([file("s.png"), file("r.png")], status, deps);
+    expect(calls.removed).toEqual([["r.png"]]);
+    expect(result.slips.map((slip) => slip.name)).toEqual(["s.png"]);
+    expect(result).toMatchObject({ receipts: 1, waiting: 1, summary: "1 receipt imported. 1 slip needs money in or out." });
+  });
+});
+
+describe("captureSlips", () => {
+  const ready = (name: string, amountMinor = "125000"): ReadySlip => ({
+    name, payload: `INVENTED-PAYLOAD-${name}`, identity, occurredOn: "2026-07-14", occurredAtTime: "09:05", amountMinor
+  });
+
+  /** Fakes for the two things `captureSlips` uses; every call goes into one ordered log. */
+  function slipFakes(options: { post?: (name: string) => SlipPosted; removes?: (names: readonly string[]) => number } = {}) {
+    const log: string[] = [];
+    const bodies: ReturnType<typeof slipPostBody>[] = [];
+    const deps = {
+      postSlip: async (body: ReturnType<typeof slipPostBody>): Promise<SlipPosted> => {
+        bodies.push(body);
+        const name = body.qrPayload.replace("INVENTED-PAYLOAD-", "");
+        log.push(`post:${name}`);
+        return options.post ? options.post(name) : { ok: true, outcome: "captured" };
+      },
+      remove: async (names: readonly string[]) => {
+        log.push(`remove:${names.join("+")}`);
+        return { ok: true as const, value: options.removes ? options.removes(names) : names.length };
+      }
+    };
+    return { deps, log, bodies };
+  }
+
+  test("a withdrawal is posted negative and a deposit positive, with the request the batch form sends", async () => {
+    const out = slipFakes();
+    await captureSlips([ready("a.png")], "withdrawal", out.deps);
+    expect(out.bodies[0]).toEqual({
+      qrPayload: "INVENTED-PAYLOAD-a.png", bankCode: "SCB", bankQrCode: "014", slipReference: identity.reference, kind: "withdrawal",
+      amountMinor: "-125000", currency: "THB", occurredOn: "2026-07-14", occurredAtTime: "09:05", counterparty: null, categoryId: null, note: null
+    });
+    const into = slipFakes();
+    await captureSlips([ready("a.png")], "deposit", into.deps);
+    expect(into.bodies[0]).toMatchObject({ kind: "deposit", amountMinor: "125000" });
+  });
+
+  test("a file is removed only after the ledger answered, one slip at a time and in order", async () => {
+    const { deps, log } = slipFakes({ post: (name) => ({ ok: true, outcome: name === "b.png" ? "duplicate" : "captured" }) });
+    const result = await captureSlips([ready("a.png"), ready("b.png")], "withdrawal", deps);
+    expect(log).toEqual(["post:a.png", "remove:a.png", "post:b.png", "remove:b.png"]);
+    expect(result).toEqual({ captured: 1, duplicates: 1, reasons: {} });
+  });
+
+  test("a refused capture keeps its file and says why, and the next slip still goes through", async () => {
+    const { deps, log } = slipFakes({ post: (name) => (name === "a.png" ? { ok: false, why: "The ledger could not be reached." } : { ok: true, outcome: "captured" }) });
+    const result = await captureSlips([ready("a.png"), ready("b.png")], "deposit", deps);
+    expect(log).toEqual(["post:a.png", "post:b.png", "remove:b.png"]);
+    expect(result).toEqual({ captured: 1, duplicates: 0, reasons: { "a.png": "The ledger could not be reached." } });
+  });
+
+  test("a confirmation that could not be read keeps the file, and nothing is removed", async () => {
+    const { deps, log } = slipFakes({ post: () => ({ ok: false, why: SLIP_UNCONFIRMED_REASON }) });
+    const result = await captureSlips([ready("a.png")], "deposit", deps);
+    expect(log).toEqual(["post:a.png"]);
+    expect(result.reasons["a.png"]).toBe(SLIP_UNCONFIRMED_REASON);
+  });
+
+  test("a removal Storage did not do keeps the file, says so and does not count it", async () => {
+    const { deps } = slipFakes({ removes: () => 0 });
+    const result = await captureSlips([ready("a.png")], "deposit", deps);
+    expect(result).toMatchObject({ captured: 0, duplicates: 0 });
+    expect(result.reasons["a.png"]).toMatch(/could not be removed/u);
+  });
+
+  test("an amount the ledger cannot store is kept without being sent", async () => {
+    const { deps, log } = slipFakes();
+    const result = await captureSlips([ready("a.png", "12.5")], "deposit", deps);
+    expect(log).toEqual([]);
+    expect(result.reasons["a.png"]).toMatch(/not one this ledger can store/u);
   });
 });

@@ -47,6 +47,12 @@ export type LinemanPage = {
   aboveMenu: string[];
   /** Everything from `Menu` down to `Reorder`, normalised. */
   body: string[];
+  /**
+   * Minutes since midnight of the phone's status-bar clock printed above the title bar, or null when
+   * none or more than one reads. Used only to tell same-address orders' screenshots apart (see
+   * `planLinemanOrders`); never stored and never part of the parsed order.
+   */
+  shotAt: number | null;
 };
 
 export type ParsedLinemanOrder = {
@@ -98,6 +104,23 @@ function orderTime(match: RegExpExecArray): string | null {
   return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00+07:00`;
 }
 
+const CLOCK = /^([01]?\d|2[0-3]):([0-5]\d)$/u;
+
+/**
+ * The status-bar clock: a clock-shaped word on the **top-most line of the image**, which must lie
+ * above the "Order details" heading. A time printed lower down (a banner, an alarm) is not read.
+ */
+function statusBarClock(words: readonly OcrWord[]): number | null {
+  const rows = groupIntoLines(words);
+  const headingAt = rows.findIndex((line) => /^<?\s*Order details\b/u.test(linemanLine(line)));
+  if (headingAt < 1) return null;
+  const readings = new Set(rows[0]!.map((word) => word.text.trim()).filter((text) => CLOCK.test(text)));
+  // None, or two different readings on the top line, is no clock.
+  if (readings.size !== 1) return null;
+  const match = CLOCK.exec([...readings][0]!)!;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
 /** One screenshot's order header (first screenshot only) and menu region, or why it is not one. */
 export function readLinemanPage(words: readonly OcrWord[]): LinemanRead<LinemanPage> {
   const lines = groupIntoLines(words).map(linemanLine).filter((line) => line !== "");
@@ -133,7 +156,8 @@ export function readLinemanPage(words: readonly OcrWord[]): LinemanRead<LinemanP
       orderNumber, restaurant, orderedAt,
       // The app's own title bar is on every screenshot, so it proves no overlap and is left out.
       aboveMenu: lines.slice(Math.max(0, menuAt - 2), menuAt).filter((line) => !/Order details/u.test(line)),
-      body: lines.slice(menuAt + 1, endAt < 0 ? undefined : endAt)
+      body: lines.slice(menuAt + 1, endAt < 0 ? undefined : endAt),
+      shotAt: statusBarClock(words)
     }
   };
 }
