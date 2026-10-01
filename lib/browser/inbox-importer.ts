@@ -137,8 +137,10 @@ export type DrainResult = {
   readonly reasons: Record<string, string>;
   readonly receipts: number;
   readonly orders: number;
-  /** Statement PDFs the server imported (or already held) and that left the queue. */
+  /** Statement PDFs the server imported and that left the queue. */
   readonly statements: number;
+  /** Statement PDFs already in the ledger (same file), which left the queue without a write. */
+  readonly statementsAlready: number;
   /** Names of held statements the owner can open on the Import page. */
   readonly reviewable: readonly string[];
   /** Slips read exactly and held for the owner's money in or out; their files are still in the queue. */
@@ -168,6 +170,7 @@ export async function drainInbox(
   let receipts = 0;
   let orders = 0;
   let statements = 0;
+  let statementsAlready = 0;
   const reviewable: string[] = [];
 
   /**
@@ -212,7 +215,9 @@ export async function drainInbox(
           if (statementPlan.review) reviewable.push(file.name);
           continue;
         }
-        if (await release([file.name])) statements += 1;
+        if (await release([file.name])) {
+          if (statementPlan.outcome === "captured") statements += 1; else statementsAlready += 1;
+        }
         continue;
       }
       const plan = planPdf(reply);
@@ -302,8 +307,8 @@ export async function drainInbox(
   deps.memory.save(remembered, files.filter((file) => !removed.has(file.name)).map((file) => file.name));
   const waiting = files.length - removed.size;
   return {
-    reasons, receipts, orders, statements, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
-    summary: describeDrain({ receipts, orders, statements, slips: slips.length })
+    reasons, receipts, orders, statements, statementsAlready, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
+    summary: describeDrain({ receipts, orders, statements, statementsAlready, slips: slips.length })
   };
 }
 

@@ -17,7 +17,9 @@ import {
 import {
   describeReceiptSyncReport, receiptSyncReportSchema, type ReceiptSyncReport
 } from "@/lib/receipts";
-import { DEFAULT_SYNC_DAYS, type SyncManifest } from "@/lib/statement-sync";
+import { postMailboxStatementImport, type StatementImportPosted } from "@/lib/browser/inbox-statement-client";
+import { planStatement } from "@/lib/inbox-drain";
+import { DEFAULT_SYNC_DAYS, mailboxReviewHref, type SyncManifest } from "@/lib/statement-sync";
 import { ledgerRequest } from "@/lib/wire";
 
 export const MAX_SYNC_ROUNDS = 20;
@@ -122,7 +124,121 @@ export function describeSevenElevenProgress(total: ReceiptSyncReport): string {
   return `${describeReceiptSyncReport(total)}${total.truncated ? STILL_READING : ""}`;
 }
 
-// --- Statements: a count only. The download, the password and the confirmation stay on /import. ---
+// --- Statements: each one is opened and, when clean, imported by the server (D-237). ---
+
+/** One held statement, with what the owner can do about it. */
+export type HeldMailboxStatement = {
+  readonly uid: number;
+  readonly part: string;
+  readonly name: string;
+  readonly reason: string;
+  /** The raw held code: "locked" and "no-passwords" are the ones only a password on the device can settle. */
+  readonly code: string;
+  /** `/import?mailbox=…` when the Import page can help, else null. */
+  readonly reviewHref: string | null;
+};
+
+export type MailboxStatementTotal = {
+  readonly captured: number;
+  readonly duplicates: number;
+  readonly held: readonly HeldMailboxStatement[];
+  /** Statements not tried because an earlier request failed, or because the listing stopped at its cap. */
+  readonly remaining: number;
+  readonly more: boolean;
+  readonly error: string | null;
+};
+
+export const EMPTY_STATEMENT_TOTAL: MailboxStatementTotal = { captured: 0, duplicates: 0, held: [], remaining: 0, more: false, error: null };
+
+type ListedStatement = { readonly uid: number; readonly part: string; readonly name: string };
+
+export const GONE_REASON = "This attachment is gone from the mailbox.";
+export const TOO_LARGE_REASON = "This PDF is larger than the limit.";
+
+/** Folds one statement's answer into the running total. Pure. */
+export function addStatementAnswer(
+  total: MailboxStatementTotal,
+  item: ListedStatement,
+  answer: StatementImportPosted
+): MailboxStatementTotal {
+  if (!answer.ok) {
+    // A statement the mailbox no longer has, or that is over the size limit, is that statement's own
+    // problem: it is held with a plain reason and the loop goes on. Anything else is a failed request.
+    const own = answer.status === 404 ? GONE_REASON : answer.status === 413 ? TOO_LARGE_REASON : null;
+    if (own === null) return { ...total, error: answer.why };
+    return {
+      ...total,
+      held: [...total.held, { uid: item.uid, part: item.part, name: item.name, reason: own, code: answer.status === 404 ? "gone" : "too-large", reviewHref: null }]
+    };
+  }
+  const plan = planStatement(answer.answer);
+  if (plan.action === "capture") {
+    return plan.outcome === "captured"
+      ? { ...total, captured: total.captured + 1 }
+      : { ...total, duplicates: total.duplicates + 1 };
+  }
+  const code = answer.answer.kind === "held" ? answer.answer.reason : "";
+  const held: HeldMailboxStatement = {
+    uid: item.uid, part: item.part, name: item.name, reason: plan.reason, code,
+    reviewHref: plan.review ? mailboxReviewHref({ uid: item.uid, part: item.part }) : null
+  };
+  return { ...total, held: [...total.held, held] };
+}
+
+/** "2 statements imported. 1 was already in the ledger." — empty when nothing happened. */
+export function describeStatementTotal(total: MailboxStatementTotal): string {
+  const plural = (n: number) => (n === 1 ? "" : "s");
+  const parts = [
+    total.captured > 0 ? `${total.captured} statement${plural(total.captured)} imported.` : null,
+    total.duplicates > 0 ? `${total.duplicates} statement${plural(total.duplicates)} ${total.duplicates === 1 ? "was" : "were"} already in the ledger.` : null
+  ].filter((part): part is string => part !== null);
+  return parts.length === 0 ? "No new statements were imported." : parts.join(" ");
+}
+
+/** Whether something is still waiting that only the Import page's own batch (where a password is typed) can open. */
+export function statementsNeedDeviceImport(total: MailboxStatementTotal): boolean {
+  return total.remaining > 0 || total.more
+    || total.held.some((entry) => entry.code === "locked" || entry.code === "no-passwords");
+}
+
+/**
+ * Lists the statement PDFs not yet fetched (the same listing `/import` uses) and posts each to the
+ * server in import mode, one at a time. A request that fails stops the loop: the rest stay in the
+ * mailbox, unflagged, and are counted as remaining. Nothing is flagged here; the server does that
+ * once a statement is in the ledger.
+ */
+export async function syncMailboxStatements(
+  onProgress?: (total: MailboxStatementTotal, done: number, of: number) => void
+): Promise<{ ok: true; total: MailboxStatementTotal } | { ok: false; why: string }> {
+  const listing = await ledgerRequest(`/api/v1/imports/mailbox?days=${DEFAULT_SYNC_DAYS}`, listingSchema, {
+    fallback: "The mailbox could not be listed.",
+    unreachable: "The mailbox could not be reached from this device.",
+    offContract: "The mailbox answer did not match its contract."
+  });
+  if (!listing.ok) return { ok: false, why: listing.why };
+  const items = listing.data.attachments.map((entry) => ({
+    uid: entry.uid, part: entry.part, name: typeof entry.name === "string" ? entry.name : "Statement"
+  }));
+  let total: MailboxStatementTotal = { ...EMPTY_STATEMENT_TOTAL, more: listing.data.truncated };
+  for (const [index, item] of items.entries()) {
+    total = addStatementAnswer(total, item, await postMailboxStatementImport(item));
+    if (total.error !== null) {
+      total = { ...total, remaining: items.length - index };
+      break;
+    }
+    onProgress?.(total, index + 1, items.length);
+  }
+  return { ok: true, total };
+}
+
+const listingSchema = z.object({
+  messages: z.number().int().nonnegative(),
+  attachments: z.array(z.object({ uid: z.number().int(), part: z.string(), name: z.string().optional() }).passthrough()),
+  truncated: z.boolean(),
+  since: z.string().nullable()
+}).passthrough();
+
+// --- Statements waiting: a count only (still used by the tests and any caller that only counts). ---
 
 const manifestSchema = z.object({
   messages: z.number().int().nonnegative(),

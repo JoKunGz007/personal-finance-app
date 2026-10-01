@@ -578,11 +578,12 @@ describe("drainInbox with statement PDFs", () => {
     expect(result).toMatchObject({ statements: 1, waiting: 0, reasons: {}, reviewable: [], summary: "1 statement imported." });
   });
 
-  test("a statement already in the ledger is removed too, and counted as imported", async () => {
+  test("a statement already in the ledger is removed too, and said so rather than counted as imported", async () => {
     const { deps, calls } = fakes({ statement: { ok: true, answer: { kind: "duplicate" } } });
     const result = await drainInbox([file(NAME)], status, deps);
     expect(calls.removed).toEqual([[NAME]]);
     expect(result.waiting).toBe(0);
+    expect(result).toMatchObject({ statements: 0, statementsAlready: 1, summary: "1 statement was already in the ledger." });
   });
 
   test("a held statement stays with its reason and a review link when Import can help", async () => {

@@ -402,7 +402,7 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
  * "2 receipts and 1 LINE MAN order imported. 3 slips need money in or out." The count of files still
  * waiting is left out on purpose: the list shows it live, and a figure fixed here went stale after a Remove.
  */
-export function describeDrain(result: { receipts: number; orders: number; slips: number; statements?: number }): string {
+export function describeDrain(result: { receipts: number; orders: number; slips: number; statements?: number; statementsAlready?: number }): string {
   const statements = result.statements ?? 0;
   const imported = [
     result.receipts > 0 ? count(result.receipts, "receipt", "receipts") : null,
@@ -411,6 +411,7 @@ export function describeDrain(result: { receipts: number; orders: number; slips:
   ].filter((part): part is string => part !== null);
   const sentences = [
     imported.length > 0 ? `${imported.join(" and ")} imported.` : null,
+    (result.statementsAlready ?? 0) > 0 ? `${count(result.statementsAlready ?? 0, "statement was", "statements were")} already in the ledger.` : null,
     result.slips > 0 ? `${count(result.slips, "slip needs", "slips need")} money in or out.` : null
   ].filter((part): part is string => part !== null);
   return sentences.length === 0 ? "Nothing was imported." : sentences.join(" ");

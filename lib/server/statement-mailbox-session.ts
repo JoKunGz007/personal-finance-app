@@ -18,10 +18,11 @@
 // **It is a mailbox app password and not a document password, and the distinction is the whole
 // argument.** This one is rotatable from a Google account page and is scoped to reading one mailbox
 // that receives nothing but bank mail. A statement's document password derives from the owner's
-// date of birth and citizen ID, is therefore non-rotatable, and **never comes near this file or any
-// server**: the PDFs move as the bank encrypted them and are opened by pdf.js on the device
-// (D-141). What transits is ciphertext this app cannot read and which already sits on Google's
-// servers anyway.
+// date of birth and citizen ID, and is therefore non-rotatable. **It never comes near this file**,
+// which only handles the mailbox credential and the bytes as the bank encrypted them. Since D-237 the
+// statement route (`app/api/v1/imports/mailbox/statement/route.ts`) opens mailbox statements on the
+// server with the stored passwords, via `lib/server/statement-pdf-node.ts`; the attachment route
+// still streams ciphertext to the device (D-141). The mailbox credentials themselves are unchanged.
 //
 // **`statement-mailbox.json` is not read here.** It is gitignored, so it does not exist in a
 // deployment; the same two facts it carries come from the environment instead.

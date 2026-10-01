@@ -164,6 +164,20 @@ export type MailboxRef = {
   readonly part: string;
 };
 
+/** `/import?mailbox=<uid>:<part>`: a held mailbox statement opened for review (D-237). */
+export function mailboxReviewHref(ref: MailboxRef): string {
+  return `/import?mailbox=${encodeURIComponent(`${ref.uid}:${ref.part}`)}`;
+}
+
+/** The ref a `?mailbox=` value names, validated exactly as the attachment route validates its params; null otherwise. */
+export function parseMailboxParam(raw: string | null | undefined): MailboxRef | null {
+  if (typeof raw !== "string") return null;
+  const [uidText, part, ...rest] = raw.split(":");
+  if (rest.length > 0 || uidText === undefined || part === undefined) return null;
+  const uid = parseUid(uidText);
+  return uid === null || !isSafePartPath(part) ? null : { uid, part };
+}
+
 /** One downloaded attachment, paired with the mailbox coordinates that produced it. */
 export type MailboxFile = {
   readonly file: File;

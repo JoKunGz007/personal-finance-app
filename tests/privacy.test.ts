@@ -457,6 +457,25 @@ describe("privacy guardrails", () => {
     }
   });
 
+  // D-237: the one mailbox route that opens statements on the server. It reads through the same node
+  // reader as the Inbox route and nothing else, and its inputs are checked like the attachment route's.
+  it("keeps the mailbox statement route owner-gated, strict and reading only through the node reader", () => {
+    const route = readFileSync("app/api/v1/imports/mailbox/statement/route.ts", "utf8");
+    const code = route.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+    expect(code).toMatch(/if \(!auth\.ok\) return routeError/u);
+    expect(code).toContain('export const runtime = "nodejs"');
+    for (const forbidden of [/console\./u, /SERVICE_ROLE/u, /STATEMENT_MAILBOX_APP_PASSWORD/u, /pdfjs/iu, /decrypt/iu]) {
+      expect(code, String(forbidden)).not.toMatch(forbidden);
+    }
+    expect(code.match(/import \{[^}]*\breadStatementPdf\b[^}]*\} from "([^"]+)"/u)?.[1]).toBe("@/lib/server/statement-pdf-node");
+    expect(code.match(/readStatementPdf/gu)?.length).toBe(2);
+    const schema = code.match(/z\.object\(\{([\s\S]*?)\}\)\.strict\(\)/u);
+    expect(schema, "body schema is strict").not.toBeNull();
+    expect([...schema![1]!.matchAll(/^\s*(\w+):/gmu)].map((key) => key[1])).toEqual(["uid", "part", "mode"]);
+    expect(code).toContain("verifyAttachment(");
+    expect(code).toContain("isSafePartPath(");
+  });
+
   it("does not widen the accounts listing beyond the chooser's needs", () => {
     const route = readFileSync("app/api/v1/accounts/route.ts", "utf8");
     // An explicit column list, never select("*"): a future column must be opted into.

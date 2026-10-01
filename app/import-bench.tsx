@@ -18,8 +18,8 @@ import {
 } from "@/lib/import-flow";
 import { ledgerRequest } from "@/lib/wire";
 import { StatementBatch, type BatchHandoff } from "@/app/statement-batch";
-import { attachmentPath, type MailboxRef } from "@/lib/statement-sync";
-import { INBOX_STATEMENT_NAME, readInboxStatement } from "@/lib/browser/inbox-statement-client";
+import { attachmentPath, parseMailboxParam, type MailboxRef } from "@/lib/statement-sync";
+import { INBOX_STATEMENT_NAME, readInboxStatement, readMailboxStatement } from "@/lib/browser/inbox-statement-client";
 import { ownerUid, removeFromInbox } from "@/lib/browser/inbox-storage";
 import { browserSupabase } from "@/lib/browser/supabase";
 import { statementHeldReason } from "@/lib/inbox-drain";
@@ -147,6 +147,8 @@ export function ImportBench() {
       const loaded = await loadAccounts();
       const requested = new URLSearchParams(window.location.search).get("inbox");
       if (requested !== null) await openInboxStatement(requested, loaded);
+      const mailbox = new URLSearchParams(window.location.search).get("mailbox");
+      if (mailbox !== null) await openMailboxStatement(mailbox, loaded);
     })();
     // Once, on mount. Re-running it on every render would put a request behind every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -332,7 +334,7 @@ export function ImportBench() {
    * same review table, same confirmation, same route. Nothing downstream needs to know a batch
    * exists, which is what keeps bulk import from becoming a second way to reach the ledger.
    */
-  function workBatchEntry(handoff: BatchHandoff, from?: { accounts: LedgerAccount[] | null; inbox: boolean }) {
+  function workBatchEntry(handoff: BatchHandoff, from?: { accounts: LedgerAccount[] | null; inbox: boolean; mailbox?: boolean }) {
     setInboxName(null);
     // The worklist value is replaced outright further down, once binding has resolved — which is
     // also what clears any banner about the *previous* entry. One sitting above the chooser for
@@ -381,7 +383,8 @@ export function ImportBench() {
       `${handoff.label}: read ${handoff.rows.length} rows across ${handoff.pageCount} page(s) as a `
       + `${handoff.frame.bankCode} statement, for account ending ${handoff.frame.accountLastFour}, `
       + `${handoff.frame.periodStart} to ${handoff.frame.periodEnd}. `
-      + (from?.inbox ? "The server read it from your Inbox. " : "Nothing has left this device. ")
+      + (from?.mailbox ? "The server read it from your statement mailbox. "
+        : from?.inbox ? "The server read it from your Inbox. " : "Nothing has left this device. ")
       + (match
         ? "The account it prints is selected below — check it and bind."
         : "Choose the ledger account it belongs to.")
@@ -411,6 +414,30 @@ export function ImportBench() {
       { accounts: loaded, inbox: true }
     );
     setInboxName(name);
+  }
+
+  /**
+   * Opens a held mailbox statement (`/import?mailbox=<uid>:<part>`, D-237): the server fetches it from
+   * the mailbox and reads it, then it takes the batch-entry path with `mailboxRef` set, so the
+   * existing post-confirm "mark fetched" call runs unchanged.
+   */
+  async function openMailboxStatement(raw: string, loaded: LedgerAccount[] | null) {
+    const ref = parseMailboxParam(raw);
+    if (!ref) {
+      setStatus("That mailbox link is not a statement this app can ask for.");
+      return;
+    }
+    setStatus("Opening the statement from your mailbox…");
+    const read = await readMailboxStatement(ref);
+    if (!read.ok) {
+      setStatus(read.held === null ? read.why : statementHeldReason(read.held));
+      return;
+    }
+    const pageCount = Math.max(1, ...read.rows.map((row) => row.provenance.page));
+    workBatchEntry(
+      { artifactDigest: read.artifactDigest, label: "Mailbox statement", frame: read.frame, rows: read.rows, pageCount, mailboxRef: ref },
+      { accounts: loaded, inbox: false, mailbox: true }
+    );
   }
 
   /** Removes a confirmed statement from the Inbox; says in words whether that worked. A failure never undoes the import. */
@@ -576,6 +603,9 @@ export function ImportBench() {
     if (inboxName) {
       setInboxName(null);
       // The object is gone, so a reload must not ask the server for it again.
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (mailboxRef && new URLSearchParams(window.location.search).has("mailbox")) {
+      // The statement is in the ledger and flagged, so a reload must not open it again.
       window.history.replaceState(null, "", window.location.pathname);
     }
     // **One transition, so the binding banner cannot outlive the confirmation.** `confirmed`

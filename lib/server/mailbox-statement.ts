@@ -1,0 +1,29 @@
+import { processInboxStatement, type InboxStatementDeps, type InboxStatementOutcome } from "@/lib/server/inbox-statement";
+
+// A statement that arrived by mail, opened by the same server core as an Inbox drop (D-237). The
+// mailbox half (verify the part, fetch the bytes, flag the message) is injected, so the rule that
+// matters is testable without IMAP: **the message is flagged fetched only after the outcome says the
+// statement is in the ledger** (captured, or already there), and only in import mode. A held or
+// failed statement stays unflagged and is offered again.
+
+export type MailboxStatementDeps = InboxStatementDeps & {
+  /** Flags the message part fetched; resolves whether the mailbox recorded it. Never throws. */
+  markFetched: () => Promise<boolean>;
+};
+
+export type MailboxStatementOutcome = InboxStatementOutcome & {
+  /** Whether the mailbox recorded the fetched flag; false when it was refused or not due. */
+  flagged?: boolean;
+};
+
+export async function processMailboxStatement(
+  mode: "import" | "read",
+  deps: MailboxStatementDeps
+): Promise<MailboxStatementOutcome> {
+  const { markFetched, ...core } = deps;
+  const outcome = await processInboxStatement(mode, core);
+  if (mode === "import" && (outcome.kind === "captured" || outcome.kind === "duplicate")) {
+    return { ...outcome, flagged: await markFetched() };
+  }
+  return outcome;
+}
