@@ -162,12 +162,31 @@ export type VisionReadResult =
  * **An empty word list is a success, not a failure.** "The engine ran and read nothing" is an
  * honest answer that the grammar turns into a named refusal — `LABEL_NOT_FOUND` on a slip,
  * a card with no fields on a screenshot — whereas a failure means no reading happened at all.
+ *
+ * **A refusal Vision calls temporary is tried once more**, after `VISION_RETRY_DELAY_MS`: on
+ * 2026-10-02 Vision answered `Vision error 8` (resource exhausted) to most of a batch of real
+ * screenshots while every quota of the project read 0%, and a later read of the same image
+ * succeeded. Only the temporary kinds are retried (`RETRYABLE`), never a bad image or a bad key, and
+ * only once, so a real outage still answers within two calls.
  */
 export async function readWordsWithVision(
   image: Uint8Array,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 ): Promise<VisionReadResult> {
+  const first = await readOnce(image, apiKey, fetchImpl);
+  if (first.ok || first.reference === undefined || !RETRYABLE.has(first.reference)) return first;
+  await wait(VISION_RETRY_DELAY_MS);
+  return readOnce(image, apiKey, fetchImpl);
+}
+
+export const VISION_RETRY_DELAY_MS = 1500;
+
+/** Refusals Vision means as "try again": resource exhausted, internal, unavailable, and their HTTP forms. */
+const RETRYABLE = new Set(["Vision error 8", "Vision error 13", "Vision error 14", "HTTP 429", "HTTP 500", "HTTP 503"]);
+
+async function readOnce(image: Uint8Array, apiKey: string, fetchImpl: typeof fetch): Promise<VisionReadResult> {
   if (apiKey.length === 0) return { ok: false, code: "NOT_CONFIGURED" };
 
   let response: Response;

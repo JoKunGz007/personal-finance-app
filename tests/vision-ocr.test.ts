@@ -195,6 +195,26 @@ describe("which failures are told apart", () => {
       .toEqual({ ok: false, code: "REFUSED", reference: "Vision error 3" });
   });
 
+  it("tries a temporary refusal once more, and only a temporary one", async () => {
+    const refusal = (code: number) => new Response(JSON.stringify({ responses: [{ error: { code } }] }), { status: 200 });
+    const read = new Response(JSON.stringify({ responses: [{}] }), { status: 200 });
+    const noWait = vi.fn(async () => {});
+
+    const recovers = vi.fn().mockResolvedValueOnce(refusal(8)).mockResolvedValueOnce(read);
+    expect((await readWordsWithVision(image, "k", recovers as unknown as typeof fetch, noWait)).ok).toBe(true);
+    expect(recovers).toHaveBeenCalledTimes(2);
+
+    const stays = vi.fn().mockResolvedValueOnce(refusal(8)).mockResolvedValueOnce(refusal(8)).mockResolvedValueOnce(read);
+    expect(await readWordsWithVision(image, "k", stays as unknown as typeof fetch, noWait))
+      .toEqual({ ok: false, code: "REFUSED", reference: "Vision error 8" });
+    expect(stays).toHaveBeenCalledTimes(2);
+
+    const badImage = vi.fn().mockResolvedValueOnce(refusal(3)).mockResolvedValueOnce(read);
+    expect(await readWordsWithVision(image, "k", badImage as unknown as typeof fetch, noWait))
+      .toEqual({ ok: false, code: "REFUSED", reference: "Vision error 3" });
+    expect(badImage).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses a body that is not the JSON it claims to be", async () => {
     const fetchImpl = vi.fn(async () => new Response("<html>gateway</html>", { status: 200 }));
     expect(await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
