@@ -81,3 +81,8 @@ public/zxing_reader.wasm
 # continuity doc. Ignored rather than trusted to habit, because everything else in this
 # directory is committable and `git add .` would not ask.
 phone_screenshots/
+
+# Temporary development backups (owner's request, 2026-10-03): a `.plbak` export and the
+# password it was made with, side by side so an agent can restore it. Together they are the
+# whole ledger in the clear, so this folder is never committed and never left on a shared disk.
+dev-backup/
