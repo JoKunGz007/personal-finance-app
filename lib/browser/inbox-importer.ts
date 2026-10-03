@@ -41,7 +41,8 @@ import { readError } from "@/lib/wire";
 
 type Client = NonNullable<ReturnType<typeof browserSupabase>>;
 
-export type Posted = { readonly ok: true } | { readonly ok: false; readonly why: string };
+/** `already`: the ledger held this receipt or order before, so the capture stored nothing new. */
+export type Posted = { readonly ok: true; readonly already?: boolean } | { readonly ok: false; readonly why: string };
 
 /** A slip capture's answer: stored now, already in the ledger, or why it is not known to be stored. */
 export type SlipPosted =
@@ -101,7 +102,8 @@ async function postSlipCapture(body: SlipPostBody): Promise<SlipPosted> {
 
 /** The drain's dependencies in the browser: the inbox bucket, the PDF worker, Vision and the capture routes. */
 export function browserDrainDeps(supabase: Client, uid: string): DrainDeps {
-  const posted = (result: { ok: true } | { ok: false; why: string }): Posted => (result.ok ? { ok: true } : { ok: false, why: result.why });
+  const posted = (result: { ok: true; data: { captured: boolean; merged?: boolean } } | { ok: false; why: string }): Posted =>
+    result.ok ? { ok: true, already: !result.data.captured && result.data.merged !== true } : { ok: false, why: result.why };
   // Resolved on the first image scanned and then kept for the drain: the WebAssembly fallback is ~1.1 MB.
   let detector: Promise<SlipQrReader | null> | null = null;
   return {
@@ -137,6 +139,9 @@ export type DrainResult = {
   readonly reasons: Record<string, string>;
   readonly receipts: number;
   readonly orders: number;
+  /** Receipts and LINE MAN orders the ledger already held; their files left the queue without a write. */
+  readonly receiptsAlready: number;
+  readonly ordersAlready: number;
   /** Statement PDFs the server imported and that left the queue. */
   readonly statements: number;
   /** Statement PDFs already in the ledger (same file), which left the queue without a write. */
@@ -169,6 +174,8 @@ export async function drainInbox(
   const slips: ReadySlip[] = [];
   let receipts = 0;
   let orders = 0;
+  let receiptsAlready = 0;
+  let ordersAlready = 0;
   let statements = 0;
   let statementsAlready = 0;
   let statementsEmpty = 0;
@@ -238,7 +245,7 @@ export async function drainInbox(
       if (plan.action === "keep") { reasons[file.name] = plan.reason; continue; }
       const saved = await deps.postReceipt(plan.value.form, plan.value.receipt);
       if (!saved.ok) { reasons[file.name] = saved.why; continue; }
-      if (await release([file.name])) receipts += 1;
+      if (await release([file.name])) { if (saved.already) receiptsAlready += 1; else receipts += 1; }
       continue;
     }
 
@@ -303,7 +310,7 @@ export async function drainInbox(
       for (const name of group.names) reasons[name] = saved.why;
       continue;
     }
-    if (await release(group.names)) receipts += 1;
+    if (await release(group.names)) { if (saved.already) receiptsAlready += 1; else receipts += 1; }
   }
 
   for (const group of planLinemanOrders(linemanPages)) {
@@ -316,7 +323,7 @@ export async function drainInbox(
       for (const name of group.names) reasons[name] = saved.why;
       continue;
     }
-    if (await release(group.names)) orders += 1;
+    if (await release(group.names)) { if (saved.already) ordersAlready += 1; else orders += 1; }
   }
 
   // A file whose removal succeeded has no reason to show.
@@ -324,8 +331,8 @@ export async function drainInbox(
   deps.memory.save(remembered, files.filter((file) => !removed.has(file.name)).map((file) => file.name));
   const waiting = files.length - removed.size;
   return {
-    reasons, receipts, orders, statements, statementsAlready, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
-    summary: describeDrain({ receipts, orders, statements, statementsAlready, statementsEmpty, slips: slips.length })
+    reasons, receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
+    summary: describeDrain({ receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, statementsEmpty, slips: slips.length })
   };
 }
 

@@ -392,6 +392,10 @@ describe("what the owner reads", () => {
     expect(describeDrain({ receipts: 0, orders: 2, slips: 0 })).toBe("2 LINE MAN orders imported.");
     expect(describeDrain({ receipts: 0, orders: 0, slips: 2 })).toBe("2 slips need money in or out.");
     expect(describeDrain({ receipts: 0, orders: 0, slips: 0 })).toBe("Nothing was imported.");
+    expect(describeDrain({ receipts: 0, orders: 0, ordersAlready: 2, slips: 0 })).toBe("2 LINE MAN orders were already in the ledger.");
+    expect(describeDrain({ receipts: 1, orders: 0, receiptsAlready: 1, ordersAlready: 1, slips: 0 }))
+      .toBe("1 receipt imported. 1 receipt and 1 LINE MAN order were already in the ledger.");
+    expect(describeDrain({ receipts: 0, orders: 0, receiptsAlready: 1, slips: 0 })).toBe("1 receipt was already in the ledger.");
     expect(describeDrain({ receipts: 0, orders: 0, slips: 0, statementsEmpty: 1 })).toBe("1 statement had no transactions.");
   });
 
@@ -415,6 +419,8 @@ type FakeOptions = {
   words?: Record<string, OcrWord[]>;
   removes?: (names: readonly string[]) => number;
   fail?: "receipt" | "order";
+  /** Receipt and order captures the ledger answers as already held. */
+  already?: boolean;
   remembered?: Record<string, RememberedKind>;
   /** An image's name to what the QR scan "found"; an image not listed has no QR. */
   scans?: Record<string, SlipScanAttempt>;
@@ -455,11 +461,11 @@ function fakes(options: FakeOptions = {}) {
     },
     postReceipt: async () => {
       calls.receipts += 1;
-      return options.fail === "receipt" ? { ok: false, why: "The ledger could not be reached, so the receipt was not saved." } : { ok: true };
+      return options.fail === "receipt" ? { ok: false, why: "The ledger could not be reached, so the receipt was not saved." } : { ok: true, already: options.already === true };
     },
     postOrder: async () => {
       calls.orders += 1;
-      return options.fail === "order" ? { ok: false, why: "The order could not be saved." } : { ok: true };
+      return options.fail === "order" ? { ok: false, why: "The order could not be saved." } : { ok: true, already: options.already === true };
     },
     memory: { load: () => new Map(Object.entries(options.remembered ?? {})), save: (remembered) => { calls.saved = new Map(remembered); } }
   };
@@ -524,6 +530,17 @@ describe("drainInbox", () => {
     expect(result).toMatchObject({ orders: 1, waiting: 1 });
     expect(Object.keys(result.reasons)).toEqual(["a1.png"]);
     expect(result.summary).toBe("1 LINE MAN order imported.");
+  });
+
+  test("an order the ledger already held leaves the queue but is not called imported", async () => {
+    const { deps, calls } = fakes({
+      already: true,
+      words: { "b1.png": sentences(LM_FIRST("000000002", OTHER_BLOCK)), "b2.png": sentences(LM_SECOND(OTHER_BLOCK)) }
+    });
+    const result = await drainInbox([file("b1.png"), file("b2.png")], status, deps);
+    expect(calls.removed).toEqual([["b1.png", "b2.png"]]);
+    expect(result).toMatchObject({ orders: 0, ordersAlready: 1, waiting: 0 });
+    expect(result.summary).toBe("1 LINE MAN order was already in the ledger.");
   });
 
   test("LINE MAN pages added at different times are all kept, and nothing is posted", async () => {

@@ -422,12 +422,23 @@ export function progressLine(done: number, total: number): string {
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** "1 receipt and 2 LINE MAN orders were already in the ledger.", or null when there are none. */
+function alreadyHeld(receipts: number, orders: number): string | null {
+  const parts = [
+    receipts > 0 ? count(receipts, "receipt", "receipts") : null,
+    orders > 0 ? count(orders, "LINE MAN order", "LINE MAN orders") : null
+  ].filter((part): part is string => part !== null);
+  if (parts.length === 0) return null;
+  return `${parts.join(" and ")} ${receipts + orders === 1 ? "was" : "were"} already in the ledger.`;
+}
+
 /**
  * "2 receipts and 1 LINE MAN order imported. 3 slips need money in or out." The count of files still
  * waiting is left out on purpose: the list shows it live, and a figure fixed here went stale after a Remove.
  */
 export function describeDrain(result: {
-  receipts: number; orders: number; slips: number; statements?: number; statementsAlready?: number; statementsEmpty?: number;
+  receipts: number; orders: number; slips: number; receiptsAlready?: number; ordersAlready?: number;
+  statements?: number; statementsAlready?: number; statementsEmpty?: number;
 }): string {
   const statements = result.statements ?? 0;
   const imported = [
@@ -437,6 +448,8 @@ export function describeDrain(result: {
   ].filter((part): part is string => part !== null);
   const sentences = [
     imported.length > 0 ? `${imported.join(" and ")} imported.` : null,
+    // A capture the ledger answered as already held stored nothing, so it is not called imported (D-241 live finding).
+    alreadyHeld(result.receiptsAlready ?? 0, result.ordersAlready ?? 0),
     (result.statementsAlready ?? 0) > 0 ? `${count(result.statementsAlready ?? 0, "statement was", "statements were")} already in the ledger.` : null,
     (result.statementsEmpty ?? 0) > 0 ? `${count(result.statementsEmpty ?? 0, "statement", "statements")} had no transactions.` : null,
     result.slips > 0 ? `${count(result.slips, "slip needs", "slips need")} money in or out.` : null
