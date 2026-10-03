@@ -408,6 +408,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-238** — Review fixes for the server statement path, a server masked dump, empty statements flagged, and KBANK's Thai print
 - **D-237** — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 - **D-236** — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 - **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
@@ -423,6 +424,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-225** — Delivery statistics are computed in SQL on `/deliveries` at each order's real cost, and never added to a ledger total
 - **D-224** — A ไทยช่วยไทย order shows its real cost, 40% of the wallet-paid food plus the fee, and is not linked to the wallet payment
 - **D-223** — LINE MAN orders are read from order-page screenshots, match on what was charged, keep their own facts in a new table, and propose no automatic match until measured
+
+## D-238 — Review fixes for the server statement path, a server masked dump, empty statements flagged, and KBANK's Thai print
+
+- Date: 2026-10-03
+- Status: **Shipped as `f4449dd` and `83fdc04`, deployed, confirmed live 2026-10-03.** No migration.
+- **D-237's four accepted review findings, fixed (`f4449dd`).** (1) An otherwise clean statement whose rows already exist (`source_transactions` fingerprints, computed as `confirm-import.ts` does; `lib/server/fingerprint-lookup.ts`) is held as `overlap` instead of auto-confirmed, because `confirm_import` would skip those rows unseen. `/import` still has no overlap warning; the Inbox reason says it. (2) Held statements are remembered per device and skipped until the next build (`NEXT_PUBLIC_BUILD_ID`, set in `next.config.ts` from `VERCEL_GIT_COMMIT_SHA` or the build time); `locked`, `no-passwords`, `needs-account` and `confirm-failed` are never remembered, since the owner can fix them without a deploy. (3) The Inbox object's size is checked from Storage metadata before the download. (4) The mailbox session is released once the bytes are read; the fetched flag uses a fresh short session.
+- **`channel_bankuse.pdf` is skipped by name** (owner's call): KBank's channel-usage notice, never a statement (`lib/server/statement-mailbox.ts`).
+- **Server masked dump (owner asked to automate the dump step).** `mode: "dump"` on both statement routes opens the PDF with the stored passwords and returns `renderMaskedDump` output (moved from `scripts/mask-statement.mjs` into `lib/masked-diagnostics.ts`), **shapes only** — the label sections the offline script prints unmasked are masked here (`finance-reviewer`: a short name next to an amount would otherwise leak; red-proved test in `tests/privacy.test.ts`). Never imports or flags. This replaces the owner typing a password for a mailbox statement the reader refuses.
+- **Empty statements (owner's call: flag, don't import; `83fdc04`).** `EMPTY_STATEMENT` only when the heading and frame read, there are no rows and no brought-forward line, no grid line carries a digit, and both item counts and both totals are zero; anything less stays `INVALID_ROW_CONTENT`. The mailbox flags it fetched, an Inbox drop leaves the queue, `/import` says there is nothing to import. Never reaches `confirm_import` (which requires a row).
+- **KBANK's Thai-language print.** The held "one-page variant" was the Thai print, not a short layout. Its wordings were inferred from the server dump's letter counts and positions, then confirmed live: the statement read 3 rows with totals cross-checked. Patterns accept English or Thai and compare Thai with combining marks folded; English matching is unchanged (`docs/KBANK_CONTRACT.md`).
+- **Evidence.** Shared-copy probe 15 of 16 ok, `KBANK-01` the glossary refused as designed. Live: read mode answered `empty` (SCB) and 3 cross-checked rows (KBANK); Sync all mail said "1 statement imported. 1 statement had no transactions."; the mailbox lists nothing after it. Vitest 1290 passed / 106 skipped (Docker not run on the owner's request), tsc and ESLint clean, no local `pnpm build` (Vercel built both). Accepted lows from review: the fresh-session flag is not re-verified by UIDVALIDITY; a Storage `info()` error reads as NOT_FOUND; an `overlap` mailbox statement is re-downloaded on every Sync.
 
 ## D-237 — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 
