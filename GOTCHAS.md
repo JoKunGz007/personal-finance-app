@@ -254,6 +254,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A total that honours a flag on one branch and not the other disagrees with itself in one keystroke
 - `display: none` on an empty `aria-live` region defeats the reason it was rendered empty
 - Merging per-account pages into one timeline shows gaps unless it stops at the shallowest paged account
+- A POST to a route that is not deployed yet answers 200, not 404
 
 ## Traps
 
@@ -272,6 +273,6 @@ these section headings rather than a third raise. The owner chose the split.
 | Statement and slip parsing | 21 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 34 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
-| App, auth, routing and accessibility | 42 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
+| App, auth, routing and accessibility | 43 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
 | Layout, typography and accessibility | 27 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 

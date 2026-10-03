@@ -348,3 +348,10 @@ the top of `GOTCHAS.md`.
 - Cause: each account pages independently, so windows reach back to different dates. Below the last loaded row of an account that still has more to fetch, that account's rows exist but are not loaded, and rendering the other accounts' rows there presents a partial ledger as a whole one. The sibling trap above floors the combined *balance*; the rows need the same floor, and retiring the balance floor (migration 022) left them with none.
 - Avoid: cut the merged view at the newest of the last loaded rows among accounts with `hasMore`, and make every reader of "what is shown" — rows, held ids, the loaded count — go through the one cut. Do not cut a single-account scope, a complete window, or reconciliation's input.
 - Verify: 2026-09-16, found by the owner on the deployed build (D-201). `tests/ledger-window.test.ts` *the merged view stops where a paged account's window stops* fails on the uncut version; live, one *Load older rows* filled the empty days.
+
+## A POST to a route that is not deployed yet answers 200, not 404
+
+- Symptom: polling a new `/api/v1/` route until it stops answering 404 reports success on the first try, before the deploy has finished.
+- Cause: on the deployed app an unknown path is served by Next's not-found page (`x-matched-path: /_not-found`), which answers a POST with **200** and an HTML body.
+- Avoid: when checking that a route is live, look for the route's own status or `x-matched-path` naming it, never for "not 404".
+- Verify: 2026-10-04, D-241: `/api/v1/line/nonexistent` answered 200 `/_not-found` while `/api/v1/line/webhook` answered its own 503.
