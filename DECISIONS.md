@@ -424,11 +424,20 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-240** — `/import` warns before Confirm when a statement's rows are already in the ledger
 - **D-239** — The eighteenth boundary moves D-223 … D-234 on the owner's word
 - **D-238** — Review fixes for the server statement path, a server masked dump, empty statements flagged, and KBANK's Thai print
 - **D-237** — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 - **D-236** — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 - **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
+
+## D-240 — `/import` warns before Confirm when a statement's rows are already in the ledger
+
+- Date: 2026-10-03
+- Status: **Shipped as `3805d7d`, deployed, confirmed live.** No migration.
+- **Why.** `confirm_import` skips a row whose fingerprint is already stored, so an overlapping statement confirmed on `/import` lost rows unseen — the half of D-237's accepted limit that D-238's `overlap` hold only moved to this page. Owner's call: warn.
+- **What.** `POST /api/v1/imports/existing` (`strongOwnerClient`, strict body, ≤2,000 64-hex fingerprints, RLS read of `source_transactions` via `existingFingerprints` in `lib/server/fingerprint-lookup.ts`) answers the stored subset. The bench computes fingerprints as `confirm-import.ts` does, then says "N of M rows are already in the ledger and will be skipped." or "Every row is already in the ledger; confirming adds nothing.", and tags each such row. **Advisory**: a failed lookup says so and never blocks Confirm (wording in `lib/existing-rows.ts`).
+- **Evidence.** Live: `/import?mailbox=32:2`, the KBANK statement imported by D-238's Sync, showed the all-rows notice and 3 tags (not confirmed). Vitest 1304 / 106 skipped, tsc and ESLint clean. Not re-checked after Confirm: the notice keeps its pre-confirm wording.
 
 ## D-239 — The eighteenth boundary moves D-223 … D-234 on the owner's word
 
