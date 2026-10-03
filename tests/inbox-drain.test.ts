@@ -3,7 +3,7 @@ import { captureSlips, drainInbox, type DrainDeps, type SlipPosted, type SlipSca
 import type { StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import { readLinemanPage } from "@/lib/delivery-lineman";
 import {
-  planStatement, reviewHref, STATEMENT_LOCKED_REASON, STATEMENT_NO_PASSWORDS_REASON, statementHeldReason, type PdfReply,
+  BUILD_ID, planStatement, reviewHref, statementNeedsReview, STATEMENT_LOCKED_REASON, STATEMENT_NO_PASSWORDS_REASON, statementHeldReason, type PdfReply,
   addedTogether, DIFFERENT_TIMES_REASON, describeDrain, describeSlipCapture, NOT_YET, parseRemembered, planLinemanOrders, planPdf,
   planReceiptScreenshots, progressLine, pruneRemembered, recogniseImage, REMEMBERED_KEY, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON,
   SLIP_WAITING_REASON, slipPostBody, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON, type ReadySlip, type RememberedKind
@@ -355,9 +355,23 @@ describe("the remembered-file memory", () => {
     for (const bad of [null, "", "not json", '["a.png","b.jpg"]', "3", "null"]) expect(parseRemembered(bad).size).toBe(0);
   });
 
-  test("the key is v2, so what v1 stored (a bare list of names, under the old key) is never read", () => {
-    expect(REMEMBERED_KEY).toBe("inbox:unrecognised:v2");
+  test("the key is v3, so what v1 stored (a bare list of names, under the old key) is never read", () => {
+    expect(REMEMBERED_KEY).toBe("inbox:unrecognised:v3");
     expect(parseRemembered('["a.png"]').size).toBe(0);
+  });
+
+  test("a held-statement entry is read on the same build and ignored on another", () => {
+    const raw = '{"a.pdf":{"kind":"held","reason":"overlap","build":"abc"},"b.png":"unrecognised","c.pdf":{"kind":"held","reason":"warnings","build":"old"},"d.pdf":{"kind":"held","build":"abc"}}';
+    expect([...parseRemembered(raw, "abc")]).toEqual([
+      ["a.pdf", { kind: "held", reason: "overlap", build: "abc" }], ["b.png", "unrecognised"]
+    ]);
+    expect([...parseRemembered(raw, "next")].map(([name]) => name)).toEqual(["b.png"]);
+  });
+
+  test("keeps a held entry only while its file is in the queue", () => {
+    const held = { kind: "held", reason: "overlap", build: "abc" } as const;
+    const remembered = new Map<string, RememberedKind>([["a.pdf", held], ["gone.pdf", held]]);
+    expect(pruneRemembered(remembered, ["a.pdf"])).toEqual({ "a.pdf": held });
   });
 
   test("keeps only the names still in the queue", () => {
@@ -556,8 +570,10 @@ describe("planStatement", () => {
     expect(planStatement({ kind: "held", reason: "unreadable" })).toMatchObject({ action: "keep", review: false });
   });
 
-  test("needs-account, warnings, confirm-failed and assembly codes stay with a review link", () => {
-    for (const reason of ["needs-account", "warnings", "confirm-failed", "NOT_CROSS_CHECKED"]) {
+  test("needs-account, warnings, overlap, confirm-failed and assembly codes stay with a review link", () => {
+    expect(statementHeldReason("overlap")).toBe("Some rows of this statement are already in the ledger, so it waits for a look.");
+    expect(statementNeedsReview("overlap")).toBe(true);
+    for (const reason of ["needs-account", "warnings", "overlap", "confirm-failed", "NOT_CROSS_CHECKED"]) {
       const plan = planStatement({ kind: "held", reason });
       expect(plan).toMatchObject({ action: "keep", review: true });
       expect(statementHeldReason(reason)).not.toBe("");
@@ -600,6 +616,34 @@ describe("drainInbox with statement PDFs", () => {
     expect(calls.removed).toEqual([]);
     expect(result.reasons[NAME]).toBe(STATEMENT_LOCKED_REASON);
     expect(result.reviewable).toEqual([]);
+  });
+
+  test("a held statement is remembered with this build, and the next drain skips download and server read", async () => {
+    const first = fakes({ statement: { ok: true, answer: { kind: "held", reason: "overlap" } } });
+    await drainInbox([file(NAME)], status, first.deps);
+    expect(first.calls.saved?.get(NAME)).toEqual({ kind: "held", reason: "overlap", build: BUILD_ID });
+
+    const second = fakes({ remembered: { [NAME]: { kind: "held", reason: "overlap", build: BUILD_ID } } });
+    const result = await drainInbox([file(NAME)], status, second.deps);
+    expect(second.calls.downloads).toEqual([]);
+    expect(second.calls.statementPosts).toEqual([]);
+    expect(result.reasons[NAME]).toBe(statementHeldReason("overlap"));
+    expect(result.reviewable).toEqual([NAME]);
+    expect(second.calls.saved?.has(NAME)).toBe(true);
+  });
+
+  test("locked, password-less, needs-account, confirm-failed and failed statements are not remembered", async () => {
+    for (const statement of [
+      { ok: true, answer: { kind: "held", reason: "locked" } },
+      { ok: true, answer: { kind: "held", reason: "no-passwords" } },
+      { ok: true, answer: { kind: "held", reason: "needs-account" } },
+      { ok: true, answer: { kind: "held", reason: "confirm-failed" } },
+      { ok: false, why: "x" }
+    ] as const) {
+      const { deps, calls } = fakes({ statement });
+      await drainInbox([file(NAME)], status, deps);
+      expect(calls.saved?.has(NAME)).toBe(false);
+    }
   });
 
   test("a failed request keeps the file with the technical reason and is not remembered as unrecognised", async () => {

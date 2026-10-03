@@ -17,13 +17,13 @@ export type MailboxStatementOutcome = InboxStatementOutcome & {
 };
 
 export async function processMailboxStatement(
-  mode: "import" | "read",
+  mode: "import" | "read" | "dump",
   deps: MailboxStatementDeps
 ): Promise<MailboxStatementOutcome> {
-  const { markFetched, ...core } = deps;
-  const outcome = await processInboxStatement(mode, core);
+  // Not a spread: `sourceName` is a getter that only has its value once the download has run.
+  const outcome = await processInboxStatement(mode, deps);
   if (mode === "import" && (outcome.kind === "captured" || outcome.kind === "duplicate")) {
-    return { ...outcome, flagged: await markFetched() };
+    return { ...outcome, flagged: await deps.markFetched() };
   }
   return outcome;
 }

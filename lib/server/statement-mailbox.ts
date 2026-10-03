@@ -65,6 +65,9 @@ export function attachmentName(node: MessagePart): string {
     ?? "";
 }
 
+// KBank sends this beside statements; it is a channel-usage notice, not a statement.
+export const NON_STATEMENT_ATTACHMENT = "channel_bankuse.pdf";
+
 /**
  * Every PDF attachment in one message's body structure, depth first.
  *
@@ -82,6 +85,7 @@ export function collectPdfParts(root: MessagePart | undefined, uid: number): Sta
     // A container node has children and no part path of its own; only leaves are downloadable.
     if (node.childNodes && node.childNodes.length > 0) return;
     if (!node.part || !isPdfAttachment(node)) return;
+    if (attachmentName(node).toLowerCase() === NON_STATEMENT_ATTACHMENT) return;
     found.push({
       uid,
       part: node.part,

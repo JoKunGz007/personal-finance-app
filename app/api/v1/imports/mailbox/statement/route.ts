@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { accountListSchema } from "@/lib/accounts";
 import { confirmImport } from "@/lib/server/confirm-import";
+import { existingFingerprintCount } from "@/lib/server/fingerprint-lookup";
 import { processMailboxStatement } from "@/lib/server/mailbox-statement";
 import { mailboxConfig, markFetched, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
-import { readStatementPdf } from "@/lib/server/statement-pdf-node";
+import { readStatementPdf, readStatementPdfPages } from "@/lib/server/statement-pdf-node";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { isSafePartPath, MAX_ATTACHMENT_BYTES, parseUid } from "@/lib/statement-sync";
 
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
 const bodySchema = z.object({
   uid: z.number(),
   part: z.string(),
-  mode: z.enum(["import", "read"])
+  mode: z.enum(["import", "read", "dump"])
 }).strict();
 
 const FAILURE_STATUS = { NOT_FOUND: 404, TOO_LARGE: 413, ACCOUNTS_UNAVAILABLE: 502, LOOKUP_FAILED: 502 } as const;
@@ -24,6 +25,7 @@ const FAILURE_STATUS = { NOT_FOUND: 404, TOO_LARGE: 413, ACCOUNTS_UNAVAILABLE: 5
  * attachment is fetched through the existing mailbox session, then `processInboxStatement` reads it
  * with the server's stored passwords and, in import mode, saves it when it is clean. **This is the one
  * mailbox route that decrypts**, by design; `GET` on the attachment path still streams ciphertext.
+ * `mode: "dump"` returns the masked structural dump instead (never imports, never flags).
  * The message is flagged fetched here, on the server, only after the statement is in the ledger
  * (captured or already there). `uid`/`part` are checked as the attachment route checks them, and
  * `verifyAttachment` re-derives them from the mailbox.
@@ -59,18 +61,25 @@ export async function POST(request: Request) {
   }
 
   const { supabase } = auth;
+  let sourceName = "";
   try {
     const outcome = await processMailboxStatement(mode, {
       download: async () => {
         const attachment = await verifyAttachment(session.client, settings.config.senders, uid, part);
         if (!attachment) return { ok: false, code: "NOT_FOUND" };
+        sourceName = attachment.name;
         if (attachment.sizeBytes > MAX_ATTACHMENT_BYTES) return { ok: false, code: "TOO_LARGE" };
         const download = await session.client.download(uid, part, { uid: true, maxBytes: MAX_ATTACHMENT_BYTES });
         const chunks: Buffer[] = [];
         for await (const chunk of download.content) chunks.push(Buffer.from(chunk as Uint8Array));
+        // The bytes are in hand: do not hold the mailbox through decrypt and confirm.
+        await session.release();
         return { ok: true, bytes: new Uint8Array(Buffer.concat(chunks)) };
       },
       readStatementPdf,
+      readStatementPdfPages,
+      // Read after the download has set it; only a masked dump ever shows it.
+      get sourceName() { return sourceName; },
       listAccounts: async () => {
         const { data, error } = await supabase
           .from("accounts")
@@ -88,8 +97,24 @@ export async function POST(request: Request) {
           .limit(1);
         return error ? null : (data?.length ?? 0) > 0;
       },
+      existingFingerprintCount: (accountId, fingerprints) => existingFingerprintCount(supabase, accountId, fingerprints),
       confirmImport: (body) => confirmImport(supabase, body),
-      markFetched: () => markFetched(session.client, uid, part)
+      // The first session was released after the download; the flag gets a fresh, short one.
+      markFetched: async () => {
+        let fresh;
+        try {
+          fresh = await openMailbox(settings.config);
+        } catch {
+          return false;
+        }
+        try {
+          return await markFetched(fresh.client, uid, part);
+        } catch {
+          return false;
+        } finally {
+          await fresh.release().catch(() => {});
+        }
+      }
     });
 
     if (outcome.kind === "failed") {

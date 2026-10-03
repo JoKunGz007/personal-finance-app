@@ -9,6 +9,9 @@ import { securityHeaders } from "./lib/security-headers";
 const headers = securityHeaders(process.env.NEXT_PUBLIC_SUPABASE_URL);
 
 const nextConfig: NextConfig = {
+  // A fresh id for every build, so a device's remembered held statements are retried once per deploy
+  // (`BUILD_ID` in lib/inbox-drain.ts). The commit sha when Vercel gives one, else the build time.
+  env: { NEXT_PUBLIC_BUILD_ID: process.env.VERCEL_GIT_COMMIT_SHA ?? String(Date.now()) },
   poweredByHeader: false,
   reactStrictMode: true,
   // The page was `/deliveries` until it held rides too (D-230); old links still land. Not

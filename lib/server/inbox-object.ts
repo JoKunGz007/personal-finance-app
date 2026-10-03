@@ -12,7 +12,14 @@ export type InboxDownload =
   | { ok: false; code: "NOT_FOUND" | "TOO_LARGE" };
 
 export async function downloadInboxObject(client: SupabaseClient, uid: string, objectName: string): Promise<InboxDownload> {
-  const { data, error } = await client.storage.from(BUCKET).download(`${uid}/${objectName}`);
+  // The size from Storage's metadata first, so an oversized object is never pulled into memory.
+  const path = `${uid}/${objectName}`;
+  const bucket = client.storage.from(BUCKET);
+  const info = await bucket.info(path);
+  if (info.error || !info.data) return { ok: false, code: "NOT_FOUND" };
+  if (typeof info.data.size === "number" && info.data.size > INBOX_MAX_BYTES) return { ok: false, code: "TOO_LARGE" };
+  // The check after the download stays as a backstop for metadata that carries no size.
+  const { data, error } = await bucket.download(path);
   if (error || !data) return { ok: false, code: "NOT_FOUND" };
   if (data.size > INBOX_MAX_BYTES) return { ok: false, code: "TOO_LARGE" };
   return { ok: true, bytes: new Uint8Array(await data.arrayBuffer()) };

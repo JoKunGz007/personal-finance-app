@@ -8,7 +8,7 @@ import type { browserSupabase } from "@/lib/browser/supabase";
 import type { LinemanPage, ParsedLinemanOrder } from "@/lib/delivery-lineman";
 import { postStatementImport, type StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import {
-  describeDrain, needsStatementRoute, NOT_YET, planLinemanOrders, planPdf, planReceiptScreenshots, planStatement, progressLine, recogniseImage,
+  BUILD_ID, describeDrain, FORGOTTEN_HELD, needsStatementRoute, statementHeldReason, statementNeedsReview, NOT_YET, planLinemanOrders, planPdf, planReceiptScreenshots, planStatement, progressLine, recogniseImage,
   SLIP_AMOUNT_REASON, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON, SLIP_WAITING_REASON, slipPostBody, slipReviewReason,
   type PdfReply, type ReadySlip, type RememberedKind, type SlipPostBody
 } from "@/lib/inbox-drain";
@@ -194,9 +194,15 @@ export async function drainInbox(
     const kind = kindOfObject(file.name);
     if (kind === null) { reasons[file.name] = NOT_YET; continue; }
     // Settled on an earlier drain: no download, no scan and no second Vision read.
-    const earlier = kind === "image" ? remembered.get(file.name) : undefined;
-    if (earlier !== undefined) {
+    const earlier = remembered.get(file.name);
+    if (kind === "image" && typeof earlier === "string") {
       reasons[file.name] = earlier === "slip-review" ? SLIP_REVIEW_REMEMBERED_REASON : NOT_YET;
+      continue;
+    }
+    // A statement the server held on this build: shown again without a download or a server read.
+    if (kind === "pdf" && typeof earlier === "object") {
+      reasons[file.name] = statementHeldReason(earlier.reason);
+      if (statementNeedsReview(earlier.reason)) reviewable.push(file.name);
       continue;
     }
     const downloaded = await deps.download(file.name);
@@ -213,6 +219,11 @@ export async function drainInbox(
         if (statementPlan.action === "keep") {
           reasons[file.name] = statementPlan.reason;
           if (statementPlan.review) reviewable.push(file.name);
+          // Not remembered: locked, password-less and needs-account (the owner fixes them without a
+          // deploy) and confirm-failed (may be a transient error). They are asked again next open.
+          if (answered.answer.kind === "held" && !FORGOTTEN_HELD.has(answered.answer.reason)) {
+            remembered.set(file.name, { kind: "held", reason: answered.answer.reason, build: BUILD_ID });
+          }
           continue;
         }
         if (await release([file.name])) {

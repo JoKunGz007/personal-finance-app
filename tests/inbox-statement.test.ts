@@ -5,7 +5,7 @@ import { confirmSchema, type ConfirmImportBody, type ConfirmImportResult } from 
 import {
   inboxIdempotencyKey, processInboxStatement, type InboxStatementDeps
 } from "@/lib/server/inbox-statement";
-import type { StatementPdfRead } from "@/lib/server/statement-pdf-node";
+import type { StatementPdfPages, StatementPdfRead } from "@/lib/server/statement-pdf-node";
 import { validStatement } from "./fixtures/krungthai-layout-v1";
 
 const ACCOUNT_ID = "11111111-2222-4333-8444-555555555555";
@@ -28,7 +28,10 @@ function deps(over: Partial<InboxStatementDeps> = {}): InboxStatementDeps & { co
     download: async () => ({ ok: true as const, bytes: BYTES }),
     readStatementPdf: async (): Promise<StatementPdfRead> => ({ kind: "read", frame, rows }),
     listAccounts: async () => [account()],
+    readStatementPdfPages: async (): Promise<StatementPdfPages> => ({ kind: "pages", pages: validStatement }),
+    sourceName: "statement_1234567890.pdf",
     artifactExists: async () => false,
+    existingFingerprintCount: vi.fn<InboxStatementDeps["existingFingerprintCount"]>(async () => 0),
     confirmImport: vi.fn(async (): Promise<ConfirmImportResult> => ({
       kind: "ok", batchId: "b", payloadDigest: "d", fingerprints: [], warnings: []
     })),
@@ -98,6 +101,29 @@ describe("processInboxStatement", () => {
     const d = deps({ readStatementPdf: async () => ({ kind: "read", frame: reordered, rows: printed }) });
     expect(await processInboxStatement("import", d)).toMatchObject({ kind: "held", reason: "warnings" });
     expect(d.confirmImport).not.toHaveBeenCalled();
+  });
+
+  it("holds a statement some of whose rows are already stored, without confirming", async () => {
+    const d = deps({ existingFingerprintCount: vi.fn(async () => 1) });
+    const out = await processInboxStatement("import", d);
+    expect(out).toMatchObject({ kind: "held", reason: "overlap" });
+    expect(d.confirmImport).not.toHaveBeenCalled();
+    const [accountId, fingerprints] = (d.existingFingerprintCount as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string[]];
+    expect(accountId).toBe(ACCOUNT_ID);
+    expect(fingerprints).toHaveLength(4);
+    for (const fingerprint of fingerprints) expect(fingerprint).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it("fails closed when the fingerprint lookup is unknown", async () => {
+    const d = deps({ existingFingerprintCount: async () => null });
+    expect(await processInboxStatement("import", d)).toEqual({ kind: "failed", code: "LOOKUP_FAILED" });
+    expect(d.confirmImport).not.toHaveBeenCalled();
+  });
+
+  it("captures when no row is stored yet", async () => {
+    const d = deps({ existingFingerprintCount: async () => 0 });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "captured" });
+    expect(d.confirmImport).toHaveBeenCalledTimes(1);
   });
 
   it("confirms a clean statement with a key derived from the artifact digest", async () => {

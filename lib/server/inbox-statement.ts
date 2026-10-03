@@ -1,12 +1,13 @@
 import type { LedgerAccount } from "@/lib/accounts";
-import { sha256Hex, sha256HexBytes } from "@/lib/canonical";
+import { rowFingerprint, sha256Hex, sha256HexBytes } from "@/lib/canonical";
+import { maskName, renderMaskedDump } from "@/lib/masked-diagnostics";
 import { assembleImportPayload, type AssemblyErrorCode } from "@/lib/import-assembly";
 import type { SourceRowCandidate } from "@/lib/statement";
 import type { StatementFrame } from "@/lib/statement-frame";
 import { soleMatchingAccount } from "@/lib/statement-binding";
 import type { ConfirmImportBody, ConfirmImportResult } from "@/lib/server/confirm-import";
 import type { InboxDownload } from "@/lib/server/inbox-object";
-import type { StatementPdfRead } from "@/lib/server/statement-pdf-node";
+import type { StatementPdfPages, StatementPdfRead } from "@/lib/server/statement-pdf-node";
 
 // Reads one statement the owner dropped into the Inbox and, when it is clean, imports it (D-235).
 // A clean statement is bound to exactly one account, passes every refusal and carries no
@@ -16,14 +17,20 @@ import type { StatementPdfRead } from "@/lib/server/statement-pdf-node";
 export type InboxStatementDeps = {
   download: () => Promise<InboxDownload>;
   readStatementPdf: (bytes: Uint8Array) => Promise<StatementPdfRead>;
+  /** The text layer for the masked dump (`dump` mode only). */
+  readStatementPdfPages: (bytes: Uint8Array) => Promise<StatementPdfPages>;
+  /** The file's own name; it only ever reaches a dump masked. */
+  sourceName: string;
   listAccounts: () => Promise<readonly LedgerAccount[] | null>;
   /** True when an import artifact with this digest already exists for the owner; null when unknown. */
   artifactExists: (artifactDigest: string) => Promise<boolean | null>;
+  /** How many of these row fingerprints the owner already has stored for the account; null when unknown. */
+  existingFingerprintCount: (accountId: string, fingerprints: string[]) => Promise<number | null>;
   confirmImport: (body: ConfirmImportBody) => Promise<ConfirmImportResult>;
 };
 
 export type HeldReason =
-  | "locked" | "no-passwords" | "unreadable" | "needs-account" | "warnings" | "confirm-failed"
+  | "locked" | "no-passwords" | "unreadable" | "needs-account" | "warnings" | "overlap" | "confirm-failed"
   | AssemblyErrorCode;
 
 export type InboxStatementOutcome =
@@ -36,6 +43,7 @@ export type InboxStatementOutcome =
       /** For `needs-account` only: what the statement printed. */
       bankCode?: string; lastFour?: string;
     }
+  | { kind: "dump"; markdown: string }
   | { kind: "read"; artifactDigest: string; frame: StatementFrame; rows: SourceRowCandidate[] }
   | { kind: "failed"; code: "NOT_FOUND" | "TOO_LARGE" | "ACCOUNTS_UNAVAILABLE" | "LOOKUP_FAILED" };
 
@@ -50,13 +58,24 @@ export async function inboxIdempotencyKey(artifactDigest: string): Promise<strin
 }
 
 export async function processInboxStatement(
-  mode: "import" | "read",
+  mode: "import" | "read" | "dump",
   deps: InboxStatementDeps
 ): Promise<InboxStatementOutcome> {
   const downloaded = await deps.download();
   if (!downloaded.ok) return { kind: "failed", code: downloaded.code };
   const { bytes } = downloaded;
   const artifactDigest = await sha256HexBytes(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+
+  if (mode === "dump") {
+    // A structural dump only: no duplicate lookup, no account, no confirm, nothing written anywhere.
+    const opened = await deps.readStatementPdfPages(bytes);
+    if (opened.kind === "locked" || opened.kind === "no-passwords") return { kind: "held", reason: opened.kind, artifactDigest };
+    if (opened.kind === "unreadable") return { kind: "held", reason: "unreadable", code: opened.code, artifactDigest };
+    return {
+      kind: "dump",
+      markdown: renderMaskedDump({ label: "server", sourceName: maskName(deps.sourceName), pageCount: opened.pages.length, pages: opened.pages, shapesOnly: true })
+    };
+  }
 
   if (mode === "import") {
     const exists = await deps.artifactExists(artifactDigest);
@@ -84,6 +103,14 @@ export async function processInboxStatement(
   });
   if (!assembled.ok) return { kind: "held", reason: assembled.code, artifactDigest };
   if (assembled.warnings.length > 0) return { kind: "held", reason: "warnings", artifactDigest };
+
+  // `confirm_import` silently skips a row whose fingerprint is already stored, so a statement that
+  // overlaps one already imported would "succeed" while saving only part of it. Held for a look instead.
+  const { payload } = assembled;
+  const fingerprints = await Promise.all(payload.rows.map((row) => rowFingerprint(payload.accountId, payload.bankCode, row)));
+  const existing = await deps.existingFingerprintCount(payload.accountId, fingerprints);
+  if (existing === null) return { kind: "failed", code: "LOOKUP_FAILED" };
+  if (existing > 0) return { kind: "held", reason: "overlap", artifactDigest };
 
   const confirmed = await deps.confirmImport({
     idempotencyKey: await inboxIdempotencyKey(artifactDigest),

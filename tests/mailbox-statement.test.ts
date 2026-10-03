@@ -19,7 +19,10 @@ function deps(over: Partial<MailboxStatementDeps> = {}) {
       id: ACCOUNT_ID, bank_code: "KTB", label: "Invented savings", account_type: "savings",
       last_four: "7890", currency: "THB", timezone: "Asia/Bangkok"
     } as LedgerAccount],
+    readStatementPdfPages: async () => ({ kind: "pages", pages: validStatement }),
+    sourceName: "statement_1234567890.pdf",
     artifactExists: async () => false,
+    existingFingerprintCount: async () => 0,
     confirmImport: async (): Promise<ConfirmImportResult> => ({ kind: "ok", batchId: "b", payloadDigest: "d", fingerprints: [], warnings: [] }),
     markFetched,
     ...over
@@ -53,10 +56,24 @@ describe("processMailboxStatement", () => {
     expect(markFetched).not.toHaveBeenCalled();
   });
 
+  it("leaves an overlapping statement unflagged", async () => {
+    const { base, markFetched } = deps({ existingFingerprintCount: async () => 2 });
+    expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "held", reason: "overlap" });
+    expect(markFetched).not.toHaveBeenCalled();
+  });
+
   it("leaves a failed fetch unflagged", async () => {
     const { base, markFetched } = deps({ download: async () => ({ ok: false, code: "NOT_FOUND" }) });
     expect(await processMailboxStatement("import", base)).toEqual({ kind: "failed", code: "NOT_FOUND" });
     expect(markFetched).not.toHaveBeenCalled();
+  });
+
+  it("never flags in dump mode, and confirms nothing", async () => {
+    const confirmImport = vi.fn();
+    const { base, markFetched } = deps({ confirmImport });
+    expect((await processMailboxStatement("dump", base)).kind).toBe("dump");
+    expect(markFetched).not.toHaveBeenCalled();
+    expect(confirmImport).not.toHaveBeenCalled();
   });
 
   it("never flags in read mode, and confirms nothing", async () => {

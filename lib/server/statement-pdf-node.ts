@@ -4,7 +4,7 @@
 // `PasswordException`. The password, the PDF and its page text stay inside this function: a result
 // carries the parsed statement or a fixed code, never a password, a pdf.js message or page text.
 
-import type { LayoutResult, StatementFrame } from "@/lib/statement-frame";
+import type { StatementFrame } from "@/lib/statement-frame";
 import type { SourceRowCandidate } from "@/lib/statement";
 import { readStatement } from "@/lib/read-statement";
 import { buildPageText } from "@/lib/statement-page-text";
@@ -23,14 +23,21 @@ export type StatementPdfRead =
 // pdf.js reads this option but its types omit it (scripts/mask-statement.mjs sets it too).
 const NO_EVAL = { isEvalSupported: false };
 
-type Attempt = { kind: "opened"; result: LayoutResult } | { kind: "password" } | { kind: "failed" };
+type Attempt<T> = { kind: "opened"; value: T } | { kind: "password" } | { kind: "failed" };
 
-export async function readStatementPdf(bytes: Uint8Array): Promise<StatementPdfRead> {
+/** The pages of a PDF opened with no password or a stored one, handed to `extract`; or why it did not open. */
+type Opened<T> =
+  | { kind: "opened"; value: T }
+  | { kind: "locked" }
+  | { kind: "no-passwords" }
+  | { kind: "unreadable" };
+
+async function openPages<T>(bytes: Uint8Array, extract: (pages: PageText[]) => T): Promise<Opened<T>> {
   // Loading pdf.js is allowed to throw: a load failure is the route's 500, not "not a statement".
   const pdfjs = await loadPdfJs();
   const passwords = storedStatementPasswords();
 
-  const attempt = async (password: string | undefined): Promise<Attempt> => {
+  const attempt = async (password: string | undefined): Promise<Attempt<T>> => {
     // pdf.js transfers the buffer it is given, so each attempt gets its own copy.
     const task = pdfjs.getDocument({
       data: new Uint8Array(bytes),
@@ -47,7 +54,7 @@ export async function readStatementPdf(bytes: Uint8Array): Promise<StatementPdfR
           const content = await (await document.getPage(pageNumber)).getTextContent();
           pages.push(buildPageText(content.items));
         }
-        return { kind: "opened", result: readStatement(pages) };
+        return { kind: "opened", value: extract(pages) };
       } finally {
         await document.destroy();
       }
@@ -58,12 +65,9 @@ export async function readStatementPdf(bytes: Uint8Array): Promise<StatementPdfR
     }
   };
 
-  const finish = (outcome: Attempt): StatementPdfRead | null => {
+  const finish = (outcome: Attempt<T>): Opened<T> | null => {
     if (outcome.kind === "password") return null;
-    if (outcome.kind === "failed") return { kind: "unreadable", code: "PDF_PARSE_FAILED" };
-    return outcome.result.ok
-      ? { kind: "read", frame: outcome.result.frame, rows: outcome.result.rows }
-      : { kind: "unreadable", code: outcome.result.code };
+    return outcome.kind === "failed" ? { kind: "unreadable" } : outcome;
   };
 
   const first = finish(await attempt(undefined));
@@ -74,4 +78,26 @@ export async function readStatementPdf(bytes: Uint8Array): Promise<StatementPdfR
     if (done) return done;
   }
   return { kind: "locked" };
+}
+
+export async function readStatementPdf(bytes: Uint8Array): Promise<StatementPdfRead> {
+  const opened = await openPages(bytes, readStatement);
+  if (opened.kind === "unreadable") return { kind: "unreadable", code: "PDF_PARSE_FAILED" };
+  if (opened.kind !== "opened") return { kind: opened.kind };
+  return opened.value.ok
+    ? { kind: "read", frame: opened.value.frame, rows: opened.value.rows }
+    : { kind: "unreadable", code: opened.value.code };
+}
+
+/** The text layer of a statement PDF, for the masked dump only: positioned runs, never rendered back as text. */
+export type StatementPdfPages =
+  | { kind: "pages"; pages: PageText[] }
+  | { kind: "locked" }
+  | { kind: "no-passwords" }
+  | { kind: "unreadable"; code: string };
+
+export async function readStatementPdfPages(bytes: Uint8Array): Promise<StatementPdfPages> {
+  const opened = await openPages(bytes, (pages) => pages);
+  if (opened.kind === "unreadable") return { kind: "unreadable", code: "PDF_PARSE_FAILED" };
+  return opened.kind === "opened" ? { kind: "pages", pages: opened.value } : { kind: opened.kind };
 }

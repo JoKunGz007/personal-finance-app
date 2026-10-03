@@ -2,9 +2,10 @@ import { z } from "zod";
 import { accountListSchema } from "@/lib/accounts";
 import { INBOX_STATEMENT_NAME } from "@/lib/inbox-queue";
 import { confirmImport } from "@/lib/server/confirm-import";
+import { existingFingerprintCount } from "@/lib/server/fingerprint-lookup";
 import { downloadInboxObject } from "@/lib/server/inbox-object";
 import { processInboxStatement } from "@/lib/server/inbox-statement";
-import { readStatementPdf } from "@/lib/server/statement-pdf-node";
+import { readStatementPdf, readStatementPdfPages } from "@/lib/server/statement-pdf-node";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 
 export const runtime = "nodejs";
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   objectName: z.string().regex(INBOX_STATEMENT_NAME),
-  mode: z.enum(["import", "read"])
+  mode: z.enum(["import", "read", "dump"])
 }).strict();
 
 const FAILURE_STATUS = { NOT_FOUND: 404, TOO_LARGE: 413, ACCOUNTS_UNAVAILABLE: 502, LOOKUP_FAILED: 502 } as const;
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
   const outcome = await processInboxStatement(parsed.data.mode, {
     download: () => downloadInboxObject(supabase, user.id, parsed.data.objectName),
     readStatementPdf,
+    readStatementPdfPages,
+    sourceName: parsed.data.objectName,
     listAccounts: async () => {
       const { data, error } = await supabase
         .from("accounts")
@@ -51,6 +54,7 @@ export async function POST(request: Request) {
         .limit(1);
       return error ? null : (data?.length ?? 0) > 0;
     },
+    existingFingerprintCount: (accountId, fingerprints) => existingFingerprintCount(supabase, accountId, fingerprints),
     confirmImport: (body) => confirmImport(supabase, body)
   });
 

@@ -2,6 +2,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { securityHeaders } from "@/lib/security-headers";
+import { processInboxStatement, type InboxStatementDeps } from "@/lib/server/inbox-statement";
+import { processMailboxStatement } from "@/lib/server/mailbox-statement";
+import { validStatement } from "./fixtures/krungthai-layout-v1";
 
 /**
  * Every `.ts` and `.tsx` under `app/`, found rather than listed.
@@ -468,7 +471,8 @@ describe("privacy guardrails", () => {
       expect(code, String(forbidden)).not.toMatch(forbidden);
     }
     expect(code.match(/import \{[^}]*\breadStatementPdf\b[^}]*\} from "([^"]+)"/u)?.[1]).toBe("@/lib/server/statement-pdf-node");
-    expect(code.match(/readStatementPdf/gu)?.length).toBe(2);
+    expect(code.match(/\breadStatementPdf\b/gu)?.length).toBe(2);
+    expect(code.match(/import \{[^}]*\breadStatementPdfPages\b[^}]*\} from "([^"]+)"/u)?.[1]).toBe("@/lib/server/statement-pdf-node");
     const schema = code.match(/z\.object\(\{([\s\S]*?)\}\)\.strict\(\)/u);
     expect(schema, "body schema is strict").not.toBeNull();
     expect([...schema![1]!.matchAll(/^\s*(\w+):/gmu)].map((key) => key[1])).toEqual(["uid", "part", "mode"]);
@@ -746,8 +750,9 @@ describe("privacy guardrails", () => {
     // The harness is the one thing in this repo that opens a real statement. It may write
     // only what the value-free diagnostics produce, so the dump it leaves on disk carries
     // no amount, balance, date, account number, name, or counterparty.
-    expect(harness).toMatch(/await writeFile\(outputPath, renderDump\(\{[^)]*\}\), "utf8"\)/u);
-    const render = /function renderDump\(\{[\s\S]*?\n\}/u.exec(harness)?.[0] ?? "";
+    expect(harness).toMatch(/await writeFile\(outputPath, renderMaskedDump\(\{[^)]*\}\), "utf8"\)/u);
+    // The renderer is shared with the server's dump mode, so it lives in the dependency-free module.
+    const render = /export function renderMaskedDump\([\s\S]*?\n\}\r?\n/u.exec(readFileSync("lib/masked-diagnostics.ts", "utf8"))?.[0] ?? "";
     expect(render).toContain("describeStructure(pages)");
     expect(render).toContain("describeLabelGeometry(pages)");
     expect(render).toContain("describeValueLabels(pages)");
@@ -767,7 +772,8 @@ describe("privacy guardrails", () => {
     // name routinely carries the account number or the holder's name. Every name that
     // reaches a dump, stdout or stderr must go through maskName, and maskName through
     // maskShape.
-    expect(harness).toMatch(/function maskName\(name\)\s*\{[\s\S]*?maskShape\(/u);
+    expect(harness).toMatch(/import \{ maskName, renderMaskedDump \} from "..\/lib\/masked-diagnostics\.ts"/u);
+    expect(readFileSync("lib/masked-diagnostics.ts", "utf8")).toMatch(/export function maskName\(name: string\)[\s\S]*?maskShape\(/u);
 
     // An allowlist, not a blacklist. A blacklist naming the path variables passes the
     // moment one is renamed — which is exactly what happened while this was written, so
@@ -1347,5 +1353,63 @@ describe("privacy guardrails", () => {
     const object = readFileSync("lib/server/inbox-object.ts", "utf8");
     expect(object).toContain('const BUCKET = "inbox";');
     expect([...object.matchAll(/\.storage\.from\(([^)]*)\)/gu)].map((match) => match[1])).toEqual(["BUCKET"]);
+  });
+});
+
+describe("the server's masked dump (D-237)", () => {
+  const deps = () => {
+    const never = async () => { throw new Error("dump mode must not call this"); };
+    const markFetched = async () => { throw new Error("dump mode must not flag"); };
+    return {
+      download: async () => ({ ok: true as const, bytes: new Uint8Array([1, 2, 3]) }),
+      readStatementPdf: never,
+      readStatementPdfPages: async () => ({ kind: "pages" as const, pages: validStatement }),
+      sourceName: "acct_9876543210_holder-name.pdf",
+      listAccounts: never,
+      artifactExists: never,
+      existingFingerprintCount: never,
+      confirmImport: never,
+      markFetched
+    } as unknown as InboxStatementDeps & { markFetched: () => Promise<boolean> };
+  };
+
+  it("carries none of an invented statement's figures, dates or names, and masks the file name", async () => {
+    for (const out of [await processInboxStatement("dump", deps()), await processMailboxStatement("dump", deps())]) {
+      expect(out.kind).toBe("dump");
+      if (out.kind !== "dump") continue;
+      const { markdown } = out;
+      const runs = validStatement.flat().map((item) => item.str);
+      // Every run that carries a digit and is long enough not to be a coordinate by chance (amounts, dates,
+      // times, account numbers) is absent verbatim.
+      for (const run of runs.filter((value) => /\p{Nd}/u.test(value) && value.length >= 5)) expect(markdown).not.toContain(run);
+      // Any run written in letters that is not a short label wording (a name, a description) is absent too.
+      for (const run of runs.filter((value) => /\p{L}/u.test(value) && value.length > 24)) expect(markdown).not.toContain(run);
+      expect(markdown).toContain("Source: xxxx_dddddddddd_xxxxxx-xxxx.pdf");
+      expect(markdown).not.toContain("9876543210");
+    }
+  });
+
+  it("prints the server dump's label sections as shapes, so a short name beside an amount or in a running header cannot appear", async () => {
+    const row = (y: number, name: string, amount: string) => [
+      { str: name, x: 40, y, width: 60 }, { str: amount, x: 120, y, width: 40 }
+    ];
+    const header = (y: number) => [
+      { str: "ZANZIBAR", x: 40, y, width: 50 }, { str: "Page", x: 120, y, width: 30 }, { str: "of", x: 160, y, width: 10 }
+    ];
+    const pages = [
+      [...header(800), ...row(700, "ACME CAFE", "123.45")],
+      [...header(800), ...row(700, "ACME CAFE", "123.45")]
+    ];
+    const d = { ...deps(), readStatementPdfPages: async () => ({ kind: "pages" as const, pages }) };
+    const out = await processInboxStatement("dump", d);
+    expect(out.kind).toBe("dump");
+    if (out.kind !== "dump") return;
+    expect(out.markdown).not.toContain("ACME");
+    expect(out.markdown).not.toContain("ZANZIBAR");
+    // The offline script's rendering keeps the wordings, which is what proves the option is what hides them.
+    const { renderMaskedDump } = await import("@/lib/masked-diagnostics");
+    const offline = renderMaskedDump({ label: "x", sourceName: "x.pdf", pageCount: 2, pages });
+    expect(offline).toContain("ACME CAFE");
+    expect(offline).toContain("ZANZIBAR");
   });
 });

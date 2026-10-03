@@ -44,9 +44,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import {
-  describeLabelGeometry, describeStructure, describeValueLabels, maskShape
-} from "../lib/masked-diagnostics.ts";
+import { maskName, renderMaskedDump } from "../lib/masked-diagnostics.ts";
 
 const DUMP_DIR = "masked-dumps";
 const PASSWORD_ATTEMPTS = 3;
@@ -90,14 +88,6 @@ function parseArguments(argv) {
 
 function slugify(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
-}
-
-// A file name reduced the same way a cell is: numerals to `d`, letters to `x`, everything
-// else kept. `scb_1234567890_202601.pdf` becomes `xxx_dddddddddd_dddddd.pdf`. The
-// extension is left intact — it is not a value, and it says what was actually read.
-function maskName(name) {
-  const extension = extname(name);
-  return `${maskShape(name.slice(0, name.length - extension.length))}${extension.toLowerCase()}`;
 }
 
 // Every PDF under the path, sorted, so numbering is stable between runs. Sorted by real
@@ -182,56 +172,6 @@ async function extractPages(bytes, password) {
   return { pages, pageCount: document.numPages };
 }
 
-function renderDump({ label, sourceName, pageCount, pages }) {
-  const structure = describeStructure(pages);
-  const labelGeometry = describeLabelGeometry(pages);
-  const valueLabels = describeValueLabels(pages);
-
-  return [
-    `# Masked structural dump — ${label}`,
-    "",
-    "Value-free. Every numeral is `d` and every letter or combining mark is `x`; only",
-    "punctuation, spacing, and coordinates survive. Produced by scripts/mask-statement.mjs.",
-    "",
-    "NOT A FIXTURE. This describes a real document (DECISIONS D-035). Never commit it, and",
-    "never transcribe its coordinates or label wordings into a fixture — read it to learn",
-    "which structural facts a reader must handle, then write the fixture independently.",
-    "",
-    `Source: ${sourceName} (masked — the real name may carry an account number or a name)`,
-    `Pages: ${pageCount}`,
-    `Runs: ${pages.reduce((total, page) => total + page.length, 0)}`,
-    "",
-    "## Structure",
-    "",
-    "`p<page> y=<row>  <shape>@<x>  <shape>@<x> …` — page one in full, later pages by their",
-    "opening lines, and the last page in full because a summary block lives there.",
-    "",
-    ...structure,
-    "",
-    "## Dense label lines",
-    "",
-    "Lines of at least three short digit-free items — heading rows are dense, address and",
-    "name lines are not. These are the candidate column headings.",
-    "",
-    ...labelGeometry.map((line) => `- ${line.join(" | ")}`),
-    "",
-    "## Labels printed immediately left of a digit",
-    "",
-    "First and last page only. This is the label/value shape the frame fields and the",
-    "summary totals use, so these are the candidate frame and summary wordings.",
-    "",
-    "**This is the one section printed unmasked**, because a wording is exactly what it",
-    "exists to reveal. A value cannot appear here — anything carrying a digit or longer",
-    "than 24 characters is dropped, and a label whose value is text (an account holder's",
-    "name) never qualifies. What *could* appear is short digit-free text that is printed",
-    "left of a number and is not boilerplate: on a receipt, a merchant or recipient name.",
-    "Glance at this list before handing the dump to anyone.",
-    "",
-    ...valueLabels.map((label_) => `- ${label_}`),
-    ""
-  ].join("\n");
-}
-
 // Opens one document, asking again if the running password does not fit it. Returns the
 // password that worked so the caller can adopt it for the rest — a folder usually shares
 // one, and re-asking per file would defeat the point of directory mode.
@@ -308,7 +248,7 @@ async function main() {
     password = opened.password;
 
     const outputPath = join(DUMP_DIR, `${slug}.md`);
-    await writeFile(outputPath, renderDump({ label: slug, sourceName: maskedName, ...opened.extracted }), "utf8");
+    await writeFile(outputPath, renderMaskedDump({ label: slug, sourceName: maskedName, ...opened.extracted }), "utf8");
     written += 1;
     process.stdout.write(`  ${maskedName} -> ${outputPath} (${opened.extracted.pageCount} pages)\n`);
   }

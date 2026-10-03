@@ -76,6 +76,7 @@ const STATEMENT_UNREADABLE_REASON = "This PDF could not be read as a statement."
 const STATEMENT_NEEDS_ACCOUNT_REASON = "No account of yours matches this statement.";
 const STATEMENT_WARNINGS_REASON = "This statement needs a look before it is saved.";
 const STATEMENT_CONFIRM_FAILED_REASON = "The statement could not be saved automatically.";
+const STATEMENT_OVERLAP_REASON = "Some rows of this statement are already in the ledger, so it waits for a look.";
 const STATEMENT_CHECKS_REASON = "This statement did not pass its checks, so it was not saved automatically.";
 
 /** A held statement's reason in plain words. Any code that is not one of the first three needs the owner's review. */
@@ -87,6 +88,7 @@ export function statementHeldReason(reason: string): string {
     case "needs-account": return STATEMENT_NEEDS_ACCOUNT_REASON;
     case "warnings": return STATEMENT_WARNINGS_REASON;
     case "confirm-failed": return STATEMENT_CONFIRM_FAILED_REASON;
+    case "overlap": return STATEMENT_OVERLAP_REASON;
     default: return STATEMENT_CHECKS_REASON;
   }
 }
@@ -354,19 +356,33 @@ export const SLIP_AMOUNT_REASON = "This amount is not one this ledger can store.
  * slip that needs the owner (so Vision is not paid for it on every open). A slip waiting for a
  * direction is **not** remembered, since the next drain must offer it again.
  */
-export type RememberedKind = "unrecognised" | "slip-review";
+export type RememberedKind =
+  | "unrecognised"
+  | "slip-review"
+  /** A statement the server held: its reason code and the build that said so (another build retries it once). */
+  | { readonly kind: "held"; readonly reason: string; readonly build: string };
+
+/** The build this page was served from; read here and nowhere else. A deploy changes it, so held statements are retried once. */
+export const BUILD_ID: string = process.env.NEXT_PUBLIC_BUILD_ID ?? "local";
+
+/** Held reasons the device never remembers: the owner can fix them without a deploy, or they may be transient. */
+export const FORGOTTEN_HELD: ReadonlySet<string> = new Set(["locked", "no-passwords", "needs-account", "confirm-failed"]);
 
 /**
  * The queue's object names this device already settled, by why, so the next drain does not send the
  * same image to Vision again. **Names only**: each is the random `<id>.<ext>` the queue gave the
  * file, which says nothing about it. Kept per device, in `lib/browser/inbox-memory.ts`. The key is
  * versioned: **a step that teaches the drain a new kind of image must change the version**, or the
- * files this memory skips would never be read by it (v2: bank slips; v1 held a bare list of names).
+ * files this memory skips would never be read by it (v3: held statements; v2: bank slips; v1 held a
+ * bare list of names).
  */
-export const REMEMBERED_KEY = "inbox:unrecognised:v2";
+export const REMEMBERED_KEY = "inbox:unrecognised:v3";
 
-/** The remembered names from stored text; anything that is not a name-to-kind object is an empty memory. */
-export function parseRemembered(raw: string | null): Map<string, RememberedKind> {
+/**
+ * The remembered names from stored text; anything that is not a name-to-kind object is an empty memory.
+ * A held-statement entry from another build than `build` is dropped, so each deploy retries it once.
+ */
+export function parseRemembered(raw: string | null, build: string = BUILD_ID): Map<string, RememberedKind> {
   const remembered = new Map<string, RememberedKind>();
   if (!raw) return remembered;
   try {
@@ -374,6 +390,12 @@ export function parseRemembered(raw: string | null): Map<string, RememberedKind>
     if (typeof value !== "object" || value === null || Array.isArray(value)) return remembered;
     for (const [name, kind] of Object.entries(value)) {
       if (kind === "unrecognised" || kind === "slip-review") remembered.set(name, kind);
+      else if (typeof kind === "object" && kind !== null) {
+        const held = kind as { kind?: unknown; reason?: unknown; build?: unknown };
+        if (held.kind === "held" && typeof held.reason === "string" && held.build === build) {
+          remembered.set(name, { kind: "held", reason: held.reason, build });
+        }
+      }
     }
     return remembered;
   } catch {
