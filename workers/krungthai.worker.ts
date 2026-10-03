@@ -37,6 +37,12 @@ workerScope.onmessage = async (event: MessageEvent<ParseMessage>) => {
 
     // Three layouts now, chosen by the document rather than by the caller.
     const result = readStatement(pages);
+    if (!result.ok && result.code === "EMPTY_STATEMENT") {
+      // Not a failure to diagnose: the statement printed no transactions and totals of zero.
+      // Nothing to import, so no label diagnostics either.
+      workerScope.postMessage({ type: "error", code: result.code, message: result.message });
+      return;
+    }
     if (!result.ok) {
       // A layout that will not read is fixed by knowing which heading words the
       // statement prints, so send those candidate labels back for the owner to see.

@@ -164,4 +164,19 @@ describe("processInboxStatement", () => {
     expect(exists).not.toHaveBeenCalled();
     expect(d.confirmImport).not.toHaveBeenCalled();
   });
+
+  it("reports an empty statement without looking up accounts or confirming, in import and read mode", async () => {
+    for (const mode of ["import", "read"] as const) {
+      const listAccounts = vi.fn(async () => [account()]);
+      const d = deps({
+        listAccounts,
+        readStatementPdf: async (): Promise<StatementPdfRead> => ({ kind: "empty", periodStart: "2026-01-01", periodEnd: "2026-01-31" })
+      });
+      const out = await processInboxStatement(mode, d);
+      expect(out).toMatchObject({ kind: "empty", periodStart: "2026-01-01", periodEnd: "2026-01-31" });
+      if (out.kind === "empty") expect(out.artifactDigest).toMatch(/^[a-f0-9]{64}$/u);
+      expect(listAccounts).not.toHaveBeenCalled();
+      expect(d.confirmImport).not.toHaveBeenCalled();
+    }
+  });
 });

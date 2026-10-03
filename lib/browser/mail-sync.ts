@@ -141,6 +141,8 @@ export type HeldMailboxStatement = {
 export type MailboxStatementTotal = {
   readonly captured: number;
   readonly duplicates: number;
+  /** Statements with no transactions and zero totals; flagged fetched, nothing imported. */
+  readonly empty: number;
   readonly held: readonly HeldMailboxStatement[];
   /** Statements not tried because an earlier request failed, or because the listing stopped at its cap. */
   readonly remaining: number;
@@ -148,7 +150,7 @@ export type MailboxStatementTotal = {
   readonly error: string | null;
 };
 
-export const EMPTY_STATEMENT_TOTAL: MailboxStatementTotal = { captured: 0, duplicates: 0, held: [], remaining: 0, more: false, error: null };
+export const EMPTY_STATEMENT_TOTAL: MailboxStatementTotal = { captured: 0, duplicates: 0, empty: 0, held: [], remaining: 0, more: false, error: null };
 
 type ListedStatement = { readonly uid: number; readonly part: string; readonly name: string };
 
@@ -173,9 +175,9 @@ export function addStatementAnswer(
   }
   const plan = planStatement(answer.answer);
   if (plan.action === "capture") {
-    return plan.outcome === "captured"
-      ? { ...total, captured: total.captured + 1 }
-      : { ...total, duplicates: total.duplicates + 1 };
+    if (plan.outcome === "captured") return { ...total, captured: total.captured + 1 };
+    if (plan.outcome === "empty") return { ...total, empty: total.empty + 1 };
+    return { ...total, duplicates: total.duplicates + 1 };
   }
   const code = answer.answer.kind === "held" ? answer.answer.reason : "";
   const held: HeldMailboxStatement = {
@@ -190,7 +192,8 @@ export function describeStatementTotal(total: MailboxStatementTotal): string {
   const plural = (n: number) => (n === 1 ? "" : "s");
   const parts = [
     total.captured > 0 ? `${total.captured} statement${plural(total.captured)} imported.` : null,
-    total.duplicates > 0 ? `${total.duplicates} statement${plural(total.duplicates)} ${total.duplicates === 1 ? "was" : "were"} already in the ledger.` : null
+    total.duplicates > 0 ? `${total.duplicates} statement${plural(total.duplicates)} ${total.duplicates === 1 ? "was" : "were"} already in the ledger.` : null,
+    total.empty > 0 ? `${total.empty} statement${plural(total.empty)} had no transactions.` : null
   ].filter((part): part is string => part !== null);
   return parts.length === 0 ? "No new statements were imported." : parts.join(" ");
 }

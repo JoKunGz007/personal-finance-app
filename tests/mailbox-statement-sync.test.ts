@@ -85,8 +85,9 @@ describe("the statements import loop", () => {
   });
 
   it("describes the totals and offers the device import only when something still needs it", () => {
-    const base = { captured: 0, duplicates: 0, held: [], remaining: 0, more: false, error: null };
+    const base = { captured: 0, duplicates: 0, empty: 0, held: [], remaining: 0, more: false, error: null };
     expect(describeStatementTotal({ ...base, captured: 2, duplicates: 1 })).toBe("2 statements imported. 1 statement was already in the ledger.");
+    expect(describeStatementTotal({ ...base, empty: 1 })).toBe("1 statement had no transactions.");
     expect(describeStatementTotal(base)).toBe("No new statements were imported.");
     expect(statementsNeedDeviceImport(base)).toBe(false);
     expect(statementsNeedDeviceImport({ ...base, more: true })).toBe(true);

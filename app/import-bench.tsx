@@ -307,9 +307,12 @@ export function ImportBench() {
         // lib/krungthai-layout.ts and carries no statement content, and without it
         // every failure except an unsupported layout reads identically — which makes
         // a single diagnostic run far less informative than it needs to be.
+        // An empty statement is not a refusal: it is said plainly, without a code.
         setStatus(
-          `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})` +
-          (reply.detail ? ` — ${reply.detail}` : "")
+          reply.code === "EMPTY_STATEMENT"
+            ? reply.message
+            : `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})` +
+              (reply.detail ? ` — ${reply.detail}` : "")
         );
         setLabelCandidates(reply.labelCandidates ?? []);
         setValueLabels(reply.valueLabels ?? []);

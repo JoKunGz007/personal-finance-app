@@ -14,6 +14,8 @@ import { storedStatementPasswords } from "@/lib/server/statement-passwords";
 
 export type StatementPdfRead =
   | { kind: "read"; frame: StatementFrame; rows: SourceRowCandidate[] }
+  /** A statement printing no transactions and zero totals: held as empty, never imported. */
+  | { kind: "empty"; periodStart: string; periodEnd: string }
   /** Encrypted, and no stored password opens it. */
   | { kind: "locked" }
   /** Encrypted, and no password is configured at all. */
@@ -84,9 +86,12 @@ export async function readStatementPdf(bytes: Uint8Array): Promise<StatementPdfR
   const opened = await openPages(bytes, readStatement);
   if (opened.kind === "unreadable") return { kind: "unreadable", code: "PDF_PARSE_FAILED" };
   if (opened.kind !== "opened") return { kind: opened.kind };
-  return opened.value.ok
-    ? { kind: "read", frame: opened.value.frame, rows: opened.value.rows }
-    : { kind: "unreadable", code: opened.value.code };
+  const result = opened.value;
+  if (result.ok) return { kind: "read", frame: result.frame, rows: result.rows };
+  if (result.code === "EMPTY_STATEMENT") {
+    return { kind: "empty", periodStart: result.empty.periodStart, periodEnd: result.empty.periodEnd };
+  }
+  return { kind: "unreadable", code: result.code };
 }
 
 /** The text layer of a statement PDF, for the masked dump only: positioned runs, never rendered back as text. */

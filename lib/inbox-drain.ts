@@ -62,6 +62,8 @@ export function needsStatementRoute(reply: PdfReply): boolean {
 export type StatementAnswer =
   | { readonly kind: "captured" }
   | { readonly kind: "duplicate" }
+  /** No transactions and zero totals: released like a captured one, since there is nothing to import. */
+  | { readonly kind: "empty" }
   | { readonly kind: "held"; readonly reason: string };
 
 /** The Import page's address for a statement waiting in the Inbox, and the label of its link. */
@@ -99,11 +101,11 @@ export function statementNeedsReview(reason: string): boolean {
 }
 
 export type StatementPlan =
-  | { readonly action: "capture"; readonly outcome: "captured" | "duplicate" }
+  | { readonly action: "capture"; readonly outcome: "captured" | "duplicate" | "empty" }
   | { readonly action: "keep"; readonly reason: string; readonly review: boolean };
 
 /**
- * The server's answer to an import. Only `captured` and `duplicate` let the file go; a held statement
+ * The server's answer to an import. Only `captured`, `duplicate` and `empty` let the file go; a held statement
  * stays with its reason (and a review link when the Import page can help).
  */
 export function planStatement(answer: StatementAnswer): StatementPlan {
@@ -424,7 +426,9 @@ const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : 
  * "2 receipts and 1 LINE MAN order imported. 3 slips need money in or out." The count of files still
  * waiting is left out on purpose: the list shows it live, and a figure fixed here went stale after a Remove.
  */
-export function describeDrain(result: { receipts: number; orders: number; slips: number; statements?: number; statementsAlready?: number }): string {
+export function describeDrain(result: {
+  receipts: number; orders: number; slips: number; statements?: number; statementsAlready?: number; statementsEmpty?: number;
+}): string {
   const statements = result.statements ?? 0;
   const imported = [
     result.receipts > 0 ? count(result.receipts, "receipt", "receipts") : null,
@@ -434,6 +438,7 @@ export function describeDrain(result: { receipts: number; orders: number; slips:
   const sentences = [
     imported.length > 0 ? `${imported.join(" and ")} imported.` : null,
     (result.statementsAlready ?? 0) > 0 ? `${count(result.statementsAlready ?? 0, "statement was", "statements were")} already in the ledger.` : null,
+    (result.statementsEmpty ?? 0) > 0 ? `${count(result.statementsEmpty ?? 0, "statement", "statements")} had no transactions.` : null,
     result.slips > 0 ? `${count(result.slips, "slip needs", "slips need")} money in or out.` : null
   ].filter((part): part is string => part !== null);
   return sentences.length === 0 ? "Nothing was imported." : sentences.join(" ");

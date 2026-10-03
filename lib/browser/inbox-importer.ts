@@ -171,6 +171,7 @@ export async function drainInbox(
   let orders = 0;
   let statements = 0;
   let statementsAlready = 0;
+  let statementsEmpty = 0;
   const reviewable: string[] = [];
 
   /**
@@ -227,7 +228,9 @@ export async function drainInbox(
           continue;
         }
         if (await release([file.name])) {
-          if (statementPlan.outcome === "captured") statements += 1; else statementsAlready += 1;
+          if (statementPlan.outcome === "captured") statements += 1;
+          else if (statementPlan.outcome === "empty") statementsEmpty += 1;
+          else statementsAlready += 1;
         }
         continue;
       }
@@ -319,7 +322,7 @@ export async function drainInbox(
   const waiting = files.length - removed.size;
   return {
     reasons, receipts, orders, statements, statementsAlready, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
-    summary: describeDrain({ receipts, orders, statements, statementsAlready, slips: slips.length })
+    summary: describeDrain({ receipts, orders, statements, statementsAlready, statementsEmpty, slips: slips.length })
   };
 }
 

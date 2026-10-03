@@ -50,6 +50,27 @@ describe("processMailboxStatement", () => {
     expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "captured", flagged: false });
   });
 
+  it("flags an empty statement in import mode, and confirms nothing", async () => {
+    const confirmImport = vi.fn();
+    const { base, markFetched } = deps({
+      confirmImport,
+      readStatementPdf: async (): Promise<StatementPdfRead> => ({ kind: "empty", periodStart: "2026-01-01", periodEnd: "2026-01-01" })
+    });
+    expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "empty", flagged: true });
+    expect(markFetched).toHaveBeenCalledTimes(1);
+    expect(confirmImport).not.toHaveBeenCalled();
+  });
+
+  it("never flags an empty statement in read mode", async () => {
+    const { base, markFetched } = deps({
+      readStatementPdf: async (): Promise<StatementPdfRead> => ({ kind: "empty", periodStart: "2026-01-01", periodEnd: "2026-01-01" })
+    });
+    const out = await processMailboxStatement("read", base);
+    expect(out.kind).toBe("empty");
+    expect(out.flagged).toBeUndefined();
+    expect(markFetched).not.toHaveBeenCalled();
+  });
+
   it("leaves a held statement unflagged", async () => {
     const { base, markFetched } = deps({ readStatementPdf: async () => ({ kind: "locked" }) as StatementPdfRead });
     expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "held", reason: "locked" });

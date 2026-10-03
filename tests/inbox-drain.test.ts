@@ -392,6 +392,7 @@ describe("what the owner reads", () => {
     expect(describeDrain({ receipts: 0, orders: 2, slips: 0 })).toBe("2 LINE MAN orders imported.");
     expect(describeDrain({ receipts: 0, orders: 0, slips: 2 })).toBe("2 slips need money in or out.");
     expect(describeDrain({ receipts: 0, orders: 0, slips: 0 })).toBe("Nothing was imported.");
+    expect(describeDrain({ receipts: 0, orders: 0, slips: 0, statementsEmpty: 1 })).toBe("1 statement had no transactions.");
   });
 
   test("after the answer, the slips captured, already held and left in the queue", () => {
@@ -560,6 +561,7 @@ describe("planStatement", () => {
   test("captured and already-stored statements let the file go", () => {
     expect(planStatement({ kind: "captured" })).toEqual({ action: "capture", outcome: "captured" });
     expect(planStatement({ kind: "duplicate" })).toEqual({ action: "capture", outcome: "duplicate" });
+    expect(planStatement({ kind: "empty" })).toEqual({ action: "capture", outcome: "empty" });
   });
 
   test("a locked or password-less statement stays, in plain words, with no review link", () => {

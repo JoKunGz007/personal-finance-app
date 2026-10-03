@@ -260,12 +260,32 @@ export function buildKbankPage(
     totals?: KbankTotalsSpec | null;
     currencyMarker?: string | null;
     footer?: boolean;
+    // The Thai-language print of the same layout: every heading, frame label, summary label
+    // and the brought-forward label in Thai, everything else identical. The Thai wordings
+    // are KBank's standard ones, inferred from masked shapes (docs/KBANK_CONTRACT.md).
+    language?: "en" | "th";
   } = {}
 ): PageText {
   const {
-    headings = true, frame = {}, carryForward = null, totals = null,
-    currencyMarker = "(THB)", footer = true
+    headings = true, frame = {}, carryForward = null, totals = null, footer = true, language = "en"
   } = options;
+  const th = language === "th";
+  const currencyMarker = options.currencyMarker === undefined ? (th ? "(บาท)" : "(THB)") : options.currencyMarker;
+  const words = th
+    ? {
+        reference: "เลขที่อ้างอิง", account: "เลขที่บัญชีเงินฝาก", period: "รอบระหว่างวันที่", ending: "ยอดยกไป",
+        withdrawal: "รวมถอนเงิน 2 รายการ", deposit: "รวมฝากเงิน 1 รายการ",
+        timeAbove: "เวลา/", balanceAbove: "ยอดคงเหลือ",
+        date: "วันที่", descriptions: "รายการ", money: "ถอนเงิน / ฝากเงิน", channel: "ช่องทาง", details: "รายละเอียด",
+        timeBelow: "วันที่มีผล", carryForward: "ยอดยกมา"
+      }
+    : {
+        reference: "Reference Code", account: "Account Number", period: "Period", ending: "Ending Balance",
+        withdrawal: "Total Withdrawal 2 items", deposit: "Total Deposit 1 items",
+        timeAbove: "Date/", balanceAbove: "Outstanding Balance",
+        date: "Date", descriptions: "Descriptions", money: "Withdrawal / Deposit", channel: "Channel", details: "Details",
+        timeBelow: "Trn.Time", carryForward: "Beginning Balance"
+      };
   const items: TextItem[] = [];
 
   if (frame) {
@@ -273,18 +293,23 @@ export function buildKbankPage(
       accountNumber: "123-4-56789-0", period: "01/01/2026 - 31/01/2026", endingBalance: null,
       ...frame
     };
-    items.push({ str: "Reference Code", x: KBANK.frameLabelX, y: 800 });
+    items.push({ str: words.reference, x: KBANK.frameLabelX, y: 800 });
     items.push({ str: "00000000000000000001", x: KBANK.frameValueX, y: 800 });
     if (values.accountNumber !== null) {
-      items.push({ str: "Account Number", x: KBANK.frameLabelX, y: 790 });
+      items.push({ str: words.account, x: KBANK.frameLabelX, y: 790 });
       items.push({ str: values.accountNumber, x: KBANK.frameValueX, y: 790 });
     }
     if (values.period !== null) {
-      items.push({ str: "Period", x: KBANK.frameLabelX, y: 780 });
+      items.push({ str: words.period, x: KBANK.frameLabelX, y: 780 });
       items.push({ str: values.period, x: KBANK.frameValueX, y: 780 });
     }
+    if (th) {
+      // The Thai print names the owning branch in the frame; a text value, never read.
+      items.push({ str: "สาขาเจ้าของบัญชี", x: KBANK.frameLabelX, y: 775 });
+      items.push({ str: "สาขาสมมติ", x: KBANK.frameValueX, y: 775 });
+    }
     if (values.endingBalance !== null) {
-      items.push({ str: "Ending Balance", x: KBANK.frameLabelX, y: 770 });
+      items.push({ str: words.ending, x: KBANK.frameLabelX, y: 770 });
       items.push(rightAligned(values.endingBalance, KBANK.frameAmountEdge, 770));
     }
   }
@@ -295,11 +320,11 @@ export function buildKbankPage(
     if (values.withdrawal !== null) {
       // The count lives inside the label's own run, so it is read out of the text rather
       // than taken from the next column.
-      items.push({ str: "Total Withdrawal 2 items", x: KBANK.frameLabelX, y: KBANK.summaryY });
+      items.push({ str: words.withdrawal, x: KBANK.frameLabelX, y: KBANK.summaryY });
       items.push(rightAligned(values.withdrawal, KBANK.frameAmountEdge, KBANK.summaryY));
     }
     if (values.deposit !== null) {
-      items.push({ str: "Total Deposit 1 items", x: KBANK.frameLabelX, y: KBANK.summaryY - 13 });
+      items.push({ str: words.deposit, x: KBANK.frameLabelX, y: KBANK.summaryY - 13 });
       items.push(rightAligned(values.deposit, KBANK.frameAmountEdge, KBANK.summaryY - 13));
     }
   }
@@ -308,23 +333,23 @@ export function buildKbankPage(
     // Three printed lines. The balance column's heading is on the upper one and the time
     // column's on the lower, so a reader anchoring on the main line alone finds five
     // anchors for six columns.
-    items.push({ str: "Date/", x: KBANK.timeHeadingX, y: KBANK.upperHeadingY });
-    items.push({ str: "Outstanding Balance", x: KBANK.columns.balance, y: KBANK.upperHeadingY });
+    items.push({ str: words.timeAbove, x: KBANK.timeHeadingX, y: KBANK.upperHeadingY });
+    items.push({ str: words.balanceAbove, x: KBANK.columns.balance, y: KBANK.upperHeadingY });
 
-    items.push({ str: "Date", x: KBANK.columns.date, y: KBANK.headingY });
-    items.push({ str: "Descriptions", x: KBANK.columns.description, y: KBANK.headingY });
-    items.push({ str: "Withdrawal / Deposit", x: KBANK.columns.money, y: KBANK.headingY });
-    items.push({ str: "Channel", x: KBANK.columns.channel, y: KBANK.headingY });
-    items.push({ str: "Details", x: KBANK.columns.details, y: KBANK.headingY });
+    items.push({ str: words.date, x: KBANK.columns.date, y: KBANK.headingY });
+    items.push({ str: words.descriptions, x: KBANK.columns.description, y: KBANK.headingY });
+    items.push({ str: words.money, x: KBANK.columns.money, y: KBANK.headingY });
+    items.push({ str: words.channel, x: KBANK.columns.channel, y: KBANK.headingY });
+    items.push({ str: words.details, x: KBANK.columns.details, y: KBANK.headingY });
 
-    items.push({ str: "Trn.Time", x: KBANK.timeHeadingX, y: KBANK.lowerHeadingY });
+    items.push({ str: words.timeBelow, x: KBANK.timeHeadingX, y: KBANK.lowerHeadingY });
     if (currencyMarker !== null) items.push({ str: currencyMarker, x: KBANK.currencyX, y: KBANK.lowerHeadingY });
   }
 
   if (carryForward !== null) {
     // Leads with a date exactly as a transaction does, so only the label tells them apart.
     items.push({ str: "01-01-26", x: KBANK.dateX, y: KBANK.carryForwardY });
-    items.push({ str: "Beginning Balance", x: KBANK.descriptionX, y: KBANK.carryForwardY });
+    items.push({ str: words.carryForward, x: KBANK.descriptionX, y: KBANK.carryForwardY });
     items.push(rightAligned(carryForward, KBANK.balanceEdge, KBANK.carryForwardY));
   }
 

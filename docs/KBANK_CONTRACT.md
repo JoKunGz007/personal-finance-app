@@ -147,6 +147,29 @@ Both amounts are right-aligned in a column of their own, well right of the grid'
 balance column — which is why they cannot double as the money columns' geometric anchor
 the way SCB's do.
 
+## Thai-language print
+
+KBANK also prints the same layout in Thai (seen in one masked dump, 2026-10, one page).
+Positions and the row grammar match the English print; only the wordings differ. The Thai
+wordings below are **inferred from masked shapes** (letter counts, combining marks counted
+as letters, and positions) as KBank's standard ones — not read — until a live read confirms
+them:
+
+| English | Thai |
+| --- | --- |
+| `Date` · `Descriptions` · `Withdrawal / Deposit` · `Channel` · `Details` | `วันที่` · `รายการ` · `ถอนเงิน / ฝากเงิน` · `ช่องทาง` · `รายละเอียด` |
+| `Date/` · `Outstanding Balance` (line above) | `เวลา/` · `ยอดคงเหลือ` |
+| `Trn.Time` · `(THB)` (line below) | `วันที่มีผล` · `(บาท)` |
+| `Beginning Balance` | `ยอดยกมา` |
+| `Reference Code` · `Account Number` · `Period` · `Ending Balance` | `เลขที่อ้างอิง` · `เลขที่บัญชีเงินฝาก` · `รอบระหว่างวันที่` · `ยอดยกไป` |
+| — | `สาขาเจ้าของบัญชี` (owning branch, a text value; not read) |
+| `Total Withdrawal <n> items` · `Total Deposit <n> items` | `รวมถอนเงิน <n> รายการ` · `รวมฝากเงิน <n> รายการ` |
+
+Every pattern accepts the English or the Thai wording. Thai is compared with its combining
+marks (U+0E31, U+0E34–U+0E3A, U+0E47–U+0E4E) removed from both sides, because pdf.js may
+order or drop marks differently from the logical spelling. Text is tried as printed first,
+so English matching is unchanged.
+
 ## Confirmed against a real statement
 
 On 2026-07-27 the owner read one real KBANK statement in a browser, on the first attempt:

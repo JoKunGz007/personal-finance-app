@@ -35,6 +35,8 @@ export type HeldReason =
 
 export type InboxStatementOutcome =
   | { kind: "duplicate"; artifactDigest: string }
+  /** No transactions and zero totals: nothing to import, and nothing for the owner to fix. */
+  | { kind: "empty"; artifactDigest: string; periodStart: string; periodEnd: string }
   | { kind: "captured"; artifactDigest: string; accountLabel: string; periodStart: string; periodEnd: string; rowCount: number }
   | {
       kind: "held"; reason: HeldReason; artifactDigest: string;
@@ -86,6 +88,8 @@ export async function processInboxStatement(
   const read = await deps.readStatementPdf(bytes);
   if (read.kind === "locked" || read.kind === "no-passwords") return { kind: "held", reason: read.kind, artifactDigest };
   if (read.kind === "unreadable") return { kind: "held", reason: "unreadable", code: read.code, artifactDigest };
+  // Before any account lookup or assembly: assembly and `confirm_import` require a row.
+  if (read.kind === "empty") return { kind: "empty", artifactDigest, periodStart: read.periodStart, periodEnd: read.periodEnd };
   if (mode === "read") return { kind: "read", artifactDigest, frame: read.frame, rows: read.rows };
 
   const accounts = await deps.listAccounts();

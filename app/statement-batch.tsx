@@ -335,8 +335,11 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
                 state: "failed",
                 digest,
                 parsed: null,
-                reason: `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})`
-                  + (reply.detail ? ` — ${reply.detail}` : ""),
+                // An empty statement is said plainly, without a code: nothing went wrong.
+                reason: reply.code === "EMPTY_STATEMENT"
+                  ? reply.message
+                  : `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})`
+                    + (reply.detail ? ` — ${reply.detail}` : ""),
                 failureCode: reply.code
               });
             }

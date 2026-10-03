@@ -2,7 +2,10 @@ import { gregorianYearFrom, type StatementEra } from "@/lib/dates";
 import { LINE_TOLERANCE, groupIntoLines, maskShape, type PageText, type TextItem } from "@/lib/masked-diagnostics";
 import { formatThb, parseThb, type MinorUnitString } from "@/lib/money";
 import type { SourceRowCandidate } from "@/lib/statement";
-import type { BankCode, ContractVersion, LayoutErrorCode, LayoutResult, StatementFrame } from "@/lib/statement-frame";
+import {
+  EMPTY_STATEMENT_MESSAGE,
+  type BankCode, type ContractVersion, type LayoutErrorCode, type LayoutResult, type StatementFrame
+} from "@/lib/statement-frame";
 
 // Descriptor-driven reader for contract versions `scb-layout-v1` and `kbank-layout-v1`
 // (docs/SCB_CONTRACT.md, docs/KBANK_CONTRACT.md).
@@ -58,6 +61,35 @@ const PERIOD_YEAR_BUDDHIST_FLOOR = 2400;
 const PERIOD_PATTERN = /(\d{2})([/-])(\d{2})\2(\d{4})\s*[-–—]\s*(\d{2})\2(\d{2})\2(\d{4})/u;
 
 type TextField = "code" | "channel" | "description" | "details";
+
+// Thai combining marks: MAI HAN-AKAT, the above/below vowels and PHINTHU, and the tone and
+// other marks. pdf.js may order these differently from the logical order a wording is
+// written in, or drop one, so a Thai wording is compared with every mark removed from both
+// sides. The Thai alternatives in a pattern are written through `thai()` for that reason.
+const THAI_COMBINING_MARKS = /[ัิ-ฺ็-๎]/gu;
+
+function foldThai(text: string): string {
+  return text.replace(THAI_COMBINING_MARKS, "");
+}
+
+// A Thai wording as it is matched: marks removed, and nothing in it a regex metacharacter.
+function thai(wording: string): string {
+  return foldThai(wording);
+}
+
+// The text is tried as printed first, so every wording matched before Thai folding existed
+// matches exactly as it did; the folded text is a second chance that can only add a match,
+// and only for text carrying a Thai combining mark.
+function execWording(pattern: RegExp, text: string): RegExpExecArray | null {
+  const asPrinted = pattern.exec(text);
+  if (asPrinted) return asPrinted;
+  const folded = foldThai(text);
+  return folded === text ? null : pattern.exec(folded);
+}
+
+function matchesWording(pattern: RegExp, item: TextItem): boolean {
+  return execWording(pattern, labelText(item)) !== null;
+}
 
 // One field of a row, in printed order. `absorb` lets the last text field of a segment
 // take any surplus runs, so a description that pdf.js splits into two runs joins rather
@@ -205,15 +237,19 @@ export const SCB_LAYOUT: LayoutDescriptor = {
 export const KBANK_LAYOUT: LayoutDescriptor = {
   contractVersion: "kbank-layout-v1",
   bankCode: "KBANK",
+  // Each anchor takes the English wording or the Thai one; the Thai-language variant prints
+  // the same block in the same places. The Thai wordings are inferred from masked shapes
+  // (letter counts and positions), not read, until a live read confirms them.
   headingAnchors: [
-    /^Date$/iu,
-    /^Descriptions?$/iu,
-    /^Withdrawal\s*\/\s*Deposit$/iu,
-    /^Channel$/iu,
-    /^Details?$/iu
+    new RegExp(String.raw`^(?:Date|${thai("วันที่")})$`, "iu"),
+    new RegExp(String.raw`^(?:Descriptions?|${thai("รายการ")})$`, "iu"),
+    new RegExp(String.raw`^(?:Withdrawal\s*\/\s*Deposit|${thai("ถอนเงิน")}\s*\/\s*${thai("ฝากเงิน")})$`, "iu"),
+    new RegExp(String.raw`^(?:Channel|${thai("ช่องทาง")})$`, "iu"),
+    new RegExp(String.raw`^(?:Details?|${thai("รายละเอียด")})$`, "iu")
   ],
-  // `Date/` and `Outstanding Balance` above, `Trn.Time` and `(THB)` below. Anchoring on
-  // the main line alone leaves the balance column inside the `Withdrawal / Deposit` band.
+  // `Date/` and `Outstanding Balance` above, `Trn.Time` and `(THB)` below (Thai: `เวลา/` and
+  // `ยอดคงเหลือ` above, `วันที่มีผล` and `(บาท)` below). Anchoring on the main line alone
+  // leaves the balance column inside the `Withdrawal / Deposit` band.
   headingLinesAbove: 1,
   headingLinesBelow: 1,
   currencyMarker: /\(\s*THB\s*\)|\bTHB\b|บาท/iu,
@@ -230,14 +266,16 @@ export const KBANK_LAYOUT: LayoutDescriptor = {
   rowFields: { transactionLabel: "description", description: "details", reference: null, branch: "channel" },
   carryForwardLabel: /Beginning\s+Balance|ยอดยกมา/iu,
   frameLabels: {
-    accountNumber: /^(Account\s*Number|Account\s*No\.?|เลขที่บัญชี)$/iu,
+    accountNumber: new RegExp(
+      String.raw`^(Account\s*Number|Account\s*No\.?|เลขที่บัญชี|${thai("เลขที่บัญชี")}|${thai("เลขที่บัญชีเงินฝาก")})$`, "iu"
+    ),
     closingBalance: /^(Ending\s+Balance|ยอดยกไป)$/iu
   },
   summary: {
     encoding: "count-inside-label",
     region: "first-page-above-grid",
-    withdrawal: /^Total\s+Withdrawals?\s+(\d{1,9})\s+items?$/iu,
-    deposit: /^Total\s+Deposits?\s+(\d{1,9})\s+items?$/iu
+    withdrawal: new RegExp(String.raw`^(?:Total\s+Withdrawals?|${thai("รวมถอนเงิน")})\s+(\d{1,9})\s+(?:items?|${thai("รายการ")})$`, "iu"),
+    deposit: new RegExp(String.raw`^(?:Total\s+Deposits?|${thai("รวมฝากเงิน")})\s+(\d{1,9})\s+(?:items?|${thai("รายการ")})$`, "iu")
   },
   detailTolerance: 14
 };
@@ -304,7 +342,7 @@ type Heading = {
 function findHeading(descriptor: LayoutDescriptor, lines: readonly TextItem[][]): Heading | null {
   for (const [index, line] of lines.entries()) {
     const matched = descriptor.headingAnchors.every((anchor) =>
-      line.some((item) => anchor.test(labelText(item))));
+      line.some((item) => matchesWording(anchor, item)));
     if (!matched) continue;
     // `groupIntoLines` returns lines top to bottom, so a lower index is a higher `y`.
     const first = Math.max(0, index - descriptor.headingLinesAbove);
@@ -393,7 +431,7 @@ function extractFrame(
   // (D-026); taking exactly one run cannot.
   const runAfter = (label: RegExp): TextItem | null => {
     for (const line of frameLines) {
-      const index = line.findIndex((item) => label.test(labelText(item)));
+      const index = line.findIndex((item) => matchesWording(label, item));
       if (index !== -1 && line[index + 1]) return line[index + 1]!;
     }
     return null;
@@ -564,6 +602,10 @@ export function extractWithLayout(descriptor: LayoutDescriptor, pages: readonly 
   // page's last balance, which the statement gives away for free (D-039).
   let openingBalance: MinorUnitString | null = null;
   let runningBalance: MinorUnitString | null = null;
+  // Grid lines, above any summary, that print a digit anywhere. Only consulted when no row
+  // was read: a statement is "empty" only if its grid is blank, so a figure the reader did
+  // not recognise as a row can never be passed off as an empty statement.
+  let gridLinesWithDigits = 0;
 
   for (const [pageIndex, page] of pages.entries()) {
     const pageNumber = pageIndex + 1;
@@ -603,10 +645,12 @@ export function extractWithLayout(descriptor: LayoutDescriptor, pages: readonly 
         continue;
       }
 
+      if (line.some((item) => /\d/u.test(item.str))) gridLinesWithDigits += 1;
+
       // The brought-forward pseudo-row. Checked before anything else because KBANK's
       // leads with a date exactly as a transaction does, so shape alone cannot tell them
       // apart — the label can.
-      if (line.some((item) => descriptor.carryForwardLabel.test(labelText(item)))) {
+      if (line.some((item) => matchesWording(descriptor.carryForwardLabel, item))) {
         const printed = line.filter(isMoney);
         if (printed.length !== 1) {
           failures.push({
@@ -701,7 +745,10 @@ export function extractWithLayout(descriptor: LayoutDescriptor, pages: readonly 
   }
   if (failures.length > 0) return summarizeFailures(failures);
   if (drafts.length === 0) {
-    return { ok: false, code: "INVALID_ROW_CONTENT", message: "The statement has no readable rows." };
+    const empty = gridLinesWithDigits === 0 && openingBalance === null
+      ? emptyStatement(descriptor, frame, summaryRegionOf(descriptor, firstPage, lastPage))
+      : null;
+    return empty ?? { ok: false, code: "INVALID_ROW_CONTENT", message: "The statement has no readable rows." };
   }
   if (openingBalance === null) {
     // Both layouts print it, so its absence means the reader did not find the block it
@@ -732,10 +779,7 @@ export function extractWithLayout(descriptor: LayoutDescriptor, pages: readonly 
     };
   }
 
-  const summaryRegion = descriptor.summary.region === "last-page-below-grid"
-    ? lastPage.lines.filter((line) => line[0]!.y < lastPage!.heading.gridTop - LINE_TOLERANCE)
-    : firstPage.lines.filter((line) => line[0]!.y > firstPage!.heading.frameBottom + LINE_TOLERANCE);
-  const totals = extractTotals(descriptor, summaryRegion);
+  const totals = extractTotals(descriptor, summaryRegionOf(descriptor, firstPage, lastPage));
   if (!totals.ok) return totals;
   const mismatch = verifyTotals(totals.totals, directed.rows);
   if (mismatch) return mismatch;
@@ -772,6 +816,38 @@ export function extractWithLayout(descriptor: LayoutDescriptor, pages: readonly 
   return { ok: true, frame: statementFrame, rows };
 }
 
+function summaryRegionOf(descriptor: LayoutDescriptor, firstPage: PageSummary, lastPage: PageSummary): TextItem[][] {
+  return descriptor.summary.region === "last-page-below-grid"
+    ? lastPage.lines.filter((line) => line[0]!.y < lastPage.heading.gridTop - LINE_TOLERANCE)
+    : firstPage.lines.filter((line) => line[0]!.y > firstPage.heading.frameBottom + LINE_TOLERANCE);
+}
+
+// A statement with no transactions: heading and frame read, no row, no failure, no
+// brought-forward line, nothing in the grid carrying a digit — checked by the caller — and
+// the statement's own totals printed in full as zero items and 0.00 both ways. Any total
+// missing, unreadable or nonzero leaves the caller's INVALID_ROW_CONTENT standing, so an
+// empty result is only ever the bank saying so, never the reader failing to find rows.
+function emptyStatement(descriptor: LayoutDescriptor, frame: FrameDraft, summaryRegion: readonly TextItem[][]): LayoutResult | null {
+  const totals = extractTotals(descriptor, summaryRegion);
+  if (!totals.ok) return null;
+  const { withdrawalCount, withdrawalTotal, depositCount, depositTotal } = totals.totals;
+  if (withdrawalCount !== 0 || depositCount !== 0) return null;
+  if (withdrawalTotal === null || depositTotal === null) return null;
+  if (BigInt(withdrawalTotal) !== 0n || BigInt(depositTotal) !== 0n) return null;
+  return {
+    ok: false,
+    code: "EMPTY_STATEMENT",
+    message: EMPTY_STATEMENT_MESSAGE,
+    empty: {
+      bankCode: descriptor.bankCode,
+      contractVersion: descriptor.contractVersion,
+      accountLastFour: frame.accountLastFour,
+      periodStart: frame.periodStart,
+      periodEnd: frame.periodEnd
+    }
+  };
+}
+
 function absoluteGap(left: MinorUnitString, right: MinorUnitString): MinorUnitString {
   const gap = BigInt(left) - BigInt(right);
   return ((gap < 0n ? -gap : gap).toString()) as MinorUnitString;
@@ -781,7 +857,7 @@ function isSummaryLine(descriptor: LayoutDescriptor, line: readonly TextItem[]):
   const patterns = descriptor.summary.encoding === "counts-on-own-line"
     ? [descriptor.summary.withdrawalTotal, descriptor.summary.depositTotal, descriptor.summary.itemCounts]
     : [descriptor.summary.withdrawal, descriptor.summary.deposit];
-  return line.some((item) => patterns.some((pattern) => pattern.test(labelText(item))));
+  return line.some((item) => patterns.some((pattern) => matchesWording(pattern, item)));
 }
 
 function readRow(
@@ -984,7 +1060,7 @@ function extractTotals(
 
   const runAfter = (pattern: RegExp): TextItem[] | null => {
     for (const line of lines) {
-      const index = line.findIndex((item) => pattern.test(labelText(item)));
+      const index = line.findIndex((item) => matchesWording(pattern, item));
       if (index !== -1) return line.slice(index + 1);
     }
     return null;
@@ -997,7 +1073,7 @@ function extractTotals(
       const read = (pattern: RegExp): { count: number; total: MinorUnitString } | null => {
         for (const line of lines) {
           for (const [index, item] of line.entries()) {
-            const match = pattern.exec(labelText(item));
+            const match = execWording(pattern, labelText(item));
             if (!match) continue;
             const amount = line[index + 1];
             if (!amount) throw new Error("missing summary total");

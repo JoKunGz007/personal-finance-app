@@ -74,6 +74,21 @@ export type StatementFrame = {
   crossChecked: boolean;
 };
 
+// A statement that printed its heading and frame, no transaction at all, and totals of zero
+// items and 0.00 both ways (D-237 follow-up). It is not an error, and it is not importable
+// either: assembly and `confirm_import` require at least one row, so it never reaches them.
+// Only what identifies the statement is carried; there are no balances to carry.
+export type EmptyStatement = {
+  bankCode: BankCode;
+  contractVersion: ContractVersion;
+  accountLastFour: string;
+  periodStart: string;
+  periodEnd: string;
+};
+
+export const EMPTY_STATEMENT_MESSAGE = "This statement has no transactions; nothing to import.";
+
 export type LayoutResult =
   | { ok: true; frame: StatementFrame; rows: SourceRowCandidate[] }
-  | { ok: false; code: LayoutErrorCode; message: string };
+  | { ok: false; code: LayoutErrorCode; message: string }
+  | { ok: false; code: "EMPTY_STATEMENT"; message: string; empty: EmptyStatement };

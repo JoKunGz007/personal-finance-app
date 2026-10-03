@@ -1,6 +1,6 @@
 import type { StatementAnswer } from "@/lib/inbox-drain";
 import type { SourceRowCandidate } from "@/lib/statement";
-import type { StatementFrame } from "@/lib/statement-frame";
+import { EMPTY_STATEMENT_MESSAGE, type StatementFrame } from "@/lib/statement-frame";
 import { readError } from "@/lib/wire";
 
 /**
@@ -50,7 +50,7 @@ async function post(route: string, payload: Record<string, unknown>): Promise<
   }
 }
 
-/** Import mode: `captured`, `duplicate` or `held`; anything else, or any failure, is not-ok (the file stays). */
+/** Import mode: `captured`, `duplicate`, `empty` or `held`; anything else, or any failure, is not-ok (the file stays). */
 export async function postStatementImport(objectName: string): Promise<StatementImportPosted> {
   return importAnswer(await post(ROUTE, { objectName, mode: "import" }));
 }
@@ -63,7 +63,7 @@ export async function postMailboxStatementImport(ref: MailboxRefLike): Promise<S
 function importAnswer(answer: Awaited<ReturnType<typeof post>>): StatementImportPosted {
   if (!answer.ok) return answer;
   const { kind, reason } = answer.body;
-  if (kind === "captured" || kind === "duplicate") return { ok: true, answer: { kind } };
+  if (kind === "captured" || kind === "duplicate" || kind === "empty") return { ok: true, answer: { kind } };
   if (kind === "held" && typeof reason === "string") return { ok: true, answer: { kind: "held", reason } };
   return { ok: false, why: "The statement answer could not be read." };
 }
@@ -82,6 +82,7 @@ function readAnswer(answer: Awaited<ReturnType<typeof post>>): StatementReadPost
   if (!answer.ok) return { ok: false, held: null, why: answer.why };
   const { kind, reason, artifactDigest, frame, rows } = answer.body;
   if (kind === "held" && typeof reason === "string") return { ok: false, held: reason };
+  if (kind === "empty") return { ok: false, held: null, why: EMPTY_STATEMENT_MESSAGE };
   if (
     kind === "read" && typeof artifactDigest === "string" && /^[0-9a-f]{64}$/u.test(artifactDigest)
     && typeof frame === "object" && frame !== null && Array.isArray(rows)

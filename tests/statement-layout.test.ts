@@ -317,6 +317,116 @@ describe("kbank-layout-v1", () => {
   });
 });
 
+describe("empty statements (no transactions, zero totals)", () => {
+  const zeroTotals = { debitTotal: "0.00", creditTotal: "0.00", debitCount: "0", creditCount: "0" };
+
+  it("reads a heading, a frame and zero totals with no rows as an empty statement", () => {
+    const result = readStatement([buildScbPage([], { footer: false, totals: zeroTotals })]);
+    expect(result.ok).toBe(false);
+    if (result.ok || result.code !== "EMPTY_STATEMENT") throw new Error(`expected EMPTY_STATEMENT, got ${result.ok ? "ok" : result.code}`);
+    expect(result.message).toBe("This statement has no transactions; nothing to import.");
+    expect(result.empty).toEqual({
+      bankCode: "SCB", contractVersion: "scb-layout-v1", accountLastFour: "7890",
+      periodStart: "2026-01-01", periodEnd: "2026-01-31"
+    });
+  });
+
+  it("refuses an empty grid whose totals are missing", () => {
+    expectFailure(extractStatement([buildScbPage([], { footer: false, totals: null })]), "INVALID_ROW_CONTENT");
+  });
+
+  it("refuses an empty grid whose totals are only partly printed", () => {
+    expectFailure(
+      extractStatement([buildScbPage([], { footer: false, totals: { ...zeroTotals, creditTotal: null } })]),
+      "INVALID_ROW_CONTENT"
+    );
+  });
+
+  it("refuses an empty grid whose printed total is not zero", () => {
+    expectFailure(
+      extractStatement([buildScbPage([], { footer: false, totals: { ...zeroTotals, debitTotal: "5.00" } })]),
+      "INVALID_ROW_CONTENT"
+    );
+    expectFailure(
+      extractStatement([buildScbPage([], { footer: false, totals: { ...zeroTotals, creditCount: "1" } })]),
+      "INVALID_ROW_CONTENT"
+    );
+  });
+
+  it("refuses an empty grid that carries a stray figure, even with zero totals", () => {
+    const page: PageText = [...buildScbPage([], { footer: false, totals: zeroTotals }), { str: "12.00", x: 220, y: 600, width: 20 }];
+    expectFailure(extractStatement([page]), "INVALID_ROW_CONTENT");
+  });
+
+  it("refuses an empty grid with a brought-forward line, even with zero totals", () => {
+    expectFailure(
+      extractStatement([buildScbPage([], { footer: false, carryForward: "5,000.00", totals: zeroTotals })]),
+      "INVALID_ROW_CONTENT"
+    );
+  });
+
+  it("is strict about digits: any grid line printing one, even page furniture, is not an empty grid", () => {
+    expectFailure(extractStatement([buildScbPage([], { footer: true, totals: zeroTotals })]), "INVALID_ROW_CONTENT");
+  });
+});
+
+describe("kbank-layout-v1, Thai-language print", () => {
+  const rows = {
+    first: [
+      { date: "02-01-26", time: "09:15", description: "Transfer Deposit", deposit: "1,200.00", balance: "2,000.00", channel: "K PLUS", details: "Synthetic inbound" },
+      { date: "05-01-26", time: "18:42", description: "Cash Withdrawal", withdrawal: "500.00", balance: "1,500.00", channel: "ATM Synthetic", details: "Synthetic cash" }
+    ],
+    second: [
+      { date: "09-01-26", time: "12:00", description: "Payment", withdrawal: "1,500.00", balance: "0.00", channel: "K PLUS", details: "Synthetic payment", detail: "Synthetic wrapped detail" }
+    ]
+  };
+  const thaiStatement: PageText[] = [
+    buildKbankPage(rows.first, { frame: { endingBalance: "0.00" }, carryForward: "800.00", totals: {}, language: "th" }),
+    buildKbankPage(rows.second, { frame: null, carryForward: "1,500.00", language: "th" })
+  ];
+
+  it("reads to the same frame and rows as the English print", () => {
+    const english = extractStatement(kbankStatement);
+    const thai = readStatement(thaiStatement);
+    if (!english.ok) throw new Error(english.message);
+    if (!thai.ok) throw new Error(thai.message);
+    expect(thai.frame).toEqual(english.frame);
+    expect(thai.frame.crossChecked).toBe(true);
+    expect(thai.rows).toEqual(english.rows);
+  });
+
+  it("matches Thai wordings whose combining marks pdf.js dropped or reordered", () => {
+    const english = extractStatement(kbankStatement);
+    if (!english.ok) throw new Error(english.message);
+    const dropped = thaiStatement.map((page) => page.map((item) => ({ ...item, str: item.str.replace(/[่-๋]/gu, "") })));
+    const reordered = thaiStatement.map((page) => page.map((item) => ({ ...item, str: item.str.replace(/(ี)(่)/gu, "$2$1") })));
+    for (const pages of [dropped, reordered]) {
+      const result = readStatement(pages);
+      if (!result.ok) throw new Error(result.message);
+      expect(result.frame).toEqual(english.frame);
+      expect(result.rows).toEqual(english.rows);
+    }
+  });
+
+  it("cross-checks against the Thai summary labels", () => {
+    const pages: PageText[] = [
+      buildKbankPage([
+        { date: "02-01-26", time: "09:15", description: "Transfer Deposit", deposit: "1,200.00", balance: "2,000.00" },
+        { date: "05-01-26", time: "18:42", description: "Cash Withdrawal", withdrawal: "500.00", balance: "1,500.00" },
+        { date: "09-01-26", time: "12:00", description: "Payment", withdrawal: "1,500.00", balance: "0.00" }
+      ], { carryForward: "800.00", totals: { withdrawal: "9,999.00" }, language: "th" })
+    ];
+    expect(expectFailure(extractStatement(pages), "SUMMARY_MISMATCH")).toMatch(/withdrawal total/u);
+  });
+
+  it("does not read the Thai brought-forward line as a transaction", () => {
+    const result = extractStatement(thaiStatement);
+    if (!result.ok) throw new Error(result.message);
+    expect(result.frame.openingBalance).toBe("80000");
+    expect(result.rows).toHaveLength(3);
+  });
+});
+
 describe("layout dispatch", () => {
   it("routes each fixture to the reader that matches its headings", () => {
     const scb = readStatement(scbStatement);

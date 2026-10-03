@@ -137,6 +137,19 @@ KBANK's, which embeds the count in the label text.
 No closing balance is printed anywhere, so it is derived from the last row as D-026
 does for Krungthai.
 
+### An empty statement
+
+A statement with no transactions prints the heading block and then nothing until the
+summary block: no rows and **no brought-forward line**, with both amounts `0.00` and both
+`TOTAL ITEMS` counts `0` (seen in a masked dump, 2026-10). The reader answers
+`EMPTY_STATEMENT` — not an error, and never imported, since assembly and `confirm_import`
+require a row — only when all of these hold: heading and frame read; no row read and no row
+refused; no grid line above the summary carries a digit (a brought-forward line therefore
+disqualifies it); and the summary block reads in full as zero items and `0.00` both ways.
+Anything else stays `INVALID_ROW_CONTENT`. The server holds it as `empty`: an Inbox drop is
+released, a mailbox statement is flagged fetched. The rule is layout-generic, so a KBANK
+statement meeting it would answer the same way; none has been seen.
+
 ## Confirmed against a real statement
 
 On 2026-07-27 the owner read one real SCB statement in a browser, on the first attempt:
