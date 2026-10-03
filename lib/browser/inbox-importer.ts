@@ -12,7 +12,7 @@ import {
   SLIP_AMOUNT_REASON, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON, SLIP_WAITING_REASON, slipPostBody, slipReviewReason,
   type PdfReply, type ReadySlip, type RememberedKind, type SlipPostBody
 } from "@/lib/inbox-drain";
-import { kindOfObject } from "@/lib/inbox-queue";
+import { kindOfObject, lineReceivedAt } from "@/lib/inbox-queue";
 import type { ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import type { CaptureForm } from "@/lib/receipts";
@@ -282,7 +282,10 @@ export async function drainInbox(
     if (!read.ok) { reasons[file.name] = read.why; continue; }
     const recognised = recogniseImage(read.words);
     if (recognised.kind === "receipt-page") receiptPages.push({ name: file.name, page: recognised.page });
-    else if (recognised.kind === "lineman-page") linemanPages.push({ name: file.name, page: recognised.page, createdAt: file.created_at });
+    // The LINE receive time, when the name carries it: images moved from the LINE holding table
+    // together all get the same Storage time, which would defeat the 10-minute "added together" rule
+    // (D-235 step 2c-i). The time LINE delivered them is the real one (D-241).
+    else if (recognised.kind === "lineman-page") linemanPages.push({ name: file.name, page: recognised.page, createdAt: lineReceivedAt(file.name) ?? file.created_at });
     else {
       reasons[file.name] = recognised.reason;
       // Not when the scan itself failed: the image may be a slip the next open can scan.

@@ -534,6 +534,20 @@ describe("drainInbox", () => {
     expect(result.reasons).toEqual({ "1.png": DIFFERENT_TIMES_REASON, "2.png": DIFFERENT_TIMES_REASON });
   });
 
+  test("LINE images moved together are grouped by the time LINE received them, not the move", async () => {
+    const lineName = (minutes: number, id: string) => `line-${Date.parse(minutesAfter(minutes))}-${id}.png`;
+    const words = (a: string, b: string) => ({ [a]: sentences(LM_FIRST()), [b]: sentences(LM_SECOND()) });
+    // Every file carries the same Storage time (T0), as after one move.
+    const apart = fakes({ words: words(lineName(0, "1"), lineName(30, "2")) });
+    const held = await drainInbox([file(lineName(0, "1")), file(lineName(30, "2"))], status, apart.deps);
+    expect(apart.calls.orders).toBe(0);
+    expect(Object.values(held.reasons)).toEqual([DIFFERENT_TIMES_REASON, DIFFERENT_TIMES_REASON]);
+
+    const near = fakes({ words: words(lineName(0, "1"), lineName(2, "2")) });
+    await drainInbox([file(lineName(0, "1")), file(lineName(2, "2"))], status, near.deps);
+    expect(near.calls.orders).toBe(1);
+  });
+
   test("(d) a file remembered as not recognised is not read by Vision again", async () => {
     const { deps, calls } = fakes({
       words: { "new.png": sentences(["Transfer successful", "Invented Sender"]), "old.png": wholeReceipt() },

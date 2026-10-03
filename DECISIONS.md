@@ -425,11 +425,26 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-240** — `/import` warns before Confirm when a statement's rows are already in the ledger
+- **D-241** — The LINE bot stores images through a secret-gated holding table, not a service-role key; images only; replies with a count and a link
 - **D-239** — The eighteenth boundary moves D-223 … D-234 on the owner's word
 - **D-238** — Review fixes for the server statement path, a server masked dump, empty statements flagged, and KBANK's Thai print
 - **D-237** — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 - **D-236** — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 - **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
+
+## D-241 — The LINE bot stores images through a secret-gated holding table, not a service-role key; images only; replies with a count and a link
+
+- Date: 2026-10-04
+- Status: **Agreed with the owner; steps 1–3 built locally, uncommitted, not on hosted.** Refines D-236 (a). Files: `supabase/migrations/202610080043_line_inbox.sql` (043), `supabase/tests/028_line_inbox.sql` (30), `lib/line-webhook.ts`, `app/api/v1/line/webhook/route.ts`, `app/api/v1/line/connect/route.ts`, `lib/server/supabase.ts` (`anonServerClient`), `lib/inbox-queue.ts`, `lib/browser/inbox-storage.ts` (`uploadNamedToInbox`), `lib/browser/line-inbox.ts`, `lib/browser/inbox-importer.ts`, `app/inbox-files.tsx`, and tests `tests/line-webhook.test.ts`, `tests/line-routes.test.ts`, `tests/line-inbox.test.ts`.
+- **Why the design changed.** D-236 said the webhook "stores the image in the Inbox queue", but the queue is the `inbox` bucket written as the owner under `private.has_strong_owner_access` (D-235 step 2a), and the deployment has no service-role key (D-141). A webhook has no session. Storing only LINE's message ID and fetching later was rejected: LINE deletes user content after an unstated period, so the bytes must be taken at webhook time.
+- **Credential (owner's choice).** A SECURITY DEFINER function granted to `anon`, doing nothing without a secret whose SHA-256 the database holds, that can **only append** a JPEG/PNG (magic bytes checked) of at most 10 MB to a private holding table, keyed on LINE's message ID, under a 200-per-24-hours and a 500-held cap. A service-role key on Vercel was rejected: it opens the whole database and reverses D-141. **What a leaked secret can do, stated honestly:** read nothing, but an appended image is moved into the Inbox queue and read like any dropped file, so a slip filed unseen (D-135) can reach the ledger. The secret is therefore its own random value, `LINE_INBOX_SECRET`, not derived from the LINE channel secret — the reviewer showed a derived one let the channel secret alone bypass the owner-ID check.
+- **Route.** `POST /api/v1/line/webhook` verifies LINE's HMAC-SHA256 signature over the raw body (≤1 MB), then the sender against `LINE_OWNER_USER_ID`; anything else is dropped without a reply. Each image is fetched from LINE at once (digits-only message ID, fixed host, timeouts) and appended.
+- **Redelivery.** A moved image's row keeps its message ID with the bytes dropped, so a late LINE redelivery is still a duplicate rather than queued twice; rows go with the 7-day expiry.
+- **Drain.** Opening `/inbox` moves held images into the bucket in the browser, because an image can exceed Vercel's 4.5 MB response cap — the one place the browser calls RPCs directly (`list_line_inbox`, `read_line_inbox_item`, `delete_line_inbox_item`, pinned in `tests/privacy.test.ts`). The bytes are dropped only after Storage confirmed the copy. Objects are named `line-<received ms>-<message id>.<ext>`, and LINE MAN grouping takes the received time from the name, because images moved together share one Storage time and would defeat the 10-minute rule. **Known limit:** order within a batch rests on server arrival, not `imageSet.index`.
+- **Kinds: images only (owner agreed).** Statements and 7-Eleven PDFs already arrive by the mailbox sync, and a stray PDF can use Add files; a public webhook accepts the fewest kinds.
+- **Reply.** One reply per image set with the count and a link to `/inbox`; a failure reply asks to resend; a non-image gets a pointer to Add files. Replies are free.
+- **Owner's setup.** A LINE Official Account with a Messaging API channel, auto-reply and greeting off, webhook URL `/api/v1/line/webhook`; Vercel variables `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_OWNER_USER_ID`, `LINE_INBOX_SECRET` (random, ≥32 characters); then "Connect LINE" on `/inbox` stores the inbox secret's hash.
+- **Evidence.** pgTAP 028 30/30; the secret, magic-byte, both cap and redelivery-marker checks red-proved. Local PostgREST end to end: stored, duplicate, a 9 MB image in 0.5 s, wrong secret refused. `finance-reviewer`: no critical or high finding; its medium (derived secret) and two lows (redelivery after the move, a loose "already exists" match) fixed.
 
 ## D-240 — `/import` warns before Confirm when a statement's rows are already in the ledger
 

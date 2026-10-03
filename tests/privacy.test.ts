@@ -1195,6 +1195,22 @@ describe("privacy guardrails", () => {
     expect(route).toMatch(/process\.env\.GOOGLE_VISION_KEY/u);
   });
 
+  it("keeps the LINE webhook sessionless, silent and free of Storage and the service role (D-241)", () => {
+    const webhook = readFileSync("app/api/v1/line/webhook/route.ts", "utf8");
+    const code = webhook.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/[^\n]*/gu, "");
+    expect(code, "the webhook has no owner session by design").not.toMatch(/strongOwnerClient/u);
+    expect(code, "the webhook must not log").not.toMatch(/\bconsole\./u);
+    expect(code).not.toMatch(/\.storage\b|service_role|SERVICE_ROLE/u);
+    expect(readFileSync("lib/line-webhook.ts", "utf8")).not.toMatch(/\bconsole\./u);
+    // The browser mover may call only the three owner RPCs, and must not log.
+    const mover = readFileSync("lib/browser/line-inbox.ts", "utf8");
+    expect(new Set([...mover.matchAll(/rpc\("([a-z_]+)"/gu)].map((match) => match[1])))
+      .toEqual(new Set(["list_line_inbox", "read_line_inbox_item", "delete_line_inbox_item"]));
+    expect(mover).not.toMatch(/\bconsole\./u);
+    // The connect route is the owner's and must stay behind the strong session.
+    expect(readFileSync("app/api/v1/line/connect/route.ts", "utf8")).toContain("await strongOwnerClient()");
+  });
+
   // D-235 reverses D-050 **for the inbox queue only**: dropped files wait in the private `inbox`
   // bucket until imported, at most seven days. That is the whole exception, so it is pinned at both
   // ends — no record the owner can capture carries an image, and exactly one module may touch

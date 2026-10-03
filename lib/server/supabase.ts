@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { REQUIRED_FACTORS } from "@/lib/owner-access";
 
@@ -7,6 +8,13 @@ function localConfig() {
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || key.startsWith("replace-with")) return null;
   return { url, key };
+}
+
+/** A sessionless client on the publishable key, for callers with no owner session (the LINE webhook, D-241). */
+export function anonServerClient() {
+  const config = localConfig();
+  if (!config) return null;
+  return createClient(config.url, config.key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
 export async function strongOwnerClient() {

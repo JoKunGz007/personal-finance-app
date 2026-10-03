@@ -11,6 +11,7 @@ import type { SlipKind } from "@/lib/slips";
 import { LedgerNote } from "@/app/ledger-note";
 import { encodeForReader } from "@/lib/browser/ocr-reader";
 import { browserSupabase } from "@/lib/browser/supabase";
+import { moveLineImages } from "@/lib/browser/line-inbox";
 import { addedLabel, kindOfObject, planFile, sizeLabel, type InboxPlan } from "@/lib/inbox-queue";
 
 type Status =
@@ -45,6 +46,9 @@ export function InboxFiles() {
   const [waiting, setWaiting] = useState<WaitingFile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(0);
+  const [lineLine, setLineLine] = useState<string | null>(null);
+  const [lineError, setLineError] = useState<string | null>(null);
+  const [connectLine, setConnectLine] = useState<{ readonly text: string; readonly ok: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [drainLine, setDrainLine] = useState<string | null>(null);
@@ -109,6 +113,11 @@ export function InboxFiles() {
         if (uid.ok) {
           const removed = await removeExpired(supabase, uid.value, new Date());
           if (removed.ok) setExpired(removed.value);
+          const line = await moveLineImages(supabase, uid.value);
+          if (line.moved > 0) setLineLine(`Moved ${line.moved} image${line.moved === 1 ? "" : "s"} from LINE.`);
+          if (line.failed > 0) {
+            setLineError(`${line.failed} image${line.failed === 1 ? "" : "s"} from LINE could not be moved; they will be tried next time.`);
+          }
         }
         const listed = await refresh();
         if (listed) await drain(listed);
@@ -215,6 +224,19 @@ export function InboxFiles() {
     }
   }
 
+  /** One-time set-up: asks the server to store the secret the LINE webhook presents (D-241). */
+  async function connect() {
+    setConnectLine(null);
+    try {
+      const response = await fetch("/api/v1/line/connect", { method: "POST" });
+      if (response.ok) { setConnectLine({ text: "Connected.", ok: true }); return; }
+      const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+      setConnectLine({ text: typeof body?.error === "string" ? body.error : "LINE could not be connected.", ok: false });
+    } catch {
+      setConnectLine({ text: "LINE could not be connected. Try again.", ok: false });
+    }
+  }
+
   const now = new Date();
 
   return (
@@ -285,6 +307,8 @@ export function InboxFiles() {
             {expired} file{expired === 1 ? "" : "s"} removed after waiting more than 7 days.
           </p>
         ) : null}
+        {lineLine ? <p className="field-help" role="status">{lineLine}</p> : null}
+        {lineError ? <p className="status error" role="alert">{lineError}</p> : null}
         {error ? <p className="status error" role="alert">{error}</p> : null}
         {waiting === null ? (
           error ? null : <p className="field-help">Loading…</p>
@@ -310,6 +334,19 @@ export function InboxFiles() {
           </ul>
         )}
       </div>
+
+      <details className="slip-form">
+        <summary>LINE bot</summary>
+        <p className="field-help">Connect once after the LINE channel is set up, so the bot can store images here.</p>
+        <button type="button" className="secondary-button" disabled={busy || !supabase} onClick={() => void connect()}>
+          Connect LINE
+        </button>
+        {connectLine ? (
+          connectLine.ok
+            ? <p className="field-help" role="status">{connectLine.text}</p>
+            : <p className="status error" role="alert">{connectLine.text}</p>
+        ) : null}
+      </details>
     </section>
   );
 }

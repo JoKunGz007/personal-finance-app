@@ -67,6 +67,28 @@ export function inboxPath(ownerUid: string, id: string, extension: InboxExtensio
   return `${ownerUid}/${id}.${extension}`;
 }
 
+const LINE_NAME = /^line-(\d{13})-(\d{1,32})\.(png|jpg)$/u;
+
+/**
+ * The queue name of an image the LINE bot held (D-241): `line-<receive time in epoch ms>-<message
+ * id>.<jpg|png>`. The time is the moment LINE delivered it, kept in the name because Storage stamps
+ * every moved image with the move's time. `null` for an unreadable time or an id that is not digits.
+ */
+export function lineObjectName(receivedAtIso: string, messageId: string, contentType: "image/jpeg" | "image/png"): string | null {
+  const ms = Date.parse(receivedAtIso);
+  if (!Number.isFinite(ms) || String(ms).length !== 13) return null;
+  if (!/^[0-9]{1,32}$/u.test(messageId)) return null;
+  return `line-${ms}-${messageId}.${contentType === "image/png" ? "png" : "jpg"}`;
+}
+
+/** The ISO receive time inside a LINE queue name; `null` for any other shape. */
+export function lineReceivedAt(name: string): string | null {
+  const match = LINE_NAME.exec(name);
+  if (!match) return null;
+  const date = new Date(Number(match[1]));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 /** The kind of a stored object, from its extension; `null` for anything the queue does not hold. */
 export function kindOfObject(name: string): InboxKind | null {
   const extension = extensionOf(name);

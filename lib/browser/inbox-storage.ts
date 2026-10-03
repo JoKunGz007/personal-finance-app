@@ -1,6 +1,6 @@
 import type { browserSupabase } from "@/lib/browser/supabase";
 import {
-  expiredObjects, inboxPath, type InboxContentType, type InboxExtension, type InboxObject
+  expiredObjects, inboxPath, lineReceivedAt, type InboxContentType, type InboxExtension, type InboxObject
 } from "@/lib/inbox-queue";
 
 /**
@@ -39,6 +39,24 @@ export async function uploadToInbox(
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, { contentType, upsert: false });
   if (!error) return { ok: true, value: path };
   // A policy refusal means the session is not the strong owner one; anything else is the network.
+  return { ok: false, why: /row-level security|unauthorized|403/iu.test(error.message) ? SIGN_IN : UNREACHABLE };
+}
+
+/**
+ * Uploads a LINE image under its own queue name (D-241). Refuses any name that is not that shape.
+ * "Already exists" counts as stored: an earlier move uploaded it and failed before its delete.
+ */
+export async function uploadNamedToInbox(
+  supabase: Client, uid: string, name: string, body: Blob, contentType: "image/jpeg" | "image/png"
+): Promise<Outcome<string>> {
+  if (lineReceivedAt(name) === null) return { ok: false, why: "That is not a LINE image name." };
+  const path = `${uid}/${name}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, body, { contentType, upsert: false });
+  if (!error) return { ok: true, value: path };
+  const { statusCode, status } = error as { statusCode?: unknown; status?: unknown };
+  if (String(statusCode) === "409" || Number(status) === 409 || /already exists/iu.test(error.message)) {
+    return { ok: true, value: path };
+  }
   return { ok: false, why: /row-level security|unauthorized|403/iu.test(error.message) ? SIGN_IN : UNREACHABLE };
 }
 

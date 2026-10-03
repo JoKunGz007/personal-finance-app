@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  addedLabel, expiredObjects, INBOX_MAX_BYTES, inboxPath, kindOfObject, planFile, sizeLabel
+  addedLabel, expiredObjects, INBOX_MAX_BYTES, inboxPath, kindOfObject, lineObjectName, lineReceivedAt, planFile, sizeLabel
 } from "@/lib/inbox-queue";
 
 /** The Inbox queue's pure rules (D-235). Every name, id and time is invented. */
@@ -81,5 +81,27 @@ describe("labels", () => {
     expect(sizeLabel(100)).toBe("1 KB");
     expect(sizeLabel(12 * 1024)).toBe("12 KB");
     expect(sizeLabel(3.4 * 1024 * 1024)).toBe("3.4 MB");
+  });
+});
+
+describe("LINE queue names (D-241)", () => {
+  const iso = "2026-09-30T10:00:00.000Z";
+  it("round-trips the receive time", () => {
+    const name = lineObjectName(iso, "100001", "image/jpeg");
+    expect(name).toBe(`line-${Date.parse(iso)}-100001.jpg`);
+    expect(lineReceivedAt(name!)).toBe(iso);
+    expect(lineObjectName(iso, "7", "image/png")).toMatch(/\.png$/u);
+  });
+  it("refuses an unreadable time or a non-digit id", () => {
+    expect(lineObjectName("nope", "1", "image/png")).toBeNull();
+    expect(lineObjectName(iso, "12ab", "image/png")).toBeNull();
+    expect(lineObjectName(iso, "../1", "image/png")).toBeNull();
+    expect(lineObjectName(iso, "1".repeat(33), "image/png")).toBeNull();
+  });
+  it("parses only its own shape", () => {
+    for (const name of [
+      "a.png", "line-123-1.png", "line-1790762400000-1.webp", "line-1790762400000-1.pdf", "../line-1790762400000-1.png",
+      "line-1790762400000-1.png/x", "line-1790762400000-..png", "x/line-1790762400000-1.png", "line-1790762400000-1.png.png"
+    ]) expect(lineReceivedAt(name), name).toBeNull();
   });
 });
