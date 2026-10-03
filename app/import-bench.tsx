@@ -5,7 +5,8 @@ import { useResultBanner } from "@/app/result-banner";
 import { accountListSchema, createAccountSchema, ledgerAccountSchema, type LedgerAccount } from "@/lib/accounts";
 import { encryptBackup } from "@/lib/backup";
 import { downloadFile } from "@/lib/download";
-import { sha256HexBytes } from "@/lib/canonical";
+import { rowFingerprint, sha256HexBytes } from "@/lib/canonical";
+import { flagExisting, ledgerCheckNotice, type LedgerCheck } from "@/lib/existing-rows";
 import { assembleImportPayload } from "@/lib/import-assembly";
 import type { StatementFrame } from "@/lib/statement-frame";
 import { soleMatchingAccount } from "@/lib/statement-binding";
@@ -154,6 +155,36 @@ export function ImportBench() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Which of the bound statement's rows `confirm_import` would silently skip because their
+  // fingerprints are already stored. Advisory: a failed lookup warns and never blocks Confirm.
+  // Keyed by the payload it answers, so a different statement never shows a previous answer and
+  // no state is set synchronously in the effect.
+  const [checked, setChecked] = useState<{ payload: ImportPayload; check: LedgerCheck } | null>(null);
+  const ledgerCheck = statement && boundAccount && checked?.payload === statement ? checked.check : null;
+  const setLedgerCheck = (payload: ImportPayload, check: LedgerCheck) => setChecked({ payload, check });
+  useEffect(() => {
+    if (!statement || !boundAccount) return;
+    let current = true;
+    (async () => {
+      try {
+        const fingerprints = await Promise.all(statement.rows.map((row) => rowFingerprint(statement.accountId, statement.bankCode, row)));
+        const response = await fetch("/api/v1/imports/existing", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accountId: statement.accountId, fingerprints })
+        });
+        const body: unknown = await response.json().catch(() => null);
+        const list = (body as { existing?: unknown } | null)?.existing;
+        if (!response.ok || !Array.isArray(list) || !list.every((item) => typeof item === "string")) throw new Error("lookup failed");
+        if (current) setLedgerCheck(statement, { status: "done", existing: flagExisting(fingerprints, list as string[]) });
+      } catch {
+        if (current) setLedgerCheck(statement, { status: "failed" });
+      }
+    })();
+    return () => { current = false; };
+  }, [statement, boundAccount]);
+  const ledgerNotice = statement ? ledgerCheckNotice(ledgerCheck, statement.rows.length) : null;
+
   const reconciliation = useMemo(
     () => statement ? reconcileRows(statement.openingBalance.minor, statement.rows) : null,
     [statement]
@@ -214,6 +245,7 @@ export function ImportBench() {
     setBoundAccount(null);
     setBindingError(null);
     setAssemblyWarnings([]);
+    setChecked(null);
     setArtifactDigest("");
     setSelectedRow(null);
     setRowCategories({});
@@ -950,6 +982,9 @@ export function ImportBench() {
               )}
             </div>
           ))}
+          {ledgerNotice ? (
+            <div className="warning" role="status"><strong>Already in the ledger</strong><span>{ledgerNotice.text}</span></div>
+          ) : null}
           {reconciliation.blockers.map((blocker) => (
             <div className="warning error" key={blocker.row} role="alert">
               <strong>Row {blocker.row} blocks confirmation</strong>
@@ -969,7 +1004,7 @@ export function ImportBench() {
                   {reconciliation.rows.map((row, index) => (
                     <tr key={`${row.provenance.page}-${row.provenance.row}`} className={row.status === "resynchronized" || row.status === "reordered" || movedRows.has(index) ? "resync-row" : ""}>
                       <td data-label="Date"><time dateTime={row.sourceDate}>{new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(new Date(`${row.sourceDate}T00:00:00+07:00`))}</time><small>{row.sourceTime ?? "—"}</small></td>
-                      <td data-label="Description"><strong lang="th">{row.transactionLabel}</strong><span>{row.description}</span>{row.components.length > 1 && <em>2 components</em>}</td>
+                      <td data-label="Description"><strong lang="th">{row.transactionLabel}</strong><span>{row.description}</span>{row.components.length > 1 && <em>2 components</em>}{ledgerCheck?.status === "done" && ledgerCheck.existing[index] ? <small className="resync-label">already in ledger</small> : null}</td>
                       <td data-label="Category">
                         <select aria-label={`Category for ${row.description}`} value={rowCategories[index] ?? "Uncategorized"} onChange={(event) => { setRowCategories((current) => ({ ...current, [index]: event.target.value })); setPreviewStale(true); }}>
                           {categories.map((category) => <option key={category}>{category}</option>)}
