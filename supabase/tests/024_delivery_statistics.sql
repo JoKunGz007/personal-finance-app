@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(19);
+select plan(23);
 
 -- Delivery statistics (migrations 037 and 038, PLAN task 58). The contract: an order counts at what it
 -- really cost — a co-payment order at the owner's share of the wallet's food (50% in 2025, 40% from
@@ -153,6 +153,38 @@ select is((select count(*)::integer from jsonb_array_elements((select v->'rideTy
 select is((select count(*)::integer from jsonb_array_elements((select v->'restaurants' from s3)) e
             where regexp_replace(btrim(e->>'restaurant'), '\s+', ' ', 'g') = 'Invented E'), 1,
   'a restaurant with extra whitespace is one group');
+
+-- Renamed ride types group under the newer name (047); stored data keeps the printed name.
+reset role;
+set local session_replication_role = replica;
+insert into public.rides(id, owner_id, booking_id, ride_type, picked_up_at, dropped_off_at, pickup_place, dropoff_place,
+  distance_meters, duration_minutes, payment_method, fare_minor, platform_fee_minor, total_minor)
+values
+  ('eeeeeeee-0000-4000-8000-000000000261', '11111111-1111-4111-8111-111111111111', 'A-R00261', 'GrabBike Saver',
+   '2026-09-06T05:00:00Z', '2026-09-06T05:15:00Z', 'Invented P', 'Invented Q', 3000, 15, '0000', 1000, 0, 1000),
+  ('eeeeeeee-0000-4000-8000-000000000262', '11111111-1111-4111-8111-111111111111', 'A-R00262', ' Saver  Bike',
+   '2026-09-07T05:00:00Z', '2026-09-07T05:15:00Z', 'Invented P', 'Invented Q', 3000, 15, '0000', 2000, 0, 2000),
+  ('eeeeeeee-0000-4000-8000-000000000263', '11111111-1111-4111-8111-111111111111', 'A-R00263', 'JustGrab',
+   '2026-09-08T05:00:00Z', '2026-09-08T05:15:00Z', 'Invented P', 'Invented Q', 3000, 15, '0000', 300, 0, 300),
+  ('eeeeeeee-0000-4000-8000-000000000264', '11111111-1111-4111-8111-111111111111', 'A-R00264', 'Standard (JustGrab)',
+   '2026-09-09T05:00:00Z', '2026-09-09T05:15:00Z', 'Invented P', 'Invented Q', 3000, 15, '0000', 400, 0, 400),
+  ('eeeeeeee-0000-4000-8000-000000000265', '11111111-1111-4111-8111-111111111111', 'A-R00265', 'Standard I Car only',
+   '2026-09-10T05:00:00Z', '2026-09-10T05:15:00Z', 'Invented P', 'Invented Q', 3000, 15, '0000', 500, 0, 500);
+set local session_replication_role = origin;
+set local role authenticated;
+create temporary table s4 on commit drop as select public.delivery_statistics() as v;
+select is((select e from jsonb_array_elements((select v->'rideTypes' from s4)) e where e->>'rideType' = 'Saver Bike'),
+  '{"rideType":"Saver Bike","rides":2,"spent":"3000"}'::jsonb,
+  'an old and a new name for one ride type group into one row under the new name');
+select is((select count(*)::integer from jsonb_array_elements((select v->'rideTypes' from s4)) e
+            where e->>'rideType' in ('GrabBike Saver', 'JustGrab')), 0,
+  'the old names no longer appear as groups');
+select is((select e from jsonb_array_elements((select v->'rideTypes' from s4)) e where e->>'rideType' like 'Standard |%'),
+  '{"rideType":"Standard | Car only","rides":1,"spent":"500"}'::jsonb,
+  'a capital I printed for the pipe maps to the pipe');
+select is((select e from jsonb_array_elements((select v->'rideTypes' from s4)) e where e->>'rideType' = 'Standard (JustGrab)'),
+  '{"rideType":"Standard (JustGrab)","rides":2,"spent":"700"}'::jsonb,
+  'JustGrab joins Standard (JustGrab)');
 
 reset role;
 select set_config(

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(28);
+select plan(30);
 
 -- The owner's say over a receipt's ledger row, and the candidate read beneath the automatic
 -- rule (migration 030, PLAN task 56, D-212).
@@ -61,7 +61,31 @@ values
   ('ffffffff-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111', '7-eleven', '0001', 'Invented branch', '1',
    '2026-09-01', '10:00', 'Invented wallet', 14100, 'complete', '{condensed}', 'condensed', true),
   ('ffffffff-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', '7-eleven', '0001', 'Invented branch', '2',
-   '2026-09-01', '11:00', 'Invented wallet', 14100, 'complete', '{condensed}', 'condensed', true);
+   '2026-09-01', '11:00', 'Invented wallet', 14100, 'complete', '{condensed}', 'condensed', true),
+  -- 046: a receipt with no time (a full invoice) and a timed one, both of net 25500 on 10 Sep.
+  ('ffffffff-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111', '7-eleven', '0001', 'Invented branch', '3',
+   '2026-09-10', null, 'Invented wallet', 25500, 'complete', '{condensed}', 'condensed', true),
+  ('ffffffff-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111', '7-eleven', '0001', 'Invented branch', '4',
+   '2026-09-10', '10:00', 'Invented wallet', 25500, 'complete', '{condensed}', 'condensed', true);
+-- T11: TRUE MONEY the same day. T12: TRUE MONEY at 00:31 the next day. T13: TRUE MONEY at 02:30 the
+-- next day. T14: a PromptPay row the same day. All of exactly 25500.
+insert into public.source_transactions(id, owner_id, account_id, fingerprint_version, fingerprint,
+  source_date, source_time, effective_date, transaction_label, description, post_balance_minor, currency)
+values
+  ('dddddddd-0000-4000-8000-000000000011', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000001',
+   'fingerprint-v1', repeat('1', 64), '2026-09-10', '12:00', '2026-09-10', 'SIPI', 'SIPS TRUE MONEY CO.,LTD. NOTE : -', '400000', 'THB'),
+  ('dddddddd-0000-4000-8000-000000000012', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000001',
+   'fingerprint-v1', repeat('2', 64), '2026-09-11', '00:31', '2026-09-11', 'SIPI', 'SIPS TRUE MONEY CO.,LTD. NOTE : -', '390000', 'THB'),
+  ('dddddddd-0000-4000-8000-000000000013', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000001',
+   'fingerprint-v1', repeat('3', 64), '2026-09-11', '02:30', '2026-09-11', 'SIPI', 'SIPS TRUE MONEY CO.,LTD. NOTE : -', '380000', 'THB'),
+  ('dddddddd-0000-4000-8000-000000000014', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000001',
+   'fingerprint-v1', repeat('4', 64), '2026-09-10', '12:05', '2026-09-10', 'ENET', 'PromptPay invented payee', '370000', 'THB');
+insert into public.source_components(id, owner_id, transaction_id, position, kind, amount_minor, currency)
+values
+  ('eeeeeeee-0000-4000-8000-000000000011', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000011', 1, 'withdrawal', -25500, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000012', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000012', 1, 'withdrawal', -25500, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000013', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000013', 1, 'withdrawal', -25500, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000014', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000014', 1, 'withdrawal', -25500, 'THB');
 set local session_replication_role = origin;
 
 insert into auth.mfa_factors(id, user_id, friendly_name, factor_type, status, secret, created_at, updated_at)
@@ -114,6 +138,19 @@ select is(
   'a row before the receipt still reads, with a negative lag, so the rule can refuse it rather than never see it'
 );
 select is(jsonb_typeof(public.receipt_ledger_candidates()), 'array', 'one JSON array, which the row cap cannot cut (041)');
+-- 046. Uniqueness and "already claimed" are applied in lib/receipt-match.ts (tests/receipt-match.test.ts).
+select is(
+  (select string_agg(right(transaction_id::text, 1) || ':' || date_only_match, ',' order by transaction_id)
+     from jsonb_to_recordset(public.receipt_ledger_candidates()) as c(receipt_id uuid, transaction_id uuid, date_only_match boolean) where receipt_id = 'ffffffff-0000-4000-8000-000000000003'),
+  '1:true,2:true,3:false,4:false',
+  'a receipt with no time flags a TRUE MONEY row the same day and one before 02:00 the next, not 02:30 and not a non-TRUE MONEY row'
+);
+select is(
+  (select string_agg(right(transaction_id::text, 1) || ':' || date_only_match, ',' order by transaction_id)
+     from jsonb_to_recordset(public.receipt_ledger_candidates()) as c(receipt_id uuid, transaction_id uuid, date_only_match boolean) where receipt_id = 'ffffffff-0000-4000-8000-000000000004'),
+  '1:false,2:false,3:false,4:false',
+  'a timed receipt flags nothing date-only, and its lag is unchanged'
+);
 reset role;
 
 select is(
