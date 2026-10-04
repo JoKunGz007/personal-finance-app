@@ -236,3 +236,10 @@ means, and what a backfilled `Dated <date> from <sha>` clause does not, is expla
 - Cause: the toggle is itself a full-height tap target (44px here) and sits in the same `grid-template-areas` row the buttons occupied, so that row's height is unchanged; hiding the buttons only removed what shared the row with it.
 - Avoid: while folded, move the cell holding the toggle into a row that already exists (here `"acct status"`, keyed on `tr:has(.row-more):not(:has(.actions-open))`), and give it its own full row back only when open. Measure the card height folded and open, not the buttons' visibility.
 - Verify: 2026-09-16 (D-205), deployed ledger at 360px — folded in its own row 257px (open 265px); beside the account label 223px folded, 257px open.
+
+## An absolutely positioned `::after` tap area starts inside the border, so `inset: -9px` on a bordered 26px circle draws 42px, not 44
+
+- Symptom: an inline (i) keeps its 26px circle and gets a "44px" hit area from `::after { position: absolute; inset: -9px }`, yet clicks just inside the expected edge miss, and a live measure reads 42×42.
+- Cause: an absolute box is laid out against its containing block's **padding box**, and the 1px border is outside it: 24 + 2 × 9 = 42. A size check built from `getBoundingClientRect()` (the border box, 26px) plus the inset agrees with the wrong arithmetic and passes.
+- Avoid: size the inset from the padding box (`inset: -10px` here, 24 + 20 = 44), and measure the same way: `clientWidth/clientHeight` minus the `::after` insets (`tests/e2e/owner-phone-audit.spec.ts`).
+- Verify: 2026-10-04 (D-242), the phone audit fails on `/ledger` with `-9px` and passes with `-10px`; live hit-testing at 375px landed on 8 of 8 edge points.
