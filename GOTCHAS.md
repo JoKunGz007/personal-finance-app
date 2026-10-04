@@ -48,7 +48,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - `supabase db push --db-url` cannot reach a local container
 - A stopped Docker makes the browser gate print all 18 test names and exit 0 without running one
 - Restarting the Supabase database container breaks every host connection until its dependants restart too
-- `supabase start` reports "already running" while its database container has exited
+- `supabase start` reports "already running" while some of its containers have exited
 - Windows reserves the whole local Supabase port block, and every container still reports healthy
 - A source-grep guard pinned to one spelling passes when the code is rewritten
 - A guard narrows in meaning without failing, because the behaviour moved to a file it does not name

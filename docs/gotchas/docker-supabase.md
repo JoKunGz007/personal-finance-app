@@ -70,12 +70,13 @@ the top of `GOTCHAS.md`.
 - Note the trap inside the trap: the in-container `psql` check that "proves the database is fine" is the one path that does not use the host proxy or a pooled service connection, so it succeeds in exactly the situation being diagnosed. It rules out data loss, not connectivity.
 - Verify: 2026-07-30. Restarting `supabase_db_private-ledger-local` alone left `pnpm supabase:test` failing; restarting the six service containers restored it to 129/129. The identical failure appeared later on port 54331 and was fixed the same way against `private-ledger-recovery`.
 
-## `supabase start` reports "already running" while its database container has exited
+## `supabase start` reports "already running" while some of its containers have exited
 
 - Symptom: `supabase start` prints that the project is already running and exits successfully; the next command fails with `supabase_db_<project> container is not running: exited`. Nothing about the first message suggests anything is wrong, so the natural next step is to re-run it with `--debug` and read a longer version of the same wrong answer.
 - Cause: the CLI decides "already running" from the presence of the project's containers rather than from their state, so an exited database satisfies it. The two halves of the check disagree, and only the second one talks to Postgres.
 - Avoid: `supabase stop` then `supabase start`. Not `--debug`, and not `docker start` on the database alone — that leaves the service containers holding dead connections, which is the trap directly above this one.
 - Verify: 2026-08-12. Hit on **both** the main project and the recovery destination in the same session, which is what makes it a trap rather than a one-off; `docker ps -a --filter name=supabase_db_` shows the exited container while `supabase start` still claims the project is up. CLI v2.109.1.
+- Verify: 2026-10-04, the other way round. After the owner stopped Docker mid-session and started it again, the database, auth, storage and realtime came back but Kong and PostgREST stayed exited; `supabase start` said nothing was wrong, pgTAP and `supabase:reset` passed (they talk to Postgres directly), and `pnpm test` failed seven files on `ECONNREFUSED 127.0.0.1:54321`. `supabase status` lists the stopped services. The same `stop` then `start` fixed it, and the next run was green.
 
 ## Windows reserves the whole local Supabase port block, and every container still reports healthy
 
