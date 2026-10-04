@@ -15,6 +15,8 @@ import { ledgerMatchRequestSchema, proposeLedgerMatches, type LedgerMatchRequest
  * - its movement is the receipt's net, negated, **to the minor unit** — the candidate read
  *   (`public.receipt_ledger_candidates()`, migration 030) returns only such rows;
  * - it falls **at or after** the receipt time, within `RECEIPT_MATCH_WINDOW_MINUTES`;
+ * - for a receipt with **no time** (a full invoice), the row's date is the receipt's date, or the
+ *   next day before 02:00, in place of the window (migration 046, amends D-212);
  * - and the pair is **mutually unique**: the receipt has exactly one such row, that row is the
  *   automatic candidate of no other undecided receipt, and no owner decision already claims it.
  *
@@ -41,7 +43,10 @@ export const receiptLedgerCandidateSchema = z.object({
   transaction_label: z.string(),
   description: z.string(),
   lag_minutes: z.number().int().nullable(),
-  names_true_money: z.boolean()
+  names_true_money: z.boolean(),
+  // Migration 046: the receipt has no time, the row names TRUE MONEY, and it falls on the
+  // receipt's date or before 02:00 the next day.
+  date_only_match: z.boolean()
 }).strict();
 
 export type ReceiptLedgerCandidate = z.infer<typeof receiptLedgerCandidateSchema>;
@@ -97,10 +102,15 @@ export const receiptMatchResponseSchema = z.object({ match: receiptMatchDecision
 const toRow = ({ transaction_id, source_date, source_time, transaction_label, description, lag_minutes, names_true_money }: ReceiptLedgerCandidate): ReceiptLedgerRow =>
   ({ transaction_id, source_date, source_time, transaction_label, description, lag_minutes, names_true_money });
 
-/** Whether one candidate satisfies the automatic rule on its own, before uniqueness. */
-export function qualifiesAutomatically(candidate: Pick<ReceiptLedgerCandidate, "names_true_money" | "lag_minutes">): boolean {
-  return candidate.names_true_money
-    && candidate.lag_minutes !== null
+/**
+ * Whether one candidate satisfies the automatic rule on its own, before uniqueness. A timed
+ * receipt uses the window; a receipt with no time (a full e-tax invoice, D-232) uses the
+ * database's date-only flag (migration 046). Uniqueness and claims are applied afterwards.
+ */
+export function qualifiesAutomatically(candidate: Pick<ReceiptLedgerCandidate, "names_true_money" | "lag_minutes"> & { date_only_match?: boolean }): boolean {
+  if (!candidate.names_true_money) return false;
+  if (candidate.date_only_match === true) return true;
+  return candidate.lag_minutes !== null
     && candidate.lag_minutes >= 0
     && candidate.lag_minutes <= RECEIPT_MATCH_WINDOW_MINUTES;
 }

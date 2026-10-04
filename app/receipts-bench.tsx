@@ -420,8 +420,10 @@ function ReceiptMatch({ receipt, onChanged }: { receipt: StoredReceipt; onChange
       sentence={receipt.match.status === "none" && receipt.purchased_at_time === null
         // Read only from a full invoice, which prints no time: the rule cannot establish
         // "at or after", so "normal for a wallet purchase" would be the wrong explanation.
-        ? "This receipt has no purchase time, so it cannot be matched automatically. Save its short receipt or a screenshot to add the time, or link a row below."
-        : MATCH_SENTENCE[receipt.match.status]}
+        ? "This receipt has no purchase time, so a row counts automatically only if it is the single TrueMoney row of this amount on the receipt's day (or before 02:00 the next day), and none was found. Save its short receipt or a screenshot to add the time, or link a row below."
+        : receipt.match.status === "matched" && receipt.purchased_at_time === null
+          ? "This receipt has no purchase time. Paid by this ledger row, the only TrueMoney row of this amount that day, found automatically:"
+          : MATCH_SENTENCE[receipt.match.status]}
       outsideRange="a ledger row outside the three days around this receipt."
       responseSchema={receiptMatchResponseSchema}
       onChanged={onChanged}

@@ -15,7 +15,7 @@ const T1 = "bbbbbbbb-0000-4000-8000-000000000001";
 const T2 = "bbbbbbbb-0000-4000-8000-000000000002";
 const ACCOUNT = "cccccccc-0000-4000-8000-000000000001";
 
-function candidate(receipt: string, transaction: string, lag: number | null, trueMoney = true): ReceiptLedgerCandidate {
+function candidate(receipt: string, transaction: string, lag: number | null, trueMoney = true, dateOnly = false): ReceiptLedgerCandidate {
   return {
     receipt_id: receipt,
     transaction_id: transaction,
@@ -25,7 +25,8 @@ function candidate(receipt: string, transaction: string, lag: number | null, tru
     transaction_label: "SIPI",
     description: trueMoney ? "SIPS TRUE MONEY CO.,LTD." : "PromptPay invented payee",
     lag_minutes: lag,
-    names_true_money: trueMoney
+    names_true_money: trueMoney,
+    date_only_match: dateOnly
   };
 }
 
@@ -45,6 +46,14 @@ describe("the automatic rule for one candidate", () => {
     expect(qualifiesAutomatically({ names_true_money: true, lag_minutes: null })).toBe(false);
     // The reimbursement case: same amount, a minute later, and still declined.
     expect(qualifiesAutomatically({ names_true_money: false, lag_minutes: 1 })).toBe(false);
+  });
+
+  it("takes a date-only TRUE MONEY row for a receipt with no time (046)", () => {
+    expect(qualifiesAutomatically({ names_true_money: true, lag_minutes: null, date_only_match: true })).toBe(true);
+    expect(qualifiesAutomatically({ names_true_money: true, lag_minutes: null, date_only_match: false })).toBe(false);
+    expect(qualifiesAutomatically({ names_true_money: false, lag_minutes: null, date_only_match: true })).toBe(false);
+    // A timed receipt is unchanged: outside the window it stays refused, and the flag is false for it.
+    expect(qualifiesAutomatically({ names_true_money: true, lag_minutes: RECEIPT_MATCH_WINDOW_MINUTES + 1, date_only_match: false })).toBe(false);
   });
 
   it("is the measured two hours", () => {
@@ -67,6 +76,20 @@ describe("proposeReceiptMatches", () => {
   it("refuses two qualifying rows rather than choosing one", () => {
     const states = proposeReceiptMatches([R1], [candidate(R1, T1, 2), candidate(R1, T2, 30)], []);
     expect(states.get(R1)).toMatchObject({ status: "ambiguous", row: null });
+  });
+
+  it("matches a receipt with no time on its single date-only row, and refuses two", () => {
+    const one = proposeReceiptMatches([R1], [candidate(R1, T1, null, true, true), candidate(R1, T2, null, true, false)], []);
+    expect(one.get(R1)).toMatchObject({ status: "matched", row: { transaction_id: T1 } });
+    // The row outside the date-only rule is still a manual option.
+    expect(one.get(R1)!.options.map((option) => option.transaction_id)).toContain(T2);
+    const two = proposeReceiptMatches([R1], [candidate(R1, T1, null, true, true), candidate(R1, T2, null, true, true)], []);
+    expect(two.get(R1)).toMatchObject({ status: "ambiguous", row: null });
+  });
+
+  it("leaves a date-only row alone when another receipt's decision holds it", () => {
+    const states = proposeReceiptMatches([R1, R2], [candidate(R1, T1, null, true, true)], [decision(R2, T1)]);
+    expect(states.get(R1)).toMatchObject({ status: "none", row: null });
   });
 
   it("refuses when two receipts both want the one row, in either order", () => {
