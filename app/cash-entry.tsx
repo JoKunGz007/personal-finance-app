@@ -27,6 +27,8 @@ type Kind = (typeof CASH_KINDS)[number];
 export function CashEntryForm({ onRecorded }: { onRecorded?: () => void }) {
   const window_ = useMemo(() => cashDateWindow(new Date()), []);
   const [open, setOpen] = useState(false);
+  /** Phone only: whether the folded section is expanded. Desktop ignores it. */
+  const [foldOpen, setFoldOpen] = useState(false);
   const [kind, setKind] = useState<Kind>("withdrawal");
   const [amount, setAmount] = useState("");
   // Bangkok, not UTC — see `bangkokToday`. The same defect as the card form's, found with it
@@ -112,7 +114,27 @@ export function CashEntryForm({ onRecorded }: { onRecorded?: () => void }) {
   }
 
   return (
-    <section className="cash-bench compact" aria-labelledby="cash-title">
+    <section
+      className="cash-bench compact cash-fold"
+      aria-labelledby="cash-title"
+      data-fold-open={foldOpen}
+    >
+      {/* Phone only (`display: none` above 700px, where the section is shown as ever). Folds the
+          whole section behind one 44px line, collapsed by default; the section underneath is
+          unchanged. A button rather than `<details>`: a closed `<details>` cannot be forced open by
+          CSS on desktop. Hidden content is `display: none` on a phone, so it is out of the tab order
+          and the accessibility tree until opened. */}
+      <button
+        type="button"
+        className="cash-disclosure"
+        aria-expanded={foldOpen}
+        aria-controls="cash-fold-body"
+        onClick={() => setFoldOpen((current) => !current)}
+      >
+        <span>Cash payments <small>· record or review</small></span>
+        <span className="chev" aria-hidden="true">›</span>
+      </button>
+      <div id="cash-fold-body" className="cash-fold-body">
       {/* **Contracted to one line** (PLAN task 42). This owned a titled section and a paragraph
           above the table, which is a lot of the page for something used a few times a week. The
           heading level is unchanged — h1, h2, h2 is still the outline, and axe's `heading-order`
@@ -244,6 +266,7 @@ export function CashEntryForm({ onRecorded }: { onRecorded?: () => void }) {
           </div>
         </form>
       )}
+      </div>
     </section>
   );
 }

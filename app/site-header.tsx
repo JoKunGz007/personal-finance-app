@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FontPicker } from "@/app/font-picker";
+import { NavPicker } from "@/app/nav-picker";
+import type { NavChoice } from "@/lib/ui-nav";
 import { ThemePicker } from "@/app/theme-picker";
 import { OwnerAccess } from "@/app/owner-access";
 import type { FontChoice } from "@/lib/ui-font";
@@ -32,8 +34,16 @@ const ROUTES = [
 // cookies that hold them are httpOnly and this is a client component. `app/layout.tsx` resolves both
 // server-side and hands them down, which is also what keeps the face and the ground correct on first
 // paint (PLAN task 42; the scheme reverses D-137).
-export function SiteHeader({ font, theme }: { font: FontChoice; theme: ThemeChoice }) {
+export function SiteHeader({ font, theme, nav }: { font: FontChoice; theme: ThemeChoice; nav: NavChoice }) {
   const pathname = usePathname();
+  const navRef = useRef<HTMLUListElement>(null);
+
+  // Strip layout: bring the active link into view on load and on navigation. Scrolls the row only
+  // (`block: "nearest"`), never the page, and is a no-op where the row does not overflow (desktop,
+  // Grid). Inline `nearest` leaves it where it is when the link is already visible.
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>("a.current")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [pathname, nav]);
   const [session, setSession] = useState("");
   /**
    * Whether the header's secondary controls are on screen. **Phone only** — above 700px the panel
@@ -102,7 +112,7 @@ export function SiteHeader({ font, theme }: { font: FontChoice; theme: ThemeChoi
       </Link>
 
       <nav className="site-nav" aria-label="Sections">
-        <ul>
+        <ul ref={navRef}>
           {ROUTES.map((route) => {
             const current = pathname === route.href || pathname.startsWith(`${route.href}/`);
             return (
@@ -137,6 +147,7 @@ export function SiteHeader({ font, theme }: { font: FontChoice; theme: ThemeChoi
         <span className="privacy-chip"><i aria-hidden="true" /> Statements unlock on this device</span>
         <FontPicker value={font} />
         <ThemePicker value={theme} />
+        <NavPicker value={nav} />
         {/* Local acceptance only, and opt-in. The bundler inlines the flag at build time, so
             in a build that did not set it the comparison is `undefined === "1"` and this is
             never rendered — though the literal below does survive in the chunk, since a dead

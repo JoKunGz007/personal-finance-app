@@ -16,6 +16,7 @@ import { cookies } from "next/headers";
 import type { Metadata, Viewport } from "next";
 import { SiteHeader } from "@/app/site-header";
 import { FONT_COOKIE, fontChoiceFrom } from "@/lib/ui-font";
+import { NAV_COOKIE, navChoiceFrom } from "@/lib/ui-nav";
 import {
   SYSTEM_DARK,
   THEME_COOKIE,
@@ -79,14 +80,16 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const jar = await cookies();
   const font = fontChoiceFrom(jar.get(FONT_COOKIE)?.value);
   const theme = themeChoiceFrom(jar.get(THEME_COOKIE)?.value);
+  // Third preference, same path: `data-nav` is what the phone nav CSS keys off (`lib/ui-nav.ts`).
+  const nav = navChoiceFrom(jar.get(NAV_COOKIE)?.value);
   return (
-    <html lang="en" data-font={font} data-theme={theme}>
+    <html lang="en" data-font={font} data-theme={theme} data-nav={nav}>
       <body>
         <nav aria-label="Skip links">
           <a className="skip-link" href="#main">Skip to content</a>
         </nav>
         <div className="app-shell">
-          <SiteHeader font={font} theme={theme} />
+          <SiteHeader font={font} theme={theme} nav={nav} />
           <main id="main">{children}</main>
           <footer><span>Private Ledger</span><p>No analytics · no session replay · no financial response caching</p></footer>
         </div>

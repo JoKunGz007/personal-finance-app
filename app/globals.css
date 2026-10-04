@@ -514,6 +514,10 @@ button:disabled { cursor: wait; opacity: .65; }
 .site-nav a { display: block; padding: 9px 14px; color: var(--muted); font-size: 14px; font-weight: 500; text-decoration: none; border-radius: var(--radius); }
 .site-nav a:hover { color: var(--navy); background: color-mix(in srgb, var(--line) 38%, transparent); }
 .site-nav a.current { color: var(--navy); font-weight: 600; box-shadow: inset 0 -2px var(--blue); }
+/* Desktop shows the Cash section as it always was: the phone fold's button is hidden and its wrapper
+   adds no box. The phone block below turns both on. */
+.cash-fold .cash-disclosure { display: none; }
+.cash-fold-body { display: contents; }
 /* **`flex-wrap` is load-bearing since the typeface became switchable** (D-153). Without it this row
    could only grow, and a pixel face grows it a lot: measured at a 390px layout viewport, choosing
    Press Start 2P took `scrollWidth` from 455px to 734px — the page shrink-to-fits and every glyph
@@ -1374,13 +1378,50 @@ footer p { margin: 0; }
     wrong on the screen.
   */
   .site-nav a { min-height: 44px; padding: 11px 12px; display: flex; align-items: center; font-size: 13px; }
-  /* **Three even columns, so the nav's row count is the link count and never the face's width.**
-     Wrapped by width, the eighth link (Deliveries) took Pixelify Sans, Press Start 2P and Silkscreen
-     to three ragged rows and the system face to two — measured at 390px, 136px against 90px — so
-     switching the typeface moved the whole page (`font-picker.spec.ts`). Every face's longest label
-     fits a third of 350px; the owner chose this over a one-row scrolling strip, 2026-09-25. */
-  .site-nav ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .site-nav a { justify-content: center; padding-inline: 6px; }
+  /* **Phone nav, two layouts keyed off `html[data-nav]`** (`lib/ui-nav.ts`, the "Phone nav" picker).
+     **Grid** is D-226: three even columns, so the nav's row count is the link count and never the
+     face's width. Wrapped by width, the eighth link (Deliveries) took Pixelify Sans, Press Start 2P
+     and Silkscreen to three ragged rows and the system face to two — measured at 390px, 136px
+     against 90px — so switching the typeface moved the whole page (`font-picker.spec.ts`). Every
+     face's longest label fits a third of 350px. The owner chose it over a one-row scrolling strip on
+     2026-09-25; **on 2026-10-04 he chose the strip (variant "E") after all and it replaced the grid
+     as the default. Grid stays selectable.** A one-row strip also fixes the height whatever the face. */
+  html[data-nav="grid"] .site-nav ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  html[data-nav="grid"] .site-nav a { justify-content: center; padding-inline: 6px; }
+  /* Strip: one swipeable row. The row bleeds to the header's edges (the negative margin cancels the
+     header's own padding) so links slide off the screen edge rather than a padded box; `min-width: 0`
+     stops the flex item growing the page. The page itself never pans: only the `ul` scrolls. */
+  html:not([data-nav="grid"]) .site-nav {
+    position: relative; min-width: 0;
+    margin-inline: calc(-1 * clamp(20px, 5vw, 76px));
+  }
+  html:not([data-nav="grid"]) .site-nav ul {
+    flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+    padding-inline: clamp(20px, 5vw, 76px); scroll-padding-inline: clamp(20px, 5vw, 76px);
+    -webkit-overflow-scrolling: touch;
+  }
+  html:not([data-nav="grid"]) .site-nav ul::-webkit-scrollbar { display: none; }
+  html:not([data-nav="grid"]) .site-nav li { flex: none; scroll-snap-align: start; }
+  html:not([data-nav="grid"]) .site-nav a { white-space: nowrap; padding-inline: 12px; }
+  /* The right-edge fade hints there is more to swipe to; it does not intercept touches. */
+  html:not([data-nav="grid"]) .site-nav::after {
+    content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 44px; pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--paper) 85%);
+  }
+  /* **Cash on /ledger folds behind one line** (owner's choice "E", 2026-10-04). Collapsed by default;
+     opened, the section underneath is unchanged. Desktop never sees the button. */
+  .cash-fold .cash-disclosure {
+    display: flex; width: 100%; min-height: 44px; padding: 8px 12px; align-items: center;
+    justify-content: space-between; gap: 10px; color: var(--navy); border: 1px solid var(--line);
+    border-radius: var(--radius); background: var(--paper-strong); font: inherit; font-size: 14px;
+    font-weight: 600; text-align: left; cursor: pointer;
+  }
+  .cash-fold .cash-disclosure small { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .cash-fold .cash-disclosure .chev { font-size: 18px; transition: transform .15s; }
+  .cash-fold[data-fold-open="true"] .cash-disclosure { margin-bottom: 14px; }
+  .cash-fold[data-fold-open="true"] .cash-disclosure .chev { transform: rotate(90deg); }
+  .cash-fold[data-fold-open="false"] .cash-fold-body { display: none; }
+  .cash-fold { padding: 10px 0 12px; }
   /* **The result banner's controls are 36px by a base rule and the audit has never seen them**, because
      it only appears after a capture and no automated run captures a card. Raised here rather than in
      the base rule, which is deliberately compact on a desktop where a pointer is doing the aiming. */
