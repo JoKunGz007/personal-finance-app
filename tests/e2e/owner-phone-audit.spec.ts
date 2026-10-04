@@ -195,8 +195,10 @@ async function measure(page: Page, minTap: number): Promise<Measurement> {
       // absolutely positioned ::after (D-242), so credit the box that pseudo-element draws.
       const after = getComputedStyle(el, "::after");
       if (after.content !== "none" && after.position === "absolute") {
-        const w = r.width - parseFloat(after.left) - parseFloat(after.right);
-        const h = r.height - parseFloat(after.top) - parseFloat(after.bottom);
+        // From the padding box: an absolute box is placed inside the border, so the border counts
+        // against it (a 26px circle with a 1px border and inset -9px draws 42px, not 44).
+        const w = (el as HTMLElement).clientWidth - parseFloat(after.left) - parseFloat(after.right);
+        const h = (el as HTMLElement).clientHeight - parseFloat(after.top) - parseFloat(after.bottom);
         if (h >= min - 1 && w >= min - 1) continue;
       }
       // **A checkbox inside a label is tapped by the label**, so the input's own box is the wrong

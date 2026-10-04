@@ -180,20 +180,27 @@ export function LedgerSummary({
         </p>
       ) : null}
 
-      {cardCount > 0 ? (
-        <p className="ledger-status">
-          <b>
-            Notification cards: {cardMatches.byCard.size} verified · {cardCount - cardMatches.byCard.size - cardMatches.needsReview.size - cardMatches.balanceConflict.size} awaiting a statement
-            {cardMatches.needsReview.size > 0 ? ` · ${cardMatches.needsReview.size} needing review` : ""}
-            {cardMatches.balanceConflict.size > 0 ? ` · ${cardMatches.balanceConflict.size} whose balance disagrees` : ""}
-          </b>
-          <LedgerNote label="How notification cards are matched">
-            A card matches on its account, the exact amount, a date within one day, and its printed
-            balance equalling the row&apos;s. The balance breaks ties; a card whose balance
-            disagrees stays unmatched rather than guessed. Rechecked on every load, not stored yet.
-          </LedgerNote>
-        </p>
-      ) : null}
+      {cardCount > 0 ? (() => {
+        const awaiting = cardCount - cardMatches.byCard.size - cardMatches.needsReview.size - cardMatches.balanceConflict.size;
+        const text = `Notification cards: ${cardMatches.byCard.size} verified · ${awaiting} awaiting a statement`
+          + (cardMatches.needsReview.size > 0 ? ` · ${cardMatches.needsReview.size} needing review` : "")
+          + (cardMatches.balanceConflict.size > 0 ? ` · ${cardMatches.balanceConflict.size} whose balance disagrees` : "");
+        // The last word and the (i) stay together, so the (i) never wraps onto a line of its own.
+        const cut = text.lastIndexOf(" ") + 1;
+        return (
+          <p className="ledger-status">
+            <b>{text.slice(0, cut)}</b>
+            <span className="note-tail">
+              <b>{text.slice(cut)}</b>
+              <LedgerNote label="How notification cards are matched">
+                A card matches on its account, the exact amount, a date within one day, and its printed
+                balance equalling the row&apos;s. The balance breaks ties; a card whose balance
+                disagrees stays unmatched rather than guessed. Rechecked on every load, not stored yet.
+              </LedgerNote>
+            </span>
+          </p>
+        );
+      })() : null}
     </>
   );
 }

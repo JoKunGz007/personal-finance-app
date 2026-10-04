@@ -783,7 +783,7 @@ div:has(> .heading-note) > :not(h1, h2, h3, .heading-note) { flex-basis: 100%; }
 .note-tail { white-space: nowrap; }
 .note-tail .note-panel { white-space: normal; }
 /* The inline link to Inbox: a taller tap area that leaves the line height alone. */
-.inbox-link { display: inline-block; padding: 14px 4px; margin: -14px -4px; }
+.inbox-link { display: inline-block; min-width: 44px; text-align: center; padding: 14px 4px; margin: -14px -4px; }
 /* `center`, not the `baseline` the shared rule sets: this row carries a 47px button, and a
    button sitting on the heading's baseline hangs below the line it belongs to. */
 .cash-heading { gap: 22px; align-items: center; }
@@ -1407,7 +1407,8 @@ footer p { margin: 0; }
     width: 26px; height: 26px; font-size: 13px; position: relative; margin-block: -4px;
   }
   .note-tail .note-toggle::after, .ledger-status .note-toggle::after, .batch-note .note-toggle::after {
-    content: ""; position: absolute; inset: -9px;
+    /* -10px, not -9px: the box is placed inside the 1px border, so 24 + 20 = 44. */
+    content: ""; position: absolute; inset: -10px;
   }
   /* 34px, inside the panel D-157 collapses — so it was never in a measured viewport until the
      disclosure-open pass existed. */
@@ -1741,7 +1742,7 @@ footer p { margin: 0; }
   .ledger-controls > :not(button) { grid-column: 1 / -1; }
   /* The one-column rule's `grid-column: auto` for this field outranks the line above (0,2,0 over
      0,1,1), which left it half a row wide in this two-track grid. */
-  .ledger-controls > .ledger-filter { grid-column: 1 / -1; }
+  .ledger-controls > .ledger-filter, .ledger-controls > .ledger-wide { grid-column: 1 / -1; }
   .ledger-controls .filters-toggle { width: 100%; }
 
   /* #10: on a card, the description a person recognises leads; the bank's channel code follows. */
