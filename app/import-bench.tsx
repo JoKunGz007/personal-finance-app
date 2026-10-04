@@ -732,7 +732,7 @@ export function ImportBench() {
           </div>
           <p className="field-help">
             Usually easier: drop files on{" "}
-            <span className="note-tail"><Link href="/inbox">Inbox</Link>.
+            <span className="note-tail"><Link href="/inbox" className="inbox-link">Inbox</Link>.
               <LedgerNote label="About Import and Inbox">
                 /import is still where you review a statement row by row before confirming.
               </LedgerNote>

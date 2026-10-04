@@ -782,6 +782,8 @@ div:has(> .heading-note) > :not(h1, h2, h3, .heading-note) { flex-basis: 100%; }
 /* The last words and their (i) stay together, so the (i) never wraps alone onto a new line. */
 .note-tail { white-space: nowrap; }
 .note-tail .note-panel { white-space: normal; }
+/* The inline link to Inbox: a taller tap area that leaves the line height alone. */
+.inbox-link { display: inline-block; padding-block: 14px; margin-block: -14px; }
 /* `center`, not the `baseline` the shared rule sets: this row carries a 47px button, and a
    button sitting on the heading's baseline hangs below the line it belongs to. */
 .cash-heading { gap: 22px; align-items: center; }
@@ -1210,6 +1212,11 @@ footer p { margin: 0; }
 /* On a phone the name keeps at least 60% of the row, so the count always drops to line 2 instead
    of sitting on line 1 only when the name happens to be short. */
 @media (max-width: 700px) { .receipt-list .receipt-branch { flex: 1 1 0; min-width: 60%; } }
+/* Stored receipts at phone width: one shape whether or not the row has a time. Date (+ time) on
+   line 1, branch on line 2, count + chip + amount on line 3. */
+@media (max-width: 700px) {
+  .receipt-list-stored .receipt-when, .receipt-list-stored .receipt-branch { flex: 0 0 100%; min-width: 0; }
+}
 .receipt-chip { display: inline-block; padding: 1px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.5; }
 .receipt-chip.ok { color: var(--verified-ink); }
 .receipt-chip.warn { color: var(--warn-ink); background: var(--saffron-wash); }
@@ -1391,6 +1398,9 @@ footer p { margin: 0; }
      full target rather than faked with a pseudo-element, so the measurement and the thumb agree.
      It costs height on the heading rows that carry one; that cost is measured, not assumed. */
   .note-toggle { width: 44px; height: 44px; font-size: 15px; }
+  /* Inline in a sentence the 44px toggle would push its line down: a negative block margin keeps
+     the line box at normal height while the hit area stays 44px (44 - ~22px line) / 2. */
+  .note-tail .note-toggle { vertical-align: middle; margin-block: -12px; }
   /* 34px, inside the panel D-157 collapses — so it was never in a measured viewport until the
      disclosure-open pass existed. */
   .ui-picker select { height: 44px; }

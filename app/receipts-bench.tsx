@@ -306,7 +306,7 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
       <div className="bench-heading">
         <p className="section-index">Stored</p>
         <div>
-          <h2 id="stored-receipts-title">On this ledger</h2>
+          <h2 id="stored-receipts-title">Stored receipts</h2>
           <div className="heading-note">
             <LedgerNote label="About stored receipts">
               Newest first, with the forms each was read from. A partial receipt&apos;s total is
@@ -335,7 +335,7 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
       {receipts === null ? null : receipts.length === 0 ? (
         <p className="ledger-empty" role="status">No receipt has been stored on this ledger yet.</p>
       ) : (
-        <ul className="receipt-list">
+        <ul className="receipt-list receipt-list-stored">
           {receipts.map((receipt) => (
             <li key={receipt.id}>
               <details>

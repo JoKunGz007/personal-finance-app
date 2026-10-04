@@ -112,21 +112,11 @@ export function DeliveriesBench() {
 
       <LinemanCapture onSaved={() => { setChanges((count) => count + 1); void load(); }} />
 
-      <section id="stored-orders" className="captured-slips" aria-labelledby="stored-deliveries-title">
+      <section id="stored-orders" className="captured-slips" aria-labelledby="stored-title">
         <div className="bench-heading">
           <p className="section-index">Stored</p>
           <div>
-            <h2 id="stored-deliveries-title">Food orders</h2>
-            <div className="heading-note">
-              <LedgerNote label="About stored orders">
-                Newest first. GrabFood is dated by its e-receipt and matches a GRAB row of the exact
-                total up to 2 hours before. LINE MAN is dated by its order time and matches a LINE
-                PAY or LINE MAN row of what was charged, 5 minutes before to 30 after. What เป๋าตัง
-                paid has no ledger row. Real cost = your share of that food (50% in 2025, 40% from
-                2026; the government pays at most ฿200 a day) plus the fee. Scheme spending in shops
-                isn&apos;t seen here, so such a day reads low.
-              </LedgerNote>
-            </div>
+            <h2 id="stored-title">Orders and rides</h2>
           </div>
         </div>
 
@@ -178,6 +168,25 @@ export function DeliveriesBench() {
             <span>{error}</span>
           </div>
         ) : null}
+      </section>
+
+      <section className="captured-slips" aria-labelledby="stored-deliveries-title">
+        <div className="bench-heading">
+          <p className="section-index">Orders</p>
+          <div>
+            <h2 id="stored-deliveries-title">Food orders</h2>
+            <div className="heading-note">
+              <LedgerNote label="About stored orders">
+                Newest first. GrabFood is dated by its e-receipt and matches a GRAB row of the exact
+                total up to 2 hours before. LINE MAN is dated by its order time and matches a LINE
+                PAY or LINE MAN row of what was charged, 5 minutes before to 30 after. What เป๋าตัง
+                paid has no ledger row. Real cost = your share of that food (50% in 2025, 40% from
+                2026; the government pays at most ฿200 a day) plus the fee. Scheme spending in shops
+                isn&apos;t seen here, so such a day reads low.
+              </LedgerNote>
+            </div>
+          </div>
+        </div>
 
         {deliveries === null || filter.show === "rides" ? null : deliveries.length === 0 ? (
           <p className="ledger-empty" role="status">No order has been stored on this ledger yet.</p>

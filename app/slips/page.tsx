@@ -23,7 +23,7 @@ export default function SlipsPage() {
             </LedgerNote>
           </div>
           <p className="field-help">
-            Usually easier: drop files on <Link href="/inbox">Inbox</Link> — it unlocks and imports them for you.
+            Usually easier: drop files on <Link href="/inbox" className="inbox-link">Inbox</Link>.
           </p>
         </div>
       </section>
