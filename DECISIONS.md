@@ -426,11 +426,23 @@ a reason to keep it rather than a reason it cannot ever move.
 
 - **D-240** — `/import` warns before Confirm when a statement's rows are already in the ledger
 - **D-241** — The LINE bot stores images through a secret-gated holding table, not a service-role key; images only; replies with a count and a link
+- **D-242** — D-241's three known limits fixed, and a sixth /ux-review fix loop
 - **D-239** — The eighteenth boundary moves D-223 … D-234 on the owner's word
 - **D-238** — Review fixes for the server statement path, a server masked dump, empty statements flagged, and KBANK's Thai print
 - **D-237** — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 - **D-236** — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 - **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
+
+## D-242 — D-241's three known limits fixed, and a sixth /ux-review fix loop
+
+- Date: 2026-10-04
+- Status: **Built and gated locally; migrations 044 and 045 not yet on hosted.**
+- **"Got N" only once the whole set is stored.** Migration 044 adds `image_set_id/index/total` to `private.line_inbox_items` (all or none, 1 ≤ index ≤ total ≤ 20, safe id), and `line_inbox_enqueue` takes them and returns `set_stored`, counted under the existing advisory lock so exactly one transaction sees it reach the total. The reply goes on that event's own token. A duplicate replies only when LINE marks it `isRedelivery` and the set is complete, so a lost first reply is recovered without a double reply. A lone image counts as 1 of 1. The webhook treats an `imageSet` with a bad id or a total over 20 as a lone image.
+- **Page order within a set.** `list_line_inbox` lists a set together, by the set's first arrival, then index. It holds back a set that is still incomplete for 2 minutes after its newest member arrives, then lists it anyway so a set that lost a member still drains. Object names are unchanged: Storage lists by upload time and the drain uploads in list order.
+- **A held image that can't be moved.** No automatic delete, because bytes are dropped only after Storage confirms the copy. The browser counts failures per message id (`inbox:line-failures:v1`). From the third failure, `/inbox` shows one line, "N LINE images can't be moved", with a confirmed Discard that calls `delete_line_inbox_item` (the redelivery marker stays).
+- **LINE panel status.** 044 adds `line_bot_status()`: owner-only, granted to `authenticated` only, returns `connected` and `connected_at` and never the hash. The panel shows "Connected" with a quieter Reconnect.
+- **/ux-review round 1** (9 pages, a subagent, read-only). Fixed: the LINE disclosure at 44px; shorter always-visible help on `/inbox` and `/receipts` (rest behind (i), D-202); a pointer to Inbox on `/import` and `/slips`; one list date format ("01 Oct 2026", months "Oct 2026") on `/receipts` and `/orders`; ledger times as HH:MM; `/orders` months newest first; "1 item"; a receipt with no purchase time reads "no time on invoice" (the full e-tax invoice prints none, so it can only be linked by hand, D-212); `/recovery` shows the last export and changes since, through `GET /api/v1/backups/status` (strongOwnerClient, existing select policies); migration 045 groups `delivery_statistics()` stores and ride types on whitespace-collapsed keys. **Not fixed:** "Most bought" splitting truncated names (receipt items store no item code, so no safe key); the phone header before the first ledger row (revisits D-226, the owner's call).
+- **Evidence.** Local: pgTAP 698 / 28 files; red-proved the reply rule (6 tests fail on the old rule), the order and hold filter, and the stuck threshold. Hosted backup read 484 / 484 before any push (newest export 2026-10-03, which supersedes the 2026-09-30 one).
 
 ## D-241 — The LINE bot stores images through a secret-gated holding table, not a service-role key; images only; replies with a count and a link
 

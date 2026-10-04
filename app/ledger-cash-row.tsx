@@ -6,7 +6,7 @@ import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CashCorrection, type CashEntry } from "@/lib/cash";
 import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
-import { formatDate, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, formatTime, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
 /**
  * A cash payment's row in the ledger (migration 013).
@@ -54,7 +54,7 @@ export function LedgerCashRow({
       <tr className="cash-row">
         <td data-label="Date">
           <time dateTime={entry.occurred_on}>{formatDate(entry.occurred_on)}</time>
-          <small>{entry.occurred_at_time ?? "—"}</small>
+          <small>{entry.occurred_at_time ? formatTime(entry.occurred_at_time) : "—"}</small>
         </td>
         <td data-label="Description">
           <strong>Cash</strong>

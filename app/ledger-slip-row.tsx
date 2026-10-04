@@ -7,7 +7,7 @@ import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CapturedSlip, type SlipCorrection } from "@/lib/slips";
 import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
-import { formatDate, formatDateParts, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, formatDateParts, formatTime, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
 /**
  * A captured slip that has not collapsed onto a statement row.
@@ -58,7 +58,7 @@ export function LedgerSlipRow({
               part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
             )}
           </time>
-          <small>{slip.occurred_at_time ? <span className="figure">{slip.occurred_at_time}</span> : "—"}</small>
+          <small>{slip.occurred_at_time ? <span className="figure">{formatTime(slip.occurred_at_time)}</span> : "—"}</small>
         </td>
         <td data-label="Description">
           <strong>Slip · {slip.bank_code}</strong>

@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.stubEnv("LINE_INBOX_SECRET", INBOX_SECRET);
   vi.stubEnv("LINE_CHANNEL_ACCESS_TOKEN", "invented-token");
   vi.stubEnv("LINE_OWNER_USER_ID", OWNER);
-  state.rpc.mockReset().mockResolvedValue({ data: "stored", error: null });
+  state.rpc.mockReset().mockResolvedValue({ data: [{ outcome: "stored", set_stored: 1 }], error: null });
   state.strongRpc.mockReset().mockResolvedValue({ data: null, error: null });
   state.auth = { ok: true };
   calls = [];
@@ -100,13 +100,43 @@ describe("POST /api/v1/line/webhook", () => {
     expect(state.rpc).toHaveBeenCalledTimes(2);
     expect(state.rpc).toHaveBeenCalledWith("line_inbox_enqueue", {
       p_secret: INBOX_SECRET, p_message_id: "100001", p_content_type: "image/jpeg",
-      p_content_base64: JPEG.toString("base64")
+      p_content_base64: JPEG.toString("base64"), p_set_id: null, p_set_index: null, p_set_total: null
     });
     const content = calls.find((c) => c.url.includes("api-data.line.me"))!;
     expect(content.url).toBe("https://api-data.line.me/v2/bot/message/100001/content");
     expect((content.init?.headers as Record<string, string>).Authorization).toBe("Bearer invented-token");
     expect(replies()).toHaveLength(2);
     expect(replies()[0].messages[0].text).toBe("Got 1 image. Open /inbox: https://ledger.example/inbox");
+  });
+  describe("image sets", () => {
+    const setEvent = (id: string, token: string, index: number) => {
+      const event = imageEvent(id, token);
+      return { ...event, message: { ...event.message, imageSet: { id: "set1", index, total: 3 } } };
+    };
+    const rowFor = (outcome: string, stored: number | null) => ({ data: [{ outcome, set_stored: stored }], error: null });
+
+    it("passes the set fields to the database", async () => {
+      await post([setEvent("100001", "t1", 2)]);
+      expect(state.rpc).toHaveBeenCalledWith("line_inbox_enqueue", expect.objectContaining({
+        p_set_id: "set1", p_set_index: 2, p_set_total: 3
+      }));
+    });
+    it("does not reply on index = total while the set is short, and replies on the event that completes it", async () => {
+      state.rpc.mockResolvedValueOnce(rowFor("stored", 1)).mockResolvedValueOnce(rowFor("stored", 2)).mockResolvedValueOnce(rowFor("stored", 3));
+      await post([setEvent("100003", "t3", 3), setEvent("100002", "t2", 2), setEvent("100001", "t1", 1)]);
+      expect(replies()).toHaveLength(1);
+      expect(replies()[0].replyToken).toBe("t1");
+      expect(replies()[0].messages[0].text).toBe("Got 3 images. Open /inbox: https://ledger.example/inbox");
+    });
+    it("does not reply on a duplicate, but confirms a redelivered one of a complete set", async () => {
+      state.rpc.mockResolvedValue(rowFor("duplicate", 3));
+      await post([setEvent("100001", "t1", 1)]);
+      expect(replies()).toEqual([]);
+      const redelivered = { ...setEvent("100001", "t1", 1), deliveryContext: { isRedelivery: true } };
+      await post([redelivered]);
+      expect(replies()).toHaveLength(1);
+      expect(replies()[0].messages[0].text).toContain("Got 3 images");
+    });
   });
   it("refuses a non-image content type from LINE: no enqueue, a failure reply", async () => {
     contentResponse = () => new Response("%PDF", { headers: { "content-type": "application/pdf" } });

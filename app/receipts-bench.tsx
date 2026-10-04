@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LedgerMatchPanel } from "@/app/ledger-match-panel";
+import { formatDate, formatDateParts } from "@/app/ledger-shared";
 import { LedgerNote } from "@/app/ledger-note";
 import { ReceiptStatisticsPanel } from "@/app/receipt-statistics";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
@@ -46,10 +47,13 @@ const screenshotKey = (page: ScreenshotPage) => `${page.storeCode}:${page.receip
 
 const isPdf = (file: File) => file.type === "application/pdf" || /\.pdf$/iu.test(file.name);
 
+const itemCount = (count: number) => `${count} item${count === 1 ? "" : "s"}`;
+
 function summary(form: CaptureForm, receipt: ParsedReceipt): string {
-  const when = receipt.purchasedAtTime ? `${receipt.purchasedAt} ${receipt.purchasedAtTime}` : receipt.purchasedAt;
+  const day = formatDate(receipt.purchasedAt);
+  const when = receipt.purchasedAtTime ? `${day} ${receipt.purchasedAtTime}` : day;
   const items = receipt.items.filter((item) => !item.isPromotion).length;
-  return `${FORM_LABEL[form]} · ${when} · ${receipt.branchName} · ${items} item${items === 1 ? "" : "s"} · ${formatThb(receipt.netMinor)}`;
+  return `${FORM_LABEL[form]} · ${when} · ${receipt.branchName} · ${itemCount(items)} · ${formatThb(receipt.netMinor)}`;
 }
 
 export function ReceiptsBench() {
@@ -228,10 +232,13 @@ export function ReceiptsBench() {
           <h2 id="receipt-add-title">Read receipts</h2>
         </div>
         <div className="slip-form">
-          <p className="field-help">
-            PDFs you pick are read on this device; app screenshots are read by Google Cloud Vision (stored
-            nowhere). Pick all screenshots of a long receipt together to join them.
-          </p>
+          <div className="heading-note">
+            <p className="field-help">Screenshots are read by Google Cloud Vision, stored nowhere.</p>
+            <LedgerNote label="About reading receipts">
+              PDFs you pick are read on this device. Pick all screenshots of a long receipt together
+              to join them.
+            </LedgerNote>
+          </div>
           <label className="account-control">
             <span>7-Eleven e-tax PDFs or app screenshots</span>
             <input type="file" accept="application/pdf,.pdf,image/*" multiple onChange={(event) => { void choose(event.target.files); event.target.value = ""; }} />
@@ -330,12 +337,16 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
               <details>
                 <summary>
                   <span className="receipt-when">
-                    <time dateTime={receipt.purchased_on}>{receipt.purchased_on}</time>
+                    <time dateTime={receipt.purchased_on}>
+                      {formatDateParts(receipt.purchased_on).map((part, index) =>
+                        part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
+                      )}
+                    </time>
                     {receipt.purchased_at_time ? ` ${receipt.purchased_at_time.slice(0, 5)}` : ""}
                   </span>
                   <span className="receipt-branch">{receipt.branch_name}</span>
-                  <span className="receipt-count">{receipt.items.filter((item) => !item.is_promotion).length} items</span>
-                  <span className={`receipt-chip ${MATCH_CHIP[receipt.match.status].tone}`}>{MATCH_CHIP[receipt.match.status].label}</span>
+                  <span className="receipt-count">{itemCount(receipt.items.filter((item) => !item.is_promotion).length)}</span>
+                  <span className={`receipt-chip ${MATCH_CHIP[receipt.match.status].tone}`}>{receipt.match.status === "none" && receipt.purchased_at_time === null ? "no time on invoice" : MATCH_CHIP[receipt.match.status].label}</span>
                   {/* `items_complete`, not `completeness`: capture overwrites the latter with the latest
                       source's verdict even when it keeps the stored items, and "partial" here means
                       the items shown are not trusted — the rule the statistics count by. */}

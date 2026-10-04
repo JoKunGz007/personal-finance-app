@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { formatDate, formatMonthParts } from "@/app/ledger-shared";
 import { LedgerNote } from "@/app/ledger-note";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { formatThb } from "@/lib/money";
 import { receiptStatisticsSchema, type ReceiptStatistics } from "@/lib/receipt-statistics";
 import { ledgerRequest } from "@/lib/wire";
+
+/** "2026-10" as "Oct 2026", with the digits in the figures font. */
+const monthLabel = (month: string) => formatMonthParts(month).map((part, index) =>
+  part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
+);
 
 type ItemRow = ReceiptStatistics["mostBought"][number];
 
@@ -44,7 +50,7 @@ function ItemTable({ id, title, items }: { id: string; title: string; items: rea
 
 function GroupTable({ id, title, label, rows }: {
   id: string; title: string; label: string;
-  rows: readonly { key: string; name: string; receipts: number; net: string }[];
+  rows: readonly { key: string; name: ReactNode; receipts: number; net: string }[];
 }) {
   return (
     <section className="stats-section" aria-labelledby={`${id}-title`}>
@@ -149,7 +155,7 @@ export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
       ) : (
         <>
           <p className="field-help">
-            {totals.firstDate} to {totals.lastDate} · {totals.receipts} receipt{totals.receipts === 1 ? "" : "s"}
+            {totals.firstDate && totals.lastDate ? `${formatDate(totals.firstDate)} to ${formatDate(totals.lastDate)}` : "—"} · {totals.receipts} receipt{totals.receipts === 1 ? "" : "s"}
             {totals.partialReceipts > 0
               ? ` · ${totals.partialReceipts} partial, so ${totals.partialReceipts === 1 ? "its" : "their"} items are left out of the item figures`
               : ""}
@@ -166,7 +172,7 @@ export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
           <ItemTable id="receipt-most-bought" title="Most bought" items={stats.mostBought} />
           <ItemTable id="receipt-most-spent" title="Most spent on" items={stats.mostSpent} />
           <GroupTable id="receipt-months" title="By month" label="Month"
-            rows={stats.months.map((m) => ({ key: m.month, name: m.month, receipts: m.receipts, net: m.net }))} />
+            rows={stats.months.map((m) => ({ key: m.month, name: monthLabel(m.month), receipts: m.receipts, net: m.net }))} />
           <GroupTable id="receipt-payment" title="By payment" label="Paid by"
             rows={stats.paymentMethods.map((p) => ({ key: p.method ?? "", name: p.method ?? "Not printed", receipts: p.receipts, net: p.net }))} />
           <GroupTable id="receipt-branches" title="By branch" label="Branch"

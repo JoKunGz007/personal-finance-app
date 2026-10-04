@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LedgerNote } from "@/app/ledger-note";
 import { SlipsBench } from "@/app/slips-bench";
 
@@ -21,6 +22,9 @@ export default function SlipsPage() {
               Vision. A slip stays provisional until the statement it belongs to arrives.
             </LedgerNote>
           </div>
+          <p className="field-help">
+            Usually easier: drop files on <Link href="/inbox">Inbox</Link> — it unlocks and imports them for you.
+          </p>
         </div>
       </section>
       <SlipsBench />

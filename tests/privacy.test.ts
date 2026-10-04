@@ -1202,10 +1202,10 @@ describe("privacy guardrails", () => {
     expect(code, "the webhook must not log").not.toMatch(/\bconsole\./u);
     expect(code).not.toMatch(/\.storage\b|service_role|SERVICE_ROLE/u);
     expect(readFileSync("lib/line-webhook.ts", "utf8")).not.toMatch(/\bconsole\./u);
-    // The browser mover may call only the three owner RPCs, and must not log.
+    // The browser mover may call only the owner RPCs (the three queue ones and the status read), and must not log.
     const mover = readFileSync("lib/browser/line-inbox.ts", "utf8");
     expect(new Set([...mover.matchAll(/rpc\("([a-z_]+)"/gu)].map((match) => match[1])))
-      .toEqual(new Set(["list_line_inbox", "read_line_inbox_item", "delete_line_inbox_item"]));
+      .toEqual(new Set(["list_line_inbox", "read_line_inbox_item", "delete_line_inbox_item", "line_bot_status"]));
     expect(mover).not.toMatch(/\bconsole\./u);
     // The connect route is the owner's and must stay behind the strong session.
     expect(readFileSync("app/api/v1/line/connect/route.ts", "utf8")).toContain("await strongOwnerClient()");

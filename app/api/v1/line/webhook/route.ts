@@ -37,7 +37,8 @@ const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png"]);
 const empty = () => Response.json({}, { status: 200, headers: { "Cache-Control": "no-store" } });
 const refuse = (status: number) => new Response(null, { status, headers: { "Cache-Control": "no-store" } });
 
-type Enqueue = (secret: string, messageId: string, contentType: string, base64: string) => Promise<ImageOutcome>;
+type Stored = { outcome: "stored" | "duplicate"; setStored: number | null };
+type Enqueue = (secret: string, image: PlannedImage, contentType: string, base64: string) => Promise<Stored | null>;
 
 async function fetchImage(messageId: string, token: string): Promise<{ contentType: string; base64: string } | null> {
   try {
@@ -58,13 +59,15 @@ async function fetchImage(messageId: string, token: string): Promise<{ contentTy
   }
 }
 
-async function storeOne(image: PlannedImage, token: string, secret: string, enqueue: Enqueue): Promise<ImageOutcome> {
+async function storeOne(
+  image: PlannedImage, token: string, secret: string, enqueue: Enqueue
+): Promise<{ outcome: ImageOutcome; setStored?: number | null }> {
   const fetched = await fetchImage(image.messageId, token);
-  if (!fetched) return "failed";
+  if (!fetched) return { outcome: "failed" };
   try {
-    return await enqueue(secret, image.messageId, fetched.contentType, fetched.base64);
+    return (await enqueue(secret, image, fetched.contentType, fetched.base64)) ?? { outcome: "failed" };
   } catch {
-    return "failed";
+    return { outcome: "failed" };
   }
 }
 
@@ -94,19 +97,24 @@ export async function POST(request: Request) {
   if (plan.images.length === 0 && plan.nonImages.length === 0) return empty();
 
   const client = anonServerClient();
-  const enqueue: Enqueue = async (inboxSecret, messageId, contentType, base64) => {
-    if (!client) return "failed";
+  const enqueue: Enqueue = async (inboxSecret, image, contentType, base64) => {
+    if (!client) return null;
     const { data, error } = await client.rpc("line_inbox_enqueue", {
-      p_secret: inboxSecret, p_message_id: messageId, p_content_type: contentType, p_content_base64: base64
+      p_secret: inboxSecret, p_message_id: image.messageId, p_content_type: contentType, p_content_base64: base64,
+      p_set_id: image.imageSet?.id ?? null, p_set_index: image.imageSet?.index ?? null, p_set_total: image.imageSet?.total ?? null
     });
-    if (error || (data !== "stored" && data !== "duplicate")) return "failed";
-    return data;
+    // The function returns one row: the outcome and how many members of the set are now held.
+    const row = Array.isArray(data) ? data[0] : data;
+    if (error || !row || typeof row !== "object") return null;
+    const { outcome, set_stored: setStored } = row as { outcome?: unknown; set_stored?: unknown };
+    if (outcome !== "stored" && outcome !== "duplicate") return null;
+    return { outcome, setStored: typeof setStored === "number" ? setStored : null };
   };
 
   // Sequential: a burst of photos must not hold many 10 MB buffers at once.
-  const outcomes: Array<PlannedImage & { outcome: ImageOutcome }> = [];
+  const outcomes: Array<PlannedImage & { outcome: ImageOutcome; setStored?: number | null }> = [];
   for (const image of plan.images) {
-    outcomes.push({ ...image, outcome: await storeOne(image, accessToken, secret, enqueue) });
+    outcomes.push({ ...image, ...(await storeOne(image, accessToken, secret, enqueue)) });
   }
 
   const origin = new URL(request.url).origin;

@@ -8,7 +8,7 @@ import { type CardReviewReason } from "@/lib/notification-card-reconcile";
 import { type NotificationCard, type NotificationCardCorrection } from "@/lib/notification-cards";
 import { type Category } from "@/lib/categories";
 import { CorrectionForm } from "@/app/correction-form";
-import { formatDate, formatDateParts, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, formatDateParts, formatTime, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 
 /**
  * A captured notification card that has not collapsed onto a statement row (migration 016).
@@ -70,7 +70,7 @@ export function LedgerCardRow({
               part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
             )}
           </time>
-          <small><span className="figure">{card.occurred_at_time}</span></small>
+          <small><span className="figure">{formatTime(card.occurred_at_time)}</span></small>
         </td>
         <td data-label="Description">
           <strong>Card · {card.channel}</strong>

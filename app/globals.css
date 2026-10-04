@@ -1213,6 +1213,8 @@ footer p { margin: 0; }
 .ledger-receipt { margin-top: 4px; font-size: 12px; }
 /* 44px hit areas (D-136): padding, not flex, so the summary keeps its marker and its spaces. */
 .ledger-receipt summary { cursor: pointer; color: var(--verified-ink); font-weight: 600; padding-block: 12px; line-height: 20px; }
+/* The /inbox LINE bot disclosure: the same padding idiom, with a 44px floor. */
+.line-bot summary { cursor: pointer; min-height: 44px; box-sizing: border-box; padding-block: 12px; line-height: 20px; }
 .ledger-receipt ul { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 2px; }
 .ledger-receipt li { display: flex; justify-content: space-between; gap: 12px; }
 .ledger-receipt a { font-size: 11px; display: inline-flex; align-items: center; min-height: 44px; }

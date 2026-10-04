@@ -7,7 +7,7 @@ import { type LedgerAccount } from "@/lib/accounts";
 import { type Category } from "@/lib/categories";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
-import { formatDate, formatDateParts, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
+import { formatDate, formatDateParts, formatTime, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
 import { OverlayCategoryForm } from "@/app/overlay-category-form";
 import { type StoredDelivery, type StoredRide } from "@/lib/deliveries";
 import { type StoredReceipt } from "@/lib/receipts";
@@ -116,7 +116,7 @@ export function LedgerStatementRow({
               part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
             )}
           </time>
-          <small>{transaction.source_time ? <span className="figure">{transaction.source_time}</span> : "—"}</small>
+          <small>{transaction.source_time ? <span className="figure">{formatTime(transaction.source_time)}</span> : "—"}</small>
         </td>
         <td data-label="Description">
           <strong lang="th">{transaction.transaction_label}</strong>

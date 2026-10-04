@@ -1,11 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { formatDate, formatMonthParts } from "@/app/ledger-shared";
 import { LedgerNote } from "@/app/ledger-note";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { deliveryStatisticsSchema, type DeliveryStatistics } from "@/lib/delivery-statistics";
 import { formatThb } from "@/lib/money";
 import { ledgerRequest } from "@/lib/wire";
+
+/** "2026-10" as "Oct 2026", with the digits in the figures font. */
+const monthLabel = (month: string) => formatMonthParts(month).map((part, index) =>
+  part.numeric ? <span key={index} className="figure">{part.value}</span> : part.value
+);
 
 const PLATFORM = { grabfood: "GrabFood", lineman: "LINE MAN" } as const;
 
@@ -14,7 +20,7 @@ function Table({ id, title, columns, rows }: {
   title: string;
   /** The first column is the name; the rest are right-aligned figures. */
   columns: readonly string[];
-  rows: readonly { key: string; cells: readonly (string | number)[] }[];
+  rows: readonly { key: string; cells: readonly (ReactNode)[] }[];
 }) {
   return (
     <section className="stats-section" aria-labelledby={`${id}-title`}>
@@ -119,7 +125,7 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
       ) : (
         <>
           <p className="field-help">
-            {totals.firstDate} to {totals.lastDate} · {totals.orders} order{totals.orders === 1 ? "" : "s"}
+            {totals.firstDate && totals.lastDate ? `${formatDate(totals.firstDate)} to ${formatDate(totals.lastDate)}` : "—"} · {totals.orders} order{totals.orders === 1 ? "" : "s"}
             {" "}· {stats.rides.rides} ride{stats.rides.rides === 1 ? "" : "s"}
           </p>
           <dl className="statement-strip">
@@ -136,11 +142,11 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
           <Table id="delivery-restaurants" title="Most spent at" columns={["Restaurant", "Orders", "Cost you"]}
             rows={stats.restaurants.map((r) => ({ key: r.restaurant, cells: [r.restaurant, r.orders, formatThb(r.spent)] }))} />
           <Table id="delivery-months" title="By month" columns={["Month", "Orders", "Food cost", "Rides", "Ride cost"]}
-            rows={stats.months.map((m) => ({ key: m.month, cells: [m.month, m.orders, formatThb(m.spent), m.rides, formatThb(m.rideSpent)] }))} />
+            rows={[...stats.months].reverse().map((m) => ({ key: m.month, cells: [monthLabel(m.month), m.orders, formatThb(m.spent), m.rides, formatThb(m.rideSpent)] }))} />
 
           {/* Its own heading: without one the ride totals read as part of "By month" above them. */}
           <section className="stats-section" aria-labelledby="delivery-rides-title">
-            <h2 id="delivery-rides-title">Rides</h2>
+            <h2 id="delivery-rides-title">Ride totals</h2>
             <dl className="statement-strip">
               <div><dt>Rides</dt><dd>{stats.rides.rides}</dd></div>
               <div><dt>Ride cost</dt><dd>{formatThb(stats.rides.spent)}</dd></div>

@@ -26,11 +26,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 function readImageSet(value: unknown): LineImageSet | undefined {
   if (!isRecord(value)) return undefined;
   const { id, index, total } = value;
-  if (typeof id !== "string" || id.length === 0 || id.length > 128) return undefined;
+  if (typeof id !== "string") return undefined;
   if (!Number.isInteger(index) || !Number.isInteger(total)) return undefined;
   const i = index as number;
   const t = total as number;
-  if (t < 1 || t > 50 || i < 1 || i > t) return undefined;
+  if (!/^[A-Za-z0-9_-]{1,64}$/u.test(id)) return undefined;
+  if (t < 1 || t > 20 || i < 1 || i > t) return undefined;
   return { id, index: i, total: t };
 }
 
@@ -71,7 +72,7 @@ export type Reply = { replyToken: string; text: string };
 const noun = (count: number) => (count === 1 ? "image" : "images");
 
 export function planLineReplies(
-  images: Array<PlannedImage & { outcome: ImageOutcome }>,
+  images: Array<PlannedImage & { outcome: ImageOutcome; setStored?: number | null }>,
   nonImages: PlannedNonImage[],
   origin: string
 ): Reply[] {
@@ -82,8 +83,11 @@ export function planLineReplies(
     replies.push({ replyToken: failed[0]!.replyToken, text: `Couldn't save ${failed.length} ${noun(failed.length)}. Open /inbox, then send again: ${link}` });
   }
   for (const image of images) {
-    if (image.outcome === "failed" || image.isRedelivery) continue;
-    if (image.imageSet && image.imageSet.index !== image.imageSet.total) continue;
+    // A set is confirmed by the event whose own store made the database count reach the total. A
+    // duplicate confirms only when LINE says it is a redelivery (the first reply may have been lost).
+    if (image.outcome === "failed") continue;
+    if (image.outcome === "duplicate" && !image.isRedelivery) continue;
+    if (image.setStored !== (image.imageSet ? image.imageSet.total : 1)) continue;
     const count = image.imageSet ? image.imageSet.total : 1;
     replies.push({ replyToken: image.replyToken, text: `Got ${count} ${noun(count)}. Open /inbox: ${link}` });
   }

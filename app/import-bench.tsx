@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useResultBanner } from "@/app/result-banner";
 import { accountListSchema, createAccountSchema, ledgerAccountSchema, type LedgerAccount } from "@/lib/accounts";
@@ -729,6 +730,10 @@ export function ImportBench() {
               only validated transaction facts cross the confirmation boundary.
             </LedgerNote>
           </div>
+          <p className="field-help">
+            Usually easier: drop files on <Link href="/inbox">Inbox</Link> — it unlocks and imports
+            them for you. Import is still the place to review a statement row by row before confirming.
+          </p>
         </div>
       </section>
 

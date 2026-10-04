@@ -46,6 +46,18 @@ export function formatDateParts(date: string): { value: string; numeric: boolean
     .map((part) => ({ value: part.value, numeric: part.type === "day" || part.type === "year" }));
 }
 
+/** A printed time as HH:MM. Statements carry minutes only, so a stored "14:30:00" must not show its seconds. */
+export function formatTime(time: string) {
+  return time.slice(0, 5);
+}
+
+/** A `YYYY-MM` month as "Oct 2026", split into figure and word parts like `formatDateParts`. */
+export function formatMonthParts(month: string): { value: string; numeric: boolean }[] {
+  return new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "UTC" })
+    .formatToParts(new Date(`${month}-01T00:00:00Z`))
+    .map((part) => ({ value: part.value, numeric: part.type === "year" }));
+}
+
 /**
  * The same date with its weekday in front, for a day-group heading row.
  *

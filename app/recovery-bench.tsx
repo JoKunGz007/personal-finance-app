@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { decryptBackup, encryptBackup, encryptedBackupSchema } from "@/lib/backup";
 import { backupSnapshotSchema, describeBackupSnapshot } from "@/lib/backup-contract";
 import { downloadFile } from "@/lib/download";
 import { buildRestorePlan } from "@/lib/restore-plan";
 import { readError } from "@/lib/wire";
 import { LedgerNote } from "@/app/ledger-note";
+import { formatDate } from "@/app/ledger-shared";
 
 /**
  * The recovery route: export an encrypted ledger backup, and restore one.
@@ -29,6 +30,19 @@ export function RecoveryBench() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [custody, setCustody] = useState<{ lastExportedAt: string | null; changesSince: string | null } | null>(null);
+  const [custodyVersion, setCustodyVersion] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/v1/backups/status", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { lastExportedAt?: string | null; changesSince?: string | null } | null) => {
+        if (live && body) setCustody({ lastExportedAt: body.lastExportedAt ?? null, changesSince: body.changesSince ?? null });
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [custodyVersion]);
 
   // The real ledger backup, as distinct from the `.pldemo` preview on the import route: the
   // whole owner snapshot, encrypted in this browser with a password the server never sees.
@@ -71,6 +85,7 @@ export function RecoveryBench() {
       // Described from the snapshot, never from this module's own table list: the server may
       // be a schema version behind the client, and a sentence about a file must be about that
       // file (D-074).
+      setCustodyVersion((version) => version + 1);
       setNote(`Encrypted backup written and custody recorded: ${describeBackupSnapshot(snapshot.data)}. Keep the file and its password apart.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The backup could not be written.");
@@ -155,6 +170,14 @@ export function RecoveryBench() {
               Custody is recorded only after the file is written, and only if the ledger has not changed since the snapshot was taken.
             </LedgerNote>
           </div>
+          {custody ? (
+            <p>
+              {custody.lastExportedAt
+                ? `Last export: ${formatDate(new Date(custody.lastExportedAt).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }))}`
+                : "Last export: never"}
+              {custody.changesSince ? ` · ${custody.changesSince} changes since` : ""}
+            </p>
+          ) : null}
           <label className="account-control">
             <span>Backup password</span>
             <input

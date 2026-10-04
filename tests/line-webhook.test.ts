@@ -65,8 +65,8 @@ describe("planLineEvents", () => {
 
 describe("planLineReplies", () => {
   const origin = "https://ledger.example";
-  const img = (over: Partial<PlannedImage> & { outcome?: "stored" | "duplicate" | "failed" } = {}) => ({
-    messageId: "1", replyToken: "t1", isRedelivery: false, outcome: "stored" as const, ...over
+  const img = (over: Partial<PlannedImage> & { outcome?: "stored" | "duplicate" | "failed"; setStored?: number | null } = {}) => ({
+    messageId: "1", replyToken: "t1", isRedelivery: false, outcome: "stored" as const, setStored: 1 as number | null, ...over
   });
 
   it("replies once for a single image", () => {
@@ -74,14 +74,37 @@ describe("planLineReplies", () => {
       { replyToken: "t1", text: "Got 1 image. Open /inbox: https://ledger.example/inbox" }
     ]);
   });
-  it("replies for an image set only on the last, with the set total", () => {
-    const set = (index: number) => img({ replyToken: `t${index}`, imageSet: { id: "s", index, total: 3 } });
-    const replies = planLineReplies([set(1), set(2), set(3)], [], origin);
-    expect(replies).toEqual([{ replyToken: "t3", text: "Got 3 images. Open /inbox: https://ledger.example/inbox" }]);
+  const member = (index: number, setStored: number | null, over: Partial<PlannedImage> & { outcome?: "stored" | "duplicate" | "failed" } = {}) =>
+    ({ ...img({ replyToken: `t${index}`, imageSet: { id: "s", index, total: 3 }, ...over }), setStored });
+  it("replies for an image set once, on the event whose store completed it", () => {
+    const replies = planLineReplies([member(1, 3), member(2, 1), member(3, 2)], [], origin);
+    expect(replies).toEqual([{ replyToken: "t1", text: "Got 3 images. Open /inbox: https://ledger.example/inbox" }]);
   });
-  it("sends no success reply for a redelivery, and counts duplicates as success", () => {
-    expect(planLineReplies([img({ isRedelivery: true })], [], origin)).toEqual([]);
-    expect(planLineReplies([img({ outcome: "duplicate" })], [], origin)).toHaveLength(1);
+  it("does not reply on index = total while the set is still short", () => {
+    expect(planLineReplies([member(3, 1), member(2, 2)], [], origin)).toEqual([]);
+  });
+  it("never replies on a duplicate, even one that reports a full set", () => {
+    expect(planLineReplies([member(1, 3, { outcome: "duplicate" })], [], origin)).toEqual([]);
+  });
+  it("confirms a redelivered duplicate of a complete set, and of a lone image", () => {
+    expect(planLineReplies([member(2, 3, { outcome: "duplicate", isRedelivery: true })], [], origin)).toEqual([
+      { replyToken: "t2", text: "Got 3 images. Open /inbox: https://ledger.example/inbox" }
+    ]);
+    expect(planLineReplies([img({ outcome: "duplicate", isRedelivery: true })], [], origin)).toEqual([
+      { replyToken: "t1", text: "Got 1 image. Open /inbox: https://ledger.example/inbox" }
+    ]);
+  });
+  it("does not confirm a redelivered duplicate of a set that is still short", () => {
+    expect(planLineReplies([member(2, 2, { outcome: "duplicate", isRedelivery: true })], [], origin)).toEqual([]);
+  });
+  it("does not confirm a duplicate that is not marked as a redelivery", () => {
+    expect(planLineReplies([member(2, 3, { outcome: "duplicate" })], [], origin)).toEqual([]);
+    expect(planLineReplies([img({ outcome: "duplicate" })], [], origin)).toEqual([]);
+  });
+  it("sends only the failure reply when a set member failed", () => {
+    const replies = planLineReplies([member(1, 2), member(2, null, { outcome: "failed" })], [], origin);
+    expect(replies).toHaveLength(1);
+    expect(replies[0]!.text).toContain("Couldn't save 1 image");
   });
   it("sends one failure reply on a failed event's token", () => {
     const replies = planLineReplies([img({ outcome: "failed", replyToken: "a" }), img({ outcome: "failed", replyToken: "b" })], [], origin);

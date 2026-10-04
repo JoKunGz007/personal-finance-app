@@ -24,7 +24,7 @@ function tripLength(ride: StoredRide): string {
 /** Bangkok wall time, which is what the e-receipt printed. */
 function bangkokTime(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Bangkok", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+    timeZone: "Asia/Bangkok", year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit"
   }).format(new Date(iso));
 }
 

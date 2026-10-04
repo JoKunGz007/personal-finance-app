@@ -70,6 +70,8 @@ After substantive changes, run `/sync-continuity` to reconcile these docs agains
 Mutable by nature — granted, spent, re-granted — which is why they live here and not in append-only
 `DECISIONS.md`. **Nothing here is inherited by a new session. Ask again.**
 
+- **2026-10-04 (the D-242 session): commit, push, `db push`, real-data read and hosted web use GRANTED in one line by the owner**, for D-241's three known limits, the 2026-09-30 backup check, and a `/ux-review` fix loop (up to about four rounds, reviews run in subagents). Spent on `b5a015f`'s push so far.
+
 - **2026-10-04 (the D-241 session): commit, push, `db push`, real-data read and hosted web use GRANTED in one line by the owner, and Docker allowed.** Spent on `6afbbcb`, `0147bad` and their pushes, the `db push` of 043 (after a hosted read of 484 / 484 and a `--dry-run` naming only 043), hosted reads of that sequence and of the new functions' grants, a read-only live check of `/inbox` in the signed-in pane, and, after the owner's LINE setup, opening `/inbox` in the pane to move and import the owner's test image and 4 real LINE MAN screenshots (2 orders).
 
 - **2026-10-03 (the D-238 session): commit, push, `db push`, real-data read and hosted web use (the pane and Claude in Chrome) GRANTED in one line by the owner.** Spent on `f4449dd`, `83fdc04`, `3805d7d` and the docs commits and their pushes, server dumps and reads of the two held mailbox statements, one live Sync, and a read-only `/import` check. `db push` unused. The owner also asked for no Docker in that session only.

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(17);
+select plan(19);
 
 -- Delivery statistics (migrations 037 and 038, PLAN task 58). The contract: an order counts at what it
 -- really cost — a co-payment order at the owner's share of the wallet's food (50% in 2025, 40% from
@@ -131,6 +131,28 @@ select is((select v->'totals'->>'schemePaid' from s2), '90803',
 select is((select jsonb_path_query_array(v->'months', '$[0 to 1]') from s2),
   '[{"month":"2025-11","orders":1,"spent":"2","rides":0,"rideSpent":"0"},{"month":"2025-12","orders":1,"spent":"15000","rides":0,"rideSpent":"0"}]'::jsonb,
   '2025 orders cost half their food, dated in Bangkok');
+
+-- Whitespace differences do not split a group (045): a ride type and a restaurant spelled with
+-- extra spaces join their plain spelling's row.
+reset role;
+set local session_replication_role = replica;
+insert into public.rides(id, owner_id, booking_id, ride_type, picked_up_at, dropped_off_at, pickup_place, dropoff_place,
+  distance_meters, duration_minutes, payment_method, fare_minor, platform_fee_minor, total_minor)
+values
+  ('eeeeeeee-0000-4000-8000-000000000243', '11111111-1111-4111-8111-111111111111', 'A-R00243', ' Invented  Bike ',
+   '2026-09-05T05:00:00Z', '2026-09-05T05:15:00Z', 'Invented P', 'Invented Q', 3000, 15, '0000', 4800, 200, 5000);
+insert into public.deliveries(id, owner_id, platform, booking_id, restaurant, receipt_sent_at, food_minor, delivery_fee_minor, total_minor)
+values
+  ('dddddddd-0000-4000-8000-000000000256', '11111111-1111-4111-8111-111111111111', 'grabfood', 'A-000256', 'Invented  E ', '2026-09-11T05:00:00Z', 1000, 0, 1000);
+set local session_replication_role = origin;
+set local role authenticated;
+create temporary table s3 on commit drop as select public.delivery_statistics() as v;
+select is((select count(*)::integer from jsonb_array_elements((select v->'rideTypes' from s3)) e
+            where e->>'rideType' ilike '%Invented%Bike%'), 1,
+  'a ride type with extra whitespace is one group');
+select is((select count(*)::integer from jsonb_array_elements((select v->'restaurants' from s3)) e
+            where regexp_replace(btrim(e->>'restaurant'), '\s+', ' ', 'g') = 'Invented E'), 1,
+  'a restaurant with extra whitespace is one group');
 
 reset role;
 select set_config(

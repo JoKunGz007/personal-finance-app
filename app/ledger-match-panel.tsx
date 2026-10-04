@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { z } from "zod";
+import { formatDate, formatTime } from "@/app/ledger-shared";
 import { ledgerRequest } from "@/lib/wire";
 
 /** What the panel needs of a ledger row, whichever document it pays for. */
@@ -24,7 +25,8 @@ export interface MatchPanelState {
 
 /** A ledger row in one line: when it posted, how far from the document's time, and what the bank called it. */
 export function describeRow(row: MatchPanelRow): string {
-  const when = row.source_time ? `${row.source_date} ${row.source_time.slice(0, 5)}` : row.source_date;
+  const date = formatDate(row.source_date);
+  const when = row.source_time ? `${date} ${formatTime(row.source_time)}` : date;
   // A refund lands days later (D-229), so a gap of a day or more reads in days.
   const span = (minutes: number) => minutes >= 1440 ? `${Math.round(minutes / 1440)} day${Math.round(minutes / 1440) === 1 ? "" : "s"}` : `${minutes} min`;
   const lag = row.lag_minutes === null

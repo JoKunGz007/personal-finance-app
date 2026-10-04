@@ -11,7 +11,7 @@ import type { SlipKind } from "@/lib/slips";
 import { LedgerNote } from "@/app/ledger-note";
 import { encodeForReader } from "@/lib/browser/ocr-reader";
 import { browserSupabase } from "@/lib/browser/supabase";
-import { moveLineImages } from "@/lib/browser/line-inbox";
+import { discardLineImage, lineBotStatus, moveLineImages, type StuckImage } from "@/lib/browser/line-inbox";
 import { addedLabel, kindOfObject, planFile, sizeLabel, type InboxPlan } from "@/lib/inbox-queue";
 
 type Status =
@@ -48,6 +48,8 @@ export function InboxFiles() {
   const [expired, setExpired] = useState(0);
   const [lineLine, setLineLine] = useState<string | null>(null);
   const [lineError, setLineError] = useState<string | null>(null);
+  const [stuck, setStuck] = useState<readonly StuckImage[]>([]);
+  const [botStatus, setBotStatus] = useState<{ readonly connected: boolean; readonly connectedAt: string | null } | null>(null);
   const [connectLine, setConnectLine] = useState<{ readonly text: string; readonly ok: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
@@ -115,6 +117,9 @@ export function InboxFiles() {
           if (removed.ok) setExpired(removed.value);
           const line = await moveLineImages(supabase, uid.value);
           if (line.moved > 0) setLineLine(`Moved ${line.moved} image${line.moved === 1 ? "" : "s"} from LINE.`);
+          setStuck(line.stuck);
+          const status = await lineBotStatus(supabase);
+          if (status) setBotStatus(status);
           if (line.failed > 0) {
             setLineError(`${line.failed} image${line.failed === 1 ? "" : "s"} from LINE could not be moved; they will be tried next time.`);
           }
@@ -229,7 +234,12 @@ export function InboxFiles() {
     setConnectLine(null);
     try {
       const response = await fetch("/api/v1/line/connect", { method: "POST" });
-      if (response.ok) { setConnectLine({ text: "Connected.", ok: true }); return; }
+      if (response.ok) {
+        setConnectLine({ text: "Connected.", ok: true });
+        const status = supabase ? await lineBotStatus(supabase) : null;
+        setBotStatus(status ?? { connected: true, connectedAt: null });
+        return;
+      }
       const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
       setConnectLine({ text: typeof body?.error === "string" ? body.error : "LINE could not be connected.", ok: false });
     } catch {
@@ -237,7 +247,19 @@ export function InboxFiles() {
     }
   }
 
+  /** The owner's confirmed discard of an image that cannot be moved: drops the bytes, keeps the redelivery marker. */
+  async function discard() {
+    if (!supabase || stuck.length === 0) return;
+    const many = stuck.length > 1;
+    if (!window.confirm(`Discard ${many ? "these LINE images" : "this LINE image"}? ${many ? "They" : "It"} will be deleted and not imported.`)) return;
+    const gone = new Set<number>();
+    for (const image of stuck) if (await discardLineImage(supabase, image)) gone.add(image.id);
+    setStuck((current) => current.filter((entry) => !gone.has(entry.id)));
+    if (gone.size < stuck.length) setLineError("A LINE image could not be discarded. Try again.");
+  }
+
   const now = new Date();
+  const connectedOn = botStatus?.connectedAt ? botStatus.connectedAt.slice(0, 10) : null;
 
   return (
     <section className="cash-bench compact" aria-labelledby="inbox-files-title">
@@ -247,9 +269,11 @@ export function InboxFiles() {
       </div>
       <div className="slip-form">
         <p className="field-help">
-          Pick screenshots, photos or PDFs. They are kept privately until they are imported, and for at
-          most 7 days. 7-Eleven receipts, LINE MAN orders, bank slips and statements are imported
-          automatically; a statement that needs a check waits here with a link to review it.
+          Kept privately up to 7 days, imported automatically.
+          <LedgerNote label="What can be added">
+            Pick screenshots, photos or PDFs. 7-Eleven receipts, LINE MAN orders, bank slips and statements
+            are imported automatically; a statement that needs a check waits here with a link to review it.
+          </LedgerNote>
         </p>
         <label className="account-control">
           <span>Images and PDFs</span>
@@ -309,6 +333,14 @@ export function InboxFiles() {
         ) : null}
         {lineLine ? <p className="field-help" role="status">{lineLine}</p> : null}
         {lineError ? <p className="status error" role="alert">{lineError}</p> : null}
+        {stuck.length > 0 ? (
+          <p className="field-help" role="status">
+            {stuck.length === 1 ? "1 LINE image can't be moved" : `${stuck.length} LINE images can't be moved`}{" "}
+            <button type="button" className="secondary-button" disabled={busy || !supabase} onClick={() => void discard()}>
+              Discard
+            </button>
+          </p>
+        ) : null}
         {error ? <p className="status error" role="alert">{error}</p> : null}
         {waiting === null ? (
           error ? null : <p className="field-help">Loading…</p>
@@ -335,11 +367,20 @@ export function InboxFiles() {
         )}
       </div>
 
-      <details className="slip-form">
+      <details className="slip-form line-bot">
         <summary>LINE bot</summary>
-        <p className="field-help">Connect once after the LINE channel is set up, so the bot can store images here.</p>
-        <button type="button" className="secondary-button" disabled={busy || !supabase} onClick={() => void connect()}>
-          Connect LINE
+        {botStatus?.connected ? (
+          <p className="field-help">Connected{connectedOn ? ` (${connectedOn})` : ""}.</p>
+        ) : (
+          <p className="field-help">Connect once after the LINE channel is set up, so the bot can store images here.</p>
+        )}
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={busy || !supabase}
+          onClick={() => void connect()}
+        >
+          {botStatus?.connected ? "Reconnect" : "Connect LINE"}
         </button>
         {connectLine ? (
           connectLine.ok
