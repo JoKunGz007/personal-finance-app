@@ -1394,6 +1394,9 @@ footer p { margin: 0; }
   html:not([data-nav="grid"]) .site-nav {
     position: relative; min-width: 0;
     margin-inline: calc(-1 * clamp(20px, 5vw, 76px));
+    /* Wider by both bleeds: the phone rule's `flex-basis: 100%` held it at the padded width, so the
+       negative margins only shifted it left and the fade stopped short of the screen edge. */
+    flex-basis: calc(100% + 2 * clamp(20px, 5vw, 76px));
   }
   html:not([data-nav="grid"]) .site-nav ul {
     flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
@@ -1408,6 +1411,7 @@ footer p { margin: 0; }
     content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 44px; pointer-events: none;
     background: linear-gradient(to right, transparent, var(--paper) 85%);
   }
+  html:not([data-nav="grid"]) .site-nav:has(ul[data-at-end])::after { display: none; }
   /* **Cash on /ledger folds behind one line** (owner's choice "E", 2026-10-04). Collapsed by default;
      opened, the section underneath is unchanged. Desktop never sees the button. */
   .cash-fold .cash-disclosure {

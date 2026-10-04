@@ -42,7 +42,14 @@ export function SiteHeader({ font, theme, nav }: { font: FontChoice; theme: Them
   // (`block: "nearest"`), never the page, and is a no-op where the row does not overflow (desktop,
   // Grid). Inline `nearest` leaves it where it is when the link is already visible.
   useEffect(() => {
-    navRef.current?.querySelector<HTMLElement>("a.current")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+    const row = navRef.current;
+    if (!row) return;
+    row.querySelector<HTMLElement>("a.current")?.scrollIntoView({ inline: "nearest", block: "nearest" });
+    // The right-edge fade means "more to swipe to", so it goes once the row is scrolled to its end.
+    const mark = () => row.toggleAttribute("data-at-end", row.scrollLeft + row.clientWidth >= row.scrollWidth - 2);
+    mark();
+    row.addEventListener("scroll", mark, { passive: true });
+    return () => row.removeEventListener("scroll", mark);
   }, [pathname, nav]);
   const [session, setSession] = useState("");
   /**
