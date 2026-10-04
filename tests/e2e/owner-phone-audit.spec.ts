@@ -191,6 +191,14 @@ async function measure(page: Page, minTap: number): Promise<Measurement> {
       // A pixel of slack, because a 44px rule lands on 43.98 under a fractional device ratio and
       // that is the layout being right rather than wrong.
       if (r.height >= min - 1 && r.width >= min - 1) continue;
+      // An inline (i) inside a sentence keeps its 26px circle and carries the tap area on an
+      // absolutely positioned ::after (D-242), so credit the box that pseudo-element draws.
+      const after = getComputedStyle(el, "::after");
+      if (after.content !== "none" && after.position === "absolute") {
+        const w = r.width - parseFloat(after.left) - parseFloat(after.right);
+        const h = r.height - parseFloat(after.top) - parseFloat(after.bottom);
+        if (h >= min - 1 && w >= min - 1) continue;
+      }
       // **A checkbox inside a label is tapped by the label**, so the input's own box is the wrong
       // element to judge — the same error as measuring the table rather than the cell. Credit the
       // label only when the label itself clears the target.

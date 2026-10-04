@@ -783,7 +783,7 @@ div:has(> .heading-note) > :not(h1, h2, h3, .heading-note) { flex-basis: 100%; }
 .note-tail { white-space: nowrap; }
 .note-tail .note-panel { white-space: normal; }
 /* The inline link to Inbox: a taller tap area that leaves the line height alone. */
-.inbox-link { display: inline-block; padding-block: 14px; margin-block: -14px; }
+.inbox-link { display: inline-block; padding: 14px 4px; margin: -14px -4px; }
 /* `center`, not the `baseline` the shared rule sets: this row carries a 47px button, and a
    button sitting on the heading's baseline hangs below the line it belongs to. */
 .cash-heading { gap: 22px; align-items: center; }
@@ -1015,6 +1015,8 @@ footer p { margin: 0; }
    option is known; Filter takes arbitrary text, and its placeholder alone - "Description, reference,
    branch..." - overran a single track. It lands last on row 2, so spanning two fills the row. */
 .ledger-controls > .ledger-filter { grid-column: span 2; }
+/* /orders' Ledger select: its longest choice overran one track, and row 1 had a track spare. */
+.ledger-controls > .ledger-wide { grid-column: span 2; }
 /* A row of its own: this is a display switch, not a narrowing of the ledger, and it reads wrongly
    sitting in the run of filters above it. */
 .ledger-controls > .ledger-grouping { grid-column: 1 / -1; }
@@ -1398,9 +1400,15 @@ footer p { margin: 0; }
      full target rather than faked with a pseudo-element, so the measurement and the thumb agree.
      It costs height on the heading rows that carry one; that cost is measured, not assumed. */
   .note-toggle { width: 44px; height: 44px; font-size: 15px; }
-  /* Inline in a sentence the 44px toggle would push its line down: a negative block margin keeps
-     the line box at normal height while the hit area stays 44px (44 - ~22px line) / 2. */
-  .note-tail .note-toggle { vertical-align: middle; margin-block: -12px; }
+  /* Inside a sentence the 44px circle pushed its line down, and pulled up with a negative margin
+     it covered the line above. So there it stays the 26px circle, the margin trims it to the 18px
+     line, and a transparent ::after carries the 44px tap area. */
+  .note-tail .note-toggle, .ledger-status .note-toggle, .batch-note .note-toggle {
+    width: 26px; height: 26px; font-size: 13px; position: relative; margin-block: -4px;
+  }
+  .note-tail .note-toggle::after, .ledger-status .note-toggle::after, .batch-note .note-toggle::after {
+    content: ""; position: absolute; inset: -9px;
+  }
   /* 34px, inside the panel D-157 collapses — so it was never in a measured viewport until the
      disclosure-open pass existed. */
   .ui-picker select { height: 44px; }
@@ -1435,7 +1443,7 @@ footer p { margin: 0; }
      and Status labels printed over each other as "ORDSTATUS". Caught by looking at the page, not
      by any assertion - no rule here overflows the document, so the phone audit stayed green while
      the control bar was unreadable. */
-  .ledger-controls > .ledger-filter { grid-column: auto; }
+  .ledger-controls > .ledger-filter, .ledger-controls > .ledger-wide { grid-column: auto; }
   .slip-fields { grid-template-columns: 1fr; }
   .batch-fix { grid-template-columns: 1fr; }
   .slip-controls { flex-direction: column; align-items: stretch; }

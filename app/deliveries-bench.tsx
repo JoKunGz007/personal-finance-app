@@ -129,13 +129,13 @@ export function DeliveriesBench() {
               <label className="account-control">
                 <span>Show</span>
                 <select value={filter.show} onChange={(event) => setFilter({ ...filter, show: event.target.value as DeliveryShow })}>
-                  <option value="all">Orders and rides</option>
+                  <option value="all">Everything</option>
                   <option value="grabfood">GrabFood orders</option>
                   <option value="lineman">LINE MAN orders</option>
                   <option value="rides">Grab rides</option>
                 </select>
               </label>
-              <label className="account-control">
+              <label className="account-control ledger-wide">
                 <span>Ledger</span>
                 <select value={filter.ledger} onChange={(event) => setFilter({ ...filter, ledger: event.target.value as DeliveryLedgerFilter })}>
                   <option value="all">Any</option>
