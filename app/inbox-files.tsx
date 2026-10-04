@@ -9,6 +9,7 @@ import Link from "next/link";
 import { describeSlipCapture, REVIEW_LINK_LABEL, reviewHref, type ReadySlip } from "@/lib/inbox-drain";
 import type { SlipKind } from "@/lib/slips";
 import { LedgerNote } from "@/app/ledger-note";
+import { formatDate } from "@/app/ledger-shared";
 import { encodeForReader } from "@/lib/browser/ocr-reader";
 import { browserSupabase } from "@/lib/browser/supabase";
 import { discardLineImage, lineBotStatus, moveLineImages, type StuckImage } from "@/lib/browser/line-inbox";
@@ -259,7 +260,7 @@ export function InboxFiles() {
   }
 
   const now = new Date();
-  const connectedOn = botStatus?.connectedAt ? botStatus.connectedAt.slice(0, 10) : null;
+  const connectedOn = botStatus?.connectedAt ? formatDate(botStatus.connectedAt.slice(0, 10)) : null;
 
   return (
     <section className="cash-bench compact" aria-labelledby="inbox-files-title">
@@ -269,11 +270,13 @@ export function InboxFiles() {
       </div>
       <div className="slip-form">
         <p className="field-help">
-          Kept privately up to 7 days, imported automatically.
-          <LedgerNote label="What can be added">
-            Pick screenshots, photos or PDFs. 7-Eleven receipts, LINE MAN orders, bank slips and statements
-            are imported automatically; a statement that needs a check waits here with a link to review it.
-          </LedgerNote>
+          Kept privately up to 7 days,{" "}
+          <span className="note-tail">imported automatically.
+            <LedgerNote label="What can be added">
+              Pick screenshots, photos or PDFs. 7-Eleven receipts, LINE MAN orders, bank slips and statements
+              are imported automatically; a statement that needs a check waits here with a link to review it.
+            </LedgerNote>
+          </span>
         </p>
         <label className="account-control">
           <span>Images and PDFs</span>

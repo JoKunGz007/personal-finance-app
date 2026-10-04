@@ -8,6 +8,7 @@ import { LinemanCapture } from "@/app/lineman-capture";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { schemeCosts, type SchemeCost } from "@/lib/delivery-cost";
 import { filterDeliveries, NO_DELIVERY_FILTER, type DeliveryFilter, type DeliveryLedgerFilter, type DeliveryShow } from "@/lib/delivery-filter";
+import { formatDate, formatTime } from "@/app/ledger-shared";
 import { formatThb } from "@/lib/money";
 import { describeGrabOutcome, describeGrabProgress, syncGrabMail } from "@/lib/browser/mail-sync";
 import { deliveryListSchema, deliveryTime, type StoredDelivery, type StoredRide } from "@/lib/deliveries";
@@ -23,9 +24,11 @@ function tripLength(ride: StoredRide): string {
 
 /** Bangkok wall time, which is what the e-receipt printed. */
 function bangkokTime(iso: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Bangkok", year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit"
-  }).format(new Date(iso));
+  // sv-SE prints "YYYY-MM-DD HH:MM", the two halves formatDate and formatTime take.
+  const [date = "", time = ""] = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).format(new Date(iso)).split(" ");
+  return `${formatDate(date)} ${formatTime(time)}`;
 }
 
 export function DeliveriesBench() {
@@ -109,9 +112,7 @@ export function DeliveriesBench() {
 
       <LinemanCapture onSaved={() => { setChanges((count) => count + 1); void load(); }} />
 
-      <DeliveryStatisticsPanel changes={changes} />
-
-      <section className="captured-slips" aria-labelledby="stored-deliveries-title">
+      <section id="stored-orders" className="captured-slips" aria-labelledby="stored-deliveries-title">
         <div className="bench-heading">
           <p className="section-index">Stored</p>
           <div>
@@ -130,7 +131,7 @@ export function DeliveriesBench() {
         </div>
 
         <div className="ledger-controls">
-          <button type="button" className="secondary-button" disabled={busy} onClick={() => void load()}>
+          <button type="button" className="secondary-button" aria-label={deliveries ? "Reload stored orders" : undefined} disabled={busy} onClick={() => void load()}>
             {busy ? "Loading…" : deliveries ? "Reload" : "Show stored orders"}
           </button>
           {deliveries === null ? null : (
@@ -325,6 +326,8 @@ export function DeliveriesBench() {
           )}
         </section>
       )}
+
+      <DeliveryStatisticsPanel changes={changes} />
     </>
   );
 }

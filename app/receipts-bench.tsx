@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LedgerMatchPanel } from "@/app/ledger-match-panel";
-import { formatDate, formatDateParts } from "@/app/ledger-shared";
+import { displayBranch, formatDate, formatDateParts } from "@/app/ledger-shared";
 import { LedgerNote } from "@/app/ledger-note";
 import { ReceiptStatisticsPanel } from "@/app/receipt-statistics";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
@@ -53,7 +53,7 @@ function summary(form: CaptureForm, receipt: ParsedReceipt): string {
   const day = formatDate(receipt.purchasedAt);
   const when = receipt.purchasedAtTime ? `${day} ${receipt.purchasedAtTime}` : day;
   const items = receipt.items.filter((item) => !item.isPromotion).length;
-  return `${FORM_LABEL[form]} · ${when} · ${receipt.branchName} · ${itemCount(items)} · ${formatThb(receipt.netMinor)}`;
+  return `${FORM_LABEL[form]} · ${when} · ${displayBranch(receipt.branchName)} · ${itemCount(items)} · ${formatThb(receipt.netMinor)}`;
 }
 
 export function ReceiptsBench() {
@@ -233,11 +233,15 @@ export function ReceiptsBench() {
         </div>
         <div className="slip-form">
           <div className="heading-note">
-            <p className="field-help">Screenshots are read by Google Cloud Vision, stored nowhere.</p>
-            <LedgerNote label="About reading receipts">
-              PDFs you pick are read on this device. Pick all screenshots of a long receipt together
-              to join them.
-            </LedgerNote>
+            <p className="field-help">
+              Screenshots are read by Google Cloud Vision,{" "}
+              <span className="note-tail">stored nowhere.
+                <LedgerNote label="About reading receipts">
+                  PDFs you pick are read on this device. Pick all screenshots of a long receipt together
+                  to join them.
+                </LedgerNote>
+              </span>
+            </p>
           </div>
           <label className="account-control">
             <span>7-Eleven e-tax PDFs or app screenshots</span>
@@ -314,7 +318,7 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
       </div>
 
       <div className="ledger-controls">
-        <button type="button" className="secondary-button" disabled={busy} onClick={onLoad}>
+        <button type="button" className="secondary-button" aria-label={receipts ? "Reload stored receipts" : undefined} disabled={busy} onClick={onLoad}>
           {busy ? "Loading…" : receipts ? "Reload" : "Show stored receipts"}
         </button>
       </div>
@@ -344,7 +348,7 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
                     </time>
                     {receipt.purchased_at_time ? ` ${receipt.purchased_at_time.slice(0, 5)}` : ""}
                   </span>
-                  <span className="receipt-branch">{receipt.branch_name}</span>
+                  <span className="receipt-branch">{displayBranch(receipt.branch_name)}</span>
                   <span className="receipt-count">{itemCount(receipt.items.filter((item) => !item.is_promotion).length)}</span>
                   <span className={`receipt-chip ${MATCH_CHIP[receipt.match.status].tone}`}>{receipt.match.status === "none" && receipt.purchased_at_time === null ? "no time on invoice" : MATCH_CHIP[receipt.match.status].label}</span>
                   {/* `items_complete`, not `completeness`: capture overwrites the latter with the latest

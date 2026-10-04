@@ -731,8 +731,12 @@ export function ImportBench() {
             </LedgerNote>
           </div>
           <p className="field-help">
-            Usually easier: drop files on <Link href="/inbox">Inbox</Link> — it unlocks and imports
-            them for you. Import is still the place to review a statement row by row before confirming.
+            Usually easier: drop files on{" "}
+            <span className="note-tail"><Link href="/inbox">Inbox</Link>.
+              <LedgerNote label="About Import and Inbox">
+                /import is still where you review a statement row by row before confirming.
+              </LedgerNote>
+            </span>
           </p>
         </div>
       </section>

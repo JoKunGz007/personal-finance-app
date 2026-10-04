@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { formatDate, formatMonthParts } from "@/app/ledger-shared";
+import { displayBranch, formatDate, formatMonthParts } from "@/app/ledger-shared";
 import { LedgerNote } from "@/app/ledger-note";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { formatThb } from "@/lib/money";
@@ -136,7 +136,7 @@ export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
       </div>
 
       <div className="ledger-controls">
-        <button type="button" className="secondary-button" disabled={busy} onClick={() => void load()}>
+        <button type="button" className="secondary-button" aria-label={stats ? "Reload statistics" : undefined} disabled={busy} onClick={() => void load()}>
           {busy ? "Loading…" : stats ? "Reload" : "Show receipt statistics"}
         </button>
       </div>
@@ -176,7 +176,7 @@ export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
           <GroupTable id="receipt-payment" title="By payment" label="Paid by"
             rows={stats.paymentMethods.map((p) => ({ key: p.method ?? "", name: p.method ?? "Not printed", receipts: p.receipts, net: p.net }))} />
           <GroupTable id="receipt-branches" title="By branch" label="Branch"
-            rows={stats.branches.map((b) => ({ key: b.storeCode, name: b.branchName, receipts: b.receipts, net: b.net }))} />
+            rows={stats.branches.map((b) => ({ key: b.storeCode, name: displayBranch(b.branchName), receipts: b.receipts, net: b.net }))} />
         </>
       )}
     </section>

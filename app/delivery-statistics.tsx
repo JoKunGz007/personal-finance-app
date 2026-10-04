@@ -106,7 +106,7 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
       </div>
 
       <div className="ledger-controls">
-        <button type="button" className="secondary-button" disabled={busy} onClick={() => void load()}>
+        <button type="button" className="secondary-button" aria-label={stats ? "Reload statistics" : undefined} disabled={busy} onClick={() => void load()}>
           {busy ? "Loading…" : stats ? "Reload" : "Show statistics"}
         </button>
       </div>

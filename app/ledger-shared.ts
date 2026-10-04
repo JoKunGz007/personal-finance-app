@@ -46,6 +46,11 @@ export function formatDateParts(date: string): { value: string; numeric: boolean
     .map((part) => ({ value: part.value, numeric: part.type === "day" || part.type === "year" }));
 }
 
+/** A store or branch name for display only: whitespace collapsed, one space before "(" ("X(Y)" and "X (Y)" both read "X (Y)"). */
+export function displayBranch(name: string) {
+  return name.replace(/\s+/gu, " ").replace(/\s*\(/gu, " (").trim();
+}
+
 /** A printed time as HH:MM. Statements carry minutes only, so a stored "14:30:00" must not show its seconds. */
 export function formatTime(time: string) {
   return time.slice(0, 5);
