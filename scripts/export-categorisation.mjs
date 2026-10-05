@@ -24,7 +24,10 @@ function query(sql) {
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]
   });
-  return JSON.parse(out.slice(out.indexOf("{"))).rows;
+  // A bare `[...]` in a plain terminal; `{ boundary, rows, warning }` when the CLI detects an agent.
+  const start = [out.indexOf("["), out.indexOf("{")].filter((i) => i >= 0).sort((a, b) => a - b)[0];
+  const parsed = JSON.parse(out.slice(start));
+  return Array.isArray(parsed) ? parsed : parsed.rows;
 }
 
 const [{ addr }] = query("select inet_server_addr()::text as addr");
