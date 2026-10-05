@@ -23,7 +23,10 @@ export const categorySchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   archived: z.boolean(),
-  created_at: z.string().optional()
+  created_at: z.string().optional(),
+  // The parent's id, or null for a top-level category (migration 048, D-245). Optional for the
+  // same reason as `created_at`: `mutate_category` does not return it; `GET` always does.
+  parent_id: z.string().uuid().nullable().optional()
 }).strict();
 
 export type Category = z.infer<typeof categorySchema>;
@@ -55,4 +58,36 @@ export function pickableCategories(all: readonly Category[], currentId: string |
   if (active.some((category) => category.id === currentId)) return active;
   const assigned = all.find((category) => category.id === currentId);
   return assigned ? [...active, assigned] : active;
+}
+
+/** `POST /api/v1/categories/parent`: set a category's parent, or remove it with null. */
+export const categoryParentBodySchema = z.object({ id: z.string().uuid(), parentId: z.string().uuid().nullable() }).strict();
+
+/** What that route answers with (`set_category_parent`). */
+export const categoryParentResponseSchema = z.object({
+  category_id: z.string().uuid(),
+  parent_id: z.string().uuid().nullable(),
+  changed: z.boolean()
+}).strict();
+
+/** `"Parent › Child"` for a subcategory, the name alone otherwise. A parent the list lacks reads as none. */
+export function categoryLabel(category: Category, all: readonly Category[]): string {
+  const parent = category.parent_id ? all.find((candidate) => candidate.id === category.parent_id) : undefined;
+  return parent ? `${parent.name} › ${category.name}` : category.name;
+}
+
+/**
+ * The list in tree order: each top-level category followed by its subcategories, both by name.
+ * A subcategory whose parent is not in `list` (archived out of a picker, say) sits among the top level.
+ */
+export function nestedCategories<T extends Category>(list: readonly T[]): T[] {
+  const byName = (a: T, b: T) => a.name.localeCompare(b.name);
+  const ids = new Set(list.map((category) => category.id));
+  const tops = list.filter((category) => !category.parent_id || !ids.has(category.parent_id)).sort(byName);
+  const out: T[] = [];
+  for (const top of tops) {
+    out.push(top);
+    out.push(...list.filter((category) => category.parent_id === top.id).sort(byName));
+  }
+  return out;
 }

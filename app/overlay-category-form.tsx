@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { overlayInForce, overlayWriteBody, overlayWriteResponseSchema, type LedgerTransaction, type TransactionOverlay } from "@/lib/transactions";
-import { pickableCategories, type Category } from "@/lib/categories";
+import { categoryReviewResponseSchema, isMachineCategory, overlayInForce, overlayWriteBody, overlayWriteResponseSchema, type LedgerTransaction, type TransactionOverlay } from "@/lib/transactions";
+import { categoryLabel, nestedCategories, pickableCategories, type Category } from "@/lib/categories";
 import { ledgerRequest } from "@/lib/wire";
 
 /**
@@ -30,6 +30,7 @@ export function OverlayCategoryForm({
   transaction,
   categories,
   onSaved,
+  onReviewed,
   onError,
   onCancel,
   onBusyChange
@@ -38,6 +39,8 @@ export function OverlayCategoryForm({
   /** Every category this owner has, archived included — see the filter below for why. */
   categories: Category[];
   onSaved: (overlay: TransactionOverlay) => void;
+  /** The owner confirmed the app's category as it stands ("Looks right", D-245). */
+  onReviewed: () => void;
   onError: (message: string) => void;
   onCancel: () => void;
   /** Lets the row disable its own "Stop editing category" trigger while a write is in flight —
@@ -58,9 +61,38 @@ export function OverlayCategoryForm({
    * on the row itself.
    */
   const pickable = useMemo(
-    () => pickableCategories(categories, inForce.categoryId),
+    () => nestedCategories(pickableCategories(categories, inForce.categoryId)),
     [categories, inForce.categoryId]
   );
+  // The app chose this category and the owner has not confirmed it (D-245). "Looks right" confirms
+  // the category as stored, so it is offered only while the picker still shows that category.
+  const machine = isMachineCategory(transaction) && transaction.category_source_revision !== null;
+
+  async function confirm() {
+    setBusy(true);
+    onBusyChange(true);
+    const result = await ledgerRequest(
+      `/api/v1/transactions/${transaction.id}/category-review`,
+      categoryReviewResponseSchema,
+      {
+        fallback: "The category could not be confirmed.",
+        unreachable: "The ledger could not be reached, so nothing was confirmed.",
+        offContract: "The category was confirmed but the answer did not come back in its published shape. Reload before trusting this view."
+      },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overlayRevision: transaction.category_source_revision })
+      }
+    );
+    setBusy(false);
+    onBusyChange(false);
+    if (!result.ok) {
+      onError(result.why);
+      return;
+    }
+    onReviewed();
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -96,6 +128,7 @@ export function OverlayCategoryForm({
   return (
     <form className="correction-form" onSubmit={(event) => void submit(event)}>
       <p className="correction-title"><strong>Category and note</strong></p>
+      {machine ? <p className="correction-hint">The app chose this category. Press Looks right to keep it, or pick another and save.</p> : null}
       <div className="slip-fields">
         <label>
           <span>Category (optional)</span>
@@ -103,7 +136,7 @@ export function OverlayCategoryForm({
             <option value="">Uncategorised</option>
             {pickable.map((category) => (
               <option key={category.id} value={category.id}>
-                {category.archived ? `${category.name} · archived` : category.name}
+                {category.archived ? `${categoryLabel(category, categories)} · archived` : categoryLabel(category, categories)}
               </option>
             ))}
           </select>
@@ -117,6 +150,9 @@ export function OverlayCategoryForm({
 
       <div className="slip-actions">
         <button type="submit" className="primary-button" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        {machine && categoryId === (inForce.categoryId ?? "") ? (
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => void confirm()}>Looks right</button>
+        ) : null}
         <button type="button" className="secondary-button" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
     </form>

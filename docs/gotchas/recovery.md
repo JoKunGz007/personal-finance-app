@@ -81,3 +81,10 @@ the top of `GOTCHAS.md`.
 - Cause: `up` starts and migrates the project; it does not discard what an earlier run left in it. `restore_backup` refuses a destination holding any owner record, so leftovers from a previous run make every restore fail at commit — after every chunk has been accepted, with a message about emptiness that names no table.
 - Avoid: `down` then `up`, always, before a run that matters. `up` alone is only safe on a destination nothing has ever restored into.
 - Verify: 2026-08-12, twice. First met with 4 ledger accounts left behind, where `down` then `up` gave a clean destination on migration 015; met again the same day taking the destination to 016, where `down` then `up` was run pre-emptively and reported `Ledger accounts: 0`.
+
+## The recovery destination stops at migration 042 with storage disabled
+
+- Symptom: `node scripts/recovery-destination.mjs up` fails at 042 with `relation "storage.buckets" does not exist`, and 11 of 12 `tests/recovery-portability.test.ts` tests then fail on sign-in.
+- Cause: `recovery/supabase/config.toml` had `[storage] enabled = false`; migration 042 creates the private `inbox` bucket, so the destination could not apply every migration.
+- Avoid: keep storage enabled there. A recovery destination has to accept every migration the ledger has, whether or not the restore itself writes storage.
+- Verify: 2026-10-05 (D-245), with `enabled = true` the destination applied all 48 migrations and portability passed 11 of 12, its usual skip aside.

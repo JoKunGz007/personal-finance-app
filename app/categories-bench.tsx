@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CategoriesList } from "@/app/categories-list";
-import { categoryListSchema, categoryWriteResponseSchema, type Category } from "@/lib/categories";
+import { categoryListSchema, categoryParentResponseSchema, categoryWriteResponseSchema, type Category } from "@/lib/categories";
 import { onOwnerReady, ownerReadyGeneration } from "@/lib/owner-ready";
 import { ledgerRequest } from "@/lib/wire";
 
@@ -92,7 +92,10 @@ export function CategoriesBench() {
 
   function foldCategory(category: Category) {
     setCategories((current) => {
-      const next = current === null ? [category] : [...current.filter((existing) => existing.id !== category.id), category];
+      // `mutate_category` does not return `parent_id`, so a rename or archive keeps the one held.
+      const held = current?.find((existing) => existing.id === category.id);
+      const folded = { ...category, parent_id: category.parent_id !== undefined ? category.parent_id : held?.parent_id ?? null };
+      const next = current === null ? [folded] : [...current.filter((existing) => existing.id !== category.id), folded];
       next.sort((a, b) => a.name.localeCompare(b.name));
       return next;
     });
@@ -187,6 +190,27 @@ export function CategoriesBench() {
     if (closedOwnRename) setRenameName("");
   }
 
+  async function setParent(category: Category, parentId: string | null) {
+    setSaving(category.id);
+    setRowError(null);
+    const result = await ledgerRequest(
+      "/api/v1/categories/parent",
+      categoryParentResponseSchema,
+      {
+        fallback: "The parent could not be set.",
+        unreachable: "The ledger could not be reached, so nothing was saved.",
+        offContract: "The parent was set but the answer did not come back in its published shape. Reload before trusting this list."
+      },
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: category.id, parentId }) }
+    );
+    setSaving(null);
+    if (!result.ok) {
+      setRowError(result.why);
+      return;
+    }
+    foldCategory({ ...category, parent_id: result.data.parent_id });
+  }
+
   return (
     <section className="cash-bench compact" aria-labelledby="categories-title">
       <div className="cash-heading">
@@ -239,6 +263,7 @@ export function CategoriesBench() {
           onCancelRename={cancelRename}
           onSubmitRename={(category) => void submitRename(category)}
           onArchiveToggle={(category) => void toggleArchive(category)}
+          onParentChange={(category, parentId) => void setParent(category, parentId)}
         />
       ) : null}
     </section>

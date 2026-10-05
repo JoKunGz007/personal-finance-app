@@ -47,6 +47,10 @@ function transaction(overrides: Partial<LedgerTransaction> = {}): LedgerTransact
     currency: "THB",
     source_components: [{ id: "22222222-2222-4222-8222-222222222222", kind: "deposit", amount_minor: "100000", currency: "THB" }],
     transaction_overlays: [],
+    category_source: null,
+    category_source_revision: null,
+    category_reviewed: false,
+    category_parent_name: null,
     ...overrides
   };
 }

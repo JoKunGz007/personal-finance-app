@@ -59,6 +59,10 @@ function row(
       currency: "THB"
     }],
     transaction_overlays: [],
+    category_source: null,
+    category_source_revision: null,
+    category_reviewed: false,
+    category_parent_name: null,
     combined_balance_minor: combined
   };
 }

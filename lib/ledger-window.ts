@@ -109,7 +109,12 @@ export function withOverlay(
     // whether the totals move — writing the same flag twice must not double-count.
     const was = row.transaction_overlays[0]?.include_in_reporting ?? true;
     const rows = [...held.rows];
-    rows[index] = { ...row, transaction_overlays: [overlay] };
+    // A changed category is the owner's from now on, exactly as `update_transaction_overlay`
+    // records it (migration 048): the "auto" marker goes and the new category is not "reviewed".
+    const previousCategory = row.transaction_overlays[0]?.category_id ?? null;
+    rows[index] = previousCategory === overlay.category_id
+      ? { ...row, transaction_overlays: [overlay] }
+      : { ...row, transaction_overlays: [overlay], category_source: "owner", category_source_revision: overlay.revision, category_reviewed: false };
 
     let totals = held.totals;
     if (was !== overlay.include_in_reporting) {
@@ -136,6 +141,20 @@ export function withOverlay(
   }
   // A row the window does not hold. Not an error: the toggle can only be pressed on a rendered
   // row, so this is the shape that says "nothing to fold" rather than a case to report.
+  return window;
+}
+
+/** Marks a row's machine category as confirmed by the owner (D-245), after the review route answered. */
+export function withCategoryReviewed(window: LedgerWindow, transactionId: string): LedgerWindow {
+  const byAccount = new Map(window.byAccount);
+  for (const [accountId, held] of window.byAccount) {
+    const index = held.rows.findIndex((row) => row.id === transactionId);
+    if (index === -1) continue;
+    const rows = [...held.rows];
+    rows[index] = { ...held.rows[index]!, category_reviewed: true };
+    byAccount.set(accountId, { ...held, rows });
+    return { byAccount };
+  }
   return window;
 }
 

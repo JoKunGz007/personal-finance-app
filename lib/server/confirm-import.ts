@@ -3,6 +3,7 @@ import { z } from "zod";
 import { confirmationDigest, rowFingerprint } from "@/lib/canonical";
 import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema } from "@/lib/statement";
+import { autoCategorise } from "@/lib/server/auto-categorise";
 
 export const confirmSchema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -59,5 +60,12 @@ export async function confirmImport(client: SupabaseClient, body: ConfirmImportB
   // already committed, so a failure here must not turn it into an error; the next import or a
   // manual run from the ledger picks the pair up.
   await client.rpc("auto_exclude_internal_transfers");
+  // Machine categories after the exclusion, because an own transfer is categorised from it (D-245).
+  // Same rule: the import is committed, so a failure here is ignored and the next ledger open retries.
+  try {
+    await autoCategorise(client as Parameters<typeof autoCategorise>[0]);
+  } catch {
+    // ignored
+  }
   return { kind: "ok", batchId: data, payloadDigest: digest, fingerprints, warnings: reconciliation.warnings };
 }

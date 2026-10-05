@@ -238,6 +238,8 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     -- leak: replica session_replication_role disables the FK triggers, so an overlay outliving its
     -- transaction does not fail — it sits there, and the next run's insert of the same fixture id
     -- fails on the primary key of a table that test never mentioned.
+    delete from public.category_reviews where owner_id = '${owner}';
+    delete from public.category_provenance where owner_id = '${owner}';
     delete from public.overlay_revisions where owner_id = '${owner}';
     delete from public.transaction_overlays where owner_id = '${owner}';
     delete from public.source_components where owner_id = '${owner}';

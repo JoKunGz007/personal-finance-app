@@ -88,7 +88,10 @@ test("folds the standing copy behind a disclosure the keyboard can reach", async
   await expect(page.getByText(/computed over whole accounts/)).toHaveCount(0);
 
   // Each one names what it explains. Three buttons called "More" would be three identical rows
-  // in a screen reader's list of controls.
+  // in a screen reader's list of controls. On a phone the Cash section is folded (D-243), which
+  // takes its disclosure out of the accessibility tree until the fold is opened.
+  const cashFold = page.getByRole("button", { name: /Cash payments/ });
+  if (await cashFold.isVisible()) await cashFold.click();
   for (const name of ["About this ledger", "About these transactions", "About cash entries"]) {
     await expect(page.getByRole("button", { name })).toHaveCount(1);
   }

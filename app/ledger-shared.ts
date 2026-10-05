@@ -221,6 +221,8 @@ export type LedgerActions = {
   readonly storeCardCorrection: (cardId: string, saved: unknown) => void;
   /** The saved overlay, folded back into ledger state and closing the panel on success. */
   readonly saveCategoryOverlay: (transactionId: string, overlay: TransactionOverlay) => void;
+  /** The owner confirmed a machine category ("Looks right"); folded back and closing the panel. */
+  readonly markCategoryReviewed: (transactionId: string) => void;
   /** A refused or unreachable category write, reported for the view's own error line. */
   readonly reportCategoryError: (message: string) => void;
   /** Whether a category write is in flight, which disables that row's own toggle meanwhile. */

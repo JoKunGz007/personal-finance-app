@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { type Category } from "@/lib/categories";
+import { nestedCategories, type Category } from "@/lib/categories";
 
 /**
  * The list half of `/categories` — create lives in `app/categories-bench.tsx`, this only reads
@@ -25,7 +25,8 @@ export function CategoriesList({
   onRenameNameChange,
   onCancelRename,
   onSubmitRename,
-  onArchiveToggle
+  onArchiveToggle,
+  onParentChange
 }: {
   categories: Category[];
   /** The category whose write is in flight, or null. Disables every row's buttons while set. */
@@ -41,6 +42,8 @@ export function CategoriesList({
   onSubmitRename: (category: Category) => void;
   /** `{id, name, archived}` with `archived` flipped and `name` unchanged, for the same reason. */
   onArchiveToggle: (category: Category) => void;
+  /** Sets the category's parent, or removes it with null (D-245). */
+  onParentChange: (category: Category, parentId: string | null) => void;
 }) {
   // Focus follows the edit (D-205): into the name, selected, when it opens or a save fails (the input
   // was disabled mid-save); back to that row's Rename button when it closes by Save, Cancel or Escape.
@@ -64,12 +67,18 @@ export function CategoriesList({
 
   return (
     <ul className="retired-list" ref={list}>
-      {categories.map((category) => {
+      {nestedCategories(categories).map((category) => {
         const isRenaming = renamingId === category.id;
+        // One level only, so the select offers exactly what `set_category_parent` accepts: an
+        // active top-level category other than itself. A category with subcategories can take no
+        // parent, so its select is disabled; its current parent stays listed even if archived.
+        const hasChildren = categories.some((other) => other.parent_id === category.id);
+        const parents = categories.filter((other) =>
+          other.id !== category.id && !other.parent_id && (!other.archived || other.id === category.parent_id));
         const isSaving = saving === category.id;
         const unchanged = renameName.trim() === "" || renameName.trim() === category.name;
         return (
-          <li key={category.id}>
+          <li key={category.id} className={category.parent_id ? "category-child" : undefined}>
             {isRenaming ? (
               <>
                 {/* `.account-control` for its border/height/radius, same as every other text input
@@ -117,6 +126,21 @@ export function CategoriesList({
                   {category.name}
                   {category.archived ? <em> · archived</em> : null}
                 </span>
+                <label className="account-control category-parent">
+                  <span>Parent</span>
+                  <select
+                    aria-label={`Parent of ${category.name}`}
+                    value={category.parent_id ?? ""}
+                    disabled={saving !== null || hasChildren}
+                    title={hasChildren ? "It has subcategories, so it cannot go under another category." : undefined}
+                    onChange={(event) => onParentChange(category, event.target.value === "" ? null : event.target.value)}
+                  >
+                    <option value="">None</option>
+                    {parents.map((parent) => (
+                      <option key={parent.id} value={parent.id}>{parent.archived ? `${parent.name} · archived` : parent.name}</option>
+                    ))}
+                  </select>
+                </label>
                 {/* A visible Rename button (D-204): the name alone looked like a link, so renaming
                     was discoverable only by accident. */}
                 <button

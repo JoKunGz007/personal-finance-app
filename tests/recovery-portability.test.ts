@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { canonicalJson } from "@/lib/canonical";
 import { decryptBackup, encryptBackup } from "@/lib/backup";
 import {
-  backupSnapshotSchema, backupSnapshotSchemaV4, backupSnapshotSchemaV5, backupSnapshotSchemaV6, backupSnapshotSchemaV7, backupSnapshotSchemaV8, backupSnapshotSchemaV9, backupSnapshotSchemaV10, backupSnapshotSchemaV11, backupSnapshotSchemaV12,
+  backupSnapshotSchema, backupSnapshotSchemaV4, backupSnapshotSchemaV5, backupSnapshotSchemaV6, backupSnapshotSchemaV7, backupSnapshotSchemaV8, backupSnapshotSchemaV9, backupSnapshotSchemaV10, backupSnapshotSchemaV11, backupSnapshotSchemaV12, backupSnapshotSchemaV13,
   BACKUP_SCHEMA_VERSION,
-  BACKUP_TABLE_KINDS, BACKUP_TABLE_KINDS_V4, BACKUP_TABLE_KINDS_V5, BACKUP_TABLE_KINDS_V6, BACKUP_TABLE_KINDS_V7, BACKUP_TABLE_KINDS_V8, BACKUP_TABLE_KINDS_V9, BACKUP_TABLE_KINDS_V10, BACKUP_TABLE_KINDS_V11, BACKUP_TABLE_KINDS_V12
+  BACKUP_TABLE_KINDS, BACKUP_TABLE_KINDS_V4, BACKUP_TABLE_KINDS_V5, BACKUP_TABLE_KINDS_V6, BACKUP_TABLE_KINDS_V7, BACKUP_TABLE_KINDS_V8, BACKUP_TABLE_KINDS_V9, BACKUP_TABLE_KINDS_V10, BACKUP_TABLE_KINDS_V11, BACKUP_TABLE_KINDS_V12, BACKUP_TABLE_KINDS_V13
 } from "@/lib/backup-contract";
 import { buildRestorePlan } from "@/lib/restore-plan";
 import {
@@ -280,10 +280,38 @@ commit;
   if (!result.ok) throw new Error(`source LINE MAN populate failed: ${result.output}`);
 }
 
+// The v14 tables: a subcategory under the rehearsal category, the rule that chose the overlay's
+// category at revision 1, and the owner's review of it. Written directly for the reason the
+// delivery above is; each references a row populateSource() writes.
+const CHILD_CATEGORY_ID = ID(56);
+const CATEGORISED_TRANSACTION = "f0000000-0000-4000-8000-100000000001";
+function populateSourceCategories(): void {
+  const result = psql(`
+begin;
+set local session_replication_role = replica;
+insert into public.categories(id, owner_id, name, archived)
+values ('${CHILD_CATEGORY_ID}', '${SOURCE_OWNER}', 'Rehearsal subcategory', false);
+insert into public.category_parents(category_id, owner_id, parent_id)
+values ('${CHILD_CATEGORY_ID}', '${SOURCE_OWNER}', '${ID(2)}');
+insert into public.category_provenance(owner_id, transaction_id, overlay_revision, source, detail)
+values ('${SOURCE_OWNER}', '${CATEGORISED_TRANSACTION}', 1, 'rule', '{"rule":"rehearsal-rule"}');
+insert into public.category_reviews(owner_id, transaction_id, overlay_revision)
+values ('${SOURCE_OWNER}', '${CATEGORISED_TRANSACTION}', 1);
+update public.mutation_sequences set sequence = sequence + 1, updated_at = now() where owner_id = '${SOURCE_OWNER}';
+set local session_replication_role = origin;
+commit;
+`);
+  if (!result.ok) throw new Error(`source category populate failed: ${result.output}`);
+}
+
 function cleanSourceReceipt(): void {
   psql(`
 begin;
 set local session_replication_role = replica;
+delete from public.category_reviews where transaction_id = '${CATEGORISED_TRANSACTION}';
+delete from public.category_provenance where transaction_id = '${CATEGORISED_TRANSACTION}';
+delete from public.category_parents where category_id = '${CHILD_CATEGORY_ID}';
+delete from public.categories where id = '${CHILD_CATEGORY_ID}';
 delete from public.lineman_order_details where delivery_id = '${LINEMAN_ID}';
 delete from public.delivery_adjustments where delivery_id = '${LINEMAN_ID}';
 delete from public.delivery_items where delivery_id = '${LINEMAN_ID}';
@@ -364,6 +392,7 @@ const NEWER_THAN_V9 = newerThan(BACKUP_TABLE_KINDS_V9);
 const NEWER_THAN_V10 = newerThan(BACKUP_TABLE_KINDS_V10);
 const NEWER_THAN_V11 = newerThan(BACKUP_TABLE_KINDS_V11);
 const NEWER_THAN_V12 = newerThan(BACKUP_TABLE_KINDS_V12);
+const NEWER_THAN_V13 = newerThan(BACKUP_TABLE_KINDS_V13);
 
 /**
  * Turns a current export into the file an older ledger would have written.
@@ -944,7 +973,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
   // v9's own two tables, carried at v9: a receipt linked to a ledger row, and the revision that
   // recorded it. The v8 test above proves the receipt rows travel; this proves the decision does,
   // with its owner rebound inside the snapshot jsonb as well as in its columns.
-  it("carries a receipt's match decision, a matched delivery order and a declined ride and a split LINE MAN order across projects at the current version", async () => {
+  it("carries a receipt's match decision, a matched delivery order, a declined ride, a split LINE MAN order and a reviewed rule category under a parent across projects at the current version", async () => {
     assertOnlyDisposableLedgerData([ID(1)]);
 
     clearFactors(CONTAINER, SOURCE_OWNER);
@@ -963,6 +992,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       populateSourceDeliveryMatch();
       populateSourceRide();
       populateSourceLineman();
+      populateSourceCategories();
 
       const exported = await rpc(API, sourceSession, "export_backup_snapshot");
       expect(exported.status, exported.body).toBe(200);
@@ -994,9 +1024,13 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       expect(current.tableCounts.delivery_match_revisions).toBe(1);
       expect(current.tableCounts.ride_match_revisions).toBe(1);
       expect(current.tableCounts.lineman_order_details).toBe(1);
-      for (const kind of ["receipts", "receipt_match_overlays", "receipt_match_revisions", "deliveries", "delivery_items",
+      expect(current.tableCounts.category_parents).toBe(1);
+      expect(current.tableCounts.category_provenance).toBe(1);
+      expect(current.tableCounts.category_reviews).toBe(1);
+      for (const kind of ["categories", "receipts", "receipt_match_overlays", "receipt_match_revisions", "deliveries", "delivery_items",
         "delivery_adjustments", "delivery_match_overlays", "delivery_match_revisions",
-        "rides", "ride_adjustments", "ride_match_overlays", "ride_match_revisions", "lineman_order_details"] as const) {
+        "rides", "ride_adjustments", "ride_match_overlays", "ride_match_revisions", "lineman_order_details",
+        "category_parents", "category_provenance", "category_reviews"] as const) {
         const rebound = canonicalJson(current.data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the restore`).toBe(rebound);
       }
@@ -1275,6 +1309,81 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
         expect(landed.tableCounts[kind], `${kind} must be present and empty in the re-export`).toBe(0);
       }
       expect(landed.tableCounts.deliveries, "the delivery order must have travelled").toBe(1);
+      expect(landed.tableCounts.delivery_match_overlays, "its match decision must have travelled").toBe(1);
+      expect(landed.tableCounts.rides, "the ride must have travelled").toBe(1);
+    } finally {
+      cleanSourceReceipt();
+      cleanSource();
+      clearFactors(CONTAINER, SOURCE_OWNER);
+      clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
+    }
+  }, 180_000);
+
+  // A v13 file — what the owner's hosted backups are written at until migration 048 lands —
+  // restored into a v14 destination, the same method: a genuine v13 artifact made by dropping the
+  // three category tables v13 predates, which must be empty for that to be lossless. The LINE MAN
+  // order rides along so v13's own table is proven to travel at v13.
+  it("restores a v13 file into a v14 destination, leaving the category tables empty", async () => {
+    assertOnlyDisposableLedgerData([ID(1)]);
+
+    clearFactors(CONTAINER, SOURCE_OWNER);
+    clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
+    const sourceSession = await sessionAt(API, OWNER_EMAIL, OWNER_PASSWORD);
+    const destinationSession = await sessionAt(DESTINATION_API, DESTINATION_EMAIL, DESTINATION_PASSWORD);
+
+    emptyDestination();
+    expect(sourceOwnerTraces(), "the destination must not already hold source-owned rows").toBe(0);
+
+    try {
+      populateSource();
+      populateSourceReceipt();
+      populateSourceReceiptMatch();
+      populateSourceDelivery();
+      populateSourceDeliveryMatch();
+      populateSourceRide();
+      populateSourceLineman();
+
+      const exported = await rpc(API, sourceSession, "export_backup_snapshot");
+      expect(exported.status, exported.body).toBe(200);
+      const current = exported.json() as Snapshot;
+      expect(current.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
+      for (const kind of NEWER_THAN_V13) {
+        expect(current.tableCounts[kind], `${kind} must be empty for the downgrade to be lossless`).toBe(0);
+      }
+
+      const v13 = downgradeTo(current, 13, BACKUP_TABLE_KINDS_V13);
+      const validated = backupSnapshotSchemaV13.safeParse(v13);
+      expect(validated.success, JSON.stringify(validated.error?.issues?.slice(0, 3))).toBe(true);
+
+      const envelope = await encryptBackup(v13, "v13 into v14 rehearsal passphrase 2026");
+      const carried = await decryptBackup(envelope, "v13 into v14 rehearsal passphrase 2026");
+      const plan = await buildRestorePlan(carried);
+      expect(plan.stage.schemaVersion).toBe(13);
+      expect(plan.chunks.map((chunk) => chunk.chunk.kind)).toEqual([...BACKUP_TABLE_KINDS_V13]);
+
+      const staged = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "stage", p_request: plan.stage });
+      expect(staged.status, staged.body).toBe(200);
+      for (const chunk of plan.chunks) {
+        const sent = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "chunk", p_request: chunk });
+        expect(sent.status, `chunk ${chunk.chunk.kind}: ${sent.body}`).toBe(200);
+      }
+      const committed = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "commit", p_request: plan.commit });
+      expect(committed.status, committed.body).toBe(200);
+      expect(sourceOwnerTraces()).toBe(0);
+
+      const reExported = await rpc(DESTINATION_API, destinationSession, "export_backup_snapshot");
+      expect(reExported.status, reExported.body).toBe(200);
+      const landed = reExported.json() as Snapshot;
+      expect(landed.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
+      for (const kind of BACKUP_TABLE_KINDS_V13.filter((table) => table !== "mutation_sequences")) {
+        const rebound = canonicalJson((v13 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
+      }
+      for (const kind of NEWER_THAN_V13) {
+        expect(landed.tableCounts[kind], `${kind} must be present and empty in the re-export`).toBe(0);
+      }
+      expect(landed.tableCounts.deliveries, "both delivery orders must have travelled").toBe(2);
+      expect(landed.tableCounts.lineman_order_details, "the LINE MAN details must have travelled").toBe(1);
       expect(landed.tableCounts.delivery_match_overlays, "its match decision must have travelled").toBe(1);
       expect(landed.tableCounts.rides, "the ride must have travelled").toBe(1);
     } finally {

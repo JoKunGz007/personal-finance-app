@@ -9,8 +9,14 @@ const patchSchema = z.object({ id: z.string().uuid(), name: z.string().trim().mi
 export async function GET() {
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
-  const { data, error } = await auth.supabase.from("categories").select("id,name,archived,created_at").order("name");
-  if (error) return routeError("Categories could not be loaded.", 400);
+  const [categories, parents] = await Promise.all([
+    auth.supabase.from("categories").select("id,name,archived,created_at").order("name"),
+    auth.supabase.from("category_parents").select("category_id,parent_id")
+  ]);
+  if (categories.error || parents.error) return routeError("Categories could not be loaded.", 400);
+  // Each category carries its parent (migration 048, D-245), null when it is top-level.
+  const parentOf = new Map((parents.data ?? []).map((link) => [link.category_id as string, link.parent_id as string]));
+  const data = (categories.data ?? []).map((category) => ({ ...category, parent_id: parentOf.get(category.id as string) ?? null }));
   return Response.json({ categories: data }, { headers: noStoreHeaders });
 }
 

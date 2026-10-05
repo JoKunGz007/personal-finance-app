@@ -16,6 +16,7 @@ import {
   matchesQuery,
   matchesSlipQuery,
   autoExcludedListSchema,
+  autoCategorisedResultSchema,
   overlayWriteBody,
   overlayWriteResponseSchema,
   type AccountTransaction,
@@ -35,6 +36,7 @@ import {
   windowReach,
   windowRows,
   withOverlay,
+  withCategoryReviewed,
   withPage,
   type LedgerWindow
 } from "@/lib/ledger-window";
@@ -992,6 +994,12 @@ export function TransactionsView() {
       const autoExcludedResult = await autoExcludedRequest;
       if (superseded()) return;
       setAutoExcluded(new Set(autoExcludedResult.ok ? autoExcludedResult.data.ids : []));
+      // Machine categories (D-245), started only now because an own transfer is categorised from
+      // the exclusion above. Quiet like that label: a failure changes nothing on screen, and the
+      // rows are reloaded only when it wrote something (a re-run writes nothing, so this settles).
+      const categorisedRequest = ledgerRequest("/api/v1/transactions/auto-categorised", autoCategorisedResultSchema, {
+        fallback: "Categories could not be applied."
+      }, { method: "POST" });
       // Only an addition to a row: a failure shows no receipt, which claims nothing about the row.
       const receiptsResult = await receiptsRequest;
       if (superseded()) return;
@@ -1012,6 +1020,9 @@ export function TransactionsView() {
       // extending it: the pages it just fetched are the newest ones again, and appending them to
       // a window that already held them would show every row twice.
       setLedgerWindow(next);
+      void categorisedRequest.then((categorised) => {
+        if (!superseded() && categorised.ok && categorised.data.applied > 0) void load(automatic);
+      });
     } catch {
       if (superseded()) return;
       setError("The ledger could not be reached. Check that the local Supabase stack is running.");
@@ -1286,6 +1297,12 @@ export function TransactionsView() {
     setCorrecting((current) => current === transactionId ? null : current);
   }
 
+  function markCategoryReviewed(transactionId: string) {
+    setLedgerWindow((current) => current === null ? current : withCategoryReviewed(current, transactionId));
+    setCategoryError(null);
+    setCorrecting((current) => current === transactionId ? null : current);
+  }
+
   function stopCorrecting() {
     setCorrecting(null);
   }
@@ -1326,6 +1343,7 @@ export function TransactionsView() {
     storeCashCorrection,
     storeCardCorrection,
     saveCategoryOverlay,
+    markCategoryReviewed,
     reportCategoryError: setCategoryError,
     setCategorySaving
   };

@@ -86,7 +86,13 @@ export const ledgerTransactionSchema = z.object({
   post_balance_minor: minorUnitStringSchema,
   currency: z.literal("THB"),
   source_components: z.array(ledgerComponentSchema),
-  transaction_overlays: z.array(transactionOverlaySchema)
+  transaction_overlays: z.array(transactionOverlaySchema),
+  // Where the category came from (migration 048, D-245): the latest provenance row's source and
+  // overlay revision (null when none), whether it is reviewed, and the category's parent's name.
+  category_source: z.enum(["owner", "rule", "match", "model"]).nullable(),
+  category_source_revision: z.number().int().positive().nullable(),
+  category_reviewed: z.boolean(),
+  category_parent_name: z.string().nullable()
 }).strict();
 
 export type LedgerTransaction = z.infer<typeof ledgerTransactionSchema>;
@@ -154,6 +160,25 @@ export type LedgerPage = z.infer<typeof ledgerPageSchema>;
 
 /** Rows whose current exclusion from reporting was written automatically (migration 026, D-207). */
 export const autoExcludedListSchema = z.object({ ids: z.array(z.string().uuid()) }).strict();
+
+/** What `POST /api/v1/transactions/auto-categorised` answers with; only `applied` is read. */
+export const autoCategorisedResultSchema = z.object({ applied: z.number().int().nonnegative() });
+
+/** `POST /api/v1/transactions/[id]/category-review`: the provenance revision the owner saw. */
+export const categoryReviewBodySchema = z.object({ overlayRevision: z.number().int().positive() }).strict();
+
+/** What that route answers with (`review_transaction_category`). */
+export const categoryReviewResponseSchema = z.object({
+  transaction_id: z.string().uuid(),
+  overlay_revision: z.number().int().positive(),
+  reviewed: z.literal(true),
+  changed: z.boolean()
+}).strict();
+
+/** A machine-set category the owner has not confirmed yet (D-245): shown with an "auto" marker. */
+export function isMachineCategory(row: Pick<LedgerTransaction, "category_source" | "category_reviewed">): boolean {
+  return row.category_source !== null && row.category_source !== "owner" && !row.category_reviewed;
+}
 
 /**
  * A candidate carries its own account, because nobody named one on its behalf.

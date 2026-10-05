@@ -163,3 +163,10 @@ the top of `GOTCHAS.md`.
 - Cause: Supabase Storage's `protect_delete` trigger refuses a delete unless `storage.allow_delete_query` is `'true'`, a setting the Storage API sets for its own deletes. RLS still applies on top.
 - Avoid: the app deletes Inbox files through the Storage API (`supabase.storage.from('inbox').remove(...)`), never by SQL. Only a pgTAP test sets the flag, with a comment saying why.
 - Verify: `supabase/tests/027_inbox_bucket.sql`, the delete assertion. Dated 2026-09-30 (D-235).
+
+## Automatic ride, order and receipt matches exist only in TypeScript, never in the database
+
+- Symptom: `ride_match_overlays`, `delivery_match_overlays` and `receipt_match_overlays` hold 0 `matched` rows on hosted while `/orders` and `/receipts` show hundreds of rides and orders matched.
+- Cause: the overlays store only the owner's own link or decline. The candidate RPCs return amount-and-date candidates, and the GET routes decide the automatic match in TypeScript (`lib/ledger-match.ts`: windows, wording, uniqueness, claims, split rides).
+- Avoid: never reproduce the decision in SQL; a copy drifts from what the pages show in at least five edge cases (฿0 orders, held rows, split rides, refund gaps, RLS under `postgres`). Call `lib/server/current-matches.ts`, which the routes themselves use (D-245).
+- Verify: 2026-10-05, a hosted count of matched overlays (0) against the pages' matched totals; the route tests passed unchanged after the decision moved into `current-matches.ts`.

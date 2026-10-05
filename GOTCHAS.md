@@ -79,6 +79,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A signed month-over-month delta inverts wherever the quantity is stored negative
 - A table-returning RPC is cut at 1,000 rows by PostgREST, silently
 - A SQL `delete from storage.objects` is refused by a trigger, whatever the policies say
+- Automatic ride, order and receipt matches exist only in TypeScript, never in the database
 
 ### Backup, restore and recovery
 
@@ -92,6 +93,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A cleanup helper that predates a migration makes the next restore fail, at commit, naming no table
 - A wrong backup password and a corrupted backup file report identically
 - A recovery destination can start non-empty, which makes portable recovery fail rather than skip
+- The recovery destination stops at migration 042 with storage disabled
 
 ### Statement and slip parsing
 
@@ -269,8 +271,8 @@ these section headings rather than a third raise. The owner chose the split.
 | --- | --- | --- |
 | Environment, shell and toolchain | 19 | [`docs/gotchas/environment.md`](docs/gotchas/environment.md) |
 | Docker and the local Supabase projects | 15 | [`docs/gotchas/docker-supabase.md`](docs/gotchas/docker-supabase.md) |
-| Database, migrations and pgTAP | 18 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
-| Backup, restore and recovery | 10 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |
+| Database, migrations and pgTAP | 19 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
+| Backup, restore and recovery | 11 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |
 | Statement and slip parsing | 21 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 34 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |

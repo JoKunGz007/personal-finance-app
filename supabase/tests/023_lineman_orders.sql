@@ -136,8 +136,8 @@ select is(
 );
 select ok(
   (public.export_backup_snapshot() -> 'tableCounts') ? 'lineman_order_details'
-    and (public.export_backup_snapshot() ->> 'schemaVersion') = '13',
-  'the export carries the LINE MAN table at schema version 13'
+    and (public.export_backup_snapshot() ->> 'schemaVersion')::integer >= 13,
+  'the export carries the LINE MAN table at schema version 13 or later'
 );
 
 select * from finish();

@@ -2,9 +2,9 @@
 
 import { Fragment, useState } from "react";
 import { formatThb } from "@/lib/money";
-import { movementMinor, overlayInForce, type AccountTransaction } from "@/lib/transactions";
+import { isMachineCategory, movementMinor, overlayInForce, type AccountTransaction } from "@/lib/transactions";
 import { type LedgerAccount } from "@/lib/accounts";
-import { type Category } from "@/lib/categories";
+import { categoryLabel, type Category } from "@/lib/categories";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type NotificationCard } from "@/lib/notification-cards";
 import { formatDate, formatDateParts, formatTime, splitFigures, type LedgerActions, type LedgerLayout, type LedgerModes } from "@/app/ledger-shared";
@@ -96,9 +96,15 @@ export function LedgerStatementRow({
   // after being attached to this row must still be nameable here, or the chip would go blank on
   // a row nobody changed. `OverlayCategoryForm` is the one that filters archived categories out
   // of its own picker.
-  const categoryName = overlay?.category_id
-    ? categories.find((category) => category.id === overlay.category_id)?.name ?? null
+  // "Parent › Child" for a subcategory. The row's own `category_parent_name` stands in when the
+  // category list failed to load (it is fail-soft) or predates a parent change.
+  const assigned = overlay?.category_id ? categories.find((category) => category.id === overlay.category_id) : undefined;
+  const categoryName = assigned
+    ? (assigned.parent_id !== undefined ? categoryLabel(assigned, categories)
+      : transaction.category_parent_name ? `${transaction.category_parent_name} › ${assigned.name}` : assigned.name)
     : null;
+  // Set by the app rather than the owner, and not confirmed yet (D-245).
+  const machineCategory = categoryName !== null && isMachineCategory(transaction);
   const pair = row.slip;
   const cardPair = row.card;
   // Through `overlayInForce` rather than `overlay?.include_in_reporting ?? true` so the default
@@ -125,7 +131,12 @@ export function LedgerStatementRow({
               editing lives in the Status cell's "Edit category" trigger and its disclosure panel,
               never in this cell. Absent entirely when the row has none, on the same D-064 rule the
               counterparty chip already follows: a badge that is present on every row says nothing. */}
-          {categoryName ? <span className="category-chip">{categoryName}</span> : null}
+          {categoryName ? (
+            <span className="category-chip">
+              {categoryName}
+              {machineCategory ? <span className="category-auto" title="Chosen by the app. Open Edit category to confirm or change it."> · auto</span> : null}
+            </span>
+          ) : null}
           {/* Named by the record it actually came from. Saying "from slip" over a
               counterparty read off a card would attribute it to a record that is
               not on this row, and the two are corrected in different places. */}
@@ -430,6 +441,7 @@ export function LedgerStatementRow({
               transaction={transaction}
               categories={categories}
               onSaved={(overlay) => actions.saveCategoryOverlay(transaction.id, overlay)}
+              onReviewed={() => actions.markCategoryReviewed(transaction.id)}
               onError={actions.reportCategoryError}
               onCancel={() => actions.toggleCorrecting(transaction.id)}
               onBusyChange={actions.setCategorySaving}

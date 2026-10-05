@@ -44,6 +44,10 @@ function row(overrides: Partial<LedgerTransaction> & { account_id?: string } = {
     currency: "THB",
     source_components: [{ id: "cccccccc-0000-4000-8000-000000000001", kind: "withdrawal", amount_minor: "-9000", currency: "THB" }],
     transaction_overlays: [],
+    category_source: null,
+    category_source_revision: null,
+    category_reviewed: false,
+    category_parent_name: null,
     account_id,
     ...rest
   };
