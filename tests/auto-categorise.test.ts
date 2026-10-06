@@ -151,6 +151,21 @@ describe("decideCategories history", () => {
     expect(decide(rows).proposals).toEqual([]);
   });
 
+  it("a description a rule splits by amount never keys history, so the amount check still runs", () => {
+    const gated: CategoryRule[] = [
+      { id: "invented-wallet", direction: "out", match: /INVENTED WALLET/i, amountsMinor: [20000n], category: "Invented Other Pick" },
+      ...rules
+    ];
+    const rows = [
+      row(1, { description: "INVENTED WALLET CO", amount_minor: "-20000", category_id: cat(8), source: "rule", reviewed: true }),
+      row(2, { description: "INVENTED WALLET CO", amount_minor: "-16400" }),
+      row(3, { description: "INVENTED WALLET CO", amount_minor: "-20000" })
+    ];
+    expect(decideCategories(rows, categories, [], new Set(), gated).proposals).toEqual([
+      { transaction_id: id(3), category_id: cat(8), source: "rule", detail: { rule: "invented-wallet" } }
+    ]);
+  });
+
   it("normalises digits, whitespace and case", () => {
     expect(normaliseDescription("  Invented  SHOP 0042\tREF 9 ")).toBe("invented shop ref");
   });

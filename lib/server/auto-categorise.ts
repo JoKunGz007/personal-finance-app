@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { strongOwnerClient } from "@/lib/server/supabase";
-import { CATEGORY_RULES, firstMatchingRule, type CategoryRule } from "@/lib/category-rules";
+import { CATEGORY_RULES, firstMatchingRule, isAmountGated, type CategoryRule } from "@/lib/category-rules";
 import type { DeliveryService } from "@/lib/deliveries";
 import { loadCurrentMatches, type CurrentMatch } from "@/lib/server/current-matches";
 
@@ -127,10 +127,13 @@ export function decideCategories(
   for (const match of matches) if (!matchOf.has(match.transaction_id)) matchOf.set(match.transaction_id, match);
   // History: a description, in one direction, whose settled rows all agree on one category.
   // Disagreement is no answer.
+  // A description a rule splits by amount never keys history (`isAmountGated`).
+  const ruleText = (row: CategoryInput) => `${row.description} ${row.transaction_label}`;
+  const keyOf = (row: CategoryInput) => (isAmountGated(ruleText(row), signOf(row), rules) ? null : historyKey(row));
   const history = new Map<string, string | null>();
   for (const row of rows) {
     if (!ownerSettled(row)) continue;
-    const key = historyKey(row);
+    const key = keyOf(row);
     if (key === null) continue;
     const seen = history.get(key);
     history.set(key, seen === undefined || seen === row.category_id ? row.category_id : null);
@@ -142,7 +145,7 @@ export function decideCategories(
     if (protectedRow(row)) continue;
     let choice: { category_id: string | null; source: "rule" | "match"; detail: Record<string, string> } | null = null;
     const match = matchOf.get(row.id);
-    const key = historyKey(row);
+    const key = keyOf(row);
     const remembered = key === null ? undefined : history.get(key);
     if (autoExcluded.has(row.id)) {
       choice = { category_id: resolve("Own Transfers"), source: "match", detail: { rule: "own-transfer" } };
@@ -151,7 +154,7 @@ export function decideCategories(
     } else if (remembered) {
       choice = { category_id: remembered, source: "rule", detail: { rule: "history" } };
     } else {
-      const rule = firstMatchingRule(`${row.description} ${row.transaction_label}`, signOf(row), rules);
+      const rule = firstMatchingRule(ruleText(row), signOf(row), rules, BigInt(row.amount_minor));
       if (rule) choice = { category_id: resolve(rule.category), source: "rule", detail: { rule: rule.id } };
     }
     if (!choice) continue;
