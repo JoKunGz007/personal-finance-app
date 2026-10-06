@@ -86,3 +86,6 @@ phone_screenshots/
 # password it was made with, side by side so an agent can restore it. Together they are the
 # whole ledger in the clear, so this folder is never committed and never left on a shared disk.
 dev-backup/
+
+# The owner's own follow-up notes: real amounts and IDs, never committed.
+owner-notes/

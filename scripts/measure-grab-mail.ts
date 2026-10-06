@@ -102,6 +102,39 @@ function relations(lines: readonly string[]): string {
   ].join("\n");
 }
 
+/**
+ * `--mart`, owner-asked (2026-10-06): the Grab receipts `classifyGrabReceipt` files as `other`
+ * (GrabMart, GrabExpress, Dine Out, anything else), grouped by the service they name. Per group the
+ * count and the first one's masked shape; per receipt only its date and its `฿` amount tokens,
+ * unmasked, to the terminal and nowhere else, so they can be set against the unmatched Grab
+ * charges. No item, shop, name, address or booking ID.
+ */
+const OTHER_SERVICES: readonly [string, RegExp][] = [
+  ["GrabMart", /GrabMart/iu],
+  ["GrabExpress", /GrabExpress|Grab Express/iu],
+  ["Dine Out", /Dine ?Out|ทานที่ร้าน/iu]
+];
+
+function printMart(others: readonly string[][]) {
+  const groups = new Map<string, string[][]>();
+  for (const lines of others) {
+    const text = lines.join(" ");
+    const name = OTHER_SERVICES.find(([, pattern]) => pattern.test(text))?.[0] ?? "unrecognised";
+    groups.set(name, [...(groups.get(name) ?? []), lines]);
+  }
+  console.log(`\nGrab receipts read as other: ${others.length}`);
+  for (const [name, receipts] of groups) {
+    console.log(`\n== ${name}: ${receipts.length}\nFirst one (masked):\n${shapeOf(receipts[0].slice(0, 80))}`);
+    for (const [index, lines] of receipts.entries()) {
+      const text = lines.join(" ");
+      const when = text.match(/\d{1,2} \w{3} \d{2} \d{2}:\d{2} \+0700/u)?.[0] ?? text.match(/\d{1,2} \w+ \d{4}(?: \d{1,2}:\d{2})?/u)?.[0] ?? "(no date)";
+      // Amount tokens only, in reading order: whatever shares a line with them is left out.
+      const amounts = lines.flatMap((line) => line.match(/฿\s?[\d,]+(?:\.\d{2})?/gu) ?? []);
+      console.log(`  ${index + 1}. ${lines[0]} ${when} | ${amounts.join(" ") || "(no ฿ amount)"}`);
+    }
+  }
+}
+
 function shapeOf(lines: readonly string[]): string {
   return lines.map((line, index) => `    ${String(index).padStart(3)} ${lineShape(line)}`).join("\n");
 }
@@ -115,6 +148,10 @@ async function main() {
   if (process.argv.includes("--probe")) return probe(config.user, pass);
 
   const session = await openMailbox({ user: config.user, pass, senders: [] });
+  // The shared session's 30 s inactivity limit suits a serverless route, not a script reading the
+  // big backfill bundles: Gmail can go quiet longer than that mid-fetch (ETIMEOUT, 2026-10-06).
+  const socket = (session.client as unknown as { socket?: { setTimeout?: (ms: number) => void } }).socket;
+  socket?.setTimeout?.(300_000);
   try {
     const uids = (await session.client.search(DELIVERY_SEARCH, { uid: true })) || [];
     const structures: FetchMessageObject[] = [];
@@ -131,12 +168,18 @@ async function main() {
     let okShape: string[] | null = null;
     let rideShape: string[] | null = null;
     const rides: string[][] = [];
+    const marts: string[][] = [];
     const bigBundleTypes = new Map<string, number>();
     const optionCounts = new Map<number, number>();
 
     for (const message of structures) {
       const documents = receiptDocuments(message.bodyStructure as MessagePart);
       if (documents.length > 5) typeCounts(message.bodyStructure as MessagePart, bigBundleTypes);
+      // `--mart`: each not-yet-read message's structure (types only), to see why a forward is missed.
+      if (process.argv.includes("--mart") && !message.flags?.has(DELIVERY_FLAG)) {
+        const types = [...typeCounts(message.bodyStructure as MessagePart, new Map())].map(([type, n]) => `${type} ${n}`).join(", ");
+        console.log(`Unread message: ${documents.length} document(s); leaf types: ${types}`);
+      }
       if (documents.length === 0) { kinds.other += 1; continue; }
       const fetched = await session.client.fetchOne(message.uid, { bodyParts: documents.map((d) => d.part) }, { uid: true });
       for (const document of documents) {
@@ -148,6 +191,8 @@ async function main() {
         kinds[kind] += 1;
         if (kind === "ride" && !rideShape) rideShape = lines.slice(0, 40);
         if (kind === "ride") rides.push(lines);
+        // Also from the other kinds: GrabExpress prints the ride heading, so it is read as a ride.
+        if (kind === "other" || OTHER_SERVICES.some(([, pattern]) => lines.some((line) => pattern.test(line)))) marts.push([`(read as ${kind})`, ...lines]);
         if (kind !== "food") continue;
         const parsed = parseGrabFood(lines);
         if (parsed.ok) {
@@ -193,6 +238,7 @@ async function main() {
     if (process.argv.includes("--rides")) printRideTemplate(rides);
     if (process.argv.includes("--rides-detail")) printRideDetail(rides);
     if (process.argv.includes("--rides-parse")) printRideParse(rides);
+    if (process.argv.includes("--mart")) printMart(marts);
   } finally {
     await session.release();
   }
