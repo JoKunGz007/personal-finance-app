@@ -892,7 +892,12 @@ export function parseGrabLateDelivery(lines: readonly string[], mailSentAt: stri
   if (totalMinor === null) return refuse("MISSING_FIELD", "No total line was found.");
   const foodMinor = items.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n);
   const fees = adjustments.reduce((sum, row) => sum + BigInt(row.amountMinor), 0n) + BigInt(deliveryFeeMinor ?? "0");
-  if (foodMinor + fees !== BigInt(totalMinor)) return refuse("TOTAL_MISMATCH", "Food plus fees does not equal the total.");
+  // The breakdown prints no discounts, and every measured mail's total is below food plus fees, so
+  // the gap is D-219's `unprinted` line. The total is printed once here; matching it exactly to a
+  // bank charge is the check. A total above the lines is still refused.
+  const gap = foodMinor + fees - BigInt(totalMinor);
+  if (gap < 0n) return refuse("TOTAL_MISMATCH", "The total is more than food plus fees.");
+  if (gap > 0n) adjustments.push({ position: adjustments.length + 1, kind: "unprinted", name: UNPRINTED_NAME, amountMinor: minor(gap.toString()) });
   return {
     ok: true,
     value: {

@@ -14,7 +14,10 @@
 
 import { readFile } from "node:fs/promises";
 import { ImapFlow, type FetchMessageObject, type SearchObject } from "imapflow";
-import { classifyGrabReceipt, htmlToLines, lineShape, pairAmounts, parseGrabFood, parseGrabRide, FOOD_LABEL, TOTAL_LABEL } from "@/lib/delivery-grab";
+import {
+  classifyGrabReceipt, htmlToLines, lineShape, pairAmounts, parseGrabDineOut, parseGrabExpress, parseGrabFood, parseGrabLateDelivery, parseGrabMart, parseGrabRide,
+  FOOD_LABEL, TOTAL_LABEL
+} from "@/lib/delivery-grab";
 import { DELIVERY_FLAG, DELIVERY_SEARCH, decodeBody, receiptDocuments } from "@/lib/server/delivery-mailbox";
 import { openMailbox } from "@/lib/server/statement-mailbox-session";
 import type { MessagePart } from "@/lib/server/statement-mailbox";
@@ -198,6 +201,19 @@ async function main() {
         if (kind === "ride") rides.push(lines);
         // Also from the other kinds: GrabExpress prints the ride heading, so it is read as a ride.
         if ((kind !== "food" && kind !== "ride") || OTHER_SERVICES.some(([, pattern]) => lines.some((line) => pattern.test(line)))) marts.push([`(read as ${kind})`, ...lines]);
+        // `--late` (owner-granted real-data read, 2026-10-06): each refused mart, dine-out, express or
+        // late document's refusal and its lines, amounts unmasked and everything else through
+        // `lineShape`, to the terminal only. The send time is a stand-in: only the arithmetic is read.
+        if (process.argv.includes("--late") && (kind === "late" || kind === "express" || kind === "mart" || kind === "dine_out")) {
+          const stand = "2000-01-01T12:00:00+07:00";
+          const read = kind === "late" ? parseGrabLateDelivery(lines, stand) : kind === "express" ? parseGrabExpress(lines, stand) : kind === "mart" ? parseGrabMart(lines) : parseGrabDineOut(lines);
+          if (read.ok) console.log(`Read ${kind}`);
+          else {
+            const money = /^(?:-|−)?\s*฿\s*(?:-|−)?\s*[\d,.]+$|^[\d,]+\.\d{2}$/u;
+            console.log(`\nRefused ${kind} ${read.code}: ${read.message}`);
+            console.log(lines.map((line, at) => `    ${String(at).padStart(3)} ${money.test(line.trim()) ? line : lineShape(line)}`).join("\n"));
+          }
+        }
         if (kind !== "food") continue;
         const parsed = parseGrabFood(lines);
         if (parsed.ok) {

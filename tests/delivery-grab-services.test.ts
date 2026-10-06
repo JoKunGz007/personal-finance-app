@@ -242,8 +242,15 @@ describe("parseGrabLateDelivery", () => {
     expect(read.value.deliveryFeeMinor).toBeNull();
     expect(read.value.adjustments).toEqual([{ position: 1, kind: "charge", name: "Service Fee + Delivery Fee", amountMinor: "2525" }]);
   });
-  test("a total that does not close is refused", () => {
+  test("a total above food plus fees is refused", () => {
     expect(parseGrabLateDelivery(lateLines({ total: "180.76" }), sent)).toMatchObject({ ok: false, code: "TOTAL_MISMATCH" });
+  });
+  test("a total below food plus fees stores the gap as an unprinted line (D-219)", () => {
+    const read = parseGrabLateDelivery(lateLines({ total: "150.75" }), sent);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.value.totalMinor).toBe("15075");
+    expect(read.value.adjustments.at(-1)).toMatchObject({ kind: "unprinted", amountMinor: "3000" });
   });
   test("the order ID is the last ID line before the breakdown", () => {
     const lines = lateLines();
