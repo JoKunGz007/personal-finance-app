@@ -439,6 +439,7 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-253** — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
 - **D-252** — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
 - **D-251** — The nineteenth boundary moves D-235 … D-244 on the owner's word
 - **D-250** — A two-digit printed slip year is completed when exactly one candidate across both eras fits the slip window
@@ -446,6 +447,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-253 — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
+
+- **Status:** live 2026-10-07 (`dbb4154`), no migration. Closes D-252's three known defects.
+- **Measured** on the owner's 22 K PLUS images (20 slips, 2 KBank account cards) and 16 SCB slips, read once through Vision with the owner's grant; the cache was deleted afterwards. Payee: K PLUS **20/20** (was 4), SCB **16/16**. **No slip carried a memo**, so D-252's "no memo on any" was correct, not a defect.
+- **Spaces:** `OcrWord.spaceAfter` carries Vision's `detectedBreak` (SPACE, SURE_SPACE, EOL_SURE_SPACE, LINE_BREAK). Display text joins on it; absent means a space, so other engines and old fixtures are unchanged. A box-gap rule was rejected: in-name syllable gaps (12px) and real spaces (13px) overlap.
+- **K PLUS:** the payee's account is masked too on most transfers, so the payee follows the **first** masked line, not "exactly one". A dropped sender mask still yields null (the next lettered line is the `เลขที่รายการ:` label). Words left of the masked account's column are the payee bank's logo (read as "0") and are dropped.
+- **SCB:** the merchant icon reads as `E`, `EX` or `E )` on every iconned slip; its gap overlaps ordinary word spacing (0.48 vs 0.48 of line height), so it is stripped by text while a name remains.
+- **Backfill (owner: "build a way to correct existing entries"):** `POST /api/v1/slips` on a duplicate fills the stored slip's payee and/or memo through `set_slip_correction`, only where the slip and its correction are both blank, carrying every existing correction field and revision. Best-effort: any failure keeps the plain duplicate answer. The Inbox line says "payee or memo added to N". A payee already stored with D-252's spaced syllables is **not** replaced (4 live slips); the owner corrects those on the row.
 
 ## D-252 — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
 
