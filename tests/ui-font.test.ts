@@ -81,7 +81,7 @@ describe("the preference's own shape", () => {
     // exactly what its own comment promised it would do — a default is a real decision, so it
     // fails loudly rather than drifting. What was rewritten is the decision; what is asserted
     // below is the invariant that outlives it (D-169).
-    expect(DEFAULT_FONT).toBe("pixelify-sans");
+    expect(DEFAULT_FONT).toBe("libron");
 
     // **The way back to something legible must not depend on the default going well.** `system`
     // stays in the closed set and stays first, so the picker offers it before any pixel face on

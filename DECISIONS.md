@@ -430,6 +430,7 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-243** — Phone nav as one swipeable row with Cash folded (option E, revisits D-226); no-time receipts match a lone TRUE MONEY row (amends D-212); renamed ride types grouped
 - **D-244** — Task 25's category set: 18 flat categories created on hosted through `mutate_category`, no subcategories yet; a read-only export feeds local-llm's measurement
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
 - **D-239** — The eighteenth boundary moves D-223 … D-234 on the owner's word
@@ -437,6 +438,14 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-237** — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 - **D-236** — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 - **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
+
+## D-248 — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
+
+- **Status:** built locally (2026-10-07), not committed or deployed. Supersedes D-169's default (Pixelify Sans), which stays in the picker one press away.
+- **Owner, 2026-10-07:** asked for Libron (github.com/nicoverbruggen/libron, v0.25) across the whole app and chose "add it and make it the default" over replacing the other faces.
+- **Source:** the release's `Libron_Web.zip` — four woff2 files (400/700, roman and italic) — plus the repo's OFL text, vendored because Fontsource does not carry it and `font-src 'self'` admits no CDN.
+- **Measured:** cap height 70 per 100px, IBM Plex's exactly, so no `size-adjust`, unlike the pixel faces. Prose runs about 3% wider than IBM Plex Sans Thai.
+- **Kept:** "Figures" goes first in its stacks, so digits stay in IBM Plex Mono (D-162, D-202); Thai falls back to IBM Plex Sans Thai. `tests/e2e/font-picker.spec.ts` passes for it at phone width.
 
 ## D-247 — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 

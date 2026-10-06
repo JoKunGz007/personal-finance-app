@@ -388,6 +388,25 @@
   src: url("../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
 }
 
+/*
+  **Libron (2026-10-07, the default since that date).** A book serif — OFL, vendored from the
+  author's v0.25 web release into `app/fonts/libron/` with its licence, because `font-src 'self'`
+  admits no CDN and Fontsource does not carry it. Measured like the pixel faces above: its cap height
+  is **70** per 100px, IBM Plex's exactly, so it needs no `size-adjust` and keeps its own name.
+  The release ships 400 and 700 in both styles; the ranges below send 500 to the regular file and
+  600 to the bold one instead of letting the browser synthesise. Latin only, like the pixel faces —
+  Thai falls back to IBM Plex Sans Thai — and its digits are proportional, so "Figures" still goes
+  first and every figure stays in Plex Mono (D-162, D-202).
+*/
+@font-face { font-family: "Libron"; font-style: normal; font-weight: 100 500; font-display: swap; src: url("./fonts/libron/Libron-Regular.woff2") format("woff2"); }
+@font-face { font-family: "Libron"; font-style: italic; font-weight: 100 500; font-display: swap; src: url("./fonts/libron/Libron-Italic.woff2") format("woff2"); }
+@font-face { font-family: "Libron"; font-style: normal; font-weight: 600 900; font-display: swap; src: url("./fonts/libron/Libron-Bold.woff2") format("woff2"); }
+@font-face { font-family: "Libron"; font-style: italic; font-weight: 600 900; font-display: swap; src: url("./fonts/libron/Libron-BoldItalic.woff2") format("woff2"); }
+
+:root[data-font="libron"] {
+  --font-body: "Figures", "Libron", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Figures", "Libron", "IBM Plex Mono", "Cascadia Mono", monospace;
+}
 :root[data-font="press-start-2p"] {
   --font-body: "Figures", "Press Start 2P Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
   --font-data: "Figures", "Press Start 2P Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;

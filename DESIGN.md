@@ -115,8 +115,9 @@ keep their single hairline, because framing everything is the same mistake as ex
 `IBM Plex Sans Thai` is the body face and `IBM Plex Mono` the data face, both bundled through
 Fontsource rather than requested from a CDN — `font-src 'self'` admits no external host.
 
-Three OFL pixel faces can replace the Latin half per device (`lib/ui-font.ts`): **Press Start 2P**,
-**Pixelify Sans**, **Silkscreen**. `system` is the default and stays so while the trial runs.
+Four OFL faces can replace the Latin half per device (`lib/ui-font.ts`): the book serif **Libron**
+(the default since 2026-10-07, D-248, vendored in `app/fonts/libron/`) and three pixel faces, **Press
+Start 2P**, **Pixelify Sans**, **Silkscreen**. `system` stays first in the picker as the way back.
 
 **Every switched stack keeps `IBM Plex Sans Thai` behind the pixel face and that is load-bearing.**
 All three are Latin-only. Thai reaches this app as *data* — a counterparty name off a statement, a

@@ -41,7 +41,7 @@ import { z } from "zod";
  * (PLAN task 42), and the way back to something plainly legible must not itself depend on the trial
  * going well. The other three are the OFL pixel faces the owner compared on the design canvas.
  */
-export const FONT_CHOICES = ["system", "press-start-2p", "pixelify-sans", "silkscreen"] as const;
+export const FONT_CHOICES = ["system", "libron", "press-start-2p", "pixelify-sans", "silkscreen"] as const;
 
 export type FontChoice = (typeof FONT_CHOICES)[number];
 
@@ -56,6 +56,9 @@ export type FontChoice = (typeof FONT_CHOICES)[number];
  * glyph, which is what forced figures down to 8px, and imposing that on a device nobody has picked
  * a face on is the cost this default exists to avoid.
  *
+ * **Superseded by the owner on 2026-10-07: Libron**, a book serif rather than a pixel face. Pixelify
+ * Sans stays in the picker, one press away, like every face before it.
+ *
  * **The trial argument still holds and now runs the other way.** Any face here can be chosen in one
  * gesture and the cookie remembers it per device, so a default is a starting point rather than a
  * commitment. What must stay true is that the way back to something legible does not depend on the
@@ -65,7 +68,7 @@ export type FontChoice = (typeof FONT_CHOICES)[number];
  * keeps IBM Plex Sans Thai behind the pixel face (D-153). Thai reaches this app as data, never as
  * interface copy.
  */
-export const DEFAULT_FONT: FontChoice = "pixelify-sans";
+export const DEFAULT_FONT: FontChoice = "libron";
 
 /** The cookie the layout reads. Prefixed so it cannot collide with a Supabase auth cookie. */
 export const FONT_COOKIE = "pl_ui_font";
@@ -76,6 +79,7 @@ export const FONT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 /** What the picker calls each face. The value is a token; only this is ever shown. */
 export const FONT_LABELS: Record<FontChoice, string> = {
   system: "System (IBM Plex)",
+  libron: "Libron",
   "press-start-2p": "Press Start 2P",
   "pixelify-sans": "Pixelify Sans",
   silkscreen: "Silkscreen"
@@ -90,6 +94,7 @@ export const FONT_LABELS: Record<FontChoice, string> = {
  */
 export const FONT_NOTES: Record<FontChoice, string> = {
   system: "The stack this app has always used. Latin and Thai in one family.",
+  libron: "A calm book serif. Latin only — Thai falls back; figures stay in Plex Mono.",
   "press-start-2p": "Widest of the three. Latin only — Thai falls back to IBM Plex Sans Thai.",
   "pixelify-sans": "Closest to ordinary proportions. Latin only — Thai falls back.",
   silkscreen: "Tightest of the three. Latin only — Thai falls back."
