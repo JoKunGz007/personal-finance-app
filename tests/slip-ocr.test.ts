@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   gregorianFromPrintedYear,
+  gregorianFromTwoDigitYear,
   groupIntoLines,
   findLabelLine,
   locateAmount,
@@ -224,10 +225,36 @@ describe("the Buddhist era, which is the opposite way round from the QR", () => 
     expect(gregorianFromPrintedYear(2026, today)).toBeNull();
   });
 
-  it("refuses a two-digit year instead of assuming a century", () => {
-    // KBANK prints `69`. That is 2569 BE and 2026 CE, and resolving it by assuming a century
-    // is guessing at precisely the point this project has already been burned.
+  it("leaves a two-digit year to its own resolver", () => {
     expect(gregorianFromPrintedYear(69, today)).toBeNull();
+  });
+
+  // KBANK prints `69`. No century is assumed: every completion in both eras is tried, and
+  // only a year with exactly one survivor in the window is believed.
+  it("completes a two-digit year when exactly one candidate fits the window", () => {
+    expect(gregorianFromTwoDigitYear(69, today)).toBe(2026); // 2569 BE
+    expect(gregorianFromTwoDigitYear(68, today)).toBe(2025); // 2568 BE
+    expect(gregorianFromTwoDigitYear(70, today)).toBe(2027); // 2570 BE, the window's last year
+    expect(gregorianFromTwoDigitYear(26, today)).toBe(2026); // printed Gregorian; 2526 BE is 1983
+    expect(gregorianFromTwoDigitYear(59, today)).toBe(2016); // 2559 BE, the window's first year
+  });
+
+  it("refuses a two-digit year that fits no candidate, and anything that is not one", () => {
+    expect(gregorianFromTwoDigitYear(71, today)).toBeNull(); // 2028 and 2071: both outside
+    expect(gregorianFromTwoDigitYear(50, today)).toBeNull(); // 2007 and 2050
+    expect(gregorianFromTwoDigitYear(100, today)).toBeNull();
+    expect(gregorianFromTwoDigitYear(-1, today)).toBeNull();
+    expect(gregorianFromTwoDigitYear(6.9, today)).toBeNull();
+  });
+
+  it("never finds two survivors, because the eras' readings of one YY sit 43 or 57 years apart", () => {
+    for (let yy = 0; yy <= 99; yy += 1) {
+      for (const year of [2020, 2026, 2035, 2060]) {
+        const at = new Date(Date.UTC(year, 5, 1));
+        const result = gregorianFromTwoDigitYear(yy, at);
+        if (result !== null) expect(result >= year - 10 && result <= year + 1).toBe(true);
+      }
+    }
   });
 
   it("refuses a converted year outside the window a slip can belong to", () => {
@@ -293,11 +320,15 @@ describe("reading the printed date", () => {
     ]);
   });
 
-  it("refuses KBANK's two-digit year rather than assuming a century", () => {
-    // The decision this reader deliberately does not make. It is named in the refusal so the
-    // form can say something true, rather than reporting "no date found" on a slip that
-    // plainly prints one.
+  it("reads KBANK's two-digit year when exactly one candidate fits the window", () => {
     const read = readPrintedDate(dateLine("24 ก.ค. 69  11:38 น."), today);
+    expect(read.ok && read.value).toEqual({ iso: "2026-07-24", time: "11:38" });
+  });
+
+  it("still refuses a two-digit year no candidate fits, and names the case", () => {
+    // Named in the refusal so the form can say something true, rather than reporting "no date
+    // found" on a slip that plainly prints one.
+    const read = readPrintedDate(dateLine("24 ก.ค. 50  11:38 น."), today);
     expect(read.ok).toBe(false);
     if (read.ok) return;
     expect(read.code).toBe("DATE_YEAR_UNRESOLVED");

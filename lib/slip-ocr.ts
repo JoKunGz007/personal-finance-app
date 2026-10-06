@@ -286,21 +286,38 @@ export function proposeAmount(words: readonly OcrWord[], bank: BankCode): OcrRea
  * sources disagree by 543 years on the same slip.
  *
  * D-031 is why this is a guard rather than a silent subtraction: a 543-year shift parsed
- * cleanly once and would have written 1983 dates into the ledger. Two-digit years are
- * refused outright — KBANK prints `69`, which is `2569` BE and `2026` CE, and a reader that
- * resolves a two-digit year by assuming a century is guessing at exactly the point where
- * this project has already been burned.
+ * cleanly once and would have written 1983 dates into the ledger. A two-digit year (KBANK
+ * prints `69`) goes through `gregorianFromTwoDigitYear` instead, which assumes no century.
  */
 export const BUDDHIST_ERA_OFFSET = 543;
 
 export function gregorianFromPrintedYear(year: number, today: Date): number | null {
   if (!Number.isInteger(year) || year < 1000) return null;
   const converted = year - BUDDHIST_ERA_OFFSET;
-  const thisYear = today.getUTCFullYear();
   // Fail closed: a converted year must land in the window a slip can plausibly belong to,
   // and an already-Gregorian year printed by mistake must not pass by looking reasonable.
-  if (converted > thisYear + 1 || converted < thisYear - 10) return null;
-  return converted;
+  return inSlipWindow(converted, today) ? converted : null;
+}
+
+/** The years a slip can belong to: ten back, one ahead (`SLIP_MAX_AGE_YEARS` server-side). */
+const inSlipWindow = (year: number, today: Date) => year >= today.getUTCFullYear() - 10 && year <= today.getUTCFullYear() + 1;
+
+/**
+ * A two-digit printed year, completed by arithmetic rather than by assuming a century
+ * (`docs/SLIP_CONTRACT.md`, decided by the owner 2026-10-07).
+ *
+ * Every completion across both eras is a candidate — `24YY`, `25YY`, `26YY` Buddhist and `19YY`,
+ * `20YY`, `21YY` Gregorian — and the year is believed only when **exactly one** lands in the
+ * slip window. It is the four-digit argument again: D-031's 1983 came from a year read in the
+ * wrong era, and two readings of one `YY` sit 43 or 57 years apart, so a twelve-year window can
+ * never hold both. More than one survivor, or none, fails closed.
+ */
+export function gregorianFromTwoDigitYear(year: number, today: Date): number | null {
+  if (!Number.isInteger(year) || year < 0 || year > 99) return null;
+  const candidates = [2400, 2500, 2600].map((century) => century + year - BUDDHIST_ERA_OFFSET)
+    .concat([1900, 2000, 2100].map((century) => century + year))
+    .filter((candidate) => inSlipWindow(candidate, today));
+  return new Set(candidates).size === 1 ? candidates[0]! : null;
 }
 
 /** A region of the source image, in the same pixel space the words are reported in. */
@@ -460,17 +477,14 @@ function readDateLine(text: string, today: Date): PrintedDate | { unresolvedYear
   // reported as one. A two-digit year is a decision this reader has not taken; a four-digit
   // year outside the plausible window is simply not a usable date. Collapsing them told the
   // owner "this slip prints a two-digit year" about a slip printing four.
-  if (printedYear < 1000) {
-    // The decision, not an omission. KBANK prints `YY`, so it is the layout where the printed
-    // date is the only date there is (D-059) — and also the one this refuses. Completing a
-    // two-digit year means assuming a century, which is guessing at the exact point D-031
-    // already cost this project a ledger dated 1983. It *may* reduce to arithmetic — the
-    // candidate set across both eras is small, and a window admitting exactly one would settle
-    // it the way the four-digit case is settled — but that is undecided, so it fails closed
-    // and names which case it is (`docs/SLIP_CONTRACT.md`, `PLAN.md` task 21).
-    return { unresolvedYear: true };
-  }
-  const year = gregorianFromPrintedYear(printedYear, today);
+  // KBANK prints `YY`, the layout where the printed date is the only date there is (D-059).
+  // It is completed only when exactly one candidate fits the window; otherwise it still fails
+  // closed and says which case it is. A three-digit year is no format any bank prints.
+  const short = printedYear < 1000;
+  const year = printedYear < 100
+    ? gregorianFromTwoDigitYear(printedYear, today)
+    : short ? null : gregorianFromPrintedYear(printedYear, today);
+  if (year === null && short) return { unresolvedYear: true };
   // Out of era or out of window: date-shaped, but not a date this ledger can believe.
   if (year === null) return null;
 

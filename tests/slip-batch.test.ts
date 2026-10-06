@@ -103,13 +103,12 @@ describe("resolving a batch slip's date", () => {
     expect(!resolved.ok && resolved.reason).toContain("disagree");
   });
 
-  // KBANK: no date in the reference and a two-digit printed year, which `readPrintedDate` will not
-  // complete (D-031). This is the residue bulk upload cannot close, and it is named rather than
-  // absorbed into a generic failure.
+  // KBANK: no date in the reference and a two-digit printed year. One no candidate fits is still
+  // refused, and named rather than absorbed into a generic failure.
   it("passes the printed reader's own refusal through for a two-digit year", () => {
     const resolved = resolveSlipDate({
       reference: "AB12CD34EF56GH78",
-      words: slipWords({ printed: "24 ก.ค. 69  11:38 น." }),
+      words: slipWords({ printed: "24 ก.ค. 50  11:38 น." }),
       window: WINDOW,
       today: TODAY
     });
@@ -274,7 +273,7 @@ describe("what a review verdict carries besides its reason", () => {
 
   it("keeps an amount that passed the strict grammar when the date is the half that failed", () => {
     // The converse, and it matters for KBANK, whose reference carries no date and whose two-digit
-    // printed year is refused outright (D-031). The amount is still exactly what was read.
+    // printed year can still be refused. The amount is still exactly what was read.
     const verdict = classifySlip({
       reference: "AB12CD34EF56GH78",
       bankCode: "KTB",

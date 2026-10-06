@@ -148,17 +148,13 @@ slip** is Buddhist and always does. The two sources disagree by 543 years on the
   form, so one table serves them all, and the finding that matters is that three of the twelve
   tokens defeat the obvious two-consonant pattern.
 
-- **KBANK's two-digit year is now the blocker, and the current guard refuses it by design.**
-  `gregorianFromPrintedYear` returns null for any year below 1000, and its comment says why: a
-  reader that resolves a two-digit year by assuming a century is guessing at the point where
-  D-031 already burned this project. But KBANK prints `YY` **and** its reference carries no
-  date (D-059), so under the present rule that layout has no readable date from either source.
-  Worth reopening rather than accepting, because the same arithmetic D-031 used may settle it
-  without guessing: completing a two-digit year gives a small candidate set across both eras,
-  and if a plausibility window admits **exactly one**, that is arithmetic rather than a
-  heuristic — the identical argument that made the four-digit case safe. If more than one
-  candidate survives, it must fail closed. **Not implemented, and it is a decision rather than
-  an oversight** (`PLAN.md` task 21).
+- **KBANK's two-digit year is completed by arithmetic, decided by the owner 2026-10-07 (D-250).**
+  KBANK prints `YY` and its reference carries no date (D-059), so the printed date is the only
+  one. `gregorianFromTwoDigitYear` tries every completion in both eras (`24YY`–`26YY` Buddhist,
+  `19YY`–`21YY` Gregorian) and believes the year only when **exactly one** lands in the slip
+  window (ten years back, one ahead). Two readings of one `YY` sit 43 or 57 years apart, so the
+  twelve-year window never holds both: no century is assumed, and D-031's wrong-era failure
+  cannot recur. A `YY` no candidate fits still fails closed as `DATE_YEAR_UNRESOLVED`.
 - **Digit confusability: measured as stability on 2026-08-10, and stability is not accuracy.**
   Across the four configurations tried (Thai-only and `tha+eng`, at native and 2×), 14 images
   were read by more than one configuration and **agreed on all 14 but one**. That one
