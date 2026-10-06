@@ -21,7 +21,7 @@ import {
 
 /** Structural, and looser than `visionWord` returns, so a fixture may omit a zero coordinate. */
 type WordFixture = {
-  symbols: Array<{ text: string }>;
+  symbols: Array<{ text: string; property?: { detectedBreak?: { type?: string } } }>;
   boundingBox: { vertices: Array<{ x?: number; y?: number }> };
 };
 
@@ -47,7 +47,7 @@ function annotated(words: WordFixture[]): VisionAnnotateResponse {
 describe("turning a Vision response into the words the grammar reads", () => {
   it("joins a word's symbols and takes its bounds", () => {
     const words = wordsFromVision(annotated([visionWord("บาท", { left: 10, top: 20, right: 60, bottom: 44 })]));
-    expect(words).toEqual([{ text: "บาท", left: 10, top: 20, right: 60, bottom: 44 }]);
+    expect(words).toEqual([{ text: "บาท", left: 10, top: 20, right: 60, bottom: 44, spaceAfter: false }]);
   });
 
   it("reads a rotated box as the rectangle that contains it", () => {
@@ -58,7 +58,7 @@ describe("turning a Vision response into the words the grammar reads", () => {
       symbols: [{ text: "1" }, { text: "2" }],
       boundingBox: { vertices: [{ x: 12, y: 4 }, { x: 40, y: 9 }, { x: 38, y: 30 }, { x: 10, y: 25 }] }
     };
-    expect(wordsFromVision(annotated([skewed]))).toEqual([{ text: "12", left: 10, top: 4, right: 40, bottom: 30 }]);
+    expect(wordsFromVision(annotated([skewed]))).toEqual([{ text: "12", left: 10, top: 4, right: 40, bottom: 30, spaceAfter: false }]);
   });
 
   it("treats a missing coordinate as zero, because that is what Vision means by it", () => {
@@ -69,7 +69,22 @@ describe("turning a Vision response into the words the grammar reads", () => {
       symbols: [{ text: "ก" }],
       boundingBox: { vertices: [{ y: 5 }, { x: 30, y: 5 }, { x: 30, y: 25 }, { y: 25 }] }
     };
-    expect(wordsFromVision(annotated([atTheEdge]))).toEqual([{ text: "ก", left: 0, top: 5, right: 30, bottom: 25 }]);
+    expect(wordsFromVision(annotated([atTheEdge]))).toEqual([{ text: "ก", left: 0, top: 5, right: 30, bottom: 25, spaceAfter: false }]);
+  });
+
+  it("records whether Vision saw a space after a word, from its last symbol's break", () => {
+    // Vision splits Thai into syllables and flags only the real spaces; a name joined on every
+    // word would read "นาย สม มุติ" instead of "นาย สมมุติ".
+    const withBreak = (text: string, left: number, type?: string) => {
+      const word = visionWord(text, { left, top: 0, right: left + 20, bottom: 20 });
+      if (type) word.symbols[word.symbols.length - 1]!.property = { detectedBreak: { type } };
+      return word;
+    };
+    const words = wordsFromVision(annotated([
+      withBreak("นาย", 0, "SPACE"), withBreak("สม", 30), withBreak("มุติ", 60, "EOL_SURE_SPACE"),
+      withBreak("A", 90, "LINE_BREAK"), withBreak("B", 120, "HYPHEN")
+    ]));
+    expect(words.map((word) => word.spaceAfter)).toEqual([true, false, true, true, false]);
   });
 
   it("drops a word with no text and a box with no area", () => {
@@ -235,6 +250,6 @@ describe("which failures are told apart", () => {
       { status: 200 }
     ));
     expect(await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch))
-      .toEqual({ ok: true, words: [{ text: "ยอด", left: 4, top: 8, right: 40, bottom: 30 }] });
+      .toEqual({ ok: true, words: [{ text: "ยอด", left: 4, top: 8, right: 40, bottom: 30, spaceAfter: false }] });
   });
 });

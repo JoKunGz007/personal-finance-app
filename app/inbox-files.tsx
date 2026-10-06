@@ -105,7 +105,7 @@ export function InboxFiles() {
       setReviewable(result.reviewable);
       // The drain's own summary leaves slips out; the capture says what happened to them.
       const slipLine = captured === null ? null : describeSlipCapture({
-        captured: captured.captured, duplicates: captured.duplicates, kept: Object.keys(captured.reasons).length
+        captured: captured.captured, duplicates: captured.duplicates, filled: captured.filled, kept: Object.keys(captured.reasons).length
       }, "withdrawal");
       setDrainLine(slipLine === null ? result.summary : result.summary === "Nothing was imported." ? slipLine : `${result.summary} ${slipLine}`);
     } catch {

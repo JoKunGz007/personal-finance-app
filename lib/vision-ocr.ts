@@ -44,7 +44,8 @@ import type { OcrWord } from "@/lib/slip-ocr";
 
 /** Vision's response, structurally, so no client library is imported for four field names. */
 type VisionVertex = { x?: number; y?: number };
-type VisionWord = { symbols?: Array<{ text?: string }>; boundingBox?: { vertices?: VisionVertex[] } };
+type VisionSymbol = { text?: string; property?: { detectedBreak?: { type?: string } } };
+type VisionWord = { symbols?: VisionSymbol[]; boundingBox?: { vertices?: VisionVertex[] } };
 type VisionParagraph = { words?: VisionWord[] };
 type VisionBlock = { paragraphs?: VisionParagraph[] };
 type VisionPage = { blocks?: VisionBlock[] };
@@ -92,6 +93,16 @@ export function visionRequestBody(base64Image: string): string {
 }
 
 /**
+ * Whether Vision saw a space after a word: its last symbol carries the break. `HYPHEN` and a
+ * missing break mean the next word continues this one — which is how Vision reports a Thai name
+ * it split into syllables.
+ */
+const SPACE_BREAKS = new Set(["SPACE", "SURE_SPACE", "EOL_SURE_SPACE", "LINE_BREAK"]);
+function breaksAfter(symbols: readonly VisionSymbol[] | undefined): boolean {
+  return SPACE_BREAKS.has(symbols?.[symbols.length - 1]?.property?.detectedBreak?.type ?? "");
+}
+
+/**
  * Flattens Vision's page/block/paragraph/word nesting into the flat word list the policy layer reads.
  *
  * Structure above the word is discarded deliberately: `groupIntoLines` re-derives lines from
@@ -122,7 +133,7 @@ export function wordsFromVision(response: VisionAnnotateResponse | null | undefi
           // Degenerate boxes are dropped rather than passed on: a zero-width word cannot contribute
           // to a crop and would widen a field region for nothing.
           if (right <= left || bottom <= top) continue;
-          words.push({ text, left, top, right, bottom });
+          words.push({ text, left, top, right, bottom, spaceAfter: breaksAfter(word.symbols) });
         }
       }
     }

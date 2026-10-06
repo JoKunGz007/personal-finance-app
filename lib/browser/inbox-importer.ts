@@ -48,7 +48,7 @@ export type Posted = { readonly ok: true; readonly already?: boolean } | { reado
 
 /** A slip capture's answer: stored now, already in the ledger, or why it is not known to be stored. */
 export type SlipPosted =
-  | { readonly ok: true; readonly outcome: "captured" | "duplicate" }
+  | { readonly ok: true; readonly outcome: "captured" | "duplicate"; /** A duplicate whose blank payee or memo the re-send filled. */ readonly filled?: boolean }
   | { readonly ok: false; readonly why: string };
 
 /**
@@ -96,7 +96,8 @@ async function postSlipCapture(body: SlipPostBody): Promise<SlipPosted> {
     const answer: unknown = await response.json().catch(() => null);
     if (answer === null) return { ok: false, why: SLIP_UNCONFIRMED_REASON };
     const captured = typeof answer === "object" && (answer as { captured?: unknown }).captured === true;
-    return { ok: true, outcome: captured ? "captured" : "duplicate" };
+    const filled = !captured && typeof answer === "object" && (answer as { filled?: unknown }).filled === true;
+    return { ok: true, outcome: captured ? "captured" : "duplicate", filled };
   } catch {
     return { ok: false, why: "This slip could not be captured." };
   }
@@ -346,6 +347,8 @@ export type SlipCaptureResult = {
   readonly captured: number;
   /** Slips the ledger already held; their files are removed like captured ones. */
   readonly duplicates: number;
+  /** Of the duplicates, those whose blank payee or memo this re-send filled in. */
+  readonly filled: number;
   /** Why each slip that stayed is still in the queue, by object name. */
   readonly reasons: Record<string, string>;
 };
@@ -363,6 +366,7 @@ export async function captureSlips(
   const reasons: Record<string, string> = {};
   let captured = 0;
   let duplicates = 0;
+  let filled = 0;
   for (const slip of slips) {
     // Refuses a non-canonical magnitude rather than coercing it, so nothing bad is sent.
     const signed = signedSlipAmount(slip.amountMinor, kind);
@@ -371,7 +375,10 @@ export async function captureSlips(
     if (!posted.ok) { reasons[slip.name] = posted.why; continue; }
     if (!(await removeAll(deps, [slip.name]))) { reasons[slip.name] = REMOVE_FAILED; continue; }
     if (posted.outcome === "captured") captured += 1;
-    else duplicates += 1;
+    else {
+      duplicates += 1;
+      if (posted.filled === true) filled += 1;
+    }
   }
-  return { captured, duplicates, reasons };
+  return { captured, duplicates, filled, reasons };
 }

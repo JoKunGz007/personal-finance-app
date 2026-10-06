@@ -408,6 +408,7 @@ describe("what the owner reads", () => {
     expect(describeSlipCapture({ captured: 1, duplicates: 1, kept: 2 }, "deposit"))
       .toBe("1 slip captured as money in. 1 slip was already in the ledger. 2 slips stay in the queue.");
     expect(describeSlipCapture({ captured: 0, duplicates: 2, kept: 1 }, "deposit")).toBe("2 slips were already in the ledger. 1 slip stays in the queue.");
+    expect(describeSlipCapture({ captured: 0, duplicates: 2, kept: 0, filled: 1 }, "deposit")).toBe("2 slips were already in the ledger; payee or memo added to 1.");
     expect(describeSlipCapture({ captured: 0, duplicates: 0, kept: 0 }, "deposit")).toBe("No slips were captured.");
   });
 });
@@ -849,14 +850,20 @@ describe("captureSlips", () => {
     const { deps, log } = slipFakes({ post: (name) => ({ ok: true, outcome: name === "b.png" ? "duplicate" : "captured" }) });
     const result = await captureSlips([ready("a.png"), ready("b.png")], "withdrawal", deps);
     expect(log).toEqual(["post:a.png", "remove:a.png", "post:b.png", "remove:b.png"]);
-    expect(result).toEqual({ captured: 1, duplicates: 1, reasons: {} });
+    expect(result).toEqual({ captured: 1, duplicates: 1, filled: 0, reasons: {} });
+  });
+
+  test("a duplicate the re-send filled is counted among the duplicates as filled", async () => {
+    const { deps } = slipFakes({ post: (name) => ({ ok: true, outcome: "duplicate", filled: name === "a.png" }) });
+    const result = await captureSlips([ready("a.png"), ready("b.png")], "withdrawal", deps);
+    expect(result).toEqual({ captured: 0, duplicates: 2, filled: 1, reasons: {} });
   });
 
   test("a refused capture keeps its file and says why, and the next slip still goes through", async () => {
     const { deps, log } = slipFakes({ post: (name) => (name === "a.png" ? { ok: false, why: "The ledger could not be reached." } : { ok: true, outcome: "captured" }) });
     const result = await captureSlips([ready("a.png"), ready("b.png")], "deposit", deps);
     expect(log).toEqual(["post:a.png", "post:b.png", "remove:b.png"]);
-    expect(result).toEqual({ captured: 1, duplicates: 0, reasons: { "a.png": "The ledger could not be reached." } });
+    expect(result).toEqual({ captured: 1, duplicates: 0, filled: 0, reasons: { "a.png": "The ledger could not be reached." } });
   });
 
   test("a confirmation that could not be read keeps the file, and nothing is removed", async () => {

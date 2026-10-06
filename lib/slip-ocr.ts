@@ -60,6 +60,13 @@ export type OcrWord = {
   top: number;
   right: number;
   bottom: number;
+  /**
+   * Whether the engine saw a space after this word. Optional, because only Vision reports it:
+   * Vision splits Thai into syllable-sized words, so joining every word with a space breaks a
+   * name ("นาย สม มุ ติ"), while its own break flag gives "นาย สมมุติ". Absent means unknown,
+   * and the join falls back to a space.
+   */
+  spaceAfter?: boolean;
 };
 
 export type OcrRefusal =
@@ -608,6 +615,10 @@ function displayText(text: string, max: number): string | null {
 
 const lineText = (words: readonly OcrWord[]) => words.map((word) => word.text).join(" ");
 
+/** Text to show and store: a space only where the engine saw one, or did not say (`spaceAfter`). */
+const shownText = (words: readonly OcrWord[]) =>
+  words.map((word, index) => (index > 0 && words[index - 1]!.spaceAfter !== false ? " " : "") + word.text).join("");
+
 /** The value words for one label, or null when the label is missing, doubled or points at a label. */
 function labelledValue(lines: readonly OcrWord[][], anchor: FieldAnchor): OcrWord[] | null {
   const found = findLabelLine(lines, anchor.label);
@@ -615,6 +626,18 @@ function labelledValue(lines: readonly OcrWord[][], anchor: FieldAnchor): OcrWor
   const value = valueWordsFor(lines, found, anchor.position);
   if (value.length === 0 || isLabelText(lineText(value))) return null;
   return value;
+}
+
+/**
+ * SCB draws a round icon left of a merchant payee, and Vision reads it as `E`, `EX` or `E )` —
+ * on all 15 iconned SCB slips measured 2026-10-07. Its gap to the name overlaps ordinary word
+ * spacing, so the token is matched by its text, and only while a name is left after it.
+ */
+const SCB_ICON = /^(?:E|EX|E\)|\))$/;
+function withoutScbIcon(value: OcrWord[]): OcrWord[] {
+  let start = 0;
+  while (start < value.length - 1 && SCB_ICON.test(value[start]!.text)) start += 1;
+  return value.slice(start);
 }
 
 /**
@@ -628,7 +651,7 @@ function labelledValue(lines: readonly OcrWord[][], anchor: FieldAnchor): OcrWor
 function scbPayee(lines: readonly OcrWord[][], anchor: FieldAnchor): OcrWord[] | null {
   const found = findLabelLine(lines, anchor.label);
   if (!found.ok) return null;
-  const value = valueWordsFor(lines, found, "same-line-right");
+  const value = withoutScbIcon(valueWordsFor(lines, found, "same-line-right"));
   if (value.length === 0 || isLabelText(lineText(value))) return null;
   const next = lines[found.index + 1];
   if (next && next.length > 0) {
@@ -647,17 +670,24 @@ const HAS_LETTER = /[ก-ฮA-Za-z]/u;
 /**
  * KBANK's payee: the first lettered line after the sender's masked account.
  *
- * Exactly one masked line, or nothing. The payee's own account is masked too on some slips, and
- * with two such lines "after the masked account" would name the line after the *payee's*
- * account — which is the memo or a fee, never the name.
+ * The sender's block comes first, so the first masked line is the sender's. The payee's own
+ * account is masked the same way on a transfer to another person (most of the 20 K PLUS slips
+ * measured 2026-10-07 print two), which is why the first is taken rather than requiring exactly one.
+ * If the engine dropped the sender's line, the first masked line is the payee's and the next
+ * lettered line is `เลขที่รายการ:`, a label, so the answer is still null rather than wrong.
  */
 function kbankPayee(lines: readonly OcrWord[][]): OcrWord[] | null {
-  const masked = lines.flatMap((words, index) => (KBANK_MASKED_ACCOUNT.test(normalise(lineText(words))) ? [index] : []));
-  if (masked.length !== 1) return null;
+  const masked = lines.findIndex((words) => KBANK_MASKED_ACCOUNT.test(normalise(lineText(words))));
+  if (masked < 0) return null;
   // Skip the arrow K PLUS draws between the two parties, and anything else with no letter in it.
-  const payee = lines.slice(masked[0]! + 1).find((words) => HAS_LETTER.test(normalise(lineText(words))));
+  const payee = lines.slice(masked + 1).find((words) => HAS_LETTER.test(normalise(lineText(words))));
   if (!payee || isLabelText(lineText(payee))) return null;
-  return payee;
+  // K PLUS left-aligns both names on the masked account's column; the payee bank's logo sits left
+  // of it and Vision reads it as a stray "0" (2 of 20 slips, 2026-10-07).
+  const masks = lines[masked]!;
+  const column = masks[0]!.left - (masks[0]!.bottom - masks[0]!.top);
+  const named = payee.filter((word) => word.left >= column);
+  return named.length > 0 ? named : null;
 }
 
 /**
@@ -668,7 +698,7 @@ function slipNote(lines: readonly OcrWord[][], bank: BankCode): string | null {
   const own = SLIP_TEXT_ANCHORS[bank].note;
   const parts: string[] = [];
   const ownValue = labelledValue(lines, own);
-  const ownText = ownValue ? displayText(lineText(ownValue), NOTE_MAX) : null;
+  const ownText = ownValue ? displayText(shownText(ownValue), NOTE_MAX) : null;
   if (ownText) parts.push(ownText);
 
   // On Krungthai and KBANK the own label *is* the memo label (KBANK with a colon), so the generic
@@ -681,7 +711,7 @@ function slipNote(lines: readonly OcrWord[][], bank: BankCode): string | null {
     if (found.ok) {
       const right = valueWordsFor(lines, found, "same-line-right");
       const value = right.length > 0 ? right : valueWordsFor(lines, found, "next-line");
-      const text = value.length > 0 && !isLabelText(lineText(value)) ? displayText(lineText(value), NOTE_MAX) : null;
+      const text = value.length > 0 && !isLabelText(lineText(value)) ? displayText(shownText(value), NOTE_MAX) : null;
       if (text && !parts.includes(text)) parts.push(text);
     }
   }
@@ -695,7 +725,7 @@ export function proposeSlipText(words: readonly OcrWord[], bank: BankCode): Slip
     ? kbankPayee(lines)
     : bank === "SCB" ? scbPayee(lines, payeeAnchor) : labelledValue(lines, payeeAnchor);
   return {
-    counterparty: payee ? displayText(lineText(payee), COUNTERPARTY_MAX) : null,
+    counterparty: payee ? displayText(shownText(payee), COUNTERPARTY_MAX) : null,
     note: slipNote(lines, bank)
   };
 }

@@ -1,5 +1,6 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { isComplete } from "@/lib/server/row-cap";
+import { correctionRpcArgs, type CorrectionRequest } from "@/lib/corrections";
 import { slipCaptureSchema } from "@/lib/slips";
 
 export const dynamic = "force-dynamic";
@@ -76,5 +77,58 @@ export async function POST(request: Request) {
   // 201 when a row was written, 200 when the same slip had already been captured. Sharing
   // a slip twice is expected rather than exceptional (migration 011), so the second share
   // is a success the client reports plainly, not an error it has to interpret.
-  return Response.json(result, { status: result.captured ? 201 : 200, headers: noStoreHeaders });
+  const filled = result.captured ? false : await fillBlankPayeeAndMemo(auth.supabase, result.slip, parsed.data);
+  return Response.json({ ...result, filled }, { status: result.captured ? 201 : 200, headers: noStoreHeaders });
+}
+
+type OverlayRow = {
+  kind: string | null; amount_minor: number | string | null; occurred_on: string | null; occurred_at_time: string | null;
+  counterparty: string | null; category_id: string | null; note: string | null; revision: number;
+};
+
+/**
+ * A re-sent slip that is already stored may carry a payee or memo the stored copy lacks (the
+ * reader that first captured it missed them). Those two blanks are filled through the owner's
+ * own correction path, so the slip row stays append-only and the fill is audited and revisioned.
+ *
+ * A field is filled only when the request has it and neither the slip nor its correction holds a
+ * value; nothing is ever overwritten. Best-effort: any failure leaves the duplicate answer as it
+ * was, so a duplicate is never turned into an error. Returns whether a correction was written.
+ */
+async function fillBlankPayeeAndMemo(
+  supabase: (Awaited<ReturnType<typeof strongOwnerClient>> & { ok: true })["supabase"],
+  slip: Record<string, unknown>,
+  request: { counterparty: string | null; note: string | null }
+): Promise<boolean> {
+  if (request.counterparty === null && request.note === null) return false;
+  if (typeof slip.id !== "string") return false;
+  try {
+    const read = await supabase
+      .from("slip_correction_overlays")
+      .select("kind,amount_minor,occurred_on,occurred_at_time,counterparty,category_id,note,revision")
+      .eq("slip_id", slip.id)
+      .maybeSingle();
+    if (read.error) return false;
+    const existing = (read.data ?? null) as OverlayRow | null;
+
+    const fillCounterparty = request.counterparty !== null && (slip.counterparty ?? null) === null && (existing?.counterparty ?? null) === null;
+    const fillNote = request.note !== null && (slip.note ?? null) === null && (existing?.note ?? null) === null;
+    if (!fillCounterparty && !fillNote) return false;
+
+    // Every existing correction field travels unchanged, so kind and amount keep moving together.
+    const args = correctionRpcArgs({
+      expectedRevision: existing?.revision ?? 0,
+      kind: (existing?.kind ?? null) as CorrectionRequest["kind"],
+      amountMinor: existing?.amount_minor == null ? null : String(existing.amount_minor),
+      occurredOn: existing?.occurred_on ?? null,
+      occurredAtTime: existing?.occurred_at_time ?? null,
+      counterparty: fillCounterparty ? request.counterparty : existing?.counterparty ?? null,
+      categoryId: existing?.category_id ?? null,
+      note: fillNote ? request.note : existing?.note ?? null
+    });
+    const written = await supabase.rpc("set_slip_correction", { p_slip_id: slip.id, ...args });
+    return !written.error;
+  } catch {
+    return false;
+  }
 }

@@ -507,10 +507,50 @@ describe("proposing the payee and note", () => {
       .toEqual({ counterparty: "นาง ผู้รับ ทดลอง", note: "ค่า ตั๋ว" });
   });
 
-  it("declines KBANK's payee with no masked account line, or with two", () => {
+  it("declines KBANK's payee with no masked account line", () => {
     expect(proposeSlipText(kbankSlip([]), "KBANK").counterparty).toBeNull();
+  });
+
+  it("reads KBANK's payee after the first masked line when the payee's account is masked too", () => {
     const two = [line(180, [["xxx-x-x1234-x", 10, 150]]), line(300, [["xxx-x-x9876-x", 10, 150]])];
-    expect(proposeSlipText(kbankSlip(two), "KBANK").counterparty).toBeNull();
+    expect(proposeSlipText(kbankSlip(two), "KBANK").counterparty).toBe("นาง ผู้รับ ทดลอง");
+  });
+
+  it("declines KBANK's payee when only the payee's masked line was read", () => {
+    // The sender's masked line was dropped, so the line after the only mask is the next label.
+    const words = [
+      ...line(100, [["นาย", 10, 40], ["ผู้ส่ง", 45, 100]]),
+      ...line(140, [["นาง", 10, 40], ["ผู้รับ", 45, 100]]),
+      ...line(180, [["xxx-x-x9876-x", 10, 150]]),
+      ...line(220, [["เลขที่รายการ:", 10, 110]])
+    ];
+    expect(proposeSlipText(words, "KBANK").counterparty).toBeNull();
+  });
+
+  it("drops a KBANK logo read left of the names' column", () => {
+    const words = [
+      ...line(100, [["นาย", 100, 140], ["ผู้ส่ง", 145, 200]]),
+      ...line(140, [["xxx-x-x1234-x", 100, 250]]),
+      ...line(200, [["0", 10, 60], ["นาง", 100, 140], ["ผู้รับ", 145, 200]])
+    ];
+    expect(proposeSlipText(words, "KBANK").counterparty).toBe("นาง ผู้รับ");
+  });
+
+  it("joins words with a space only where the engine saw one", () => {
+    // Vision splits a Thai name into syllables and flags only the real spaces (`spaceAfter`).
+    const words = [
+      ...line(100, [["xxx-x-x1234-x", 10, 150]]),
+      ...[["นาย", 10, 40, true], ["ผู้", 50, 70, false], ["รับ", 72, 100, true], ["ทด", 110, 130, false], ["ลอง", 132, 170, true]]
+        .map(([text, left, right, spaceAfter]) => ({ text, left, right, top: 140, bottom: 160, spaceAfter }) as OcrWord)
+    ];
+    expect(proposeSlipText(words, "KBANK").counterparty).toBe("นาย ผู้รับ ทดลอง");
+  });
+
+  it("drops the icon SCB draws before a merchant payee, read as E, EX or E )", () => {
+    for (const icon of [[["EX", 150, 180]], [["E", 150, 165]], [["E", 150, 165], [")", 168, 175]]] as Array<Array<[string, number, number]>>) {
+      const words = line(100, [["ไปยัง", 10, 60], ...icon, ["INVENTED", 200, 290], ["SHOP", 300, 360]]);
+      expect(proposeSlipText(words, "SCB").counterparty).toBe("INVENTED SHOP");
+    }
   });
 
   it("accepts the generic memo label on SCB and joins it with the provider note", () => {

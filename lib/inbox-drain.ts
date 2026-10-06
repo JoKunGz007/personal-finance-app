@@ -476,10 +476,10 @@ export function describeDrain(result: {
 }
 
 /** After the owner's answer: "2 slips captured as money out. 1 slip stays in the queue." */
-export function describeSlipCapture(result: { captured: number; duplicates: number; kept: number }, kind: SlipKind): string {
+export function describeSlipCapture(result: { captured: number; duplicates: number; kept: number; filled?: number }, kind: SlipKind): string {
   const sentences = [
     result.captured > 0 ? `${count(result.captured, "slip", "slips")} captured as money ${kind === "withdrawal" ? "out" : "in"}.` : null,
-    result.duplicates > 0 ? `${count(result.duplicates, "slip was", "slips were")} already in the ledger.` : null,
+    result.duplicates > 0 ? `${count(result.duplicates, "slip was", "slips were")} already in the ledger${result.filled ? `; payee or memo added to ${result.filled}` : ""}.` : null,
     result.kept > 0 ? `${count(result.kept, "slip stays", "slips stay")} in the queue.` : null
   ].filter((part): part is string => part !== null);
   return sentences.length === 0 ? "No slips were captured." : sentences.join(" ");

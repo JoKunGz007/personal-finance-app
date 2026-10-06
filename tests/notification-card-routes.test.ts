@@ -690,7 +690,7 @@ describe.skipIf(!reachable)("notification cards over HTTP", () => {
         const read = await readCard(PNG, "image/png");
         expect(read.status).toBe(200);
         expect((read.body as { words: unknown[] }).words)
-          .toEqual([{ text: "บาท", left: 4, top: 8, right: 40, bottom: 30 }]);
+          .toEqual([{ text: "บาท", left: 4, top: 8, right: 40, bottom: 30, spaceAfter: false }]);
       } finally {
         globalThis.fetch = realFetch;
       }
