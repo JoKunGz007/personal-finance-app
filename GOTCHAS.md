@@ -19,6 +19,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Silent Python installers can outlive the calling shell
 - The skill validator inherits the Windows locale encoding
 - PowerShell `>` re-encodes a native program's output, and Thai comes out garbled
+- Python reading a script from a Bash heredoc mangles Thai unless UTF-8 mode is on
 - Untracked files are absent from ordinary diffs
 - PowerShell mangles commit messages two different ways
 - A blocked event loop silently starves a spawned child's stdin
@@ -272,7 +273,7 @@ these section headings rather than a third raise. The owner chose the split.
 
 | Section | Traps | File |
 | --- | --- | --- |
-| Environment, shell and toolchain | 20 | [`docs/gotchas/environment.md`](docs/gotchas/environment.md) |
+| Environment, shell and toolchain | 21 | [`docs/gotchas/environment.md`](docs/gotchas/environment.md) |
 | Docker and the local Supabase projects | 15 | [`docs/gotchas/docker-supabase.md`](docs/gotchas/docker-supabase.md) |
 | Database, migrations and pgTAP | 19 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
 | Backup, restore and recovery | 11 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |

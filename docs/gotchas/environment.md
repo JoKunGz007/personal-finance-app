@@ -183,3 +183,10 @@ the top of `GOTCHAS.md`.
 - Cause: Windows PowerShell 5.1 decodes a native program's stdout with `[Console]::OutputEncoding` (the Thai code page here, not UTF-8) before `>` writes it out again as UTF-16. The Node program wrote correct UTF-8; the redirect mangled it.
 - Avoid: start the command with `[Console]::OutputEncoding = [Text.Encoding]::UTF8;` and keep `>` (not `*>`, which hides the password prompt). Read the file with `iconv -f UTF-16LE -t UTF-8`.
 - Verify: 2026-10-06 (D-247). The `--mart` probe run without the prefix garbled every Thai line; the `--late` run with it decoded cleanly.
+
+## Python reading a script from a Bash heredoc mangles Thai unless UTF-8 mode is on
+
+- Symptom: a `python - <<'EOF'` edit script whose search strings contain Thai fails its own "found exactly once" assertion against a file that plainly holds the text; the assertion message shows the Thai as `����`.
+- Cause: on this Windows machine Python decodes stdin with the ANSI code page, not UTF-8, so the Thai in the script is mangled before it runs. The files themselves are fine. Text the script reads with `open(..., encoding="utf-8")` is unaffected.
+- Avoid: prefix the run with `PYTHONUTF8=1` (Bash) or `$env:PYTHONUTF8=1` (PowerShell), or write the script to a file first. Keep the "exactly once" assertion, which is what caught it before anything was written.
+- Verify: 2026-10-07 (D-249). The round-2 rule edit failed its assertion on the coffee rule's Thai; the same script under `PYTHONUTF8=1` applied cleanly.
