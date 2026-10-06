@@ -124,6 +124,8 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Gmail's IMAP `SUBJECT` search matches whole words, so a hyphenated subject word finds nothing
 - A Grab ride's card is charged at booking, so a window keyed on the drop-off matches almost nothing
 - A done-flag set while a reader skipped a kind hides that kind from the reader that follows
+- Gmail's "Forward as attachment" on a conversation attaches one message, not the thread
+- A Grab receipt's heading does not say which service it is
 
 ### Real data, masking and privacy
 

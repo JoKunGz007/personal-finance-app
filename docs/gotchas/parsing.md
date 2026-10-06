@@ -168,3 +168,17 @@ the top of `GOTCHAS.md`.
 - Cause: the Sync flags a message done once every receipt in it is resolved, and "a ride, skipped" counted as resolved. Every bundle holding rides was already flagged, so it is never opened again.
 - Avoid: when a reader starts reading what it used to skip, change the done-flag (`DELIVERY_FLAG`, `PLDelivery` → `PLGrab` in `lib/server/delivery-mailbox.ts`) so every message is read once more. Already-stored documents come back as `alreadyStored`, so the re-read is harmless.
 - Verify: 2026-09-24 (D-222): the harness reported 4 of 4 messages flagged `PLDelivery` and 0 flagged `PLGrab` before the deploy. The first live Sync then read all 4 and stored 276 rides, with 114 orders already stored.
+
+## Gmail's "Forward as attachment" on a conversation attaches one message, not the thread
+
+- Symptom: a backfill bundle built from a Gmail search arrives with fewer receipts than were ticked; the missing ones were in threads ("Grab, no-reply 3"), and a different receipt from the same thread came instead.
+- Cause: with conversation view on, ticking a row selects the conversation, and Forward as attachment attached one message of it (the latest, here a ride receipt), not the receipt the search matched.
+- Avoid: turn conversation view off (Settings → General) before building a bundle, so each row is one message; give the bundle a subject with the separate word `Grab` (the whole-word search above).
+- Verify: 2026-10-06 (D-246): a bundle of 8 ticked rows reached the mailbox holding 2 of its 6 Dine Out receipts and 4 ride receipts in place of the other 4; resent with conversation view off, the missing 4 arrived (`scripts/measure-grab-mail.ts --mart`, counts only).
+
+## A Grab receipt's heading does not say which service it is
+
+- Symptom: a GrabExpress receipt is counted among the rides, and Thai Dine Out receipts are found by no "Dine Out" search.
+- Cause: `classifyGrabReceipt` keys on headings. GrabExpress prints the ride template's `E-Receipt/Abbreviated Tax Invoice`, so it is classified `ride`; GrabMart and Dine Out print neither heading (`other`), and the Thai Dine Out receipt names itself only as `ส่วนลดสำหรับทานที่ร้าน`.
+- Avoid: classify on the service name as well as the heading (GrabExpress, GrabMart, the Dine Out wording in both languages), and check a new reader against every kind in the mailbox, not only the one it targets. When it starts reading kinds it used to skip, change the done-flag (above).
+- Verify: 2026-10-06 (D-246), the harness's `--mart` grouping: GrabExpress `(read as ride)`, GrabMart and 6 Dine Out `(read as other)`.

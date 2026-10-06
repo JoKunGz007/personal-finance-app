@@ -430,11 +430,27 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-243** — Phone nav as one swipeable row with Cash folded (option E, revisits D-226); no-time receipts match a lone TRUE MONEY row (amends D-212); renamed ride types grouped
 - **D-244** — Task 25's category set: 18 flat categories created on hosted through `mutate_category`, no subcategories yet; a read-only export feeds local-llm's measurement
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
 - **D-239** — The eighteenth boundary moves D-223 … D-234 on the owner's word
 - **D-238** — Review fixes for the server statement path, a server masked dump, empty statements flagged, and KBANK's Thai print
 - **D-237** — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 - **D-236** — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 - **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
+
+## D-246 — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+- Date: 2026-10-06
+- Status: **Investigated; no app code changed.** Harness extended (`87be104`); two rows hand-labelled at the owner's request. The reader is the next build (PLAN).
+- **The 15 Grab charges (D-245's next step 1), all accounted for**, against the owner's mailbox and Grab app, figures kept out of the repo (the owner's private, gitignored `owner-notes/`):
+  - 6 are **Grab Dine Out** (pay-at-the-restaurant) receipts, 1 **GrabMart**, 1 **GrabExpress**: services `classifyGrabReceipt` never reads.
+  - 3 are GrabFood orders for which Grab sent only a **"We're sorry for the late delivery"** mail (order breakdown and total, no e-receipt).
+  - 1 was refunded by a later `POS REFUND` of the same amount (not linked in the app); 1 is a merchant-cancelled order Grab said would not be charged, charged and never refunded (the owner's call whether to chase it).
+  - 2 are **food-voucher package purchases**, which send no receipt (one confirmed in the Grab app, the other inferred: same shape, older than the app's history). Labelled Food & Drinks › Delivery **by the owner's request through `PUT /api/v1/transactions/[id]/overlay`** (the owner's own path, so `owner` provenance).
+  - Checked and ruled out: no charge equals two or three stored rides/orders within a day; no inflow names Grab.
+- **Mail findings** (measured with `scripts/measure-grab-mail.ts --mart`, counts and date/amount tokens to the owner's terminal only): the four backfill bundles held only food and ride receipts (390), which is why none of these services was ever seen. **GrabExpress prints the ride heading, so it is classified `ride`** (today's Sync may store it as a ride). Thai Dine Out receipts never say "Dine Out"; they say `ส่วนลดสำหรับทานที่ร้าน`. The owner forwarded all of them (and the late-delivery mails) to the statement mailbox; the late-delivery layout is not measured yet.
+- **Decided for the reader (owner, 2026-10-06):** read Dine Out, GrabMart, GrabExpress and late-delivery mails, store them as orders, match on the exact total like GrabFood, and categorise: Dine Out → Food & Drinks › Dining Out; GrabMart → Groceries & Convenience › **Grocery Delivery** (a new subcategory: what was bought, not how it arrived; not yet created); late delivery → Food & Drinks › Delivery; GrabExpress → Shopping or a new Services › Courier (**open**: the owner's "sure" did not pick one). Shopee stays Shopping › Online until its orders are linked.
+- **`SIPS TRUE MONEY` (D-245's step 2): no rule.** 131 outgoing rows; the description, label, reference and account are identical on every one. All 16 receipt-matched rows fall inside the receipt-coverage window and all 115 blank ones before it, so no rule's precision can be measured. Round-฿10 amounts and daytime hours are suggestive only. Left blank; new rows categorise once their receipts match. Whether round-฿10 rows go to Wallet Top-up is the owner's open call (deferred with step 3).
+- **Keyword rules round 2 (step 3): drafted, not shipped.** Public names only; measured on the 2026-10-05 export to touch only blank rows. The owner chose SIPS SHOPEEPAY → Shopping › Online and leaving SCB merchant-QR and payment-processor payees blank; two payees await the owner. Deferred until after the reader.
 
 ## D-245 — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
 
