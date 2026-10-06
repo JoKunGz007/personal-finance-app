@@ -410,11 +410,22 @@ const NEWER_THAN_V13 = newerThan(BACKUP_TABLE_KINDS_V13);
  * The caller asserts the dropped tables are empty at source first, without which this would be
  * lossy rather than a downgrade.
  */
+// What a destination re-exports for rows restored from an older file: those orders come back as
+// food, because the old file had no `service` to carry (migration 049).
+function asRestored(kind: string, rows: unknown): unknown {
+  return kind === "deliveries"
+    ? (rows as Array<Record<string, unknown>>).map((row) => ({ ...row, service: "food" }))
+    : rows;
+}
+
 function downgradeTo(snapshot: Snapshot, schemaVersion: number, kinds: readonly string[]): unknown {
   const data: Record<string, unknown> = {};
   const tableCounts: Record<string, number> = {};
   for (const kind of kinds) {
-    data[kind] = snapshot.data[kind];
+    // v15 added `service` to delivery rows; an older file has none, and strict schemas refuse it.
+    data[kind] = schemaVersion < 15 && kind === "deliveries"
+      ? (snapshot.data[kind] as Array<Record<string, unknown>>).map(({ service: _service, ...row }) => row)
+      : snapshot.data[kind];
     tableCounts[kind] = snapshot.tableCounts[kind]!;
   }
   return {
@@ -609,7 +620,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
 
       for (const kind of BACKUP_TABLE_KINDS_V4.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v4 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v4 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V4) {
@@ -696,7 +707,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
 
       for (const kind of BACKUP_TABLE_KINDS_V5.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v5 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v5 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V5) {
@@ -790,7 +801,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
 
       for (const kind of BACKUP_TABLE_KINDS_V6.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v6 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v6 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V6) {
@@ -872,7 +883,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
 
       for (const kind of BACKUP_TABLE_KINDS_V7.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v7 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v7 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V7) {
@@ -953,7 +964,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       expect(backupSnapshotSchema.safeParse(landed).success).toBe(true);
 
       for (const kind of BACKUP_TABLE_KINDS_V8.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v8 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v8 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V8) {
@@ -1094,7 +1105,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const landed = reExported.json() as Snapshot;
       expect(landed.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
       for (const kind of BACKUP_TABLE_KINDS_V9.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v9 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v9 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V9) {
@@ -1162,7 +1173,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const landed = reExported.json() as Snapshot;
       expect(landed.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
       for (const kind of BACKUP_TABLE_KINDS_V10.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v10 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v10 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V10) {
@@ -1231,7 +1242,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const landed = reExported.json() as Snapshot;
       expect(landed.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
       for (const kind of BACKUP_TABLE_KINDS_V11.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v11 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v11 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V11) {
@@ -1302,7 +1313,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const landed = reExported.json() as Snapshot;
       expect(landed.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
       for (const kind of BACKUP_TABLE_KINDS_V12.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v12 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v12 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V12) {
@@ -1376,7 +1387,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       const landed = reExported.json() as Snapshot;
       expect(landed.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
       for (const kind of BACKUP_TABLE_KINDS_V13.filter((table) => table !== "mutation_sequences")) {
-        const rebound = canonicalJson((v13 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        const rebound = canonicalJson(asRestored(kind, (v13 as Snapshot).data[kind])).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
       }
       for (const kind of NEWER_THAN_V13) {

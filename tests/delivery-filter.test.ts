@@ -8,7 +8,7 @@ const state = (status: DeliveryMatchState["status"]): DeliveryMatchState => ({ s
 
 function order(id: string, overrides: Partial<StoredDelivery> = {}): StoredDelivery {
   return {
-    id, platform: "grabfood", booking_id: `A-${id}`, restaurant: "Invented Noodle House", payment_method: null,
+    id, platform: "grabfood", service: "food", booking_id: `A-${id}`, restaurant: "Invented Noodle House", payment_method: null,
     receipt_sent_at: "2026-09-01T12:10:00+00:00", ordered_at: null, charged_minor: null, food_minor: "10000",
     delivery_fee_minor: null, total_minor: "10000",
     items: [{ position: 1, quantity: 1, name: "Invented Pad Kra Pao", options: ["Extra egg"], amount_minor: "10000" }],

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { strongOwnerClient } from "@/lib/server/supabase";
 import { CATEGORY_RULES, firstMatchingRule, type CategoryRule } from "@/lib/category-rules";
+import type { DeliveryService } from "@/lib/deliveries";
 import { loadCurrentMatches, type CurrentMatch } from "@/lib/server/current-matches";
 
 /**
@@ -53,11 +54,21 @@ export interface CategoryDecision {
   unresolved: number;
 }
 
-const MATCH_CATEGORY: Record<CurrentMatch["kind"], string> = {
+const MATCH_CATEGORY: Record<Exclude<CurrentMatch["kind"], "delivery">, string> = {
   ride: "Transport › Ride-hailing",
-  delivery: "Food & Drinks › Delivery",
   receipt: "Groceries & Convenience › Convenience Store"
 };
+
+/** A delivery order's category by its Grab service (D-247); an absent service reads as food. */
+const DELIVERY_CATEGORY: Record<DeliveryService, string> = {
+  food: "Food & Drinks › Delivery",
+  dine_out: "Food & Drinks › Dining Out",
+  mart: "Groceries & Convenience › Grocery Delivery",
+  express: "Services › Courier"
+};
+
+const matchCategory = (match: CurrentMatch): string =>
+  match.kind === "delivery" ? DELIVERY_CATEGORY[match.service ?? "food"] : MATCH_CATEGORY[match.kind];
 
 /** Digits removed, whitespace collapsed, lower-cased: one merchant's rows share a key. */
 export function normaliseDescription(description: string): string {
@@ -136,7 +147,7 @@ export function decideCategories(
     if (autoExcluded.has(row.id)) {
       choice = { category_id: resolve("Own Transfers"), source: "match", detail: { rule: "own-transfer" } };
     } else if (match) {
-      choice = { category_id: resolve(MATCH_CATEGORY[match.kind]), source: "match", detail: { kind: match.kind, entity_id: match.entity_id } };
+      choice = { category_id: resolve(matchCategory(match)), source: "match", detail: { kind: match.kind, entity_id: match.entity_id } };
     } else if (remembered) {
       choice = { category_id: remembered, source: "rule", detail: { rule: "history" } };
     } else {

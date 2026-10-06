@@ -202,6 +202,7 @@ export function DeliveriesBench() {
                     <span className="receipt-when"><time dateTime={deliveryTime(delivery)}>{bangkokTime(deliveryTime(delivery))}</time></span>
                     <span className="receipt-branch">{delivery.restaurant}</span>
                     <span className="receipt-count">{dishCount(delivery)}</span>
+                    {SERVICE_LABEL[delivery.service] ? <span className="receipt-chip quiet">{SERVICE_LABEL[delivery.service]}</span> : null}
                     {delivery.platform === "lineman" ? <span className="receipt-chip quiet">LINE MAN</span> : null}
                     <span className={`receipt-chip ${MATCH_CHIP[delivery.match.status].tone}`}>{MATCH_CHIP[delivery.match.status].label}</span>
                     {delivery.adjustments.some((row) => row.kind === "unprinted") ? <span className="receipt-chip warn">not all on the e-receipt</span> : null}
@@ -378,6 +379,8 @@ function dishCount(delivery: { items: readonly { quantity: number }[] }): string
   return `${dishes} ${dishes === 1 ? "dish" : "dishes"}`;
 }
 
+// A short label for the non-food Grab services; GrabFood orders carry none.
+const SERVICE_LABEL: Record<StoredDelivery["service"], string | null> = { food: null, mart: "Mart", express: "Express", dine_out: "Dine out" };
 const PLATFORM_LABEL = { grabfood: "GrabFood", lineman: "LINE MAN" } as const;
 
 // The summary's chip, the receipts page's tones: green for a row on the ledger, amber for

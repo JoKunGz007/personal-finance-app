@@ -108,8 +108,12 @@ export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
 // been refused at every version since. Nothing about that arithmetic weakens with age: the
 // files the owner holds now span v2 to v5, and each stops being restorable only if this list
 // stops naming it.
-export const BACKUP_SCHEMA_VERSION = 14;
-export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const;
+//
+// v15 adds no table: it adds `service` to each `deliveries` row (migration 049, D-247), so v14 and
+// v15 share one table list and differ only in that row shape. A v2-v14 file has no `service`
+// and restores every order as food.
+export const BACKUP_SCHEMA_VERSION = 15;
+export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] as const;
 
 export function backupTableKindsFor(schemaVersion: number): readonly BackupTableKind[] {
   if (schemaVersion === 2) return BACKUP_TABLE_KINDS_V2;
@@ -574,6 +578,12 @@ const deliveryRowSchema = z.object({
   created_at: timestampSchema
 }).strict();
 
+// v15 adds the order's service (migration 049): a GrabFood order, or a Grab Mart, Express or Dine
+// Out receipt. v10-v14 rows have no such key and are read as food by the restore.
+const deliveryRowSchemaV15 = deliveryRowSchema.extend({
+  service: z.enum(["food", "mart", "express", "dine_out"])
+}).strict();
+
 const deliveryItemRowSchema = z.object({
   id: uuidSchema,
   owner_id: uuidSchema,
@@ -789,11 +799,17 @@ const v13DataShape = {
   lineman_order_details: z.array(linemanOrderDetailRowSchema)
 } as const;
 export const backupDataSchemaV13 = z.object(v13DataShape).strict();
-export const backupDataSchema = z.object({
+const v14DataShape = {
   ...v13DataShape,
   category_parents: z.array(categoryParentRowSchema),
   category_provenance: z.array(categoryProvenanceRowSchema),
   category_reviews: z.array(categoryReviewRowSchema)
+} as const;
+export const backupDataSchemaV14 = z.object(v14DataShape).strict();
+// v15 changes one table's row shape and adds none, so only `deliveries` is replaced.
+export const backupDataSchema = z.object({
+  ...v14DataShape,
+  deliveries: z.array(deliveryRowSchemaV15)
 }).strict();
 
 function chunkSchema<const Kind extends (typeof BACKUP_TABLE_KINDS)[number], Row extends z.ZodType>(
@@ -833,7 +849,9 @@ export const backupChunkSchema = z.discriminatedUnion("kind", [
   chunkSchema("receipt_discounts", receiptDiscountRowSchema),
   chunkSchema("receipt_match_overlays", receiptMatchOverlayRowSchema),
   chunkSchema("receipt_match_revisions", receiptMatchRevisionRowSchema),
-  chunkSchema("deliveries", deliveryRowSchema),
+  // One chunk schema serves every version, so `service` is optional here; the snapshot schemas
+  // above are what require it at v15 and refuse it before.
+  chunkSchema("deliveries", deliveryRowSchemaV15.partial({ service: true })),
   chunkSchema("delivery_items", deliveryItemRowSchema),
   chunkSchema("delivery_adjustments", deliveryAdjustmentRowSchema),
   chunkSchema("delivery_match_overlays", deliveryMatchOverlayRowSchema),
@@ -914,6 +932,7 @@ const baseV11 = z.object({ ...identity, schemaVersion: z.literal(11) }).strict()
 const baseV12 = z.object({ ...identity, schemaVersion: z.literal(12) }).strict();
 const baseV13 = z.object({ ...identity, schemaVersion: z.literal(13) }).strict();
 const baseV14 = z.object({ ...identity, schemaVersion: z.literal(14) }).strict();
+const baseV15 = z.object({ ...identity, schemaVersion: z.literal(15) }).strict();
 
 // Each version keeps its own kind list, so a v2 request is still checked against eleven
 // chunks and a v3 against twelve. Widening the union is not the same as relaxing it.
@@ -931,7 +950,8 @@ function actionUnion<Shape extends z.ZodRawShape>(extend: (kinds: readonly Backu
     baseV11.extend(extend(BACKUP_TABLE_KINDS_V11)).strict(),
     baseV12.extend(extend(BACKUP_TABLE_KINDS_V12)).strict(),
     baseV13.extend(extend(BACKUP_TABLE_KINDS_V13)).strict(),
-    baseV14.extend(extend(BACKUP_TABLE_KINDS)).strict()
+    baseV14.extend(extend(BACKUP_TABLE_KINDS)).strict(),
+    baseV15.extend(extend(BACKUP_TABLE_KINDS)).strict()
   ]);
 }
 
@@ -942,8 +962,8 @@ export const restoreActionSchemas = {
     chunkDigest: digestSchema,
     chunk: backupChunkSchema
   })),
-  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13, baseV14]),
-  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13, baseV14])
+  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13, baseV14, baseV15]),
+  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13, baseV14, baseV15])
 } as const;
 
 function snapshotFor<Data extends z.ZodType>(
@@ -984,7 +1004,8 @@ export const backupSnapshotSchemaV10 = snapshotFor(10, BACKUP_TABLE_KINDS_V10, b
 export const backupSnapshotSchemaV11 = snapshotFor(11, BACKUP_TABLE_KINDS_V11, backupDataSchemaV11);
 export const backupSnapshotSchemaV12 = snapshotFor(12, BACKUP_TABLE_KINDS_V12, backupDataSchemaV12);
 export const backupSnapshotSchemaV13 = snapshotFor(13, BACKUP_TABLE_KINDS_V13, backupDataSchemaV13);
-export const backupSnapshotSchemaV14 = snapshotFor(14, BACKUP_TABLE_KINDS, backupDataSchema);
+export const backupSnapshotSchemaV14 = snapshotFor(14, BACKUP_TABLE_KINDS, backupDataSchemaV14);
+export const backupSnapshotSchemaV15 = snapshotFor(15, BACKUP_TABLE_KINDS, backupDataSchema);
 
 // What a restore accepts. A snapshot read off disk is one of these and nothing else — the
 // union discriminates on the payload's own declared version rather than sniffing for a
@@ -1002,7 +1023,8 @@ export const backupSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   backupSnapshotSchemaV11,
   backupSnapshotSchemaV12,
   backupSnapshotSchemaV13,
-  backupSnapshotSchemaV14
+  backupSnapshotSchemaV14,
+  backupSnapshotSchemaV15
 ]);
 
 /**

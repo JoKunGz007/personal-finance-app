@@ -93,3 +93,11 @@ describe("schemeWallet", () => {
     expect(schemeWallet(lineman("18900", "20500", "20500"))).toBeNull();
   });
 });
+
+describe("schemeCosts service", () => {
+  it("leaves a non-food order out: the scheme and its daily cap are food only", () => {
+    const mart = { ...grab("30000", [discount("TH26GF0001ALL", "30000")]), service: "mart" as const };
+    expect(schemeCosts([mart]).size).toBe(0);
+    expect(schemeCosts([{ ...mart, service: "food" as const }]).size).toBe(1);
+  });
+});

@@ -17,6 +17,7 @@ import { deliveryMatchStateSchema } from "@/lib/delivery-match";
 export function captureDeliveryRequest(order: ParsedDelivery) {
   return {
     platform: order.platform,
+    ...(order.service ? { service: order.service } : {}),
     bookingId: order.bookingId,
     restaurant: order.restaurant,
     paymentMethod: order.paymentMethod,
@@ -100,9 +101,14 @@ export function captureRideRequest(ride: ParsedRide) {
   };
 }
 
+export const deliveryServiceSchema = z.enum(["food", "mart", "express", "dine_out"]);
+export type DeliveryService = z.infer<typeof deliveryServiceSchema>;
+
 export const storedDeliverySchema = z.object({
   id: z.string().uuid(),
   platform: z.enum(["grabfood", "lineman"]),
+  /** Which Grab service the order came from (migration 049); an absent value reads as food. */
+  service: deliveryServiceSchema.default("food"),
   booking_id: z.string(),
   restaurant: z.string(),
   payment_method: z.string().nullable(),

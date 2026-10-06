@@ -30,6 +30,8 @@ export const SCHEME_DAILY_CAP = 20000n;
 type Order = {
   id: string;
   platform: "grabfood" | "lineman";
+  /** The scheme and its daily cap are food only (D-247); absent reads as food. */
+  service?: "food" | "mart" | "express" | "dine_out";
   receipt_sent_at: string | null;
   ordered_at: string | null;
   food_minor: MinorUnitString;
@@ -90,6 +92,7 @@ function ownShare(food: bigint, date: string): bigint {
  */
 export function schemeCosts(orders: readonly Order[]): Map<string, SchemeCost> {
   const scheme = orders
+    .filter((order) => (order.service ?? "food") === "food")
     .map((order) => ({ order, paid: schemeWallet(order), at: order.ordered_at ?? order.receipt_sent_at ?? "" }))
     .filter((row): row is typeof row & { paid: { wallet: bigint; charged: bigint } } => row.paid !== null && row.at !== "")
     .sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || (a.order.id < b.order.id ? -1 : a.order.id > b.order.id ? 1 : 0));

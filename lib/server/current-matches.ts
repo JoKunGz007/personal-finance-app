@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { strongOwnerClient } from "@/lib/server/supabase";
 import { isComplete } from "@/lib/server/row-cap";
-import { deliveryTime, paidOutsidePlatform } from "@/lib/deliveries";
+import { deliveryTime, paidOutsidePlatform, type DeliveryService } from "@/lib/deliveries";
 import {
   deliveryLedgerCandidateSchema, deliveryMatchDecisionSchema, proposeGrabMatches, proposeRideSplits,
   rideLedgerCandidateSchema, rideMatchDecisionSchema, rideSplitCandidateSchema,
@@ -27,7 +27,7 @@ export async function loadOrderMatches(supabase: OwnerClient) {
   const [orders, rides, orderCandidates, rideCandidates, orderDecisions, rideDecisions, splitCandidates] = await Promise.all([
     supabase
       .from("deliveries")
-      .select("id,platform,booking_id,restaurant,payment_method,receipt_sent_at,food_minor,delivery_fee_minor,total_minor,items:delivery_items(position,quantity,name,options,amount_minor),adjustments:delivery_adjustments(position,kind,name,amount_minor),lineman:lineman_order_details(ordered_at,charged_minor)", { count: "exact" }),
+      .select("id,platform,service,booking_id,restaurant,payment_method,receipt_sent_at,food_minor,delivery_fee_minor,total_minor,items:delivery_items(position,quantity,name,options,amount_minor),adjustments:delivery_adjustments(position,kind,name,amount_minor),lineman:lineman_order_details(ordered_at,charged_minor)", { count: "exact" }),
     supabase
       .from("rides")
       .select("id,booking_id,ride_type,picked_up_at,dropped_off_at,pickup_place,dropoff_place,distance_meters,duration_minutes,payment_method,fare_minor,platform_fee_minor,total_minor,adjustments:ride_adjustments(position,kind,name,amount_minor)", { count: "exact" })
@@ -145,7 +145,7 @@ export async function loadReceiptMatches(supabase: OwnerClient) {
 
 export type CurrentMatch =
   | { transaction_id: string; kind: "ride"; entity_id: string }
-  | { transaction_id: string; kind: "delivery"; platform: "grabfood" | "lineman"; entity_id: string }
+  | { transaction_id: string; kind: "delivery"; platform: "grabfood" | "lineman"; /** Absent reads as food. */ service?: DeliveryService; entity_id: string }
   | { transaction_id: string; kind: "receipt"; entity_id: string };
 
 /**
@@ -172,7 +172,7 @@ export async function loadCurrentMatches(supabase: OwnerClient): Promise<{ ok: t
     ...orders.rides.flatMap((ride) => heldRows(ride.match, linkedRide.get(ride.id))
       .map((transaction_id) => ({ transaction_id, kind: "ride" as const, entity_id: ride.id }))),
     ...orders.deliveries.flatMap((delivery) => heldRows(delivery.match, linkedOrder.get(delivery.id))
-      .map((transaction_id) => ({ transaction_id, kind: "delivery" as const, platform: delivery.platform as "grabfood" | "lineman", entity_id: delivery.id }))),
+      .map((transaction_id) => ({ transaction_id, kind: "delivery" as const, platform: delivery.platform as "grabfood" | "lineman", service: ((delivery as { service?: DeliveryService }).service ?? "food"), entity_id: delivery.id }))),
     ...receipts.receipts.flatMap((receipt) => heldRows(receipt.match, linkedReceipt.get(receipt.id))
       .map((transaction_id) => ({ transaction_id, kind: "receipt" as const, entity_id: receipt.id })))
   ];

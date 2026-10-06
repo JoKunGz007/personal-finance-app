@@ -21,7 +21,7 @@
 
 import { minor, parseThb, type MinorUnitString } from "@/lib/money";
 
-export type GrabKind = "food" | "ride" | "other";
+export type GrabKind = "food" | "ride" | "other" | "mart" | "express" | "dine_out" | "late";
 
 export type DeliveryRefusal =
   | "MISSING_FIELD"
@@ -63,6 +63,8 @@ export type DeliveryAdjustment = {
 
 export type ParsedDelivery = {
   readonly platform: "grabfood";
+  /** Which Grab service the order came from; absent means food (migration 049). */
+  readonly service?: "food" | "mart" | "express" | "dine_out";
   readonly bookingId: string;
   readonly restaurant: string;
   readonly paymentMethod: string | null;
@@ -131,8 +133,22 @@ export function htmlToLines(html: string): string[] {
     .filter((line) => line !== "");
 }
 
-/** Which Grab template a body is, by its content. Anything else is not a receipt this app reads. */
+// Dine Out's discount heading is printed with U+0E4D U+0E32 (sara am split in two) in real mail;
+// the composed U+0E33 spelling is accepted too.
+const DINE_OUT_DISCOUNT = /ส่วนลดสำหรับทานที่ร้าน|ส่วนลดสําหรับทานที่ร้าน/u;
+const LATE_APOLOGY = /We[\u2019']re sorry for the late delivery/u;
+
+/**
+ * Which Grab template a body is, by its content. Anything else is not a receipt this app reads.
+ * Order matters: a late-delivery apology carries a GrabFood banner, and GrabExpress carries the
+ * ride heading, so both are decided before food and ride.
+ */
 export function classifyGrabReceipt(lines: readonly string[]): GrabKind {
+  if (lines.some((line) => LATE_APOLOGY.test(line))) return "late";
+  if (lines.some((line) => line === "Your item has been delivered!" || line === "Item pickup location" || line.startsWith("GrabExpress ("))) return "express";
+  // Dine Out prints no `GrabFood` line, so a food receipt with the same closing phrase stays food.
+  if (lines.some((line) => line === "Hope you had a great meal!" || DINE_OUT_DISCOUNT.test(line)) && !lines.some((line) => line.includes("GrabFood"))) return "dine_out";
+  if (lines.some((line, index) => line === "ขอบคุณที่ซื้อสินค้ากับเรา!" || (line.includes("สั่งซื้อด้วย") && (lines[index + 1] ?? "").includes("GrabMart")))) return "mart";
   const food = lines.some((line) => line.includes(FOOD_HEADING)) && lines.some((line) => line.includes("GrabFood"));
   if (food) return "food";
   if (lines.some((line) => line.includes(RIDE_HEADING))) return "ride";
@@ -204,6 +220,37 @@ export function pairAmounts(lines: readonly string[]): DeliveryRead<Line[]> {
   return { ok: true, value: out };
 }
 
+type RawItem = { position: number; quantity: number; name: string; options: string[]; amountMinor: MinorUnitString };
+
+/**
+ * Dishes before the subtotal row: a quantity line, the name (on the same line or the next), its
+ * price on the line after, then priceless option lines until the next quantity line. Lines before
+ * the first quantity line are header lines and are skipped.
+ */
+function readItems(rows: readonly Line[], foodAt: number): DeliveryRead<RawItem[]> {
+  const items: RawItem[] = [];
+  for (let index = 0; index < foodAt; index += 1) {
+    const row = rows[index]!;
+    const match = QUANTITY.exec(row.text);
+    if (match) {
+      const quantity = Number(match[1]);
+      if (quantity < 1) return { ok: false, code: "MALFORMED_LINE", message: "A dish line has a zero quantity." };
+      const namedAt = match[2] !== undefined ? index : index + 1;
+      const named = rows[namedAt];
+      if (!named || namedAt >= foodAt || named.amount === null || named.amount.negative || (named !== row && row.amount !== null)) {
+        return { ok: false, code: "MALFORMED_LINE", message: "A dish has no name and price." };
+      }
+      items.push({ position: items.length + 1, quantity, name: match[2] ?? named.text, options: [], amountMinor: named.amount.minor });
+      if (named !== row) index += 1;
+    } else if (items.length > 0) {
+      if (row.amount !== null) return { ok: false, code: "UNKNOWN_CHARGE", message: "A priced line among the dishes is not a dish." };
+      items.at(-1)!.options.push(row.text);
+    }
+  }
+  if (items.length === 0) return { ok: false, code: "MISSING_FIELD", message: "No dish lines were found." };
+  return { ok: true, value: items };
+}
+
 /** Reads a food e-receipt's lines. Call only on lines `classifyGrabReceipt` called `food`. */
 export function parseGrabFood(lines: readonly string[]): DeliveryRead<ParsedDelivery> {
   const bookingValue = labelValue(lines, BOOKING_LABEL);
@@ -228,28 +275,9 @@ export function parseGrabFood(lines: readonly string[]): DeliveryRead<ParsedDeli
   // The same total is printed at the top, under the heading. When it is there it must agree.
   const topTotal = rows.slice(0, foodAt).find((row) => row.text === TOTAL_LABEL && row.amount !== null)?.amount ?? null;
 
-  // Dishes: a quantity line, the name (on the same line or the next), its price on the line after,
-  // then priceless option lines until the next quantity line or the food subtotal.
-  const items: { position: number; quantity: number; name: string; options: string[]; amountMinor: MinorUnitString }[] = [];
-  for (let index = 0; index < foodAt; index += 1) {
-    const row = rows[index]!;
-    const match = QUANTITY.exec(row.text);
-    if (match) {
-      const quantity = Number(match[1]);
-      if (quantity < 1) return { ok: false, code: "MALFORMED_LINE", message: "A dish line has a zero quantity." };
-      const namedAt = match[2] !== undefined ? index : index + 1;
-      const named = rows[namedAt];
-      if (!named || namedAt >= foodAt || named.amount === null || named.amount.negative || (named !== row && row.amount !== null)) {
-        return { ok: false, code: "MALFORMED_LINE", message: "A dish has no name and price." };
-      }
-      items.push({ position: items.length + 1, quantity, name: match[2] ?? named.text, options: [], amountMinor: named.amount.minor });
-      if (named !== row) index += 1;
-    } else if (items.length > 0) {
-      if (row.amount !== null) return { ok: false, code: "UNKNOWN_CHARGE", message: "A priced line among the dishes is not a dish." };
-      items.at(-1)!.options.push(row.text);
-    }
-  }
-  if (items.length === 0) return { ok: false, code: "MISSING_FIELD", message: "No dish lines were found." };
+  const itemsRead = readItems(rows, foodAt);
+  if (!itemsRead.ok) return itemsRead;
+  const items = itemsRead.value;
 
   // The tail: delivery, then each discount (printed with a minus sign) or other named charge
   // (printed without one, as the delivery fee is), then the total. The sign is read as printed and
@@ -538,6 +566,338 @@ export function parseGrabRide(lines: readonly string[]): DeliveryRead<ParsedRide
       distanceMeters: metres(measured[1]!),
       durationMinutes: Number(duration[1] ?? 0) * 60 + Number(duration[2] ?? 0),
       paymentMethod, fareMinor: fare, platformFeeMinor: fee, adjustments, totalMinor
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// GrabMart and Dine Out (D-247). Same pure-function shape as food; sibling parsers sharing the
+// helpers above. Both fail closed on arithmetic exactly as food does, minus the `unprinted` rule.
+// ---------------------------------------------------------------------------------------------
+
+const MART_ORDER_LABEL = "รหัสคำสั่งซื้อ";
+const MART_SHOP_LABEL = "สั่งซื้อจาก:";
+const MART_PAYMENT_LABEL = "วิธีการชำระเงิน:";
+const MART_SENT_LABEL = "จัดส่งเมื่อ";
+const MART_TOTAL_LABEL = "ทั้งหมด";
+const MART_SUBTOTAL_LABEL = "ราคาคำสั่งซื้อ";
+const BOOKING_SHAPE = /^[A-Za-z0-9][A-Za-z0-9-]{5,}$/u;
+
+/** Reads a GrabMart e-receipt's lines. Call only on lines `classifyGrabReceipt` called `mart`. */
+export function parseGrabMart(lines: readonly string[]): DeliveryRead<ParsedDelivery> {
+  const bookingId = labelValue(lines, MART_ORDER_LABEL)?.split(" ")[0] ?? "";
+  if (!BOOKING_SHAPE.test(bookingId)) return refuse("MISSING_FIELD", "No booking ID was found.");
+  const restaurant = labelValue(lines, MART_SHOP_LABEL);
+  if (!restaurant) return refuse("MISSING_FIELD", "No shop line was found.");
+  const receiptSentAt = readSentAt(lines);
+  if (!receiptSentAt || !lines.some((line) => line.includes(MART_SENT_LABEL))) return refuse("MISSING_FIELD", "No delivered-at date line was found.");
+  const paymentMethod = labelValue(lines, MART_PAYMENT_LABEL);
+
+  const paired = pairAmounts(lines);
+  if (!paired.ok) return paired;
+  const rows = paired.value;
+  const subtotalAt = rows.findIndex((row) => row.text.startsWith(MART_SUBTOTAL_LABEL) && row.amount !== null && !row.amount.negative);
+  if (subtotalAt < 0) return refuse("MISSING_FIELD", "No order subtotal line was found.");
+  const foodMinor = rows[subtotalAt]!.amount!.minor;
+  const topTotal = rows.slice(0, subtotalAt).find((row) => row.text === MART_TOTAL_LABEL && row.amount !== null)?.amount ?? null;
+
+  const itemsRead = readItems(rows, subtotalAt);
+  if (!itemsRead.ok) return itemsRead;
+  const items = itemsRead.value;
+
+  let deliveryFeeMinor: MinorUnitString | null = null;
+  let totalMinor: MinorUnitString | null = null;
+  const adjustments: DeliveryAdjustment[] = [];
+  for (let index = subtotalAt + 1; index < rows.length && totalMinor === null; index += 1) {
+    const { text, amount } = rows[index]!;
+    if (amount === null) continue;
+    if (text === MART_TOTAL_LABEL && !amount.negative) {
+      totalMinor = amount.minor;
+    } else if (text.startsWith(DELIVERY_LABEL) && !amount.negative) {
+      if (deliveryFeeMinor !== null) return refuse("MALFORMED_LINE", "Two delivery fee lines were found.");
+      deliveryFeeMinor = amount.minor;
+    } else {
+      adjustments.push({ position: adjustments.length + 1, kind: amount.negative ? "discount" : "charge", name: text, amountMinor: amount.minor });
+    }
+  }
+  if (totalMinor === null) return refuse("MISSING_FIELD", "No total line was found.");
+  if (topTotal !== null && (topTotal.negative || topTotal.minor !== totalMinor)) {
+    return refuse("TOTAL_MISMATCH", "The total at the top does not equal the total at the bottom.");
+  }
+  if (items.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n) !== BigInt(foodMinor)) {
+    return refuse("ITEMS_MISMATCH", "The items do not add up to the order subtotal.");
+  }
+  const net = adjustments.reduce((sum, row) => sum + (row.kind === "charge" ? 1n : -1n) * BigInt(row.amountMinor), 0n);
+  if (BigInt(foodMinor) + BigInt(deliveryFeeMinor ?? "0") + net !== BigInt(totalMinor)) {
+    return refuse("TOTAL_MISMATCH", "Subtotal plus delivery plus charges minus discounts does not equal the total.");
+  }
+  return {
+    ok: true,
+    value: {
+      platform: "grabfood", service: "mart", bookingId, restaurant, paymentMethod: paymentMethod || null, receiptSentAt,
+      items, foodMinor, deliveryFeeMinor, adjustments, totalMinor: minor(totalMinor)
+    }
+  };
+}
+
+const DINE_OUT_SHORT_LABEL = "รหัสคำสั่งซื้อแบบสั้น";
+const DINE_OUT_SENT_LABEL = "วันที่ | เวลา";
+const DINE_OUT_SHOP_LABELS = ["ร้านอาาหร:", "ร้านอาหาร:"] as const;
+const DINE_OUT_TOTAL_LABEL = "Total";
+
+/**
+ * Reads a Dine Out (pay-at-the-restaurant) receipt's lines. Call only on lines `classifyGrabReceipt`
+ * called `dine_out`. The receipt prints a short order ID that repeats over time, so the booking ID
+ * is `<shortId>-<YYYY-MM-DD>` (Bangkok date of the receipt): an `@` joiner would break the
+ * `booking_id` check `^[A-Za-z0-9][A-Za-z0-9-]{5,}$`, which a bare short ID like `A-B1C` also fails.
+ */
+export function parseGrabDineOut(lines: readonly string[]): DeliveryRead<ParsedDelivery> {
+  const shortId = labelValue(lines, DINE_OUT_SHORT_LABEL)?.split(" ")[0] ?? "";
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{2,}$/u.test(shortId)) return refuse("MISSING_FIELD", "No short order ID was found.");
+  const restaurant = DINE_OUT_SHOP_LABELS.map((label) => labelValue(lines, label)).find((value) => value);
+  if (!restaurant) return refuse("MISSING_FIELD", "No restaurant line was found.");
+  if (!lines.some((line) => line.includes(DINE_OUT_SENT_LABEL))) return refuse("MISSING_FIELD", "No date line was found.");
+  const receiptSentAt = readSentAt(lines);
+  if (!receiptSentAt) return refuse("MISSING_FIELD", "No date line was found.");
+  const paymentMethod = labelValue(lines, PAYMENT_LABEL);
+
+  const paired = pairAmounts(lines);
+  if (!paired.ok) return paired;
+  const rows = paired.value;
+  const foodAt = rows.findIndex((row) => row.text.startsWith(FOOD_LABEL) && row.amount !== null && !row.amount.negative);
+  if (foodAt < 0) return refuse("MISSING_FIELD", "No food line was found.");
+  const foodMinor = rows[foodAt]!.amount!.minor;
+  const topTotal = rows.slice(0, foodAt).find((row) => row.text === TOTAL_LABEL && row.amount !== null)?.amount ?? null;
+  if (topTotal === null || topTotal.negative) return refuse("MISSING_FIELD", "No total was found at the top.");
+
+  let totalMinor: MinorUnitString | null = null;
+  const adjustments: DeliveryAdjustment[] = [];
+  for (let index = foodAt + 1; index < rows.length && totalMinor === null; index += 1) {
+    const { text, amount } = rows[index]!;
+    if (amount === null) continue;
+    if (text === DINE_OUT_TOTAL_LABEL && !amount.negative) totalMinor = amount.minor;
+    else if (amount.negative) adjustments.push({ position: adjustments.length + 1, kind: "discount", name: text, amountMinor: amount.minor });
+    else return refuse("UNKNOWN_CHARGE", "A positive line between the food line and the total is not known.");
+  }
+  if (totalMinor === null) return refuse("MISSING_FIELD", "No total line was found.");
+  if (topTotal.minor !== totalMinor) return refuse("TOTAL_MISMATCH", "The total at the top does not equal the total at the bottom.");
+  const discounts = adjustments.reduce((sum, row) => sum + BigInt(row.amountMinor), 0n);
+  if (BigInt(foodMinor) - discounts !== BigInt(totalMinor)) {
+    return refuse("TOTAL_MISMATCH", "Food minus discounts does not equal the total.");
+  }
+  return {
+    ok: true,
+    value: {
+      platform: "grabfood", service: "dine_out", bookingId: `${shortId}-${receiptSentAt.slice(0, 10)}`, restaurant,
+      paymentMethod: paymentMethod || null, receiptSentAt, items: [], foodMinor, deliveryFeeMinor: null, adjustments,
+      totalMinor: minor(totalMinor)
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Forwarded-mail date, GrabExpress and late-delivery receipts (D-247 part 2). Pure, no sync wiring.
+// ---------------------------------------------------------------------------------------------
+
+const FORWARDED_DATE = /^Date:\s*[A-Za-z]{3,9},\s*([A-Za-z]{3,4})\s+(\d{1,2}),\s*(\d{4})\s+at\s+(\d{1,2}):(\d{2})[\s ]*([AP]M)$/iu;
+
+/**
+ * The original send time of a Gmail inline forward: the first `Date: Thu, Apr 9, 2026 at 9:41 PM`
+ * line after a `Forwarded message` marker, as ISO +07:00. Gmail prints no zone, and the owner is in
+ * Bangkok, so +07:00 is assumed. English Gmail only; null when there is no marker or no parsable line.
+ */
+export function readForwardedDate(lines: readonly string[]): string | null {
+  const marker = lines.findIndex((line) => line.includes("Forwarded message"));
+  if (marker < 0) return null;
+  for (const line of lines.slice(marker + 1)) {
+    const match = FORWARDED_DATE.exec(line.trim());
+    if (!match) continue;
+    const [, monthName, day, year, hour, minute, meridiem] = match;
+    const month = MONTHS[monthName!.toLowerCase()];
+    const d = Number(day), y = Number(year), h12 = Number(hour), m = Number(minute);
+    if (!month || d < 1 || d > 31 || h12 < 1 || h12 > 12 || m > 59) continue;
+    if (new Date(Date.UTC(y, month - 1, d)).getUTCMonth() !== month - 1) continue;
+    const h = (h12 % 12) + (meridiem!.toUpperCase() === "PM" ? 12 : 0);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${y}-${pad(month)}-${pad(d)}T${pad(h)}:${pad(m)}:00+07:00`;
+  }
+  return null;
+}
+
+const PRINTED_DATE = /^(\d{1,2}) ([A-Za-z]{3,4}) (\d{2}|\d{4})$/u;
+const EXPRESS_RESTAURANT = "GrabExpress";
+
+/** The Bangkok calendar date (YYYY-MM-DD) of an ISO timestamp, or null when it does not parse. */
+function bangkokDate(iso: string): string | null {
+  const at = new Date(iso).getTime();
+  return Number.isNaN(at) ? null : new Date(at + 7 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Reads a GrabExpress (parcel) receipt's lines. Call only on lines `classifyGrabReceipt` called
+ * `express`. The two address lines are never read, so nothing can store them; the restaurant is the
+ * fixed name `GrabExpress`. `Total VAT Item(s) Amount1` after the bottom total is VAT information,
+ * not money, and the read stops at the bottom total.
+ *
+ * The receipt prints a date only. When the mail's own sent time falls on that Bangkok date it is
+ * used; otherwise (a forward's own time is not the order's) the printed date at 12:00 +07:00.
+ */
+export function parseGrabExpress(lines: readonly string[], mailSentAt: string | null): DeliveryRead<ParsedDelivery> {
+  const paired = pairAmounts(lines);
+  if (!paired.ok) return paired;
+  const rows = paired.value;
+  const valueOf = (label: string): string | null => {
+    const at = rows.findIndex((row) => row.text === label);
+    return at < 0 ? null : (rows[at + 1]?.text ?? null);
+  };
+
+  const bookingId = valueOf("Booking code") ?? "";
+  if (!BOOKING_SHAPE.test(bookingId)) return refuse("MISSING_FIELD", "No booking code was found.");
+  const dateMatch = PRINTED_DATE.exec(valueOf("Date") ?? "");
+  const month = dateMatch ? MONTHS[dateMatch[2]!.toLowerCase()] : undefined;
+  if (!dateMatch || !month) return refuse("MISSING_FIELD", "No printed date was found.");
+  const year = dateMatch[3]!.length === 2 ? 2000 + Number(dateMatch[3]) : Number(dateMatch[3]);
+  const day = Number(dateMatch[1]);
+  if (day < 1 || day > 31 || new Date(Date.UTC(year, month - 1, day)).getUTCMonth() !== month - 1) {
+    return refuse("MISSING_FIELD", "No printed date was found.");
+  }
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const printedDate = `${year}-${pad(month)}-${pad(day)}`;
+  const receiptSentAt = mailSentAt !== null && bangkokDate(mailSentAt) === printedDate ? mailSentAt : `${printedDate}T12:00:00+07:00`;
+
+  const topTotal = rows.find((row) => row.text === "TOTAL" && row.amount !== null)?.amount ?? null;
+  if (topTotal === null || topTotal.negative) return refuse("MISSING_FIELD", "No total was found at the top.");
+  const summaryAt = rows.findIndex((row) => row.text === "Receipt Summary");
+  if (summaryAt < 0) return refuse("MISSING_FIELD", "No receipt summary was found.");
+  const paymentAt = rows.findIndex((row, index) => index > summaryAt && row.text === "Payment Method");
+  const paymentRow = paymentAt < 0 ? undefined : rows[paymentAt + 1];
+  const paymentMethod = paymentRow && paymentRow.amount === null && paymentRow.text !== "Amount" ? paymentRow.text : null;
+
+  let deliveryFeeMinor: MinorUnitString | null = null;
+  let totalMinor: MinorUnitString | null = null;
+  const adjustments: DeliveryAdjustment[] = [];
+  for (let index = summaryAt + 1; index < rows.length && totalMinor === null; index += 1) {
+    const { text, amount } = rows[index]!;
+    if (amount === null) continue;
+    if (text === "TOTAL" && !amount.negative) totalMinor = amount.minor;
+    else if (text.startsWith("Basic Delivery Guarantee") && !amount.negative) {
+      if (deliveryFeeMinor !== null) return refuse("MALFORMED_LINE", "Two delivery fee lines were found.");
+      deliveryFeeMinor = amount.minor;
+    } else if (text === "Item Carrying Fee" && !amount.negative) {
+      adjustments.push({ position: adjustments.length + 1, kind: "charge", name: text, amountMinor: amount.minor });
+    } else if (text === "Rewards" && amount.negative) {
+      adjustments.push({ position: adjustments.length + 1, kind: "discount", name: text, amountMinor: amount.minor });
+    } else return refuse("UNKNOWN_CHARGE", "A priced line in the receipt summary is not known.");
+  }
+  if (totalMinor === null) return refuse("MISSING_FIELD", "No total line was found.");
+  if (topTotal.minor !== totalMinor) return refuse("TOTAL_MISMATCH", "The total at the top does not equal the total at the bottom.");
+  const net = adjustments.reduce((sum, row) => sum + (row.kind === "charge" ? 1n : -1n) * BigInt(row.amountMinor), 0n);
+  if (BigInt(deliveryFeeMinor ?? "0") + net !== BigInt(totalMinor)) {
+    return refuse("TOTAL_MISMATCH", "Delivery plus charges minus discounts does not equal the total.");
+  }
+  return {
+    ok: true,
+    value: {
+      platform: "grabfood", service: "express", bookingId, restaurant: EXPRESS_RESTAURANT, paymentMethod,
+      receiptSentAt, items: [], foodMinor: minor("0"), deliveryFeeMinor, adjustments, totalMinor: minor(totalMinor)
+    }
+  };
+}
+
+const LATE_ID_LINE = /^[A-Za-z]+ [A-Za-z]+:\s*(\S+)$/u;
+// Always printed with two decimals, so an option line such as `2` is never read as a price.
+const BARE_AMOUNT = /^(?:0|[1-9]\d{0,2}(?:,\d{3})+|[1-9]\d*)\.\d{2}$/u;
+const LATE_SERVICE_FEE = "Service Fee";
+const LATE_DELIVERY_FEE = "Delivery Fee";
+const LATE_COMBINED_NAME = "Service Fee + Delivery Fee";
+
+const bareMinor = (line: string | undefined): MinorUnitString | null =>
+  line !== undefined && BARE_AMOUNT.test(line) ? parseThb(line).minor : null;
+
+/**
+ * Reads a late-delivery apology mail's GrabFood order breakdown. Call only on lines
+ * `classifyGrabReceipt` called `late`. Amounts are bare (no baht sign), so the `฿` voucher amount
+ * in the apology sentence is never a candidate. Options print BEFORE a dish's price here. When the
+ * two fee labels sit together over one amount the split is unknowable: it is stored as a single
+ * `charge` and the delivery fee is null. The mail's own sent time is the receipt time.
+ */
+export function parseGrabLateDelivery(lines: readonly string[], mailSentAt: string | null): DeliveryRead<ParsedDelivery> {
+  const breakdownAt = lines.findIndex((line) => line === "Order breakdown");
+  if (breakdownAt < 0) return refuse("MISSING_FIELD", "No order breakdown was found.");
+  // The ID line is the last `<Word> <Word>: <ID>` before the breakdown, so a forward's or the
+  // apology's earlier lines cannot supply it.
+  let bookingId = "";
+  for (const line of lines.slice(0, breakdownAt).reverse()) {
+    const id = LATE_ID_LINE.exec(line.trim())?.[1];
+    if (id !== undefined && BOOKING_SHAPE.test(id)) { bookingId = id; break; }
+  }
+  if (bookingId === "") return refuse("MISSING_FIELD", "No order ID was found.");
+  const body = lines.slice(breakdownAt + 1);
+  const merchantAt = body.indexOf("Merchant");
+  const restaurant = merchantAt < 0 ? undefined : body[merchantAt + 1];
+  if (!restaurant) return refuse("MISSING_FIELD", "No merchant line was found.");
+  const headerAt = body.indexOf("Amount (THB)");
+  if (headerAt < 0) return refuse("MISSING_FIELD", "No amount header was found.");
+  if (mailSentAt === null) return refuse("MISSING_FIELD", "No sent-at time was given.");
+
+  const isFeeOrTotal = (line: string) => line === LATE_SERVICE_FEE || line === LATE_DELIVERY_FEE || line === "Total";
+  const items: DeliveryItem[] = [];
+  let index = headerAt + 1;
+  while (index < body.length && !isFeeOrTotal(body[index]!)) {
+    const match = QUANTITY.exec(body[index]!);
+    if (!match) return refuse("MALFORMED_LINE", "A line among the dishes is not a dish.");
+    const quantity = Number(match[1]);
+    if (quantity < 1) return refuse("MALFORMED_LINE", "A dish line has a zero quantity.");
+    let name = match[2];
+    index += 1;
+    if (name === undefined) { name = body[index]; index += 1; }
+    if (!name || bareMinor(name) !== null) return refuse("MALFORMED_LINE", "A dish has no name.");
+    const options: string[] = [];
+    let amountMinor: MinorUnitString | null = null;
+    while (index < body.length && !isFeeOrTotal(body[index]!) && !QUANTITY.test(body[index]!)) {
+      amountMinor = bareMinor(body[index]);
+      index += 1;
+      if (amountMinor !== null) break;
+      options.push(body[index - 1]!);
+    }
+    if (amountMinor === null) return refuse("MALFORMED_LINE", "A dish has no price.");
+    items.push({ position: items.length + 1, quantity, name, options, amountMinor });
+  }
+  if (items.length === 0) return refuse("MISSING_FIELD", "No dish lines were found.");
+
+  let deliveryFeeMinor: MinorUnitString | null = null;
+  const adjustments: DeliveryAdjustment[] = [];
+  let totalMinor: MinorUnitString | null = null;
+  while (index < body.length && totalMinor === null) {
+    const label = body[index]!;
+    const own = bareMinor(body[index + 1]);
+    if (label === "Total") {
+      if (own === null) return refuse("MISSING_FIELD", "No total amount was found.");
+      totalMinor = own;
+      index += 2;
+    } else if (label === LATE_SERVICE_FEE || label === LATE_DELIVERY_FEE) {
+      const other = label === LATE_SERVICE_FEE ? LATE_DELIVERY_FEE : LATE_SERVICE_FEE;
+      const combined = bareMinor(body[index + 2]);
+      if (own !== null) {
+        if (label === LATE_SERVICE_FEE) adjustments.push({ position: adjustments.length + 1, kind: "charge", name: label, amountMinor: own });
+        else if (deliveryFeeMinor !== null) return refuse("MALFORMED_LINE", "Two delivery fee lines were found.");
+        else deliveryFeeMinor = own;
+        index += 2;
+      } else if (body[index + 1] === other && combined !== null) {
+        adjustments.push({ position: adjustments.length + 1, kind: "charge", name: LATE_COMBINED_NAME, amountMinor: combined });
+        index += 3;
+      } else return refuse("MALFORMED_LINE", "A fee label has no amount.");
+    } else index += 1;
+  }
+  if (totalMinor === null) return refuse("MISSING_FIELD", "No total line was found.");
+  const foodMinor = items.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n);
+  const fees = adjustments.reduce((sum, row) => sum + BigInt(row.amountMinor), 0n) + BigInt(deliveryFeeMinor ?? "0");
+  if (foodMinor + fees !== BigInt(totalMinor)) return refuse("TOTAL_MISMATCH", "Food plus fees does not equal the total.");
+  return {
+    ok: true,
+    value: {
+      platform: "grabfood", service: "food", bookingId, restaurant, paymentMethod: null, receiptSentAt: mailSentAt,
+      items, foodMinor: minor(foodMinor.toString()), deliveryFeeMinor, adjustments, totalMinor: minor(totalMinor)
     }
   };
 }

@@ -26,11 +26,13 @@
 //
 // ## Marking a message done
 //
-// A message is flagged `PLGrab` once **every** receipt in it is resolved — stored, already stored,
+// A message is flagged `PLGrab2` once **every** receipt in it is resolved — stored, already stored,
 // or not a receipt — so the next sync skips it. **The flag was `PLDelivery` until rides were read**
 // (D-222): that flag marked messages whose rides had been skipped, so a new flag makes every Grab
 // message read once more. The orders in them come back as already stored, which costs one query
-// per message. A message with any refused receipt
+// per message. **It became `PLGrab2` with the mart, dine-out, GrabExpress and late-delivery readers**
+// (D-247): messages flagged before those existed (an all-`other` message was flagged resolved) are
+// read again. Re-reads are idempotent: booking IDs are unique and rides compare money and times. A message with any refused receipt
 // is left unflagged and re-read next time, so a reader fix picks it up without anyone re-sending
 // mail; re-reading is cheap because a stored order is recognised by its booking ID and skipped. One
 // flag per message rather than per part: a bundle has a hundred parts, and a keyword per part is a
@@ -38,10 +40,13 @@
 
 import type { ImapFlow, FetchMessageObject, SearchObject } from "imapflow";
 import type { MessagePart } from "@/lib/server/statement-mailbox";
-import { classifyGrabReceipt, htmlToLines, parseGrabFood, parseGrabRide, type ParsedDelivery, type ParsedRide } from "@/lib/delivery-grab";
+import {
+  classifyGrabReceipt, htmlToLines, parseGrabDineOut, parseGrabExpress, parseGrabFood, parseGrabLateDelivery, parseGrabMart, parseGrabRide,
+  readForwardedDate, type DeliveryRead, type ParsedDelivery, type ParsedRide
+} from "@/lib/delivery-grab";
 import type { DeliverySyncReport } from "@/lib/deliveries";
 
-export const DELIVERY_FLAG = "PLGrab";
+export const DELIVERY_FLAG = "PLGrab2";
 // **The word `Grab`, not `E-Receipt`.** Gmail's IMAP SUBJECT search matches whole words, so
 // `E-Receipt` found none of the bundles ("Grab e-receipts backfill") — measured 2026-09-23 against
 // the real mailbox, 0 hits where `Grab` found all four. `Grab` also covers Grab's own "Your Grab
@@ -55,9 +60,17 @@ export type ReceiptDocument = {
   readonly part: string;
   readonly encoding: string;
   readonly charset: string;
+  /** When the mail carrying this document was sent (ISO), or null when the envelope had no valid date. */
+  readonly mailSentAt: string | null;
 };
 
-type Node = MessagePart & { readonly encoding?: string };
+type Node = MessagePart & { readonly encoding?: string; readonly envelope?: { readonly date?: unknown } };
+
+/** An envelope date as an ISO instant; only a valid Date is accepted. */
+function envelopeDate(node: Node | undefined): string | null {
+  const date = node?.envelope?.date;
+  return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString() : null;
+}
 
 /**
  * One HTML document per message: the top-level message's own body, and each embedded
@@ -68,12 +81,13 @@ type Node = MessagePart & { readonly encoding?: string };
  * fetching the wrapper's path would return the whole embedded message, headers and all.
  */
 export function receiptDocuments(root: Node | undefined): ReceiptDocument[] {
+  const outerDate = envelopeDate(root);
   const documents: ReceiptDocument[] = [];
-  const firstHtml = (node: Node, wrapper: string | null): ReceiptDocument | null => {
+  const firstHtml = (node: Node, wrapper: string | null, sentAt: string | null): ReceiptDocument | null => {
     if (node.type === "message/rfc822") return null;
     if (node.childNodes && node.childNodes.length > 0) {
       for (const child of node.childNodes as Node[]) {
-        const found = firstHtml(child, wrapper);
+        const found = firstHtml(child, wrapper, sentAt);
         if (found) return found;
       }
       return null;
@@ -82,7 +96,7 @@ export function receiptDocuments(root: Node | undefined): ReceiptDocument[] {
     if ((node.disposition ?? "").toLowerCase() === "attachment") return null;
     const own = node.part ?? "1";
     const part = wrapper !== null && own === wrapper ? `${wrapper}.1` : own;
-    return { part, encoding: (node.encoding ?? "7bit").toLowerCase(), charset: (node.parameters?.charset ?? "utf-8").toLowerCase() };
+    return { part, encoding: (node.encoding ?? "7bit").toLowerCase(), charset: (node.parameters?.charset ?? "utf-8").toLowerCase(), mailSentAt: sentAt };
   };
   const embedded = (node: Node, found: Node[]) => {
     for (const child of (node.childNodes ?? []) as Node[]) {
@@ -91,15 +105,15 @@ export function receiptDocuments(root: Node | undefined): ReceiptDocument[] {
     }
     return found;
   };
-  const visit = (body: Node, wrapper: string | null) => {
-    const html = firstHtml(body, wrapper);
+  const visit = (body: Node, wrapper: string | null, sentAt: string | null) => {
+    const html = firstHtml(body, wrapper, sentAt);
     if (html) documents.push(html);
     for (const message of embedded(body, [])) {
       const inner = message.childNodes?.[0] as Node | undefined;
-      if (inner) visit(inner, message.part ?? null);
+      if (inner) visit(inner, message.part ?? null, envelopeDate(message));
     }
   };
-  if (root) visit(root, null);
+  if (root) visit(root, null, outerDate);
   return documents;
 }
 
@@ -172,6 +186,9 @@ export async function readMessage(
 ): Promise<boolean> {
   let resolved = true;
   const orders: ParsedDelivery[] = [];
+  // Late-delivery breakdowns by index in `orders` (D-247): they cannot split their fees, so one that
+  // disagrees with a stored copy of the same booking defers to that fuller receipt.
+  const late = new Set<number>();
   const rides: ParsedRide[] = [];
   for (const document of documents) {
     const raw = bodies.get(document.part);
@@ -193,8 +210,18 @@ export async function readMessage(
     } else if (kind === "other") {
       report.notReceipts += 1;
     } else {
-      const parsed = parseGrabFood(lines);
-      if (parsed.ok) orders.push(parsed.value);
+      // A Gmail inline forward carries Grab's own send time in its body; the envelope's is the forward's.
+      const mailSentAt = lines.some((line) => line.includes("Forwarded message")) ? readForwardedDate(lines) : document.mailSentAt;
+      const parsed: DeliveryRead<ParsedDelivery> =
+        kind === "mart" ? parseGrabMart(lines)
+          : kind === "dine_out" ? parseGrabDineOut(lines)
+            : kind === "express" ? parseGrabExpress(lines, mailSentAt)
+              : kind === "late" ? parseGrabLateDelivery(lines, mailSentAt)
+                : parseGrabFood(lines);
+      if (parsed.ok) {
+        if (kind === "late") late.add(orders.length);
+        orders.push(parsed.value);
+      }
       else {
         countRefusal(report, parsed.code);
         resolved = false;
@@ -202,9 +229,9 @@ export async function readMessage(
     }
   }
   if (orders.length > 0) {
-    for (const outcome of await stores.orders(orders)) {
+    for (const [index, outcome] of (await stores.orders(orders)).entries()) {
       if (outcome === "captured") report.captured += 1;
-      else if (outcome === "alreadyStored") report.alreadyStored += 1;
+      else if (outcome === "alreadyStored" || (outcome === "disagrees" && late.has(index))) report.alreadyStored += 1;
       else {
         countRefusal(report, outcome === "disagrees" ? "DISAGREES" : "STORE_REFUSED");
         resolved = false;
@@ -253,7 +280,7 @@ export async function syncDeliveryMail(
   report.truncated = ordered.length > examined.length;
 
   const byUid = new Map<number, FetchMessageObject>();
-  for await (const message of client.fetch(examined, { uid: true, bodyStructure: true }, { uid: true })) {
+  for await (const message of client.fetch(examined, { uid: true, bodyStructure: true, envelope: true }, { uid: true })) {
     byUid.set(message.uid, message);
   }
 
@@ -264,7 +291,7 @@ export async function syncDeliveryMail(
       report.truncated = true;
       break;
     }
-    const documents = receiptDocuments(message.bodyStructure as Node);
+    const documents = receiptDocuments({ ...(message.bodyStructure as Node), envelope: message.envelope } as Node);
     report.messages += 1;
     if (documents.length === 0) {
       report.notReceipts += 1;

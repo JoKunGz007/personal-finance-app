@@ -74,6 +74,30 @@ describe("decideCategories precedence", () => {
     ]);
   });
 
+  it("resolves a delivery by its service, a missing child falling back to the parent and a missing parent proposing nothing", () => {
+    const tree: CategoryNode[] = [
+      ...categories,
+      { id: cat(20), name: "Dining Out", archived: false, parent_id: cat(4) },
+      { id: cat(21), name: "Grocery Delivery", archived: false, parent_id: cat(5) }
+      // no "Services" parent at all
+    ];
+    const at = (n: number, service?: "food" | "mart" | "express" | "dine_out"): CurrentMatch =>
+      ({ transaction_id: id(n), kind: "delivery", platform: "grabfood", ...(service ? { service } : {}), entity_id: id(900 + n) });
+    const result = decideCategories(
+      [row(1), row(2), row(3), row(4), row(5)],
+      tree,
+      [at(1), at(2, "food"), at(3, "dine_out"), at(4, "mart"), at(5, "express")],
+      new Set()
+    );
+    expect(result.proposals.map((p) => [p.transaction_id, p.category_id])).toEqual([
+      [id(1), cat(4)], [id(2), cat(4)], [id(3), cat(20)], [id(4), cat(21)]
+    ]);
+    expect(result.unresolved).toBe(1);
+    // With the mart child absent it falls back to Groceries & Convenience.
+    const noChild = decideCategories([row(4)], categories, [at(4, "mart")], new Set());
+    expect(noChild.proposals.map((p) => p.category_id)).toEqual([cat(5)]);
+  });
+
   it("history beats a keyword rule", () => {
     const rows = [
       row(1, { description: "INVENTED RIDE 0001", category_id: cat(7), source: "owner" }),

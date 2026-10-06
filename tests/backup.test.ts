@@ -27,7 +27,10 @@ import {
   backupDataSchemaV11,
   backupDataSchemaV12,
   backupDataSchemaV13,
+  backupDataSchemaV14,
   backupSnapshotSchema,
+  backupSnapshotSchemaV14,
+  backupSnapshotSchemaV15,
   describeBackupSnapshot,
   restoreActionSchemas,
   restoreManifestSchema,
@@ -159,6 +162,9 @@ describe("restore manifest", () => {
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 12, manifest: manifestOver(BACKUP_TABLE_KINDS_V12) }).success).toBe(true);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 13, manifest: manifestOver(BACKUP_TABLE_KINDS_V13) }).success).toBe(true);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 14, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 15, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 16, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 15, manifest: manifestOver(BACKUP_TABLE_KINDS_V13) }).success).toBe(false);
     // The pairing is the point: a version and a manifest that disagree about how many
     // tables exist cannot both be right, and the server would otherwise stage one and
     // then refuse chunks against the other.
@@ -217,7 +223,7 @@ describe("restore manifest", () => {
     const parsed = backupSnapshotSchema.parse({
       schemaVersion: BACKUP_SCHEMA_VERSION, exportedAt: "2026-07-24T00:00:00.000Z", snapshotSequence: "9223372036854775807", tableCounts, data
     });
-    expect(parsed.schemaVersion).toBe(14);
+    expect(parsed.schemaVersion).toBe(15);
     expect(parsed.data.source_transactions).toHaveLength(1001);
     expect(parsed.data.source_transactions[0]).toMatchObject({ post_balance_minor: "-9223372036854775808" });
     expect(parsed.data.source_transactions[1000]).toMatchObject({ post_balance_minor: "9223372036854775807" });
@@ -299,6 +305,10 @@ describe("restore manifest", () => {
     expect(v14).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
     expect(v14).toContain("schema version 14");
 
+    const v15 = describeBackupSnapshot({ schemaVersion: 15, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
+    expect(v15).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    expect(v15).toContain("schema version 15");
+
     // Rows are summed from the counts, so the sentence cannot claim rows the file lacks.
     const rows = BACKUP_TABLE_KINDS_V3.reduce((sum, _kind, index) => sum + index, 0);
     expect(v3).toContain(`${rows} rows`);
@@ -369,7 +379,8 @@ describe("backup row shapes are shared by every version that carries the table",
     { name: "v11", data: backupDataSchemaV11, kinds: BACKUP_TABLE_KINDS_V11 },
     { name: "v12", data: backupDataSchemaV12, kinds: BACKUP_TABLE_KINDS_V12 },
     { name: "v13", data: backupDataSchemaV13, kinds: BACKUP_TABLE_KINDS_V13 },
-    { name: "v14", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
+    { name: "v14", data: backupDataSchemaV14, kinds: BACKUP_TABLE_KINDS },
+    { name: "v15", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
   ] as const;
 
   it("uses one row schema per table across every version, so a column cannot diverge them", () => {
@@ -381,7 +392,9 @@ describe("backup row shapes are shared by every version that carries the table",
         expect(row, `${version.name} carries no row schema for ${table}`).toBeDefined();
         if (!first.has(table)) {
           first.set(table, row);
-        } else if (first.get(table) !== row) {
+        } else if (first.get(table) !== row && !(table === "deliveries" && version.name === "v15")) {
+          // The one deliberate exception to D-097: v15 gives `deliveries` a `service` column
+          // (migration 049, D-247), so its row schema is the v10-v14 one plus that key.
           divergent.push(`${table} diverges at ${version.name}`);
         }
       }
@@ -401,7 +414,9 @@ describe("backup row shapes are shared by every version that carries the table",
         newer.kinds.slice(0, older.kinds.length),
         `${newer.name} does not begin with ${older.name}'s table list`
       ).toEqual([...older.kinds]);
-      expect(newer.kinds.length).toBeGreaterThan(older.kinds.length);
+      // v15 adds a column, not a table, so its list equals v14's.
+      if (newer.name === "v15") expect(newer.kinds).toEqual(older.kinds);
+      else expect(newer.kinds.length).toBeGreaterThan(older.kinds.length);
     }
   });
 
@@ -422,5 +437,57 @@ describe("backup row shapes are shared by every version that carries the table",
     }
     const provenance = rowSchemaOf(backupDataSchema, "category_provenance") as { safeParse: (value: unknown) => { success: boolean } };
     expect(provenance.safeParse({ ...rows.category_provenance, source: "guess" }).success).toBe(false);
+  });
+});
+
+// Backup v15 carries `deliveries.service` (migration 049, D-247). v10-v14 files have no such key.
+describe("backup v15 delivery service", () => {
+  const ownerId = "11111111-1111-4111-8111-111111111111";
+  const order = {
+    id: "22222222-2222-4222-8222-222222222222",
+    owner_id: ownerId,
+    platform: "grabfood",
+    booking_id: "A-SYNTHETIC1",
+    restaurant: "Invented Mart",
+    payment_method: null,
+    receipt_sent_at: "2026-10-01T12:30:00.000Z",
+    food_minor: "25000",
+    delivery_fee_minor: "1500",
+    total_minor: "26500",
+    created_at: "2026-10-01T12:31:00.000Z"
+  };
+
+  function snapshotWith(version: 14 | 15, deliveries: unknown[]) {
+    const data = Object.fromEntries(BACKUP_TABLE_KINDS.map((kind) => [kind, []])) as Record<string, unknown[]>;
+    data.deliveries = deliveries;
+    data.mutation_sequences = [{ owner_id: ownerId, sequence: "7", last_exported_sequence: "0", updated_at: "2026-10-01T00:00:00.000Z" }];
+    const tableCounts = Object.fromEntries(BACKUP_TABLE_KINDS.map((kind) => [kind, data[kind]!.length]));
+    return { schemaVersion: version, exportedAt: "2026-10-01T00:00:00.000Z", snapshotSequence: "7", tableCounts, data };
+  }
+
+  it("keeps a non-food service through a v15 encrypt and decrypt round trip", async () => {
+    const snapshot = backupSnapshotSchemaV15.parse(snapshotWith(15, [{ ...order, service: "dine_out" }]));
+    const carried = await decryptBackup(await encryptBackup(snapshot, "v15 service round trip passphrase 2026"), "v15 service round trip passphrase 2026");
+    const parsed = backupSnapshotSchema.parse(carried);
+    expect(parsed.schemaVersion).toBe(15);
+    expect(((parsed.data as { deliveries: Array<{ service: string }> }).deliveries[0]!).service).toBe("dine_out");
+  }, 30_000);
+
+  it("still reads a v14 file whose orders have no service, and keeps the two versions distinct", () => {
+    const v14 = snapshotWith(14, [order]);
+    expect(backupSnapshotSchemaV14.safeParse(v14).success).toBe(true);
+    expect(backupSnapshotSchema.safeParse(v14).success).toBe(true);
+    // A v15 file must say which service; a v14 file must not grow one.
+    expect(backupSnapshotSchemaV15.safeParse(snapshotWith(15, [order])).success).toBe(false);
+    expect(backupSnapshotSchemaV14.safeParse(snapshotWith(14, [{ ...order, service: "mart" }])).success).toBe(false);
+    expect(backupSnapshotSchemaV15.safeParse(snapshotWith(15, [{ ...order, service: "taxi" }])).success).toBe(false);
+  });
+
+  it("accepts a delivery chunk with or without service, the restore reading a missing one as food", () => {
+    const base = { restoreId: "33333333-3333-4333-8333-333333333333", idempotencyKey: "44444444-4444-4444-8444-444444444444", digest: "a".repeat(64), chunkIndex: 29, chunkDigest: "b".repeat(64) };
+    for (const [version, row] of [[14, order], [15, { ...order, service: "express" }]] as const) {
+      const request = { ...base, schemaVersion: version, chunk: { kind: "deliveries", rows: [row] } };
+      expect(restoreActionSchemas.chunk.safeParse(request).success, `v${version}`).toBe(true);
+    }
   });
 });

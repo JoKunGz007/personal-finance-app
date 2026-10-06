@@ -110,6 +110,8 @@ function relations(lines: readonly string[]): string {
  * charges. No item, shop, name, address or booking ID.
  */
 const OTHER_SERVICES: readonly [string, RegExp][] = [
+  // First: an apology names the service it apologises for, so it would land in that group.
+  ["Late delivery", /late delivery|delivered late|ล่าช้า/iu],
   ["GrabMart", /GrabMart/iu],
   ["GrabExpress", /GrabExpress|Grab Express/iu],
   ["Dine Out", /Dine ?Out|ทานที่ร้าน/iu]
@@ -124,7 +126,10 @@ function printMart(others: readonly string[][]) {
   }
   console.log(`\nGrab receipts read as other: ${others.length}`);
   for (const [name, receipts] of groups) {
-    console.log(`\n== ${name}: ${receipts.length}\nFirst one (masked):\n${shapeOf(receipts[0].slice(0, 80))}`);
+    console.log(`\n== ${name}: ${receipts.length}\nFirst one (masked):\n${shapeOf((receipts[0] ?? []).slice(0, 80))}`);
+    // `--mart-template`: the group's shared labels as text, as `--rides` does. In a group of two a
+    // line both share prints too, so glance for a shop name before pasting anything on.
+    if (process.argv.includes("--mart-template") && name !== "unrecognised") printRideTemplate(receipts.map((lines) => lines.slice(1)), name);
     for (const [index, lines] of receipts.entries()) {
       const text = lines.join(" ");
       const when = text.match(/\d{1,2} \w{3} \d{2} \d{2}:\d{2} \+0700/u)?.[0] ?? text.match(/\d{1,2} \w+ \d{4}(?: \d{1,2}:\d{2})?/u)?.[0] ?? "(no date)";
@@ -160,7 +165,7 @@ async function main() {
     }
     console.log(`Messages matching the search: ${uids.length}; already flagged ${DELIVERY_FLAG}: ${structures.filter((m) => m.flags?.has(DELIVERY_FLAG)).length}`);
 
-    const kinds = { food: 0, ride: 0, other: 0 };
+    const kinds = { food: 0, ride: 0, other: 0, mart: 0, express: 0, dine_out: 0, late: 0 };
     const refused = new Map<string, number>();
     const firstRefusal = new Map<string, string[]>();
     const bookings = new Map<string, number>();
@@ -192,7 +197,7 @@ async function main() {
         if (kind === "ride" && !rideShape) rideShape = lines.slice(0, 40);
         if (kind === "ride") rides.push(lines);
         // Also from the other kinds: GrabExpress prints the ride heading, so it is read as a ride.
-        if (kind === "other" || OTHER_SERVICES.some(([, pattern]) => lines.some((line) => pattern.test(line)))) marts.push([`(read as ${kind})`, ...lines]);
+        if ((kind !== "food" && kind !== "ride") || OTHER_SERVICES.some(([, pattern]) => lines.some((line) => pattern.test(line)))) marts.push([`(read as ${kind})`, ...lines]);
         if (kind !== "food") continue;
         const parsed = parseGrabFood(lines);
         if (parsed.ok) {
@@ -221,7 +226,7 @@ async function main() {
       }
     }
 
-    console.log(`Documents: food ${kinds.food}, ride ${kinds.ride}, other ${kinds.other}, undecodable ${undecodable}`);
+    console.log(`Documents: food ${kinds.food}, ride ${kinds.ride}, other ${kinds.other}, mart ${kinds.mart}, express ${kinds.express}, dine-out ${kinds.dine_out}, late ${kinds.late}, undecodable ${undecodable}`);
     console.log(`Food read: ${ok}; refused: ${[...refused].map(([code, n]) => `${code} ${n}`).join(", ") || "none"}`);
     console.log(`Distinct booking IDs: ${bookings.size}; read more than once: ${[...bookings.values()].filter((n) => n > 1).length}`);
     console.log(`Zero-total ${zeroTotal}; no delivery line ${noFee}; no payment line ${noPayment}; with options ${withOptions}; with discounts ${discounted}; with charges ${charged}`);
@@ -251,8 +256,8 @@ async function main() {
  * a place, name or plate is masked, and amounts are masked everywhere. **Glance over the template
  * lines before pasting**: a saved place you ride to on most trips could clear 80% too.
  */
-function printRideTemplate(rides: readonly string[][]) {
-  if (rides.length === 0) return void console.log("\nNo ride receipts.");
+function printRideTemplate(rides: readonly string[][], noun = "ride") {
+  if (rides.length === 0) return void console.log(`\nNo ${noun} receipts.`);
   const digitMasked = (line: string) => line.replace(/\d/gu, "9");
   const seen = new Map<string, number>();
   for (const lines of rides) for (const line of new Set(lines.map(digitMasked))) seen.set(line, (seen.get(line) ?? 0) + 1);
@@ -272,12 +277,12 @@ function printRideTemplate(rides: readonly string[][]) {
     signatures.set(key, entry);
   }
   const lengths = rides.map((lines) => lines.length).sort((a, b) => a - b);
-  console.log(`\nRide receipts: ${rides.length}; lines per receipt ${lengths[0]}–${lengths.at(-1)}; distinct layouts ${signatures.size}`);
-  console.log("Template lines (in 80%+ of rides, digits masked), with how many rides carry each:");
+  console.log(`\n${noun} receipts: ${rides.length}; lines per receipt ${lengths[0]}–${lengths.at(-1)}; distinct layouts ${signatures.size}`);
+  console.log(`Template lines (in 80%+ of ${noun} receipts, digits masked), with how many carry each:`);
   for (const line of template) console.log(`    ${String(seen.get(line)).padStart(4)}  ${line}`);
   const top = [...signatures.values()].sort((a, b) => b.count - a.count).slice(0, 4);
   top.forEach(({ count, lines }, index) => {
-    console.log(`\nLayout ${index + 1}, ${count} rides (~ = masked, ฿ 9 = an amount):`);
+    console.log(`\nLayout ${index + 1}, ${count} ${noun} receipts (~ = masked, ฿ 9 = an amount):`);
     console.log(lines.map((line, at) => `    ${String(at).padStart(3)} ${line}`).join("\n"));
   });
 }
