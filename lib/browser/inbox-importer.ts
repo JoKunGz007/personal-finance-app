@@ -17,6 +17,7 @@ import type { ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import type { CaptureForm } from "@/lib/receipts";
 import { classifySlip, signedSlipAmount } from "@/lib/slip-batch";
+import { proposeSlipText } from "@/lib/slip-ocr";
 import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
 import { slipDateWindow, type SlipKind } from "@/lib/slips";
 import { readError } from "@/lib/wire";
@@ -31,8 +32,9 @@ import { readError } from "@/lib/wire";
  *
  * **A bank slip is told by its QR, scanned on the device before any Vision read**, so a slip never
  * reaches the receipt recognisers. A slip whose amount and date were read exactly is *ready* but is
- * not captured here: money in or out is the owner's answer, asked once for the batch, and
- * `captureSlips` applies it afterwards. Its file stays in the queue until then.
+ * not captured here: `app/inbox-files.tsx` hands every ready slip to `captureSlips` as money out
+ * straight after the drain, since a slip is always the payer's (owner, 2026-10-07, D-252). Its file
+ * stays in the queue until that capture is confirmed.
  *
  * Everything that touches the network or the device comes in through `DrainDeps`, so the drain's own
  * ordering rules are tested with fakes. Two devices draining at once is harmless: a capture is
@@ -268,13 +270,17 @@ export async function drainInbox(
         today: new Date()
       });
       if (verdict.status === "ready") {
+        // Ready means Vision answered, so the words are there; the payee and memo are best-effort.
+        const text = read.ok ? proposeSlipText(read.words, scan.identity.bankCode) : { counterparty: null, note: null };
         slips.push({
           name: file.name,
           payload: scan.payload,
           identity: scan.identity,
           occurredOn: verdict.date.occurredOn,
           occurredAtTime: verdict.date.occurredAtTime,
-          amountMinor: verdict.amountMinor
+          amountMinor: verdict.amountMinor,
+          counterparty: text.counterparty,
+          note: text.note
         });
         reasons[file.name] = SLIP_WAITING_REASON;
       } else {
@@ -332,7 +338,7 @@ export async function drainInbox(
   const waiting = files.length - removed.size;
   return {
     reasons, receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
-    summary: describeDrain({ receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, statementsEmpty, slips: slips.length })
+    summary: describeDrain({ receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, statementsEmpty, slips: 0 })
   };
 }
 

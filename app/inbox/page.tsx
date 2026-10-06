@@ -19,8 +19,8 @@ export default function InboxPage() {
               invoices, on the server, and checks for bank statements. Statements are not read here:
               they are locked PDFs, opened on this device on the Import page with your document
               password. Files you add below are kept privately only until they are imported, and at
-              most 7 days. Bank slips are read by their QR code, and you answer money in or out
-              once per batch.
+              most 7 days. Bank slips are read by their QR code and stored as money out, with the
+              payee and memo they print.
             </LedgerNote>
           </div>
         </div>

@@ -297,10 +297,13 @@ export type ReadySlip = {
   readonly occurredAtTime: string | null;
   /** The **magnitude**, in minor units. The direction supplies the sign at capture. */
   readonly amountMinor: MinorUnitString;
+  /** The payee and the memo as printed, read by `proposeSlipText`; null when the layout gave none (D-252). */
+  readonly counterparty: string | null;
+  readonly note: string | null;
 };
 
-/** Why a ready slip's file is still in the queue while the owner has not yet answered. */
-export const SLIP_WAITING_REASON = "Waiting for money in or out.";
+/** Why a ready slip's file is still in the queue until the page captures it as money out (D-252). */
+export const SLIP_WAITING_REASON = "Waiting to be captured as money out.";
 
 /** Shown for a slip already found to need checking on an earlier drain (no download, no read). */
 export const SLIP_REVIEW_REMEMBERED_REASON = `This slip needs checking. Add it on the ${SLIPS_PAGE} page, then remove it here.`;
@@ -322,12 +325,16 @@ export type SlipPostBody = {
   readonly currency: "THB";
   readonly occurredOn: string;
   readonly occurredAtTime: string | null;
-  readonly counterparty: null;
+  readonly counterparty: string | null;
   readonly categoryId: null;
-  readonly note: null;
+  readonly note: string | null;
 };
 
-/** A ready slip with the owner's direction applied. Counterparty, category and note are not on a slip. */
+/**
+ * A ready slip with the direction applied. The payee and memo go as read off the slip (D-252): they
+ * are the slip's own detail on the matched row, never the statement's description, and the owner can
+ * correct either. The category stays unset; the categoriser decides it.
+ */
 export function slipPostBody(slip: ReadySlip, kind: SlipKind, signedAmountMinor: MinorUnitString): SlipPostBody {
   return {
     qrPayload: slip.payload,
@@ -339,9 +346,9 @@ export function slipPostBody(slip: ReadySlip, kind: SlipKind, signedAmountMinor:
     currency: "THB",
     occurredOn: slip.occurredOn,
     occurredAtTime: slip.occurredAtTime,
-    counterparty: null,
+    counterparty: slip.counterparty,
     categoryId: null,
-    note: null
+    note: slip.note
   };
 }
 
@@ -376,13 +383,16 @@ export const FORGOTTEN_HELD: ReadonlySet<string> = new Set(["locked", "no-passwo
  * file, which says nothing about it. Kept per device, in `lib/browser/inbox-memory.ts`. The key is
  * versioned: **a step that teaches the drain a new kind of image must change the version**, or the
  * files this memory skips would never be read by it (v3: held statements; v2: bank slips; v1 held a
- * bare list of names).
+ * bare list of names). Since every entry is build-stamped, a deploy now does that on its own.
  */
 export const REMEMBERED_KEY = "inbox:unrecognised:v3";
 
 /**
  * The remembered names from stored text; anything that is not a name-to-kind object is an empty memory.
- * A held-statement entry from another build than `build` is dropped, so each deploy retries it once.
+ * **Every entry is stamped with the build that settled it, and one from another build is dropped**, so
+ * each deploy retries it once: a reader fixed in a deploy must get to read the images an older build
+ * gave up on (2026-10-07, D-252: 20 K PLUS slips stayed "needs checking" after the two-digit year was
+ * fixed, because the verdict outlived the build that made it). Unstamped entries are dropped too.
  */
 export function parseRemembered(raw: string | null, build: string = BUILD_ID): Map<string, RememberedKind> {
   const remembered = new Map<string, RememberedKind>();
@@ -391,12 +401,12 @@ export function parseRemembered(raw: string | null, build: string = BUILD_ID): M
     const value: unknown = JSON.parse(raw);
     if (typeof value !== "object" || value === null || Array.isArray(value)) return remembered;
     for (const [name, kind] of Object.entries(value)) {
-      if (kind === "unrecognised" || kind === "slip-review") remembered.set(name, kind);
-      else if (typeof kind === "object" && kind !== null) {
-        const held = kind as { kind?: unknown; reason?: unknown; build?: unknown };
-        if (held.kind === "held" && typeof held.reason === "string" && held.build === build) {
-          remembered.set(name, { kind: "held", reason: held.reason, build });
-        }
+      if (typeof kind !== "object" || kind === null) continue;
+      const stored = kind as { kind?: unknown; reason?: unknown; build?: unknown };
+      if (stored.build !== build) continue;
+      if (stored.kind === "unrecognised" || stored.kind === "slip-review") remembered.set(name, stored.kind);
+      else if (stored.kind === "held" && typeof stored.reason === "string") {
+        remembered.set(name, { kind: "held", reason: stored.reason, build });
       }
     }
     return remembered;
@@ -405,12 +415,20 @@ export function parseRemembered(raw: string | null, build: string = BUILD_ID): M
   }
 }
 
-/** What to store: the remembered names that are still in the queue, so the memory cannot grow. */
+/** One stored entry: every kind carries the build that settled it (`parseRemembered`). */
+export type StoredRemembered =
+  | { readonly kind: "unrecognised" | "slip-review"; readonly build: string }
+  | { readonly kind: "held"; readonly reason: string; readonly build: string };
+
+/** What to store: the remembered names that are still in the queue, so the memory cannot grow, each stamped with `build`. */
 export function pruneRemembered(
-  remembered: ReadonlyMap<string, RememberedKind>, inQueue: readonly string[]
-): Record<string, RememberedKind> {
+  remembered: ReadonlyMap<string, RememberedKind>, inQueue: readonly string[], build: string = BUILD_ID
+): Record<string, StoredRemembered> {
   const present = new Set(inQueue);
-  return Object.fromEntries([...remembered].filter(([name]) => present.has(name)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+  return Object.fromEntries([...remembered]
+    .filter(([name]) => present.has(name))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([name, kind]): [string, StoredRemembered] => [name, typeof kind === "string" ? { kind, build } : kind]));
 }
 
 // --- What the owner reads ---

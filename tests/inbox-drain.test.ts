@@ -9,7 +9,7 @@ import {
   SLIP_WAITING_REASON, slipPostBody, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON, type ReadySlip, type RememberedKind
 } from "@/lib/inbox-drain";
 import { readScreenshotPage, readScreenshotReceipt } from "@/lib/receipt-screenshot";
-import type { OcrWord } from "@/lib/slip-ocr";
+import { proposeSlipText, type OcrWord } from "@/lib/slip-ocr";
 import type { SlipScanResult } from "@/lib/slip-scan";
 
 // Every value is invented (docs/FIXTURE_POLICY.md). The word layouts reuse the shapes of
@@ -349,34 +349,38 @@ describe("addedTogether", () => {
 });
 
 describe("the remembered-file memory", () => {
-  test("reads a stored name-to-kind object, and treats anything else as empty", () => {
-    expect([...parseRemembered('{"a.png":"unrecognised","b.jpg":"slip-review"}')]).toEqual([["a.png", "unrecognised"], ["b.jpg", "slip-review"]]);
-    expect([...parseRemembered('{"a.png":"unrecognised","b.png":3,"c.png":"other"}')]).toEqual([["a.png", "unrecognised"]]);
-    for (const bad of [null, "", "not json", '["a.png","b.jpg"]', "3", "null"]) expect(parseRemembered(bad).size).toBe(0);
+  test("reads a build-stamped name-to-kind object, and treats anything else as empty", () => {
+    const raw = '{"a.png":{"kind":"unrecognised","build":"abc"},"b.jpg":{"kind":"slip-review","build":"abc"},"c.png":{"kind":"other","build":"abc"},"d.png":3}';
+    expect([...parseRemembered(raw, "abc")]).toEqual([["a.png", "unrecognised"], ["b.jpg", "slip-review"]]);
+    for (const bad of [null, "", "not json", '["a.png","b.jpg"]', "3", "null"]) expect(parseRemembered(bad, "abc").size).toBe(0);
   });
 
   test("the key is v3, so what v1 stored (a bare list of names, under the old key) is never read", () => {
     expect(REMEMBERED_KEY).toBe("inbox:unrecognised:v3");
-    expect(parseRemembered('["a.png"]').size).toBe(0);
+    expect(parseRemembered('["a.png"]', "abc").size).toBe(0);
   });
 
-  test("a held-statement entry is read on the same build and ignored on another", () => {
-    const raw = '{"a.pdf":{"kind":"held","reason":"overlap","build":"abc"},"b.png":"unrecognised","c.pdf":{"kind":"held","reason":"warnings","build":"old"},"d.pdf":{"kind":"held","build":"abc"}}';
+  // D-252: 20 K PLUS slips stayed "needs checking" after a deploy fixed their date, because the
+  // verdict outlived the build that made it. Every kind is now dropped on another build.
+  test("every entry is read on the build that stored it and dropped on another, unstamped ones too", () => {
+    const raw = '{"a.pdf":{"kind":"held","reason":"overlap","build":"abc"},"b.png":{"kind":"slip-review","build":"abc"},"c.pdf":{"kind":"held","reason":"warnings","build":"old"},"d.pdf":{"kind":"held","build":"abc"},"e.png":"unrecognised"}';
     expect([...parseRemembered(raw, "abc")]).toEqual([
-      ["a.pdf", { kind: "held", reason: "overlap", build: "abc" }], ["b.png", "unrecognised"]
+      ["a.pdf", { kind: "held", reason: "overlap", build: "abc" }], ["b.png", "slip-review"]
     ]);
-    expect([...parseRemembered(raw, "next")].map(([name]) => name)).toEqual(["b.png"]);
+    expect(parseRemembered(raw, "next").size).toBe(0);
   });
 
   test("keeps a held entry only while its file is in the queue", () => {
     const held = { kind: "held", reason: "overlap", build: "abc" } as const;
     const remembered = new Map<string, RememberedKind>([["a.pdf", held], ["gone.pdf", held]]);
-    expect(pruneRemembered(remembered, ["a.pdf"])).toEqual({ "a.pdf": held });
+    expect(pruneRemembered(remembered, ["a.pdf"], "abc")).toEqual({ "a.pdf": held });
   });
 
-  test("keeps only the names still in the queue", () => {
+  test("keeps only the names still in the queue, stamped with the build, and reads back what it stored", () => {
     const remembered = new Map<string, RememberedKind>([["b.png", "slip-review"], ["gone.png", "unrecognised"], ["a.png", "unrecognised"]]);
-    expect(pruneRemembered(remembered, ["a.png", "b.png", "c.png"])).toEqual({ "a.png": "unrecognised", "b.png": "slip-review" });
+    const stored = pruneRemembered(remembered, ["a.png", "b.png", "c.png"], "abc");
+    expect(stored).toEqual({ "a.png": { kind: "unrecognised", build: "abc" }, "b.png": { kind: "slip-review", build: "abc" } });
+    expect([...parseRemembered(JSON.stringify(stored), "abc")]).toEqual([["a.png", "unrecognised"], ["b.png", "slip-review"]]);
   });
 });
 
@@ -752,13 +756,15 @@ describe("drainInbox with bank slips", () => {
       identity,
       occurredOn: "2026-07-14",
       occurredAtTime: null,
-      amountMinor: "125000"
+      amountMinor: "125000",
+      ...proposeSlipText(slipWords(), identity.bankCode)
     }]);
     expect(calls.removed).toEqual([]);
     expect(calls.slipPosts).toBe(0);
     expect(result.reasons).toEqual({ "s.png": SLIP_WAITING_REASON });
-    expect(result).toMatchObject({ waiting: 1, summary: "1 slip needs money in or out." });
-    // Waiting for a direction is not a verdict: the next drain must offer it again.
+    // The drain's summary leaves slips out: the page captures them as money out and says so (D-252).
+    expect(result).toMatchObject({ waiting: 1, summary: "Nothing was imported." });
+    // Waiting for the capture is not a verdict: a slip whose capture failed must be offered again.
     expect([...calls.saved!]).toEqual([]);
   });
 
@@ -794,13 +800,14 @@ describe("drainInbox with bank slips", () => {
     const result = await drainInbox([file("s.png"), file("r.png")], status, deps);
     expect(calls.removed).toEqual([["r.png"]]);
     expect(result.slips.map((slip) => slip.name)).toEqual(["s.png"]);
-    expect(result).toMatchObject({ receipts: 1, waiting: 1, summary: "1 receipt imported. 1 slip needs money in or out." });
+    expect(result).toMatchObject({ receipts: 1, waiting: 1, summary: "1 receipt imported." });
   });
 });
 
 describe("captureSlips", () => {
   const ready = (name: string, amountMinor = "125000"): ReadySlip => ({
-    name, payload: `INVENTED-PAYLOAD-${name}`, identity, occurredOn: "2026-07-14", occurredAtTime: "09:05", amountMinor
+    name, payload: `INVENTED-PAYLOAD-${name}`, identity, occurredOn: "2026-07-14", occurredAtTime: "09:05", amountMinor,
+    counterparty: null, note: null
   });
 
   /** Fakes for the two things `captureSlips` uses; every call goes into one ordered log. */
@@ -829,6 +836,10 @@ describe("captureSlips", () => {
       qrPayload: "INVENTED-PAYLOAD-a.png", bankCode: "SCB", bankQrCode: "014", slipReference: identity.reference, kind: "withdrawal",
       amountMinor: "-125000", currency: "THB", occurredOn: "2026-07-14", occurredAtTime: "09:05", counterparty: null, categoryId: null, note: null
     });
+    // The payee and memo read off the slip travel in the request as they were read (D-252).
+    const named = slipFakes();
+    await captureSlips([{ ...ready("a.png"), counterparty: "INVENTED PAYEE CO", note: "invented memo" }], "withdrawal", named.deps);
+    expect(named.bodies[0]).toMatchObject({ counterparty: "INVENTED PAYEE CO", note: "invented memo" });
     const into = slipFakes();
     await captureSlips([ready("a.png")], "deposit", into.deps);
     expect(into.bodies[0]).toMatchObject({ kind: "deposit", amountMinor: "125000" });

@@ -6,8 +6,7 @@ import {
 } from "@/lib/browser/inbox-storage";
 import { captureSlips, browserDrainDeps, drainInbox } from "@/lib/browser/inbox-importer";
 import Link from "next/link";
-import { describeSlipCapture, REVIEW_LINK_LABEL, reviewHref, type ReadySlip } from "@/lib/inbox-drain";
-import type { SlipKind } from "@/lib/slips";
+import { describeSlipCapture, REVIEW_LINK_LABEL, reviewHref } from "@/lib/inbox-drain";
 import { LedgerNote } from "@/app/ledger-note";
 import { formatDate } from "@/app/ledger-shared";
 import { encodeForReader } from "@/lib/browser/ocr-reader";
@@ -55,7 +54,6 @@ export function InboxFiles() {
   const [busy, setBusy] = useState(false);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [drainLine, setDrainLine] = useState<string | null>(null);
-  const [slips, setSlips] = useState<readonly ReadySlip[]>([]);
   const [reviewable, setReviewable] = useState<readonly string[]>([]);
   const counter = useRef(0);
   // Who owns `busy`. Only the run that claimed it may release it, so a second run that finds it taken
@@ -91,11 +89,25 @@ export function InboxFiles() {
     try {
       const uid = await ownerUid(supabase);
       if (!uid.ok) { setError(uid.why); return; }
-      const result = await drainInbox(files, setDrainLine, browserDrainDeps(supabase, uid.value));
-      setReasons(result.reasons);
-      setSlips(result.slips);
+      const deps = browserDrainDeps(supabase, uid.value);
+      const result = await drainInbox(files, setDrainLine, deps);
+      // **A slip is always money out** (owner, 2026-10-07, superseding D-236's one answer per batch):
+      // a bank slip is the payer's receipt, so every slip the owner forwards is a payment he made.
+      // Ready slips are captured here, in the same claimed run, rather than waiting on a button.
+      const captured = result.slips.length > 0 ? await captureSlips(result.slips, "withdrawal", deps) : null;
+      const reasons = { ...result.reasons };
+      for (const slip of result.slips) {
+        const why = captured?.reasons[slip.name];
+        if (why) reasons[slip.name] = why;
+        else delete reasons[slip.name];
+      }
+      setReasons(reasons);
       setReviewable(result.reviewable);
-      setDrainLine(result.summary);
+      // The drain's own summary leaves slips out; the capture says what happened to them.
+      const slipLine = captured === null ? null : describeSlipCapture({
+        captured: captured.captured, duplicates: captured.duplicates, kept: Object.keys(captured.reasons).length
+      }, "withdrawal");
+      setDrainLine(slipLine === null ? result.summary : result.summary === "Nothing was imported." ? slipLine : `${result.summary} ${slipLine}`);
     } catch {
       // Nothing is removed unless a capture answered and Storage confirmed, so a failure here loses nothing.
       failed = true;
@@ -190,41 +202,9 @@ export function InboxFiles() {
           delete rest[name];
           return rest;
         });
-        setSlips((current) => current.filter((slip) => slip.name !== name));
         setReviewable((current) => current.filter((held) => held !== name));
       }
       await refresh();
-    } finally {
-      release();
-    }
-  }
-
-  /** The owner's one answer for the batch: capture every held slip as money out or in. */
-  async function answerSlips(kind: SlipKind) {
-    if (!supabase || slips.length === 0 || !claim()) return;
-    const held = slips;
-    try {
-      const uid = await ownerUid(supabase);
-      if (!uid.ok) { setError(uid.why); return; }
-      const result = await captureSlips(held, kind, browserDrainDeps(supabase, uid.value));
-      // Files a capture removed lose their reason; files that stayed take the capture's reason.
-      setReasons((current) => {
-        const next = { ...current };
-        for (const slip of held) {
-          const why = result.reasons[slip.name];
-          if (why) next[slip.name] = why;
-          else delete next[slip.name];
-        }
-        return next;
-      });
-      setDrainLine(describeSlipCapture({
-        captured: result.captured, duplicates: result.duplicates, kept: Object.keys(result.reasons).length
-      }, kind));
-      setSlips([]);
-      await refresh();
-    } catch {
-      // Nothing is removed unless a capture answered and Storage confirmed, so a failure here loses nothing.
-      setError("The slips could not be captured. Try again.");
     } finally {
       release();
     }
@@ -311,23 +291,6 @@ export function InboxFiles() {
       <div className="slip-form">
         {drainLine && !(waiting !== null && waiting.length === 0 && drainLine === "Nothing was imported.") ? (
           <p className="field-help" role="status">{drainLine}</p>
-        ) : null}
-        {slips.length > 0 && !busy ? (
-          <div className="slip-actions">
-            <p className="field-help">
-              {slips.length === 1 ? "1 slip is ready." : `${slips.length} slips are ready.`} Money out or money in?
-              <LedgerNote label="Why one direction">
-                A slip doesn&apos;t say which side you&apos;re on, so one answer applies to the whole batch.
-                For mixed directions, remove the slips of the other direction first and add them in a second batch.
-              </LedgerNote>
-            </p>
-            <button type="button" className="secondary-button" disabled={busy} onClick={() => void answerSlips("withdrawal")}>
-              Money out
-            </button>
-            <button type="button" className="secondary-button" disabled={busy} onClick={() => void answerSlips("deposit")}>
-              Money in
-            </button>
-          </div>
         ) : null}
         {expired > 0 ? (
           <p className="field-help" role="status">

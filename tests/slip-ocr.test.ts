@@ -7,6 +7,7 @@ import {
   locateAmount,
   paddedCrop,
   proposeAmount,
+  proposeSlipText,
   readAmount,
   readPrintedDate,
   valueWordsFor,
@@ -436,5 +437,131 @@ describe("locating the amount for a crop", () => {
     // Clamped at every edge, so a label near a margin cannot produce a negative crop.
     const corner = paddedCrop({ left: 0, top: 0, right: 100, bottom: 20 }, { width: 90, height: 15 });
     expect(corner).toEqual({ left: 0, top: 0, right: 90, bottom: 15 });
+  });
+});
+
+describe("proposing the payee and note", () => {
+  // Invented names and memos throughout; only the label wordings and where each layout puts
+  // its value are format knowledge.
+
+  it("reads SCB's payee beside its label and the provider note under its label", () => {
+    const words = [
+      ...line(100, [["ไปยัง", 10, 60], ["นาย", 200, 240], ["สมมุติ", 250, 320], ["ทดลอง", 330, 400]]),
+      ...line(140, [["xxx-xxx123-4", 200, 340]]),
+      ...line(180, [["จำนวนเงิน", 10, 90], ["150.00", 300, 380]]),
+      ...line(220, [["ข้อมูลเพิ่มเติมจากผู้ให้บริการ", 10, 200]]),
+      ...line(260, [["ค่า", 10, 40], ["สมาชิก", 45, 100], ["รายเดือน", 105, 170]])
+    ];
+    expect(proposeSlipText(words, "SCB")).toEqual({ counterparty: "นาย สมมุติ ทดลอง", note: "ค่า สมาชิก รายเดือน" });
+  });
+
+  it("appends SCB's one wrapped continuation line of a long payee", () => {
+    const words = [
+      ...line(100, [["ไปยัง", 10, 60], ["INVENTED", 200, 290], ["HOLDINGS", 300, 390], ["PUBLIC", 400, 470]]),
+      ...line(140, [["COMPANY", 200, 290], ["LIMITED", 300, 380]]),
+      ...line(180, [["FURTHER", 200, 290], ["WORDS", 300, 380]])
+    ];
+    expect(proposeSlipText(words, "SCB").counterparty).toBe("INVENTED HOLDINGS PUBLIC COMPANY LIMITED");
+  });
+
+  it("does not append SCB's next line when it carries a digit, a colon, or starts left of the label", () => {
+    const payee = line(100, [["ไปยัง", 10, 60], ["INVENTED", 200, 290], ["SHOP", 300, 360]]);
+    for (const next of [
+      line(140, [["Biller", 200, 260], ["ID", 270, 290], ["0000000000001", 300, 420]]),
+      line(140, [["Ref", 200, 240], ["no:", 250, 290], ["ABC", 300, 340]]),
+      line(140, [["ELSEWHERE", 5, 100]])
+    ]) {
+      expect(proposeSlipText([...payee, ...next], "SCB").counterparty).toBe("INVENTED SHOP");
+    }
+  });
+
+  it("reads Krungthai's payee from the line under its label and the memo beside its label", () => {
+    const words = [
+      ...line(100, [["ไปยัง", 10, 60]]),
+      ...line(140, [["น.ส.", 10, 50], ["ตัวอย่าง", 55, 130], ["สมมติ", 135, 200]]),
+      ...line(180, [["xxx-x-x5678-x", 10, 150]]),
+      ...line(220, [["บันทึกช่วยจำ", 10, 100], ["คืน", 300, 330], ["ค่า", 335, 360], ["ข้าว", 365, 400]])
+    ];
+    expect(proposeSlipText(words, "KTB")).toEqual({ counterparty: "น.ส. ตัวอย่าง สมมติ", note: "คืน ค่า ข้าว" });
+  });
+
+  it("leaves Krungthai's note null when no memo is printed", () => {
+    const words = [...line(100, [["ไปยัง", 10, 60]]), ...line(140, [["INVENTED", 10, 100], ["PERSON", 110, 180]])];
+    expect(proposeSlipText(words, "KTB")).toEqual({ counterparty: "INVENTED PERSON", note: null });
+  });
+
+  const kbankSlip = (masked: OcrWord[][]) => [
+    ...line(100, [["นาย", 10, 40], ["ผู้ส่ง", 45, 100], ["สมมุติ", 105, 170]]),
+    ...line(140, [["ธ.กสิกรไทย", 10, 110]]),
+    ...(masked[0] ?? []),
+    ...line(220, [["↓", 10, 20]]),
+    ...line(260, [["นาง", 10, 40], ["ผู้รับ", 45, 100], ["ทดลอง", 105, 170]]),
+    ...(masked[1] ?? []),
+    ...line(340, [["บันทึกช่วยจำ:", 10, 110]]),
+    ...line(380, [["ค่า", 10, 40], ["ตั๋ว", 45, 80]])
+  ];
+
+  it("reads KBANK's payee as the first lettered line after the sender's masked account", () => {
+    // The arrow between the two parties is skipped: it carries no letter.
+    expect(proposeSlipText(kbankSlip([line(180, [["xxx-x-x1234-x", 10, 150]])]), "KBANK"))
+      .toEqual({ counterparty: "นาง ผู้รับ ทดลอง", note: "ค่า ตั๋ว" });
+  });
+
+  it("declines KBANK's payee with no masked account line, or with two", () => {
+    expect(proposeSlipText(kbankSlip([]), "KBANK").counterparty).toBeNull();
+    const two = [line(180, [["xxx-x-x1234-x", 10, 150]]), line(300, [["xxx-x-x9876-x", 10, 150]])];
+    expect(proposeSlipText(kbankSlip(two), "KBANK").counterparty).toBeNull();
+  });
+
+  it("accepts the generic memo label on SCB and joins it with the provider note", () => {
+    const words = [
+      ...line(100, [["ข้อมูลเพิ่มเติมจากผู้ให้บริการ", 10, 200]]),
+      ...line(140, [["INV-0001", 10, 100]]),
+      ...line(180, [["บันทึกช่วยจำ", 10, 100], ["ของขวัญ", 300, 380]])
+    ];
+    expect(proposeSlipText(words, "SCB").note).toBe("INV-0001 · ของขวัญ");
+  });
+
+  it("falls back to the memo label without KBANK's colon, reading the line below", () => {
+    const words = [...line(100, [["บันทึกช่วยจำ", 10, 100]]), ...line(140, [["ค่า", 10, 40], ["ตั๋ว", 45, 80]])];
+    expect(proposeSlipText(words, "KBANK").note).toBe("ค่า ตั๋ว");
+  });
+
+  it("declines a field whose label appears on two lines", () => {
+    const words = [
+      ...line(100, [["ไปยัง", 10, 60], ["ONE", 200, 260]]),
+      ...line(140, [["ไปยัง", 10, 60], ["TWO", 200, 260]])
+    ];
+    expect(proposeSlipText(words, "SCB").counterparty).toBeNull();
+  });
+
+  it("declines a value line that is really the next field's label", () => {
+    // The memo was blank, so the line under its label is the amount's label.
+    const kbank = [...line(100, [["บันทึกช่วยจำ:", 10, 110]]), ...line(140, [["จำนวน:", 10, 70]])];
+    expect(proposeSlipText(kbank, "KBANK").note).toBeNull();
+    const ktb = [...line(100, [["ไปยัง", 10, 60]]), ...line(140, [["จำนวนเงิน", 10, 90], ["150.00", 300, 380]])];
+    expect(proposeSlipText(ktb, "KTB").counterparty).toBeNull();
+  });
+
+  it("keeps a memo that merely contains a label word", () => {
+    const words = line(100, [["บันทึกช่วยจำ", 10, 100], ["โอนไปยังเพื่อน", 300, 420]]);
+    expect(proposeSlipText(words, "KTB").note).toBe("โอนไปยังเพื่อน");
+  });
+
+  it("caps the payee at 240 characters and the note at 2000", () => {
+    const words = [
+      ...line(100, [["ไปยัง", 10, 60], ["A".repeat(300), 200, 900]]),
+      ...line(140, [["ข้อมูลเพิ่มเติมจากผู้ให้บริการ", 10, 200]]),
+      ...line(180, [["B".repeat(2500), 10, 900]])
+    ];
+    const read = proposeSlipText(words, "SCB");
+    expect(read.counterparty).toHaveLength(240);
+    expect(read.note).toHaveLength(2000);
+  });
+
+  it("returns nulls, without throwing, for no words at all", () => {
+    for (const bank of ["SCB", "KTB", "KBANK"] as const) {
+      expect(proposeSlipText([], bank)).toEqual({ counterparty: null, note: null });
+    }
   });
 });

@@ -439,12 +439,20 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-252** — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
 - **D-251** — The nineteenth boundary moves D-235 … D-244 on the owner's word
 - **D-250** — A two-digit printed slip year is completed when exactly one candidate across both eras fits the slip window
 - **D-249** — Keyword rules round 2: 11 merchant rules, Transport › Fuel, and TrueMoney charges called top-ups only at round top-up amounts; amount-split descriptions never key history
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-252 — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
+
+- **Status:** built 2026-10-07. Supersedes D-236's one money in/out answer per batch (archived in `docs/decisions/ARCHIVE-D-235-D-244.md`).
+- **Owner, 2026-10-07:** every slip of every bank is the payer's receipt, so a forwarded slip is always money out. `app/inbox-files.tsx` captures each ready slip as a withdrawal in the same run as the drain; the Money out / Money in buttons are gone. `/slips` keeps both directions for a hand entry.
+- **Payee and memo (owner's request):** `proposeSlipText` (`lib/slip-ocr.ts`) reads the payee (SCB and KTB under `ไปยัง`; K PLUS has no label, so the first lettered line after the sender's masked account) and the memo (SCB `ข้อมูลเพิ่มเติมจากผู้ให้บริการ`, KTB and K PLUS `บันทึกช่วยจำ`), best-effort and null on any doubt. They go to the slip's `counterparty` and `note`, shown on the matched row; the statement's description never changes. Thai names may be misread; the owner corrects them on the row.
+- **Stale memory fixed:** the Inbox's per-device memory of "not recognised" and "needs checking" now stamps every entry with the build and drops it on another, as held statements already did, after 20 K PLUS slips stayed "needs checking" past the deploy that fixed their date (D-250).
 
 ## D-251 — The nineteenth boundary moves D-235 … D-244 on the owner's word
 

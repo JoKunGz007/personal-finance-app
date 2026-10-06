@@ -38,11 +38,11 @@ import type { BankCode } from "@/lib/statement-frame";
  * The one transformation performed is Thai digits to Arabic (`๐`–`๙`), which is a lossless
  * one-to-one transliteration rather than a guess about a doubtful glyph.
  *
- * ## What this deliberately does not read yet
+ * ## What this reads only as a suggestion
  *
- * **The counterparty.** The contract says it is not sized, and it is free text in two
- * scripts — the field least suited to a whitelist and the one where a wrong read is least
- * visible. It stays typed.
+ * **The counterparty and the note.** Free text in two scripts — the fields least suited to a
+ * whitelist — so `proposeSlipText` pre-fills them for the owner to see and correct, and declines
+ * with `null` rather than refusing. It never feeds a money decision.
  *
  * ## What it now does read
  *
@@ -543,4 +543,159 @@ export function readPrintedDate(words: readonly OcrWord[], today: Date): OcrRead
     };
   }
   return { ok: false, code: "DATE_NOT_FOUND", message: "No line on this image reads as a date." };
+}
+
+/**
+ * The payee and the memo, read best-effort for the form to pre-fill (never to store unseen).
+ *
+ * **Unlike the amount, this never refuses — it only declines.** A wrong amount is a wrong
+ * number in the ledger; a wrong payee is a visibly wrong name in a field the owner is looking
+ * at and can retype. So there are no refusal codes here: anything not found, doubled or empty
+ * is simply `null`, and the field stays blank for the owner to type.
+ */
+export type SlipText = { counterparty: string | null; note: string | null };
+
+// The capture schema's own limits (`lib/slips.ts`), so a long OCR run cannot make an otherwise
+// valid capture fail validation over a field the owner never typed.
+const COUNTERPARTY_MAX = 240;
+const NOTE_MAX = 2000;
+
+const PAYEE_LABEL = "ไปยัง";
+// Krungthai's memo label, and KBANK's with a colon. Accepted on every layout, because a memo the
+// bank chose to print is worth reading whichever template carried it.
+const MEMO_LABEL = "บันทึกช่วยจำ";
+
+/**
+ * Where each layout prints its payee and its note (`docs/SLIP_CONTRACT.md`).
+ *
+ * KBANK has no payee label at all — the name is found by position, after the sender's masked
+ * account (see `kbankPayee`) — which is why its payee anchor is null rather than invented.
+ */
+const SLIP_TEXT_ANCHORS: Record<BankCode, { payee: FieldAnchor | null; note: FieldAnchor }> = {
+  SCB: {
+    payee: { label: PAYEE_LABEL, position: "same-line-right" },
+    note: { label: "ข้อมูลเพิ่มเติมจากผู้ให้บริการ", position: "next-line" }
+  },
+  KTB: {
+    payee: { label: PAYEE_LABEL, position: "next-line" },
+    note: { label: MEMO_LABEL, position: "same-line-right" }
+  },
+  KBANK: {
+    payee: null,
+    note: { label: `${MEMO_LABEL}:`, position: "next-line" }
+  }
+};
+
+// Every label any layout prints. A value line that begins with one of these is the *next field*,
+// not a value — which happens when the value itself was blank or the engine dropped it — and
+// reading it as a payee would put `จำนวนเงิน` in the counterparty. A prefix rather than a
+// substring test, because labels open their line and a memo such as "โอนไปยัง…" must survive.
+const KNOWN_LABELS = [
+  "จำนวนเงิน", "จำนวน:", "ค่าธรรมเนียม", "เลขที่รายการ:", "รหัสอ้างอิง", "วันที่ทำรายการ",
+  PAYEE_LABEL, MEMO_LABEL, "ข้อมูลเพิ่มเติมจากผู้ให้บริการ"
+].map(normalise);
+
+const isLabelText = (text: string) => {
+  const flat = normalise(text);
+  return KNOWN_LABELS.some((label) => flat.startsWith(label));
+};
+
+/** Display text, not comparison text: `normalise` strips spaces, which a name needs. */
+function displayText(text: string, max: number): string | null {
+  const capped = text.normalize("NFKC").replace(/\s+/g, " ").trim().slice(0, max).trim();
+  return capped.length > 0 ? capped : null;
+}
+
+const lineText = (words: readonly OcrWord[]) => words.map((word) => word.text).join(" ");
+
+/** The value words for one label, or null when the label is missing, doubled or points at a label. */
+function labelledValue(lines: readonly OcrWord[][], anchor: FieldAnchor): OcrWord[] | null {
+  const found = findLabelLine(lines, anchor.label);
+  if (!found.ok) return null;
+  const value = valueWordsFor(lines, found, anchor.position);
+  if (value.length === 0 || isLabelText(lineText(value))) return null;
+  return value;
+}
+
+/**
+ * SCB's payee, with at most one wrapped continuation line.
+ *
+ * SCB wraps a long company name under itself, indented to where the value began. The next line
+ * is taken as a continuation only when it sits entirely right of the label and looks like more
+ * name — no digit and no colon, since the line under a short payee is an account number or the
+ * next labelled field, and either would corrupt the name rather than finish it.
+ */
+function scbPayee(lines: readonly OcrWord[][], anchor: FieldAnchor): OcrWord[] | null {
+  const found = findLabelLine(lines, anchor.label);
+  if (!found.ok) return null;
+  const value = valueWordsFor(lines, found, "same-line-right");
+  if (value.length === 0 || isLabelText(lineText(value))) return null;
+  const next = lines[found.index + 1];
+  if (next && next.length > 0) {
+    const text = normalise(lineText(next));
+    const indented = next.every((word) => word.left >= found.labelRight);
+    if (indented && !/\d/.test(text) && !text.includes(":") && !isLabelText(text)) return [...value, ...next];
+  }
+  return value;
+}
+
+// The sender's masked account as K PLUS prints it, `xxx-x-x1234-x`. It is the only fixed
+// landmark between the sender block and the payee's name.
+const KBANK_MASKED_ACCOUNT = /^x{3}-x-x\d{4}-x$/i;
+const HAS_LETTER = /[ก-ฮA-Za-z]/u;
+
+/**
+ * KBANK's payee: the first lettered line after the sender's masked account.
+ *
+ * Exactly one masked line, or nothing. The payee's own account is masked too on some slips, and
+ * with two such lines "after the masked account" would name the line after the *payee's*
+ * account — which is the memo or a fee, never the name.
+ */
+function kbankPayee(lines: readonly OcrWord[][]): OcrWord[] | null {
+  const masked = lines.flatMap((words, index) => (KBANK_MASKED_ACCOUNT.test(normalise(lineText(words))) ? [index] : []));
+  if (masked.length !== 1) return null;
+  // Skip the arrow K PLUS draws between the two parties, and anything else with no letter in it.
+  const payee = lines.slice(masked[0]! + 1).find((words) => HAS_LETTER.test(normalise(lineText(words))));
+  if (!payee || isLabelText(lineText(payee))) return null;
+  return payee;
+}
+
+/**
+ * The note: the bank's own note label, plus the generic memo label where the layout's own label
+ * is not already that one. Where both carry text (an SCB bill payment with a memo), both are kept.
+ */
+function slipNote(lines: readonly OcrWord[][], bank: BankCode): string | null {
+  const own = SLIP_TEXT_ANCHORS[bank].note;
+  const parts: string[] = [];
+  const ownValue = labelledValue(lines, own);
+  const ownText = ownValue ? displayText(lineText(ownValue), NOTE_MAX) : null;
+  if (ownText) parts.push(ownText);
+
+  // On Krungthai and KBANK the own label *is* the memo label (KBANK with a colon), so the generic
+  // label is only a fallback for an engine that dropped KBANK's colon — tried when the own label
+  // is absent, never as a second read of the same line.
+  const ownIsMemo = normalise(own.label).includes(normalise(MEMO_LABEL));
+  const ownFound = findLabelLine(lines, own.label);
+  if (!ownIsMemo || (!ownFound.ok && ownFound.code === "LABEL_NOT_FOUND")) {
+    const found = findLabelLine(lines, MEMO_LABEL);
+    if (found.ok) {
+      const right = valueWordsFor(lines, found, "same-line-right");
+      const value = right.length > 0 ? right : valueWordsFor(lines, found, "next-line");
+      const text = value.length > 0 && !isLabelText(lineText(value)) ? displayText(lineText(value), NOTE_MAX) : null;
+      if (text && !parts.includes(text)) parts.push(text);
+    }
+  }
+  return displayText(parts.join(" · "), NOTE_MAX);
+}
+
+export function proposeSlipText(words: readonly OcrWord[], bank: BankCode): SlipText {
+  const lines = groupIntoLines(words);
+  const payeeAnchor = SLIP_TEXT_ANCHORS[bank].payee;
+  const payee = payeeAnchor === null
+    ? kbankPayee(lines)
+    : bank === "SCB" ? scbPayee(lines, payeeAnchor) : labelledValue(lines, payeeAnchor);
+  return {
+    counterparty: payee ? displayText(lineText(payee), COUNTERPARTY_MAX) : null,
+    note: slipNote(lines, bank)
+  };
 }
