@@ -430,6 +430,7 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-243** — Phone nav as one swipeable row with Cash folded (option E, revisits D-226); no-time receipts match a lone TRUE MONEY row (amends D-212); renamed ride types grouped
 - **D-244** — Task 25's category set: 18 flat categories created on hosted through `mutate_category`, no subcategories yet; a read-only export feeds local-llm's measurement
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-249** — Keyword rules round 2: 11 merchant rules, Transport › Fuel, and TrueMoney charges called top-ups only at round top-up amounts; amount-split descriptions never key history
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
@@ -438,6 +439,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-237** — Statements dropped on /inbox are opened on the server with stored passwords and confirmed automatically when clean
 - **D-236** — The Inbox imports slips with one money in/out answer per batch, ties same-address LINE MAN pages by the phone's clock, and names a Vision refusal's status number
 - **D-235** — An Inbox page gathers every import: one "Sync all mail" now, a queue of dropped files next, processed when the page is opened, with no LLM
+
+## D-249 — Keyword rules round 2: 11 merchant rules, Transport › Fuel, and TrueMoney charges called top-ups only at round top-up amounts; amount-split descriptions never key history
+
+- **Status:** live 2026-10-07 (`2959e79`). The first run on hosted applied **259** rule categories, exactly what the rules predicted against the 2026-10-05 export (only uncategorised rows moved); a second run applied 0.
+- **Owner, 2026-10-07, checked against his SCB slips:** Central Pattana bill payments are mall parking → Transport › Parking (Parking-CTW was already caught). SUANPHLU STATION CO., LTD. is the Shell station at 65 S Sathon Rd → a new **Transport › Fuel** (created on hosted the same day). Swensen's → Dining Out (Coffee & Snacks may become its subcategory later). State Railway fares (฿30–35) → Public Transit: Public Transit is everyday travel in town, Travel is a trip, and a long-distance ticket is moved by hand. A football-pitch rental → Entertainment. ShopeePay → Shopping › Online (D-246).
+- **TrueMoney (D-246's open call):** a rule may now require exact amounts (`amountsMinor`). `SIPS TRUE MONEY` → Wallet Top-up only at ฿100/200/300/400/500/1,000 (46 rows); other round amounts (฿230, ฿110) and every other amount stay blank, as all 16 receipt-matched TrueMoney rows were 7-Eleven purchases at non-round amounts.
+- **Review finding fixed:** history (which runs before rules) keys on the description alone, so one confirmed TrueMoney row would have spread its category to every TrueMoney row past the amount check. A description an amount rule matches no longer keys history (`isAmountGated`); red-proven.
+- **Kept blank:** payment processors and SCB merchant-QR payees, person-named payees, MBK. Bangchak's Greenet shops are Convenience Store, not fuel.
+- **Not solvable by a rule:** phone top-ups print only `รายการผ่าน INTERNET` (22 blank rows). The slip names the operator, so the next step is letting rules read a matched slip's counterparty.
 
 ## D-248 — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 
