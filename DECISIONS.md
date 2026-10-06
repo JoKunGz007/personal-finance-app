@@ -440,7 +440,7 @@ a reason to keep it rather than a reason it cannot ever move.
 
 ## D-247 — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 
-- **Status:** in progress (2026-10-06). Builds D-246's reader.
+- **Status:** built and live (2026-10-06, `b13fd0a`, `60e692d`). Builds D-246's reader.
 - **Measured** (`measure-grab-mail.ts --mart --mart-template`, owner's terminal, labels only): GrabMart's layout is GrabFood's with Thai labels, and its money closes. Dine Out has a food subtotal and discounts but no item lines and no delivery fee. GrabExpress prints the ride heading and a date with no time. Its fees are a delivery guarantee plus a carrying fee, less rewards, and they close. A late-delivery mail is an apology carrying the order breakdown of a GrabFood order: amounts have no `฿`, the body has no date, and the `฿` figure in the apology is a voucher, not a charge.
 - **Storage:** `deliveries.service` (`food`, `mart`, `express` or `dine_out`; LINE MAN is always `food`) instead of new platform values, so the platform unions stay as they are. Zero items are allowed for `express` and `dine_out` only.
 - **Owner, 2026-10-06:** late-delivery breakdowns are stored as GrabFood orders, timed by the mail. They link by hand if the automatic 0–120 min rule misses; whether it misses is checked after the first sync. Delivery statistics count `food` only. Categories: Dine Out → Food & Drinks › Dining Out; GrabMart → Groceries & Convenience › Grocery Delivery (the owner creates it); GrabExpress → Services › Courier; late delivery → Food & Drinks › Delivery.

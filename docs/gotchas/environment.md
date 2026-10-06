@@ -176,3 +176,10 @@ the top of `GOTCHAS.md`.
 - Cause: pdf.js builds one `DOMMatrix` when its module loads, and under Node it borrows the class from the optional `@napi-rs/canvas`. This machine has that package installed; the serverless bundle does not carry it, so the module throws at load. A static import makes that throw a route-load failure, which hides the message.
 - Avoid: load pdf.js inside the request (`loadPdfJs` in `lib/server/receipt-pdf-node.ts`) so a failure can be reported, and define a bare `DOMMatrix` before the import when none exists. Text extraction never draws, and a drawing path reaching the placeholder throws, which reads as a refusal. A module-load failure should never be caught as "not a document": that would mark mail done for good.
 - Verify: 2026-09-26 (D-232). `64f51a6` made the live route report `ReferenceError: DOMMatrix is not defined`; after `c7f9e0f` the live Sync read a real bundle. The same PDF text extracts under Node with only the placeholder defined.
+
+## PowerShell `>` re-encodes a native program's output, and Thai comes out garbled
+
+- Symptom: a harness run in the owner's terminal with `> file.txt` produces a UTF-16 file whose Thai labels read as mojibake (`เธฟ` for `฿`), so label text copied from it into a parser would never match.
+- Cause: Windows PowerShell 5.1 decodes a native program's stdout with `[Console]::OutputEncoding` (the Thai code page here, not UTF-8) before `>` writes it out again as UTF-16. The Node program wrote correct UTF-8; the redirect mangled it.
+- Avoid: start the command with `[Console]::OutputEncoding = [Text.Encoding]::UTF8;` and keep `>` (not `*>`, which hides the password prompt). Read the file with `iconv -f UTF-16LE -t UTF-8`.
+- Verify: 2026-10-06 (D-247). The `--mart` probe run without the prefix garbled every Thai line; the `--late` run with it decoded cleanly.

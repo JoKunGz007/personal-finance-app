@@ -77,6 +77,7 @@ the top of `GOTCHAS.md`.
 - Avoid: `supabase stop` then `supabase start`. Not `--debug`, and not `docker start` on the database alone — that leaves the service containers holding dead connections, which is the trap directly above this one.
 - Verify: 2026-08-12. Hit on **both** the main project and the recovery destination in the same session, which is what makes it a trap rather than a one-off; `docker ps -a --filter name=supabase_db_` shows the exited container while `supabase start` still claims the project is up. CLI v2.109.1.
 - Verify: 2026-10-04, the other way round. After the owner stopped Docker mid-session and started it again, the database, auth, storage and realtime came back but Kong and PostgREST stayed exited; `supabase start` said nothing was wrong, pgTAP and `supabase:reset` passed (they talk to Postgres directly), and `pnpm test` failed seven files on `ECONNREFUSED 127.0.0.1:54321`. `supabase status` lists the stopped services. The same `stop` then `start` fixed it, and the next run was green.
+- Verify: 2026-10-06 (D-247), again Kong and PostgREST exited with the database up (31 hours old), same seven files failing with `fetch failed`. With the database healthy, `docker start` on just the exited service containers (rest, kong, pg_meta, inbucket, edge_runtime, studio) also fixed it, and the full run went 84 of 84 files.
 
 ## Windows reserves the whole local Supabase port block, and every container still reports healthy
 

@@ -166,8 +166,8 @@ the top of `GOTCHAS.md`.
 
 - Symptom: a new reader for something the Sync used to skip (Grab rides) is built and deployed, and the Sync still reads none of it.
 - Cause: the Sync flags a message done once every receipt in it is resolved, and "a ride, skipped" counted as resolved. Every bundle holding rides was already flagged, so it is never opened again.
-- Avoid: when a reader starts reading what it used to skip, change the done-flag (`DELIVERY_FLAG`, `PLDelivery` → `PLGrab` in `lib/server/delivery-mailbox.ts`) so every message is read once more. Already-stored documents come back as `alreadyStored`, so the re-read is harmless.
-- Verify: 2026-09-24 (D-222): the harness reported 4 of 4 messages flagged `PLDelivery` and 0 flagged `PLGrab` before the deploy. The first live Sync then read all 4 and stored 276 rides, with 114 orders already stored.
+- Avoid: when a reader starts reading what it used to skip, change the done-flag (`DELIVERY_FLAG`, `PLDelivery` → `PLGrab` in `lib/server/delivery-mailbox.ts`) so every message is read once more. Already-stored documents come back as `alreadyStored`, so the re-read is harmless. **It happened again with D-247**: an all-`other` message also counts as resolved, so the Dine Out, GrabMart, GrabExpress and late-delivery readers needed `PLGrab` → `PLGrab2`.
+- Verify: 2026-09-24 (D-222): the harness reported 4 of 4 messages flagged `PLDelivery` and 0 flagged `PLGrab` before the deploy. The first live Sync then read all 4 and stored 276 rides, with 114 orders already stored. 2026-10-06 (D-247): after `PLGrab2` the live Sync re-read everything and stored the 12 new-service orders; rides and earlier orders all came back already stored.
 
 ## Gmail's "Forward as attachment" on a conversation attaches one message, not the thread
 
