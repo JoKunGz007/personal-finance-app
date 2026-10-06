@@ -80,7 +80,7 @@ export async function loadOrderMatches(supabase: OwnerClient) {
     adjustments: [...ride.adjustments].sort((a, b) => a.position - b.position).map((row) => ({ ...row, amount_minor: String(row.amount_minor) }))
   }));
   const matches = proposeGrabMatches(
-    deliveries.map((delivery) => ({ id: delivery.id, paidOutside: paidOutsidePlatform(delivery), platform: delivery.platform })),
+    deliveries.map((delivery) => ({ id: delivery.id, paidOutside: paidOutsidePlatform(delivery), platform: delivery.platform, service: delivery.service })),
     parsedOrderCandidates.data,
     parsedOrderDecisions.data,
     // A ฿0 ride was paid in full by discounts: no card row, so it is never matched.

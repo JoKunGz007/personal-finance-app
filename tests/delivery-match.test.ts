@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { proposeGrabMatches as proposeGrabMatchesForTest, DINE_OUT_MATCH_AFTER_MINUTES, EXPRESS_MATCH_BEFORE_MINUTES } from "@/lib/delivery-match";
 import {
   DELIVERY_MATCH_WINDOW_MINUTES,
   deliveryMatchRequestSchema,
@@ -284,5 +285,30 @@ describe("proposeRideSplits (D-229)", () => {
   it("never touches a ride the owner decided or one already matched", () => {
     const declined: DeliveryMatchState = { status: "declined", row: null, options: [], revision: 2 };
     expect(propose([row(R, "1", -5, -3000), row(R, "2", 8, -1000)], [], new Map([[R, declined]])).get(R)).toEqual(declined);
+  });
+});
+
+describe("Dine Out and GrabExpress windows (D-247)", () => {
+  const order = (id: string, service: "food" | "express" | "dine_out") => ({ id, paidOutside: false, platform: "grabfood" as const, service });
+  const state = (service: "food" | "express" | "dine_out", lag: number) =>
+    proposeGrabMatchesForTest([order(D1, service)], [candidate(D1, T1, lag)], [], [], [], []).orders.get(D1)!.status;
+
+  it("matches a Dine Out row up to ten minutes after the receipt, and food still not", () => {
+    expect(state("dine_out", 1)).toBe("matched");
+    expect(state("dine_out", DINE_OUT_MATCH_AFTER_MINUTES)).toBe("matched");
+    expect(state("dine_out", DINE_OUT_MATCH_AFTER_MINUTES + 1)).toBe("none");
+    expect(state("food", 1)).toBe("none");
+  });
+
+  it("matches a GrabExpress row up to six hours before the receipt, and food still not", () => {
+    expect(state("express", -156)).toBe("matched");
+    expect(state("express", -EXPRESS_MATCH_BEFORE_MINUTES)).toBe("matched");
+    expect(state("express", -EXPRESS_MATCH_BEFORE_MINUTES - 1)).toBe("none");
+    expect(state("express", 1)).toBe("none");
+    expect(state("food", -156)).toBe("none");
+  });
+
+  it("still needs the row to name GRAB", () => {
+    expect(proposeGrabMatchesForTest([order(D1, "express")], [candidate(D1, T1, -156, false)], [], [], [], []).orders.get(D1)!.status).toBe("none");
   });
 });

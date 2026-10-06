@@ -127,6 +127,32 @@ type GrabWording = Pick<DeliveryLedgerCandidate, "names_grab" | "lag_minutes"> &
 const toRow = ({ transaction_id, source_date, source_time, transaction_label, description, lag_minutes }: DeliveryLedgerCandidate): DeliveryLedgerRow =>
   ({ transaction_id, source_date, source_time, transaction_label, description, lag_minutes });
 
+/**
+ * Grab services whose charge does not land before a delivered e-receipt (D-247, chosen by the owner
+ * 2026-10-07). Dine Out is paid at the table and its receipt is sent at payment, so the card row
+ * can land just after it (measured: 5 of 6 within 0-120 minutes before, 1 one minute after).
+ * GrabExpress is charged at booking and its receipt sent on delivery (measured: 156 minutes
+ * before). Every other condition is GrabFood's: the row names GRAB, the exact total, uniqueness.
+ */
+export const DINE_OUT_MATCH_AFTER_MINUTES = 10;
+export const EXPRESS_MATCH_BEFORE_MINUTES = 360;
+
+/** Whether a Dine Out candidate satisfies the rule on its own, before uniqueness. */
+export function dineOutQualifiesAutomatically(candidate: GrabWording): boolean {
+  return (candidate.names_grab || unnamedCardSpend(candidate))
+    && candidate.lag_minutes !== null
+    && candidate.lag_minutes <= DINE_OUT_MATCH_AFTER_MINUTES
+    && candidate.lag_minutes >= -DELIVERY_MATCH_WINDOW_MINUTES;
+}
+
+/** Whether a GrabExpress candidate satisfies the rule on its own, before uniqueness. */
+export function expressQualifiesAutomatically(candidate: GrabWording): boolean {
+  return (candidate.names_grab || unnamedCardSpend(candidate))
+    && candidate.lag_minutes !== null
+    && candidate.lag_minutes <= 0
+    && candidate.lag_minutes >= -EXPRESS_MATCH_BEFORE_MINUTES;
+}
+
 /** Whether one candidate satisfies the automatic rule on its own, before uniqueness. */
 export function qualifiesAutomatically(candidate: GrabWording): boolean {
   return (candidate.names_grab || unnamedCardSpend(candidate))
@@ -177,7 +203,7 @@ type Tagged = DeliveryLedgerCandidate & { readonly document: string; readonly ru
  * whatever the candidates say, and wants no row.
  */
 export function proposeGrabMatches(
-  orders: readonly { id: string; paidOutside: boolean; platform?: "grabfood" | "lineman" }[],
+  orders: readonly { id: string; paidOutside: boolean; platform?: "grabfood" | "lineman"; service?: "food" | "mart" | "express" | "dine_out" }[],
   orderCandidates: readonly DeliveryLedgerCandidate[],
   orderDecisions: readonly DeliveryMatchDecision[],
   rides: readonly { id: string; paidOutside: boolean }[],
@@ -192,11 +218,17 @@ export function proposeGrabMatches(
   // Each document keeps its own window: GrabFood before the send time, LINE MAN after the order
   // time, a ride around its pickup.
   const lineman = new Set(orders.filter((order) => order.platform === "lineman").map((order) => order.id));
+  const service = new Map(orders.map((order) => [order.id, order.service ?? "food"]));
+  const orderRule = (id: string) =>
+    lineman.has(id) ? linemanQualifiesAutomatically
+      : service.get(id) === "dine_out" ? dineOutQualifiesAutomatically
+        : service.get(id) === "express" ? expressQualifiesAutomatically
+          : qualifiesAutomatically;
   const candidates: Tagged[] = [
     ...orderCandidates.filter((candidate) => matchableOrders.has(candidate.delivery_id))
       .map((candidate) => ({
         ...candidate, document: orderKey(candidate.delivery_id),
-        rule: lineman.has(candidate.delivery_id) ? linemanQualifiesAutomatically : qualifiesAutomatically
+        rule: orderRule(candidate.delivery_id)
       })),
     ...rideCandidates.filter((candidate) => matchableRides.has(candidate.ride_id))
       .map(({ ride_id, ...candidate }) => ({ ...candidate, delivery_id: ride_id, document: rideKey(ride_id), rule: rideQualifiesAutomatically }))
