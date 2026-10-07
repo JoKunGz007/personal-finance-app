@@ -439,6 +439,7 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-257** — Vision reads Krungthai's printed 6 as 5: a doubtful year is refused, and a year the window refuses is read again from an enlarged crop
 - **D-256** — Krungthai slip payee read by layout (a transfer's wrapped name under `ไปยัง`, a bill payment's biller after the sender's masked account, logo dropped); a doubled date hyphen reads; a kept measurement script
 - **D-255** — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
 - **D-254** — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
@@ -450,6 +451,14 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-257 — Vision reads Krungthai's printed 6 as 5: a doubtful year is refused, and a year the window refuses is read again from an enlarged crop
+
+- **Status:** live 2026-10-07 (`7b34f03`, `4927cf2`), no migration. Options chosen by the owner ("1, 2") over a third, rejected: always reading a 5 as 6, which is guessing a date (D-031).
+- **Measured** in the pane on the 12 Krungthai images the Krungthai re-send left in `/inbox` as "needs checking" (owner's real-data grant; nothing kept): 11 printed a correct year that Vision read with its 6 as 5 (`2569` → `2559`, `2568` → `2558`); the twelfth printed its amount with a comma, which the money grammar rightly refuses. All 11 carry Krungthai's 17-character reference, which embeds no date (D-059), so the printed line is the only date. The year's own box, padded 12 px, enlarged ×3 and read alone, read correctly **10/10** (9 misread plus 1 already right).
+- **Why a guard as well:** the window (today − 10 years … tomorrow) caught every misread only because the misread is exactly 10 years. A 5↔6 swap that lands inside the window too (a slip dated today or tomorrow, or a year ending 5/6) would have been believed. `readPrintedDate` now refuses such a four-digit year as `DATE_YEAR_DOUBTFUL`; a printed date already outside the window is not doubted.
+- **The re-read:** `classifySlipRereadingYear` (`lib/slip-batch.ts`) runs only when there is no QR date and the printed date is out of range (`code: "OUT_OF_RANGE"`, which covers both a year the window refuses and, after `4927cf2`, a year the era check refuses, now `DATE_OUT_OF_RANGE` instead of "no date"). It crops the year (`lib/browser/year-reread.ts`), swaps the digits into a copy of the words and runs the same `classifySlip`, so window and guard apply again; only a ready verdict is used, and amount and payee stay from the first read. The Inbox drain is wired; the `/slips` batch page is not (`tests/privacy.test.ts` asserts the literal `classifySlip(` in its `readOne`).
+- **Live:** two `/inbox` opens imported 4 + 5 of the misread slips (one more was already in the ledger), each date checked against the image; Krungthai slips 96 → 105, none dated before 2025. Gate: Vitest 83 files passed / 3 skipped (1,577 passed / 107 skipped, DB-backed suites with no local Supabase), tsc, eslint; new tests red-proved against the old code.
 
 ## D-256 — Krungthai slip payee read by layout (a transfer's wrapped name under `ไปยัง`, a bill payment's biller after the sender's masked account, logo dropped); a doubled date hyphen reads; a kept measurement script
 

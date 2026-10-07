@@ -202,4 +202,11 @@ the top of `GOTCHAS.md`.
 - Symptom: Krungthai slips captured with a blank payee, or a payee beginning `e `.
 - Cause: only a Krungthai transfer prints `ไปยัง`; a bill payment prints the biller's name straight under the sender's masked account. A transfer's payee bank logo reads as `e`, and a long name wraps onto a second line.
 - Avoid: `ktbPayee` (`lib/slip-ocr.ts`) reads by layout — the lines under `ไปยัง` up to the bank line above the next masked account, or the line after the sender's masked account when there is no label. Measure new shapes with `scripts/measure-slip-words.ts`.
-- Verify: 2026-10-07 (D-256): 9/9 local Krungthai slips; red-proofs in `tests/slip-ocr.test.ts`.
+- Verify: 2026-10-07 (D-256): 9/9 local Krungthai slips; red-proofs in `tests/slip-ocr.test.ts`. After the full re-send (D-257), 5 of 105 stored Krungthai payees were still blank or one letter, so shapes outside those 9 remain.
+
+## Vision reads a Krungthai slip's printed 6 as 5, and the window hides it only by coincidence
+
+- Symptom: Krungthai slips land in the Inbox as "date … outside the range" or "no line reads as a date" while the image plainly prints `2569` or `2568`.
+- Cause: on a whole-slip read Vision returns the year with its 6 as 5 (`2559`, `2558`). The slip window (today − 10 years … tomorrow) refuses most of these only because the misread is exactly 10 years; a 17-character Krungthai reference carries no date to cross-check (D-059).
+- Avoid: never "correct" a 5 to a 6. A four-digit year whose 5↔6 swap is also in the window is refused (`DATE_YEAR_DOUBTFUL`); an out-of-range year is read again from its own box, padded 12 px and enlarged ×3, and the result must pass the same rules (`classifySlipRereadingYear`, `lib/browser/year-reread.ts`). The `/slips` batch page does not re-read.
+- Verify: 2026-10-07 (D-257): crop read 10/10 on real queued slips; two live `/inbox` opens captured all 9 distinct misread slips with their printed dates; red-proofs in `tests/slip-ocr.test.ts`, `tests/inbox-drain.test.ts`.
