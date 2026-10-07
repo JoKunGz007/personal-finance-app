@@ -439,6 +439,7 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
 - **D-258** — A slip with no readable QR imports on its printed reference (Krungthai and SCB; migration 052), guarded against duplicates on bank, date, time and amount; Krungthai payee skips a one-letter logo line
 - **D-257** — Vision reads Krungthai's printed 6 as 5: a doubtful year is refused, and a year the window refuses is read again from an enlarged crop
 - **D-256** — Krungthai slip payee read by layout (a transfer's wrapped name under `ไปยัง`, a bill payment's biller after the sender's masked account, logo dropped); a doubled date hyphen reads; a kept measurement script
@@ -452,6 +453,14 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-259 — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+- **Status:** live 2026-10-08 (`54dac39`), no migration. Owner-approved (D-258's PLAN steps 1 and 2); he wants a slip that still fails to stay queued so it can be studied.
+- **Amount:** when `proposeAmount` refuses beside a label it found, `locateAmount`'s box is cropped (`paddedCrop`) and read at 2×, then 3× only if 2× still fails: at most 2 extra Vision calls. The crop's words go through the *same* `proposeAmount` (label and strict grammar), so nothing lenient is added; a label Vision misreads in the crop leaves the slip in review. The year re-read (D-257) became one case of `rereadBox(file, box, crop)` with its own crop unchanged (3×). Live: the queued slip whose `23.00` Vision read as `23,00` imported on the first open.
+- **Remembering:** a review decision carries `retryable`, set where it is made: true when the reader failed or a second read (amount or year) was tried and gave nothing usable, and then the verdict is **not** remembered, so the next open reads the slip again. A definite review stays remembered per build. A capture refused with 409 or another 4xx carrying a reason is remembered too, so a refused slip stops costing a Vision read each open; 401, 403, 408 and 429 are not (session or load, not the slip), nor network or 5xx failures. The remembered entry shows the generic "needs checking" reason, not the server's text (the memory format is unchanged).
+- **Cost to know:** a retryable slip is re-read through Vision on every `/inbox` open until it imports or is removed — the queued ฿-amount slip whose year re-read fails is one now.
+- **Evidence:** Vitest 87 files, 1,712 passed / 18 skipped (DB suites skipped locally); 12 new tests; the 2× success and the not-remembered tests red-proved; tsc and eslint clean.
 
 ## D-258 — A slip with no readable QR imports on its printed reference (Krungthai and SCB; migration 052), guarded against duplicates on bank, date, time and amount; Krungthai payee skips a one-letter logo line
 

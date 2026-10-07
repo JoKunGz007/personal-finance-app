@@ -2,7 +2,7 @@
 
 Last updated: 2026-10-07 (D-258 — no-QR slips import on their printed reference, migration 052; Krungthai payees fixed).
 
-**Current headline: D-258, live (`eeb8dc0`; migration 052 on hosted).** 17 no-QR slips imported; 7/7 Krungthai payees read, 4 stored ones corrected. 2 slips stay queued for checking. **Backup:** exported by the owner just before 052 (1,232 / 1,232); the 17 imports and 4 corrections since make it stale, so ask for a fresh export before the next `db push`. Next session's order is in PLAN's checkpoint.
+**Current headline: D-259, live (`54dac39`), on D-258 (`eeb8dc0`; migration 052 on hosted).** No-QR slips import on their printed reference; a refused amount is re-read enlarged; 631 slips. 1 slip stays queued for the owner to add by hand. **Backup:** exported by the owner just before 052 (1,232 / 1,232); the 17 imports and 4 corrections since make it stale, so ask for a fresh export before the next `db push`. Next session's order is in PLAN's checkpoint.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
