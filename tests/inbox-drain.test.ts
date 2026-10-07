@@ -818,7 +818,10 @@ describe("drainInbox with bank slips", () => {
     expect(calls.amountRereads).toEqual([]);
     expect(result.slips).toEqual([]);
     expect(calls.removed).toEqual([]);
-    expect(result.reasons["s.png"]).toMatch(/Add it on the Slips page, then remove it here\.$/u);
+    expect(result.reasons["s.png"]).toMatch(/\.$/u);
+    expect(result.reasons["s.png"]).not.toMatch(/remove it here/u);
+    // The row offers "Add on Slips" instead of the sentence (D-261).
+    expect(result.slipReview).toEqual(["s.png"]);
     expect([...calls.saved!]).toEqual([["s.png", "slip-review"]]);
   });
 
@@ -829,6 +832,7 @@ describe("drainInbox with bank slips", () => {
     expect(calls.scans).toEqual([]);
     expect(calls.ocr).toEqual([]);
     expect(result.reasons).toEqual({ "s.png": SLIP_REVIEW_REMEMBERED_REASON });
+    expect(result.slipReview).toEqual(["s.png"]);
     expect(calls.saved!.get("s.png")).toBe("slip-review");
   });
 
@@ -948,20 +952,20 @@ describe("captureSlips", () => {
     const { deps, log } = slipFakes({ post: (name) => ({ ok: true, outcome: name === "b.png" ? "duplicate" : "captured" }) });
     const result = await captureSlips([ready("a.png"), ready("b.png")], "withdrawal", deps);
     expect(log).toEqual(["post:a.png", "remove:a.png", "post:b.png", "remove:b.png"]);
-    expect(result).toEqual({ captured: 1, duplicates: 1, filled: 0, reasons: {} });
+    expect(result).toEqual({ captured: 1, duplicates: 1, filled: 0, reasons: {}, slipReview: [] });
   });
 
   test("a duplicate the re-send filled is counted among the duplicates as filled", async () => {
     const { deps } = slipFakes({ post: (name) => ({ ok: true, outcome: "duplicate", filled: name === "a.png" }) });
     const result = await captureSlips([ready("a.png"), ready("b.png")], "withdrawal", deps);
-    expect(result).toEqual({ captured: 0, duplicates: 2, filled: 1, reasons: {} });
+    expect(result).toEqual({ captured: 0, duplicates: 2, filled: 1, reasons: {}, slipReview: [] });
   });
 
   test("a refused capture keeps its file and says why, and the next slip still goes through", async () => {
     const { deps, log } = slipFakes({ post: (name) => (name === "a.png" ? { ok: false, why: "The ledger could not be reached." } : { ok: true, outcome: "captured" }) });
     const result = await captureSlips([ready("a.png"), ready("b.png")], "deposit", deps);
     expect(log).toEqual(["post:a.png", "post:b.png", "remove:b.png"]);
-    expect(result).toEqual({ captured: 1, duplicates: 0, filled: 0, reasons: { "a.png": "The ledger could not be reached." } });
+    expect(result).toEqual({ captured: 1, duplicates: 0, filled: 0, reasons: { "a.png": "The ledger could not be reached." }, slipReview: [] });
   });
 
   test("a confirmation that could not be read keeps the file, and nothing is removed", async () => {
@@ -992,6 +996,7 @@ describe("captureSlips", () => {
     const result = await captureSlips([ready("a.png"), ready("b.png")], "withdrawal", { ...deps, memory });
     expect(result.reasons["a.png"]).toMatch(/already stored/u);
     expect([...saved!]).toEqual([["old.png", "unrecognised"], ["a.png", "slip-review"]]);
+    expect(result.slipReview).toEqual(["a.png"]);
   });
 
   test("nothing is saved when no slip was refused by the ledger itself", async () => {

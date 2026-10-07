@@ -332,12 +332,23 @@ export type ReadySlip = {
 export const SLIP_WAITING_REASON = "Waiting to be captured as money out.";
 
 /** Shown for a slip already found to need checking on an earlier drain (no download, no read). */
-export const SLIP_REVIEW_REMEMBERED_REASON = `This slip needs checking. Add it on the ${SLIPS_PAGE} page, then remove it here.`;
+export const SLIP_REVIEW_REMEMBERED_REASON = "This slip needs checking.";
 
-/** The verdict's own reason, then where the owner can type the slip in. */
+/**
+ * The verdict's own reason as a sentence. Where to fix it is the row's "Add on Slips" button
+ * (`slipHref`, D-261), so the sentence no longer says to add it elsewhere and remove it here.
+ */
 export function slipReviewReason(reason: string): string {
-  const sentence = /[.!?]$/u.test(reason.trim()) ? reason.trim() : `${reason.trim()}.`;
-  return `${sentence} Add it on the ${SLIPS_PAGE} page, then remove it here.`;
+  return /[.!?]$/u.test(reason.trim()) ? reason.trim() : `${reason.trim()}.`;
+}
+
+/**
+ * The Slips page's address for a queued slip that needs checking, and the label of its button
+ * (D-261): the page opens the queued image as if it were picked, and removes it after a capture.
+ */
+export const SLIP_LINK_LABEL = `Add on ${SLIPS_PAGE}`;
+export function slipHref(objectName: string): string {
+  return `/slips?inbox=${encodeURIComponent(objectName)}`;
 }
 
 /** The body of `POST /api/v1/slips`: the same one `app/slip-batch.tsx` sends for a slip it has read. */
@@ -382,7 +393,7 @@ export function slipPostBody(slip: ReadySlip, kind: SlipKind, signedAmountMinor:
 export const SLIP_UNCONFIRMED_REASON =
   "This slip was accepted but its confirmation could not be read. Check the ledger before capturing it again.";
 
-export const SLIP_AMOUNT_REASON = "This amount is not one this ledger can store. Add it on the Slips page, then remove it here.";
+export const SLIP_AMOUNT_REASON = "This amount is not one this ledger can store.";
 
 // --- Images already found not to be any known screen ---
 

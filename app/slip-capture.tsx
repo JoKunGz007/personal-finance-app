@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { openInboxSlip, releaseInboxSlip } from "@/lib/browser/inbox-slip";
 import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
 import { detectAtScale, resolveDetector } from "@/lib/browser/qr-detector";
 import { bangkokToday } from "@/lib/dates";
@@ -103,6 +105,10 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The queued Inbox file this form was opened from (`?inbox=`, D-261), and what removing it said.
+  // Cleared by `reset`, so a file picked by hand afterwards never removes the queued one.
+  const [inboxName, setInboxName] = useState<string | null>(null);
+  const [inboxLine, setInboxLine] = useState<{ readonly ok: boolean; readonly text: string } | null>(null);
 
   const [kind, setKind] = useState<SlipKind>("withdrawal");
   const [amount, setAmount] = useState("");
@@ -135,7 +141,19 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (!new URLSearchParams(globalThis.location.search).has("shared")) return;
+      const query = new URLSearchParams(globalThis.location.search);
+      // A slip waiting in the Inbox (D-261): opened exactly as if the owner had picked it here.
+      const queued = query.get("inbox");
+      if (queued !== null) {
+        setStatus("Opening the slip from your Inbox…");
+        const opened = await openInboxSlip(queued);
+        if (cancelled) return;
+        if (!opened.ok) { setStatus(null); setError(opened.why); return; }
+        await onFile(opened.value);
+        if (!cancelled) setInboxName(queued);
+        return;
+      }
+      if (!query.has("shared")) return;
       const shared = await consumePendingSharedSlip();
       if (cancelled || !shared) return;
       await onFile(shared);
@@ -177,6 +195,7 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
     setCategoryId("");
     setNote("");
     setError(null);
+    setInboxName(null);
     if (preview) URL.revokeObjectURL(preview);
     setPreview(null);
     if (fileInput.current) fileInput.current.value = "";
@@ -185,6 +204,7 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
   async function onFile(file: File | undefined) {
     if (!file) return;
     reset();
+    setInboxLine(null);
     setBusy(true);
     setStatus("Reading the slip's QR code…");
     try {
@@ -328,6 +348,8 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
     setBusy(true);
     setError(null);
     setStatus("Capturing…");
+    setInboxLine(null);
+    const queued = inboxName;
     try {
       const response = await fetch("/api/v1/slips", {
         method: "POST",
@@ -363,6 +385,9 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
         ? "Captured as a provisional entry. The statement remains the authority."
         : "Already captured — this slip is in the ledger and nothing changed.");
       reset();
+      // A queued slip leaves the Inbox only now, after the ledger answered captured or already
+      // stored. A removal that fails is said plainly and never undoes the capture.
+      if (queued) setInboxLine(await releaseInboxSlip(queued));
       // Both outcomes refresh the list below: an already-captured slip is still one the owner
       // is entitled to see, and a form that clears itself with no record left on the page is
       // what made a successful capture feel like nothing happened (D-075).
@@ -407,6 +432,11 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
 
       {status && <p className="status" role="status">{status}</p>}
       {error && <p className="status error" role="alert">{error}</p>}
+      {inboxLine && (
+        <p className={inboxLine.ok ? "status" : "status error"} role={inboxLine.ok ? "status" : "alert"}>
+          {inboxLine.text} <Link href="/inbox" className="inbox-link">Back to Inbox</Link>
+        </p>
+      )}
 
       {identity && (
         <form className="slip-form" onSubmit={(event) => void submit(event)}>

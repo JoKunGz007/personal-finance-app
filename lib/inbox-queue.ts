@@ -89,6 +89,18 @@ export function lineReceivedAt(name: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+/** The name the queue gives an uploaded image: a random uuid and its extension. No slash or dot-dot can match. */
+const INBOX_UPLOAD_IMAGE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:png|jpg|webp)$/u;
+
+/**
+ * True for a queued image's own name (an upload's `<uuid>.<png|jpg|webp>` or a LINE image's
+ * `line-<ms>-<id>.<jpg|png>`), which is what `/slips?inbox=` accepts (D-261). Anything else, including
+ * a path with a slash or `..`, is refused before a Storage call is made.
+ */
+export function isInboxImageName(name: string): boolean {
+  return INBOX_UPLOAD_IMAGE_NAME.test(name) || lineReceivedAt(name) !== null;
+}
+
 /** The kind of a stored object, from its extension; `null` for anything the queue does not hold. */
 export function kindOfObject(name: string): InboxKind | null {
   const extension = extensionOf(name);

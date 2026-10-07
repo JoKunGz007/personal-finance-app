@@ -6,7 +6,7 @@ import {
 } from "@/lib/browser/inbox-storage";
 import { captureSlips, browserDrainDeps, drainInbox } from "@/lib/browser/inbox-importer";
 import Link from "next/link";
-import { describeSlipCapture, REVIEW_LINK_LABEL, reviewHref } from "@/lib/inbox-drain";
+import { describeSlipCapture, REVIEW_LINK_LABEL, reviewHref, SLIP_LINK_LABEL, slipHref } from "@/lib/inbox-drain";
 import { LedgerNote } from "@/app/ledger-note";
 import { formatDate } from "@/app/ledger-shared";
 import { encodeForReader } from "@/lib/browser/ocr-reader";
@@ -22,6 +22,24 @@ type Status =
   | { readonly state: "refused"; readonly reason: string };
 
 type Picked = { readonly key: number; readonly name: string; readonly status: Status };
+
+/**
+ * A queued file's buttons: "Review on Import" for a held statement, "Add on Slips" for a slip that
+ * needs checking (D-261), and Remove for every file.
+ */
+export function QueueActions({ name, review, slip, busy, onRemove }: {
+  readonly name: string; readonly review: boolean; readonly slip: boolean; readonly busy: boolean; readonly onRemove: () => void;
+}) {
+  return (
+    <span className="slip-actions">
+      {review ? <Link href={reviewHref(name)} className="secondary-button">{REVIEW_LINK_LABEL}</Link> : null}
+      {slip ? <Link href={slipHref(name)} className="secondary-button">{SLIP_LINK_LABEL}</Link> : null}
+      <button type="button" className="secondary-button" disabled={busy} onClick={onRemove}>
+        Remove
+      </button>
+    </span>
+  );
+}
 
 // The choice made this visit, so a browser that refuses storage still switches views.
 let chosenView: InboxView | null = null;
@@ -70,6 +88,7 @@ export function InboxFiles() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [drainLine, setDrainLine] = useState<string | null>(null);
   const [reviewable, setReviewable] = useState<readonly string[]>([]);
+  const [slipReview, setSlipReview] = useState<readonly string[]>([]);
   // Read from storage on the client only; the server render and first client render both show the table.
   const view = useSyncExternalStore(subscribeView, () => chosenView ?? loadInboxView(), () => "table" as InboxView);
   const [enlarged, setEnlarged] = useState<string | null>(null);
@@ -126,6 +145,7 @@ export function InboxFiles() {
       }
       setReasons(reasons);
       setReviewable(result.reviewable);
+      setSlipReview([...result.slipReview, ...(captured?.slipReview ?? [])]);
       // The drain's own summary leaves slips out; the capture says what happened to them.
       const slipLine = captured === null ? null : describeSlipCapture({
         captured: captured.captured, duplicates: captured.duplicates, filled: captured.filled, kept: Object.keys(captured.reasons).length
@@ -253,6 +273,7 @@ export function InboxFiles() {
           return rest;
         });
         setReviewable((current) => current.filter((held) => held !== name));
+        setSlipReview((current) => current.filter((held) => held !== name));
       }
       await refresh();
     } finally {
@@ -309,12 +330,13 @@ export function InboxFiles() {
   }
 
   const actions = (file: WaitingFile) => (
-    <span className="slip-actions">
-      {reviewable.includes(file.name) ? <Link href={reviewHref(file.name)} className="secondary-button">{REVIEW_LINK_LABEL}</Link> : null}
-      <button type="button" className="secondary-button" disabled={busy} onClick={() => void remove(file.name)}>
-        Remove
-      </button>
-    </span>
+    <QueueActions
+      name={file.name}
+      review={reviewable.includes(file.name)}
+      slip={slipReview.includes(file.name)}
+      busy={busy}
+      onRemove={() => void remove(file.name)}
+    />
   );
   const connectedOn = botStatus?.connectedAt ? formatDate(botStatus.connectedAt.slice(0, 10)) : null;
 

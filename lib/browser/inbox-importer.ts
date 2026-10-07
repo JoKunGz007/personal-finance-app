@@ -171,6 +171,8 @@ export type DrainResult = {
   readonly statementsAlready: number;
   /** Names of held statements the owner can open on the Import page. */
   readonly reviewable: readonly string[];
+  /** Names of slips that need checking, which the owner can open on the Slips page (D-261). */
+  readonly slipReview: readonly string[];
   /** Slips read exactly and held for the owner's money in or out; their files are still in the queue. */
   readonly slips: readonly ReadySlip[];
   readonly waiting: number;
@@ -195,6 +197,7 @@ type FileOutcome = {
   readonly reason?: string;
   readonly remember?: RememberedKind;
   readonly reviewable?: boolean;
+  readonly slipReview?: boolean;
   readonly slip?: ReadySlip;
   readonly receiptPage?: { name: string; page: ScreenshotPage };
   readonly linemanPage?: { name: string; page: LinemanPage; createdAt: string | null };
@@ -217,6 +220,7 @@ export async function drainInbox(
   /** One sentence per statement that overlapped the ledger (D-260). */
   const statementNotes: string[] = [];
   const reviewable: string[] = [];
+  const slipReview: string[] = [];
 
   /**
    * Removes files whose capture succeeded and says whether **every** one went. Files Storage did not
@@ -284,7 +288,7 @@ export async function drainInbox(
     // Settled on an earlier drain: no download, no scan and no second Vision read.
     const earlier = remembered.get(file.name);
     if (kind === "image" && typeof earlier === "string") {
-      return { reason: earlier === "slip-review" ? SLIP_REVIEW_REMEMBERED_REASON : NOT_YET };
+      return earlier === "slip-review" ? { reason: SLIP_REVIEW_REMEMBERED_REASON, slipReview: true } : { reason: NOT_YET };
     }
     // A statement the server held on this build: shown again without a download or a server read.
     if (kind === "pdf" && typeof earlier === "object") {
@@ -346,7 +350,7 @@ export async function drainInbox(
       // Remembered only when no further read could change it (D-259): an unreachable reader, or a
       // second, enlarged read that gave nothing usable, is not a verdict on the slip, and the next
       // open may read it cleanly.
-      return { reason: slipReviewReason(verdict.reason), remember: verdict.retryable ? undefined : "slip-review" };
+      return { reason: slipReviewReason(verdict.reason), slipReview: true, remember: verdict.retryable ? undefined : "slip-review" };
     }
 
     if (!read.ok) return { reason: read.why };
@@ -393,6 +397,7 @@ export async function drainInbox(
     const outcome = outcomes[index]!;
     if (outcome.reason !== undefined) reasons[file.name] = outcome.reason;
     if (outcome.reviewable) reviewable.push(file.name);
+    if (outcome.slipReview) slipReview.push(file.name);
     if (outcome.remember !== undefined) remembered.set(file.name, outcome.remember);
     if (outcome.slip) slips.push(outcome.slip);
     if (outcome.receiptPage) receiptPages.push(outcome.receiptPage);
@@ -430,7 +435,7 @@ export async function drainInbox(
   deps.memory.save(remembered, files.filter((file) => !removed.has(file.name)).map((file) => file.name));
   const waiting = files.length - removed.size;
   return {
-    reasons, receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
+    reasons, receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, reviewable: reviewable.filter((name) => !removed.has(name)), slipReview, slips, waiting,
     summary: [describeDrain({ receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, statementsEmpty, slips: 0 }), ...statementNotes].join(" ")
   };
 }
@@ -443,6 +448,8 @@ export type SlipCaptureResult = {
   readonly filled: number;
   /** Why each slip that stayed is still in the queue, by object name. */
   readonly reasons: Record<string, string>;
+  /** Slips the ledger refused or could not store as read, which the owner can open on the Slips page (D-261). */
+  readonly slipReview: readonly string[];
 };
 
 /**
@@ -460,17 +467,18 @@ export async function captureSlips(
 ): Promise<SlipCaptureResult> {
   const reasons: Record<string, string> = {};
   const settled: string[] = [];
+  const slipReview: string[] = [];
   let captured = 0;
   let duplicates = 0;
   let filled = 0;
   for (const slip of slips) {
     // Refuses a non-canonical magnitude rather than coercing it, so nothing bad is sent.
     const signed = signedSlipAmount(slip.amountMinor, kind);
-    if (signed === null) { reasons[slip.name] = SLIP_AMOUNT_REASON; continue; }
+    if (signed === null) { reasons[slip.name] = SLIP_AMOUNT_REASON; slipReview.push(slip.name); continue; }
     const posted = await deps.postSlip(slipPostBody(slip, kind, signed));
     if (!posted.ok) {
       reasons[slip.name] = posted.why;
-      if (posted.settled === true) settled.push(slip.name);
+      if (posted.settled === true) { settled.push(slip.name); slipReview.push(slip.name); }
       continue;
     }
     if (!(await removeAll(deps, [slip.name]))) { reasons[slip.name] = REMOVE_FAILED; continue; }
@@ -486,5 +494,5 @@ export async function captureSlips(
     for (const name of settled) remembered.set(name, "slip-review");
     deps.memory.save(remembered, [...remembered.keys()]);
   }
-  return { captured, duplicates, filled, reasons };
+  return { captured, duplicates, filled, reasons, slipReview };
 }
