@@ -439,6 +439,7 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-255** — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
 - **D-254** — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
 - **D-253** — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
 - **D-252** — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
@@ -448,6 +449,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-255 — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
+
+- **Status:** live 2026-10-07 (`63f4b1d`, `0f89b97`, `d50dbcc`, `24132c3`, `b24dcb5`; migration 050 on hosted after the owner's fresh export). The owner backfilled about 490 SCB slips through LINE; the ledger holds 512 slips.
+- **Measured before building rules (PLAN job 1):** every K PLUS and SCB slip matched a statement row whose description already names the same payee; transfers to people stay blank by D-245's no-names rule; none of the 20 K PLUS slips was a phone top-up, and of 2 SCB TrueMove H top-ups one matched its `รายการผ่าน INTERNET` row uniquely, the other was ambiguous among same-day ฿200 rows. Slip payees therefore settle few categories; the owner backfills anyway to have every slip on the ledger, and the rule work waits for the full set. A blind `รายการผ่าน INTERNET` → Bills & Phone rule was offered and declined for now.
+- **SCB payee icons:** D-253's text list caught only `E`/`EX`/`E )`. Later batches showed one-letter words, split pieces (`E3` + `)`), `EX)`, `฿ER`, and the TrueMoney/dtac logos. `withoutScbIcon` now joins engine words up to each space flag before judging them (GOTCHAS, parsing). Stored payees were cleaned through `/api/v1/slips/{id}/correction` by an owner-run console snippet (26, then 6), after the auto-mode classifier refused the agent's writes.
+- **Concurrency:** `drainInbox` reads `DRAIN_CONCURRENCY = 3` files at once and applies outcomes in queue order; PDFs and statements post afterwards, one at a time. Measured: about 3 s a slip against 8 s; a batch of 50 takes about 4–6 minutes, of which about 60 s is the LINE move. About one Vision "reader could not be reached" per batch, each read cleanly on the next open.
+- **Cap:** 200 images a 24 hours refused 24 of one batch; migration 050 raised it to 600 (owner). The owner agreed it should return to 200 once the backfill ends (a new migration). A time-bounded draft (800, then 200 by itself) was written and deleted unpushed when the owner chose to fix the Krungthai reader first.
+- **Krungthai, first real test (6 saved, 4 refused by the cap):** 4 captured with only 1 usable payee (2 blank, 1 read as `e`), 1 refused as dated outside the window, 1 not imported. The Krungthai reader is the next job, before the remaining ~114 are sent.
 
 ## D-254 — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
 

@@ -128,6 +128,8 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A done-flag set while a reader skipped a kind hides that kind from the reader that follows
 - Gmail's "Forward as attachment" on a conversation attaches one message, not the thread
 - A Grab receipt's heading does not say which service it is
+- An SCB slip's payee icon is read as text in many shapes
+- An SCB bill-payment slip may print no QR, so the Inbox cannot import it
 
 ### Real data, masking and privacy
 
@@ -262,6 +264,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - `display: none` on an empty `aria-live` region defeats the reason it was rendered empty
 - Merging per-account pages into one timeline shows gaps unless it stops at the shallowest paged account
 - A POST to a route that is not deployed yet answers 200, not 404
+- The LINE bot refuses images past a 24-hour count that includes moved ones
 
 ## Traps
 
