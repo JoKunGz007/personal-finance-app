@@ -439,6 +439,7 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-254** — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
 - **D-253** — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
 - **D-252** — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
 - **D-251** — The nineteenth boundary moves D-235 … D-244 on the owner's word
@@ -447,6 +448,13 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-254 — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
+
+- **Status:** live 2026-10-07 (`0d6e113`, CSS fixes `f9e2531`, `6d7649d`, `19bf83e`), no migration.
+- **Owner, 2026-10-07:** chose mockup A (a ledger-style table) from three drawn on the live `/inbox`, and asked for C (cards) to stay switchable; Review should match Remove. The choice is per device (`localStorage` key `inbox-queue-view`, default table).
+- **Previews:** each listed image is downloaded from the queue bucket on the device (3 at a time) and shown as an object URL, revoked when the file leaves the list or the page closes; a native `<dialog>` enlarges it. PDFs and images the browser cannot decode (HEIC) show a plain tile. **No new storage**: images are still deleted on capture, so only queued files have a preview.
+- **Phone:** the table reuses the ledger's stacked-card layout, but the ledger's D-203 phone rules outrank `.inbox-table` alone and overlapped the cells on the deployed build at 375px; the overrides are qualified `.ledger-table.inbox-table` and sit last in `globals.css`. Verified live at 375px (no sideways scroll) and 1024px with an invented test image, removed afterwards.
 
 ## D-253 — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
 
