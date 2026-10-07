@@ -1231,6 +1231,51 @@ footer p { margin: 0; }
 .receipt-list .ledger-table { min-width: 0; }
 .receipt-queue li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .receipt-list li { border-top: 1px solid var(--line); padding: 8px 0; }
+/* Inbox "Waiting" queue: a table or cards, each with a thumbnail of a queued image. */
+.slip-actions a.secondary-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.inbox-view-toggle { margin: 0 0 12px; }
+.inbox-table { min-width: 640px; }
+.inbox-table th:nth-child(1) { width: 72px; }
+.inbox-table th:nth-child(2) { width: 90px; }
+.inbox-table th:nth-child(3) { width: 150px; }
+.inbox-table th:nth-child(4) { width: 100px; }
+.inbox-table th:nth-child(5) { width: auto; }
+.inbox-table th:nth-child(6) { width: 190px; }
+.inbox-table td { vertical-align: middle; overflow-wrap: anywhere; }
+.inbox-thumb {
+  display: grid; place-items: center; width: 40px; height: 56px; padding: 0; overflow: hidden;
+  color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong);
+  font: 600 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .06em;
+}
+button.inbox-thumb { cursor: zoom-in; }
+button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(--blue); outline: 2px solid var(--blue); outline-offset: 1px; }
+.inbox-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.inbox-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.inbox-card {
+  display: grid; align-content: start; gap: 6px; min-width: 0; padding: 10px; overflow-wrap: anywhere;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font-size: 13px;
+}
+.inbox-card .inbox-thumb { width: 100%; height: auto; aspect-ratio: 3 / 4; }
+.inbox-card .slip-actions { gap: 8px; }
+.inbox-card .secondary-button { min-height: 38px; padding: 7px 12px; font-size: 13px; }
+.image-dialog { max-width: 95vw; max-height: 95vh; padding: 0; color: var(--navy); border: 1px solid var(--navy); border-radius: var(--radius); background: var(--paper); }
+.image-dialog::backdrop { background: color-mix(in srgb, var(--scrim) 65%, transparent); }
+.image-dialog-body { display: grid; justify-items: center; gap: 10px; padding: 10px; }
+.image-dialog-body img { display: block; max-width: 90vw; max-height: calc(90vh - 70px); object-fit: contain; }
+@media (max-width: 700px) {
+  .inbox-table tbody tr {
+    min-height: 0; column-gap: 12px; row-gap: 2px; grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-areas: "pre type" "pre added" "pre size" "status status" "act act";
+  }
+  .inbox-table td[data-label="Preview"] { grid-area: pre; grid-row: 1 / span 3; padding: 5px 0; }
+  .inbox-table td[data-label="Type"] { grid-area: type; }
+  .inbox-table td[data-label="Added"] { grid-area: added; grid-column: auto; }
+  .inbox-table td[data-label="Size"] { grid-area: size; }
+  .inbox-table td[data-label="Status"] { grid-area: status; }
+  .inbox-table td[data-label="Actions"] { grid-area: act; text-align: left !important; }
+  .inbox-table td[data-label="Preview"]::before, .inbox-table td[data-label="Actions"]::before { display: none; }
+  .inbox-table td:empty { display: none; }
+}
 .receipt-list summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
 /* Receipts (D-215): neutral amounts, colour only for meaning. Green and red mean money in and out
    on /ledger, and a receipt is neither, so its amounts stay in the ink colour and only discounts

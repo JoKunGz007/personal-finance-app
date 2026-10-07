@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   listWaiting, ownerUid, removeExpired, removeFromInbox, uploadToInbox, type WaitingFile
 } from "@/lib/browser/inbox-storage";
@@ -13,6 +13,8 @@ import { encodeForReader } from "@/lib/browser/ocr-reader";
 import { browserSupabase } from "@/lib/browser/supabase";
 import { discardLineImage, lineBotStatus, moveLineImages, type StuckImage } from "@/lib/browser/line-inbox";
 import { addedLabel, kindOfObject, planFile, sizeLabel, type InboxPlan } from "@/lib/inbox-queue";
+import { kindLabel, loadInboxView, saveInboxView, type InboxView } from "@/lib/inbox-view";
+import { useInboxPreviews } from "@/app/use-inbox-previews";
 
 type Status =
   | { readonly state: "uploading" }
@@ -20,6 +22,19 @@ type Status =
   | { readonly state: "refused"; readonly reason: string };
 
 type Picked = { readonly key: number; readonly name: string; readonly status: Status };
+
+// The choice made this visit, so a browser that refuses storage still switches views.
+let chosenView: InboxView | null = null;
+const viewListeners = new Set<() => void>();
+function announceView(next: InboxView) {
+  chosenView = next;
+  saveInboxView(next);
+  for (const listener of viewListeners) listener();
+}
+function subscribeView(listener: () => void) {
+  viewListeners.add(listener);
+  return () => { viewListeners.delete(listener); };
+}
 
 /** PNG bytes for a file the queue does not hold as it is (HEIC and the like), or null. */
 async function toPng(file: File): Promise<Blob | null> {
@@ -55,6 +70,14 @@ export function InboxFiles() {
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [drainLine, setDrainLine] = useState<string | null>(null);
   const [reviewable, setReviewable] = useState<readonly string[]>([]);
+  // Read from storage on the client only; the server render and first client render both show the table.
+  const view = useSyncExternalStore(subscribeView, () => chosenView ?? loadInboxView(), () => "table" as InboxView);
+  const [enlarged, setEnlarged] = useState<string | null>(null);
+  const enlargeDialog = useRef<HTMLDialogElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const imageNames = (waiting ?? []).filter((file) => kindOfObject(file.name) === "image").map((file) => file.name);
+  const previews = useInboxPreviews(supabase, imageNames);
   const counter = useRef(0);
   // Who owns `busy`. Only the run that claimed it may release it, so a second run that finds it taken
   // (React's double effect in development, a press during a drain) neither starts nor clears it.
@@ -144,6 +167,33 @@ export function InboxFiles() {
       }
     })();
   }, [supabase, refresh, drain, claim, release]);
+
+
+  const enlargedUrl = enlarged === null ? null : previews.urls[enlarged] ?? null;
+  useEffect(() => {
+    const dialog = enlargeDialog.current;
+    if (!dialog) return;
+    if (enlargedUrl !== null) {
+      if (!dialog.open) dialog.showModal();
+      closeButton.current?.focus();
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [enlargedUrl]);
+
+  function chooseView(next: InboxView) {
+    announceView(next);
+  }
+
+  function enlarge(name: string, button: HTMLElement) {
+    opener.current = button;
+    setEnlarged(name);
+  }
+
+  function closeEnlarged() {
+    setEnlarged(null);
+    opener.current?.focus();
+  }
 
   const setStatus = (key: number, status: Status) =>
     setPicked((current) => current.map((entry) => (entry.key === key ? { ...entry, status } : entry)));
@@ -240,6 +290,32 @@ export function InboxFiles() {
   }
 
   const now = new Date();
+  const enlargedFile = enlarged === null ? null : (waiting ?? []).find((file) => file.name === enlarged) ?? null;
+
+  /** The thumbnail: an enlargeable picture for a queued image that loaded, otherwise a plain tile. */
+  function thumb(file: WaitingFile): ReactNode {
+    const kind = kindOfObject(file.name);
+    const url = previews.urls[file.name];
+    if (kind === "image" && url) {
+      const label = `Enlarge image added ${addedLabel(file.created_at, now)}`;
+      return (
+        <button type="button" className="inbox-thumb" aria-label={label} onClick={(event) => enlarge(file.name, event.currentTarget)}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a blob: URL of a file already in the queue */}
+          <img src={url} alt="" onError={() => previews.markBroken(file.name)} />
+        </button>
+      );
+    }
+    return <span className="inbox-thumb placeholder" aria-hidden="true">{kindLabel(kind)}</span>;
+  }
+
+  const actions = (file: WaitingFile) => (
+    <span className="slip-actions">
+      {reviewable.includes(file.name) ? <Link href={reviewHref(file.name)} className="secondary-button">{REVIEW_LINK_LABEL}</Link> : null}
+      <button type="button" className="secondary-button" disabled={busy} onClick={() => void remove(file.name)}>
+        Remove
+      </button>
+    </span>
+  );
   const connectedOn = botStatus?.connectedAt ? formatDate(botStatus.connectedAt.slice(0, 10)) : null;
 
   return (
@@ -313,25 +389,83 @@ export function InboxFiles() {
         ) : waiting.length === 0 ? (
           <p className="field-help">Nothing is waiting.</p>
         ) : (
-          <ul className="receipt-queue" aria-labelledby="inbox-waiting-title">
-            {waiting.map((file) => (
-              <li key={file.name}>
-                <strong>{kindOfObject(file.name) === "pdf" ? "PDF" : kindOfObject(file.name) === "image" ? "Image" : "File"}</strong>
-                <span>
-                  {file.size === null ? "size unknown" : sizeLabel(file.size)} · added {addedLabel(file.created_at, now)}
-                </span>
-                {reasons[file.name] ? <span className="field-help">{reasons[file.name]}</span> : null}
-                <span className="slip-actions">
-                  {reviewable.includes(file.name) ? <Link href={reviewHref(file.name)}>{REVIEW_LINK_LABEL}</Link> : null}
-                  <button type="button" className="secondary-button" disabled={busy} onClick={() => void remove(file.name)}>
-                    Remove
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <div className="window-presets inbox-view-toggle" role="group" aria-label="Queue layout">
+              {(["table", "cards"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={view === option ? "chip current" : "chip"}
+                  aria-pressed={view === option}
+                  onClick={() => chooseView(option)}
+                >
+                  {option === "table" ? "Table" : "Cards"}
+                </button>
+              ))}
+            </div>
+            {view === "table" ? (
+              <div className="table-scroll">
+                <table className="ledger-table inbox-table" aria-labelledby="inbox-waiting-title">
+                  <thead>
+                    <tr>
+                      <th>Preview</th>
+                      <th>Type</th>
+                      <th>Added</th>
+                      <th>Size</th>
+                      <th>Status</th>
+                      <th><span className="sr-only">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {waiting.map((file) => (
+                      <tr key={file.name}>
+                        <td data-label="Preview">{thumb(file)}</td>
+                        <td data-label="Type">{kindLabel(kindOfObject(file.name))}</td>
+                        <td data-label="Added">{addedLabel(file.created_at, now)}</td>
+                        <td data-label="Size">{file.size === null ? "size unknown" : sizeLabel(file.size)}</td>
+                        <td data-label="Status">{reasons[file.name] ?? null}</td>
+                        <td data-label="Actions">{actions(file)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <ul className="inbox-cards" aria-labelledby="inbox-waiting-title">
+                {waiting.map((file) => (
+                  <li key={file.name} className="inbox-card">
+                    {thumb(file)}
+                    <strong>{kindLabel(kindOfObject(file.name))}{file.size === null ? " · size unknown" : ` · ${sizeLabel(file.size)}`}</strong>
+                    <span>Added {addedLabel(file.created_at, now)}</span>
+                    {reasons[file.name] ? <span className="field-help">{reasons[file.name]}</span> : null}
+                    {actions(file)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
+
+      <dialog
+        ref={enlargeDialog}
+        className="image-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label={enlargedFile ? `Image added ${addedLabel(enlargedFile.created_at, now)}` : "Image"}
+        onClose={closeEnlarged}
+        onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}
+      >
+        {enlargedUrl ? (
+          <div className="image-dialog-body">
+            {/* eslint-disable-next-line @next/next/no-img-element -- a blob: URL of a file already in the queue */}
+            <img src={enlargedUrl} alt="" />
+            <button ref={closeButton} type="button" className="secondary-button" onClick={() => enlargeDialog.current?.close()}>
+              Close
+            </button>
+          </div>
+        ) : null}
+      </dialog>
 
       <details className="slip-form line-bot">
         <summary>LINE bot</summary>
