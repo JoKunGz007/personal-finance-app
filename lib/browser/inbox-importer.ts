@@ -168,6 +168,18 @@ async function removeAll(deps: Pick<DrainDeps, "remove">, names: readonly string
   return result.ok && result.value === names.length;
 }
 
+/** How many queued files are read at once. Vision has no quota guard and a 2026-10-02 burst answered error 8, so keep it small. */
+export const DRAIN_CONCURRENCY = 3;
+
+type FileOutcome = {
+  readonly reason?: string;
+  readonly remember?: RememberedKind;
+  readonly reviewable?: boolean;
+  readonly slip?: ReadySlip;
+  readonly receiptPage?: { name: string; page: ScreenshotPage };
+  readonly linemanPage?: { name: string; page: LinemanPage; createdAt: string | null };
+};
+
 export async function drainInbox(
   files: readonly WaitingFile[], onStatus: (line: string) => void, deps: DrainDeps
 ): Promise<DrainResult> {
@@ -200,57 +212,63 @@ export async function drainInbox(
   const receiptPages: { name: string; page: ScreenshotPage }[] = [];
   const linemanPages: { name: string; page: LinemanPage; createdAt: string | null }[] = [];
 
-  for (const [index, file] of files.entries()) {
-    onStatus(progressLine(index + 1, files.length));
+  const outcomes: FileOutcome[] = new Array<FileOutcome>(files.length);
+  let done = 0;
+  let failed = false;
+  const finished = (index: number, outcome: FileOutcome): void => {
+    outcomes[index] = outcome;
+    done += 1;
+    // A read still in flight when another failed must not overwrite the page's failure line.
+    if (!failed) onStatus(progressLine(done, files.length));
+  };
+
+  /** A statement or PDF receipt posts to the server and removes its file, so those run one at a time, after the reads. */
+  async function settlePdf(file: WaitingFile, downloaded: Blob): Promise<FileOutcome> {
+    const reply = await deps.readPdf(downloaded);
+    if (needsStatementRoute(reply)) {
+      // An encrypted statement: the server holds the passwords and opens it. A failed or unanswered
+      // request keeps the file with the technical reason and is simply asked again next open.
+      const answered = await deps.postStatement(file.name);
+      if (!answered.ok) return { reason: answered.why };
+      const statementPlan = planStatement(answered.answer);
+      if (statementPlan.action === "keep") {
+        // Not remembered: locked, password-less and needs-account (the owner fixes them without a
+        // deploy) and confirm-failed (may be a transient error). They are asked again next open.
+        const hold: RememberedKind | undefined = answered.answer.kind === "held" && !FORGOTTEN_HELD.has(answered.answer.reason)
+          ? { kind: "held", reason: answered.answer.reason, build: BUILD_ID } : undefined;
+        return { reason: statementPlan.reason, reviewable: statementPlan.review === true, remember: hold };
+      }
+      if (await release([file.name])) {
+        if (statementPlan.outcome === "captured") statements += 1;
+        else if (statementPlan.outcome === "empty") statementsEmpty += 1;
+        else statementsAlready += 1;
+      }
+      return {};
+    }
+    const plan = planPdf(reply);
+    if (plan.action === "keep") return { reason: plan.reason };
+    const saved = await deps.postReceipt(plan.value.form, plan.value.receipt);
+    if (!saved.ok) return { reason: saved.why };
+    if (await release([file.name])) { if (saved.already) receiptsAlready += 1; else receipts += 1; }
+    return {};
+  }
+
+  /** Reads one queued file and says what to record; it writes no shared state, so reads can overlap. */
+  async function readFile(file: WaitingFile): Promise<FileOutcome | "pdf"> {
     const kind = kindOfObject(file.name);
-    if (kind === null) { reasons[file.name] = NOT_YET; continue; }
+    if (kind === null) return { reason: NOT_YET };
     // Settled on an earlier drain: no download, no scan and no second Vision read.
     const earlier = remembered.get(file.name);
     if (kind === "image" && typeof earlier === "string") {
-      reasons[file.name] = earlier === "slip-review" ? SLIP_REVIEW_REMEMBERED_REASON : NOT_YET;
-      continue;
+      return { reason: earlier === "slip-review" ? SLIP_REVIEW_REMEMBERED_REASON : NOT_YET };
     }
     // A statement the server held on this build: shown again without a download or a server read.
     if (kind === "pdf" && typeof earlier === "object") {
-      reasons[file.name] = statementHeldReason(earlier.reason);
-      if (statementNeedsReview(earlier.reason)) reviewable.push(file.name);
-      continue;
+      return { reason: statementHeldReason(earlier.reason), reviewable: statementNeedsReview(earlier.reason) };
     }
+    if (kind === "pdf") return "pdf";
     const downloaded = await deps.download(file.name);
-    if (!downloaded.ok) { reasons[file.name] = downloaded.why; continue; }
-
-    if (kind === "pdf") {
-      const reply = await deps.readPdf(downloaded.value);
-      if (needsStatementRoute(reply)) {
-        // An encrypted statement: the server holds the passwords and opens it. A failed or unanswered
-        // request keeps the file with the technical reason and is simply asked again next open.
-        const answered = await deps.postStatement(file.name);
-        if (!answered.ok) { reasons[file.name] = answered.why; continue; }
-        const statementPlan = planStatement(answered.answer);
-        if (statementPlan.action === "keep") {
-          reasons[file.name] = statementPlan.reason;
-          if (statementPlan.review) reviewable.push(file.name);
-          // Not remembered: locked, password-less and needs-account (the owner fixes them without a
-          // deploy) and confirm-failed (may be a transient error). They are asked again next open.
-          if (answered.answer.kind === "held" && !FORGOTTEN_HELD.has(answered.answer.reason)) {
-            remembered.set(file.name, { kind: "held", reason: answered.answer.reason, build: BUILD_ID });
-          }
-          continue;
-        }
-        if (await release([file.name])) {
-          if (statementPlan.outcome === "captured") statements += 1;
-          else if (statementPlan.outcome === "empty") statementsEmpty += 1;
-          else statementsAlready += 1;
-        }
-        continue;
-      }
-      const plan = planPdf(reply);
-      if (plan.action === "keep") { reasons[file.name] = plan.reason; continue; }
-      const saved = await deps.postReceipt(plan.value.form, plan.value.receipt);
-      if (!saved.ok) { reasons[file.name] = saved.why; continue; }
-      if (await release([file.name])) { if (saved.already) receiptsAlready += 1; else receipts += 1; }
-      continue;
-    }
+    if (!downloaded.ok) return { reason: downloaded.why };
 
     // The slip QR first, before any Vision read: a slip is told by its QR, and one that is never
     // reaches the receipt recognisers. No QR, or a QR that is not a slip's, falls through unchanged.
@@ -273,38 +291,73 @@ export async function drainInbox(
       if (verdict.status === "ready") {
         // Ready means Vision answered, so the words are there; the payee and memo are best-effort.
         const text = read.ok ? proposeSlipText(read.words, scan.identity.bankCode) : { counterparty: null, note: null };
-        slips.push({
-          name: file.name,
-          payload: scan.payload,
-          identity: scan.identity,
-          occurredOn: verdict.date.occurredOn,
-          occurredAtTime: verdict.date.occurredAtTime,
-          amountMinor: verdict.amountMinor,
-          counterparty: text.counterparty,
-          note: text.note
-        });
-        reasons[file.name] = SLIP_WAITING_REASON;
-      } else {
-        reasons[file.name] = slipReviewReason(verdict.reason);
-        // Remembered only once Vision actually answered: an unreachable reader is not a verdict on
-        // the slip, and the next open may read it cleanly.
-        if (read.ok) remembered.set(file.name, "slip-review");
+        return {
+          reason: SLIP_WAITING_REASON,
+          slip: {
+            name: file.name,
+            payload: scan.payload,
+            identity: scan.identity,
+            occurredOn: verdict.date.occurredOn,
+            occurredAtTime: verdict.date.occurredAtTime,
+            amountMinor: verdict.amountMinor,
+            counterparty: text.counterparty,
+            note: text.note
+          }
+        };
       }
-      continue;
+      // Remembered only once Vision actually answered: an unreachable reader is not a verdict on
+      // the slip, and the next open may read it cleanly.
+      return { reason: slipReviewReason(verdict.reason), remember: read.ok ? "slip-review" : undefined };
     }
 
-    if (!read.ok) { reasons[file.name] = read.why; continue; }
+    if (!read.ok) return { reason: read.why };
     const recognised = recogniseImage(read.words);
-    if (recognised.kind === "receipt-page") receiptPages.push({ name: file.name, page: recognised.page });
+    if (recognised.kind === "receipt-page") return { receiptPage: { name: file.name, page: recognised.page } };
     // The LINE receive time, when the name carries it: images moved from the LINE holding table
     // together all get the same Storage time, which would defeat the 10-minute "added together" rule
     // (D-235 step 2c-i). The time LINE delivered them is the real one (D-241).
-    else if (recognised.kind === "lineman-page") linemanPages.push({ name: file.name, page: recognised.page, createdAt: lineReceivedAt(file.name) ?? file.created_at });
-    else {
-      reasons[file.name] = recognised.reason;
-      // Not when the scan itself failed: the image may be a slip the next open can scan.
-      if (recognised.reason === NOT_YET && scan.code !== "SCAN_FAILED") remembered.set(file.name, "unrecognised");
+    if (recognised.kind === "lineman-page") {
+      return { linemanPage: { name: file.name, page: recognised.page, createdAt: lineReceivedAt(file.name) ?? file.created_at } };
     }
+    // Not when the scan itself failed: the image may be a slip the next open can scan.
+    return { reason: recognised.reason, remember: recognised.reason === NOT_YET && scan.code !== "SCAN_FAILED" ? "unrecognised" : undefined };
+  }
+
+  onStatus(progressLine(0, files.length));
+  // A small pool: files are read DRAIN_CONCURRENCY at a time. One failing aborts the drain, as before.
+  const deferredPdfs: { index: number; file: WaitingFile }[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (!failed && next < files.length) {
+      const index = next++;
+      const file = files[index]!;
+      try {
+        const result = await readFile(file);
+        if (result === "pdf") deferredPdfs.push({ index, file });
+        else finished(index, result);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(DRAIN_CONCURRENCY, files.length) }, worker));
+
+  deferredPdfs.sort((x, y) => x.index - y.index);
+  for (const { index, file } of deferredPdfs) {
+    const downloaded = await deps.download(file.name);
+    finished(index, downloaded.ok ? await settlePdf(file, downloaded.value) : { reason: downloaded.why });
+  }
+
+  // Applied in queue order, whatever order the reads finished in: the page groups below depend on it.
+  for (const [index, file] of files.entries()) {
+    const outcome = outcomes[index]!;
+    if (outcome.reason !== undefined) reasons[file.name] = outcome.reason;
+    if (outcome.reviewable) reviewable.push(file.name);
+    if (outcome.remember !== undefined) remembered.set(file.name, outcome.remember);
+    if (outcome.slip) slips.push(outcome.slip);
+    if (outcome.receiptPage) receiptPages.push(outcome.receiptPage);
+    if (outcome.linemanPage) linemanPages.push(outcome.linemanPage);
   }
 
   for (const group of planReceiptScreenshots(receiptPages)) {

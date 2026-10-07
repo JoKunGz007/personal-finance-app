@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { captureSlips, drainInbox, type DrainDeps, type SlipPosted, type SlipScanAttempt } from "@/lib/browser/inbox-importer";
+import { captureSlips, DRAIN_CONCURRENCY, drainInbox, type DrainDeps, type SlipPosted, type SlipScanAttempt } from "@/lib/browser/inbox-importer";
 import type { StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import { readLinemanPage } from "@/lib/delivery-lineman";
 import {
@@ -802,6 +802,60 @@ describe("drainInbox with bank slips", () => {
     expect(calls.removed).toEqual([["r.png"]]);
     expect(result.slips.map((slip) => slip.name)).toEqual(["s.png"]);
     expect(result).toMatchObject({ receipts: 1, waiting: 1, summary: "1 receipt imported." });
+  });
+});
+
+describe("drainInbox reads files concurrently", () => {
+  const queue = ["s1.png", "top.png", "s2.png", "bottom.png", "b1.png", "x.png", "b2.png"];
+  const words = {
+    "s1.png": slipWords(),
+    "s2.png": slipWords("300.00"),
+    "top.png": tokens([...header("12345"), ...ITEMS.slice(0, 4), ...FOOTER]),
+    "bottom.png": tokens([...header("12345"), ...ITEMS.slice(3), ...TAIL, ...FOOTER]),
+    "b1.png": sentences(LM_FIRST("000000002", OTHER_BLOCK)),
+    "b2.png": sentences(LM_SECOND(OTHER_BLOCK))
+  };
+  const scans = { "s1.png": slipScan(), "s2.png": slipScan("202607141234567890CD" as typeof identity.reference) };
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  /** The fakes with every Vision read delayed by `delayOf(name)` and the reads in flight counted. */
+  function slowFakes(delayOf: (name: string) => number) {
+    const base = fakes({ words, scans });
+    const flight = { now: 0, peak: 0 };
+    const deps: DrainDeps = {
+      ...base.deps,
+      readImage: async (blob) => {
+        flight.now += 1;
+        flight.peak = Math.max(flight.peak, flight.now);
+        await sleep(delayOf(labels.get(blob)!));
+        flight.now -= 1;
+        return base.deps.readImage(blob);
+      }
+    };
+    return { deps, calls: base.calls, flight };
+  }
+
+  test("reads that finish out of order still give slips and pages in queue order", async () => {
+    // The later the file is queued, the sooner its read answers.
+    const slow = slowFakes((name) => (queue.length - queue.indexOf(name)) * 15);
+    const slowResult = await drainInbox(queue.map((name) => file(name)), () => undefined, slow.deps);
+    expect(slow.calls.ocr).not.toEqual(queue);
+
+    const even = slowFakes(() => 0);
+    const evenResult = await drainInbox(queue.map((name) => file(name)), () => undefined, even.deps);
+
+    expect(slowResult.slips.map((slip) => slip.name)).toEqual(["s1.png", "s2.png"]);
+    expect(slow.calls.removed).toEqual([["top.png", "bottom.png"], ["b1.png", "b2.png"]]);
+    expect(slowResult).toEqual(evenResult);
+    expect(slow.calls.saved).toEqual(even.calls.saved);
+  });
+
+  test("at most DRAIN_CONCURRENCY reads are in flight at once, and progress counts completed files", async () => {
+    const lines: string[] = [];
+    const slow = slowFakes(() => 10);
+    await drainInbox(queue.map((name) => file(name)), (line) => lines.push(line), slow.deps);
+    expect(slow.flight.peak).toBe(DRAIN_CONCURRENCY);
+    expect(lines).toEqual(Array.from({ length: queue.length + 1 }, (_, done) => progressLine(done, queue.length)));
   });
 });
 
