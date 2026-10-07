@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   describeGrabOutcome, describeGrabProgress, describeSevenElevenOutcome, describeSevenElevenProgress,
   describeStatementTotal, statementsNeedDeviceImport, syncGrabMail, syncMailboxStatements, syncSevenElevenMail,
@@ -9,7 +9,7 @@ import {
 } from "@/lib/browser/mail-sync";
 import { REVIEW_LINK_LABEL } from "@/lib/inbox-drain";
 
-type Line =
+export type Line =
   | { readonly state: "waiting" }
   | { readonly state: "running"; readonly note: string }
   | { readonly state: "done"; readonly note: string; readonly error: string | null }
@@ -89,7 +89,8 @@ export function InboxBench() {
   );
 }
 
-function SourceLine({ line }: { line: Line }) {
+/** Exported for its render test only. */
+export function SourceLine({ line }: { line: Line }) {
   switch (line.state) {
     case "waiting":
       return <span>Waiting…</span>;
@@ -110,11 +111,17 @@ function SourceLine({ line }: { line: Line }) {
       return (
         <>
           <span role="status">{nothing ? "No statements waiting." : describeStatementTotal(total)}</span>
+          {total.notes.map((note, index) => <span key={`note-${index}`} role="status">{note}</span>)}
           {total.held.map((entry) => (
-            <span key={`${entry.uid}.${entry.part}`} role="status">
-              {entry.name}: {entry.reason}{" "}
-              {entry.reviewHref ? <Link href={entry.reviewHref}>{REVIEW_LINK_LABEL}</Link> : null}
-            </span>
+            <Fragment key={`${entry.uid}.${entry.part}`}>
+              <span role="status">{entry.name}: {entry.reason}</span>
+              {/* A button like the queue's own Review (D-254), not a bare link (D-260). */}
+              {entry.reviewHref ? (
+                <span className="slip-actions">
+                  <Link href={entry.reviewHref} className="secondary-button">{REVIEW_LINK_LABEL}</Link>
+                </span>
+              ) : null}
+            </Fragment>
           ))}
           {total.error ? <span className="status error" role="alert">{total.error}</span> : null}
           {statementsNeedDeviceImport(total) ? (

@@ -18,7 +18,7 @@ import {
   describeReceiptSyncReport, receiptSyncReportSchema, type ReceiptSyncReport
 } from "@/lib/receipts";
 import { postMailboxStatementImport, type StatementImportPosted } from "@/lib/browser/inbox-statement-client";
-import { planStatement } from "@/lib/inbox-drain";
+import { describeStatementRows, planStatement } from "@/lib/inbox-drain";
 import { DEFAULT_SYNC_DAYS, mailboxReviewHref, type SyncManifest } from "@/lib/statement-sync";
 import { ledgerRequest } from "@/lib/wire";
 
@@ -148,9 +148,11 @@ export type MailboxStatementTotal = {
   readonly remaining: number;
   readonly more: boolean;
   readonly error: string | null;
+  /** One sentence per statement that overlapped the ledger: how many rows were new and how many already there (D-260). */
+  readonly notes: readonly string[];
 };
 
-export const EMPTY_STATEMENT_TOTAL: MailboxStatementTotal = { captured: 0, duplicates: 0, empty: 0, held: [], remaining: 0, more: false, error: null };
+export const EMPTY_STATEMENT_TOTAL: MailboxStatementTotal = { captured: 0, duplicates: 0, empty: 0, held: [], remaining: 0, more: false, error: null, notes: [] };
 
 type ListedStatement = { readonly uid: number; readonly part: string; readonly name: string };
 
@@ -175,6 +177,8 @@ export function addStatementAnswer(
   }
   const plan = planStatement(answer.answer);
   if (plan.action === "capture") {
+    const note = describeStatementRows(item.name, answer.answer);
+    if (note !== null) total = { ...total, notes: [...total.notes, note] };
     if (plan.outcome === "captured") return { ...total, captured: total.captured + 1 };
     if (plan.outcome === "empty") return { ...total, empty: total.empty + 1 };
     return { ...total, duplicates: total.duplicates + 1 };

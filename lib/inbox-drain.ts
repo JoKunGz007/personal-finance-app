@@ -60,11 +60,28 @@ export function needsStatementRoute(reply: PdfReply): boolean {
 
 /** What the statement route answered to an import, as the drain needs it. */
 export type StatementAnswer =
-  | { readonly kind: "captured" }
-  | { readonly kind: "duplicate" }
+  /** `existingRows` of `rowCount` were already in the ledger and skipped (D-260); absent from an older server. */
+  | { readonly kind: "captured"; readonly rowCount?: number; readonly existingRows?: number }
+  /** `rowCount` is set when the file was new but every row of it was already in the ledger (D-260). */
+  | { readonly kind: "duplicate"; readonly rowCount?: number }
   /** No transactions and zero totals: released like a captured one, since there is nothing to import. */
   | { readonly kind: "empty" }
   | { readonly kind: "held"; readonly reason: string };
+
+/**
+ * "Statement: 12 new rows imported, 30 already in the ledger." for a statement that overlapped the
+ * ledger, "Statement: All 42 rows are already in the ledger." for one that added nothing, else null (D-260).
+ */
+export function describeStatementRows(name: string, answer: StatementAnswer): string | null {
+  if (answer.kind === "captured" && answer.rowCount !== undefined && answer.existingRows !== undefined && answer.existingRows > 0) {
+    const fresh = answer.rowCount - answer.existingRows;
+    return `${name}: ${fresh} new ${fresh === 1 ? "row" : "rows"} imported, ${answer.existingRows} already in the ledger.`;
+  }
+  if (answer.kind === "duplicate" && answer.rowCount !== undefined) {
+    return `${name}: ${answer.rowCount === 1 ? "Its 1 row is" : `All ${answer.rowCount} rows are`} already in the ledger.`;
+  }
+  return null;
+}
 
 /** The Import page's address for a statement waiting in the Inbox, and the label of its link. */
 export const REVIEW_LINK_LABEL = "Review on Import";

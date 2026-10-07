@@ -9,7 +9,7 @@ import type { browserSupabase } from "@/lib/browser/supabase";
 import type { LinemanPage, ParsedLinemanOrder } from "@/lib/delivery-lineman";
 import { postStatementImport, type StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import {
-  BUILD_ID, describeDrain, FORGOTTEN_HELD, needsStatementRoute, statementHeldReason, statementNeedsReview, NOT_YET, planLinemanOrders, planPdf, planReceiptScreenshots, planStatement, progressLine, recogniseImage,
+  BUILD_ID, describeDrain, describeStatementRows, FORGOTTEN_HELD, needsStatementRoute, statementHeldReason, statementNeedsReview, NOT_YET, planLinemanOrders, planPdf, planReceiptScreenshots, planStatement, progressLine, recogniseImage,
   SLIP_AMOUNT_REASON, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON, SLIP_WAITING_REASON, slipPostBody, slipReviewReason,
   type PdfReply, type ReadySlip, type ReadySlipIdentity, type RememberedKind, type SlipPostBody
 } from "@/lib/inbox-drain";
@@ -214,6 +214,8 @@ export async function drainInbox(
   let statements = 0;
   let statementsAlready = 0;
   let statementsEmpty = 0;
+  /** One sentence per statement that overlapped the ledger (D-260). */
+  const statementNotes: string[] = [];
   const reviewable: string[] = [];
 
   /**
@@ -262,6 +264,8 @@ export async function drainInbox(
         if (statementPlan.outcome === "captured") statements += 1;
         else if (statementPlan.outcome === "empty") statementsEmpty += 1;
         else statementsAlready += 1;
+        const note = describeStatementRows("Statement", answered.answer);
+        if (note !== null) statementNotes.push(note);
       }
       return {};
     }
@@ -427,7 +431,7 @@ export async function drainInbox(
   const waiting = files.length - removed.size;
   return {
     reasons, receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, reviewable: reviewable.filter((name) => !removed.has(name)), slips, waiting,
-    summary: describeDrain({ receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, statementsEmpty, slips: 0 })
+    summary: [describeDrain({ receipts, orders, receiptsAlready, ordersAlready, statements, statementsAlready, statementsEmpty, slips: 0 }), ...statementNotes].join(" ")
   };
 }
 

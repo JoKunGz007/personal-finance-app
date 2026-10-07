@@ -77,10 +77,16 @@ describe("processMailboxStatement", () => {
     expect(markFetched).not.toHaveBeenCalled();
   });
 
-  it("leaves an overlapping statement unflagged", async () => {
+  it("imports an overlapping statement and flags it (D-260)", async () => {
     const { base, markFetched } = deps({ existingFingerprintCount: async () => 2 });
-    expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "held", reason: "overlap" });
-    expect(markFetched).not.toHaveBeenCalled();
+    expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "captured", existingRows: 2 });
+    expect(markFetched).toHaveBeenCalledTimes(1);
+  });
+
+  it("flags a statement whose rows are all stored, without importing it (D-260)", async () => {
+    const { base, markFetched } = deps({ existingFingerprintCount: async (_account, fingerprints) => fingerprints.length });
+    expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "duplicate" });
+    expect(markFetched).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a failed fetch unflagged", async () => {

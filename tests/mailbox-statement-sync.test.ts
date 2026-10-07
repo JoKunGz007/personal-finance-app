@@ -71,6 +71,27 @@ describe("the statements import loop", () => {
     expect(statementsNeedDeviceImport(result.total)).toBe(false);
   });
 
+  it("says how many rows of an overlapping statement were new, and when all were already there (D-260)", async () => {
+    stubFetch((call) => call === 0 ? listing([4, 5, 6])
+      : call === 1 ? json({ kind: "captured", artifactDigest: "d", rowCount: 42, existingRows: 30 })
+      : call === 2 ? json({ kind: "duplicate", artifactDigest: "d", rowCount: 7 })
+      : json({ kind: "captured", artifactDigest: "d", rowCount: 5, existingRows: 0 }));
+    const result = await syncMailboxStatements();
+    if (!result.ok) throw new Error(result.why);
+
+    expect(result.total).toMatchObject({ captured: 2, duplicates: 1, held: [] });
+    expect(result.total.notes).toEqual([
+      "s4.pdf: 12 new rows imported, 30 already in the ledger.",
+      "s5.pdf: All 7 rows are already in the ledger."
+    ]);
+  });
+
+  it("ignores row counts that do not add up", async () => {
+    stubFetch((call) => call === 0 ? listing([4]) : json({ kind: "captured", artifactDigest: "d", rowCount: 3, existingRows: 9 }));
+    const result = await syncMailboxStatements();
+    expect(result.ok && result.total).toMatchObject({ captured: 1, notes: [] });
+  });
+
   it("still stops on a 5xx", async () => {
     const spy = stubFetch((call) => call === 0 ? listing([4, 5]) : json({ error: "Busy." }, 502));
     const result = await syncMailboxStatements();
@@ -85,7 +106,7 @@ describe("the statements import loop", () => {
   });
 
   it("describes the totals and offers the device import only when something still needs it", () => {
-    const base = { captured: 0, duplicates: 0, empty: 0, held: [], remaining: 0, more: false, error: null };
+    const base = { captured: 0, duplicates: 0, empty: 0, held: [], remaining: 0, more: false, error: null, notes: [] };
     expect(describeStatementTotal({ ...base, captured: 2, duplicates: 1 })).toBe("2 statements imported. 1 statement was already in the ledger.");
     expect(describeStatementTotal({ ...base, empty: 1 })).toBe("1 statement had no transactions.");
     expect(describeStatementTotal(base)).toBe("No new statements were imported.");

@@ -3,7 +3,7 @@ import { browserDrainDeps, captureSlips, DRAIN_CONCURRENCY, drainInbox, type Dra
 import type { StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import { readLinemanPage } from "@/lib/delivery-lineman";
 import {
-  BUILD_ID, planStatement, reviewHref, statementNeedsReview, STATEMENT_LOCKED_REASON, STATEMENT_NO_PASSWORDS_REASON, statementHeldReason, type PdfReply,
+  BUILD_ID, describeStatementRows, planStatement, reviewHref, statementNeedsReview, STATEMENT_LOCKED_REASON, STATEMENT_NO_PASSWORDS_REASON, statementHeldReason, type PdfReply,
   addedTogether, DIFFERENT_TIMES_REASON, describeDrain, describeSlipCapture, NOT_YET, parseRemembered, planLinemanOrders, planPdf,
   planReceiptScreenshots, progressLine, pruneRemembered, recogniseImage, REMEMBERED_KEY, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON,
   SLIP_WAITING_REASON, slipPostBody, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON, type ReadySlip, type RememberedKind
@@ -652,6 +652,34 @@ describe("drainInbox with statement PDFs", () => {
     expect(calls.removed).toEqual([[NAME]]);
     expect(result.waiting).toBe(0);
     expect(result).toMatchObject({ statements: 0, statementsAlready: 1, summary: "1 statement was already in the ledger." });
+  });
+
+  test("an overlapping statement is imported and says how many rows were new (D-260)", async () => {
+    const { deps, calls } = fakes({ statement: { ok: true, answer: { kind: "captured", rowCount: 42, existingRows: 30 } } });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(calls.removed).toEqual([[NAME]]);
+    expect(result).toMatchObject({
+      statements: 1, waiting: 0, reviewable: [],
+      summary: "1 statement imported. Statement: 12 new rows imported, 30 already in the ledger."
+    });
+  });
+
+  test("a statement whose rows are all stored is let go and reported, not imported (D-260)", async () => {
+    const { deps, calls } = fakes({ statement: { ok: true, answer: { kind: "duplicate", rowCount: 42 } } });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(calls.removed).toEqual([[NAME]]);
+    expect(result).toMatchObject({
+      statements: 0, statementsAlready: 1, waiting: 0,
+      summary: "1 statement was already in the ledger. Statement: All 42 rows are already in the ledger."
+    });
+  });
+
+  test("the row sentence wording (D-260)", () => {
+    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 2, existingRows: 1 })).toBe("s.pdf: 1 new row imported, 1 already in the ledger.");
+    expect(describeStatementRows("s.pdf", { kind: "duplicate", rowCount: 1 })).toBe("s.pdf: Its 1 row is already in the ledger.");
+    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 4, existingRows: 0 })).toBeNull();
+    expect(describeStatementRows("s.pdf", { kind: "captured" })).toBeNull();
+    expect(describeStatementRows("s.pdf", { kind: "duplicate" })).toBeNull();
   });
 
   test("a held statement stays with its reason and a review link when Import can help", async () => {

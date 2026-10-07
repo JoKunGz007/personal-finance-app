@@ -30,14 +30,20 @@ export type InboxStatementDeps = {
 };
 
 export type HeldReason =
-  | "locked" | "no-passwords" | "unreadable" | "needs-account" | "warnings" | "overlap" | "confirm-failed"
+  | "locked" | "no-passwords" | "unreadable" | "needs-account" | "warnings" | "confirm-failed"
   | AssemblyErrorCode;
 
 export type InboxStatementOutcome =
-  | { kind: "duplicate"; artifactDigest: string }
+  /**
+   * Already in the ledger. `rowCount` is set only when the file itself is new but every one of its
+   * rows is already stored (D-260): nothing was confirmed and there is nothing to add.
+   */
+  | { kind: "duplicate"; artifactDigest: string; rowCount?: number }
   /** No transactions and zero totals: nothing to import, and nothing for the owner to fix. */
   | { kind: "empty"; artifactDigest: string; periodStart: string; periodEnd: string }
-  | { kind: "captured"; artifactDigest: string; accountLabel: string; periodStart: string; periodEnd: string; rowCount: number }
+  | { kind: "captured"; artifactDigest: string; accountLabel: string; periodStart: string; periodEnd: string; rowCount: number;
+      /** Rows of this statement already stored before the confirm; `rowCount - existingRows` were new (D-260). */
+      existingRows: number }
   | {
       kind: "held"; reason: HeldReason; artifactDigest: string;
       /** The reader's own code when `reason` is `unreadable`. */
@@ -108,13 +114,16 @@ export async function processInboxStatement(
   if (!assembled.ok) return { kind: "held", reason: assembled.code, artifactDigest };
   if (assembled.warnings.length > 0) return { kind: "held", reason: "warnings", artifactDigest };
 
-  // `confirm_import` silently skips a row whose fingerprint is already stored, so a statement that
-  // overlaps one already imported would "succeed" while saving only part of it. Held for a look instead.
+  // `confirm_import` skips a row whose fingerprint is already stored. The fingerprint covers date,
+  // time, label, description, reference, amounts, post-balance and branch, so a stored one is the
+  // same bank row and skipping it is correct: an overlapping statement is confirmed and reports how
+  // many rows were already there (D-260). `confirm_import` returns only the batch id, so the counts
+  // come from this pre-count. A statement whose rows are all stored adds nothing and is not confirmed.
   const { payload } = assembled;
   const fingerprints = await Promise.all(payload.rows.map((row) => rowFingerprint(payload.accountId, payload.bankCode, row)));
   const existing = await deps.existingFingerprintCount(payload.accountId, fingerprints);
   if (existing === null) return { kind: "failed", code: "LOOKUP_FAILED" };
-  if (existing > 0) return { kind: "held", reason: "overlap", artifactDigest };
+  if (existing >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length };
 
   const confirmed = await deps.confirmImport({
     idempotencyKey: await inboxIdempotencyKey(artifactDigest),
@@ -128,6 +137,7 @@ export async function processInboxStatement(
     accountLabel: account.label,
     periodStart: assembled.payload.periodStart,
     periodEnd: assembled.payload.periodEnd,
-    rowCount: assembled.payload.rows.length
+    rowCount: assembled.payload.rows.length,
+    existingRows: existing
   };
 }
