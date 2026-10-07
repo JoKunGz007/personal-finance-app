@@ -1,4 +1,5 @@
 import { parseThb } from "@/lib/money";
+import { slipDateWindow } from "@/lib/slips";
 import type { BankCode } from "@/lib/statement-frame";
 
 /**
@@ -77,7 +78,8 @@ export type OcrRefusal =
   | "VALUE_AMBIGUOUS"
   | "DATE_NOT_FOUND"
   | "DATE_AMBIGUOUS"
-  | "DATE_YEAR_UNRESOLVED";
+  | "DATE_YEAR_UNRESOLVED"
+  | "DATE_YEAR_DOUBTFUL";
 
 export type OcrRead<T> = { ok: true; value: T; source: string } | { ok: false; code: OcrRefusal; message: string };
 
@@ -466,6 +468,93 @@ export type PrintedDate = {
 };
 
 /**
+ * True when swapping 5<->6 on any non-empty subset of a four-digit printed year's 5/6 digits gives
+ * a different Buddhist-era year whose same day/month is a real date inside the slip window.
+ */
+function hasInWindowYearAlternative(printedYear: number, month: number, day: number, today: Date): boolean {
+  const digits = String(printedYear).split("");
+  if (digits.length !== 4) return false;
+  const positions = digits.flatMap((digit, index) => (digit === "5" || digit === "6" ? [index] : []));
+  const window = slipDateWindow(today);
+  const isoOf = (year: number) => `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  // A printed date already outside the window is refused downstream ("outside the range"), so
+  // there is nothing to doubt: behaviour for it is unchanged.
+  const printedIso = isoOf(printedYear - BUDDHIST_ERA_OFFSET);
+  if (printedIso < window.earliest || printedIso > window.latest) return false;
+  for (let mask = 1; mask < 1 << positions.length; mask += 1) {
+    const swapped = [...digits];
+    positions.forEach((position, bit) => {
+      if (mask & (1 << bit)) swapped[position] = digits[position] === "5" ? "6" : "5";
+    });
+    const year = Number(swapped.join("")) - BUDDHIST_ERA_OFFSET;
+    const utc = new Date(Date.UTC(year, month - 1, day));
+    if (utc.getUTCFullYear() !== year || utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day) continue;
+    const iso = isoOf(year);
+    if (iso >= window.earliest && iso <= window.latest) return true;
+  }
+  return false;
+}
+
+/**
+ * Where the printed date's four-digit year sits: the word that carries it, the year's offset inside
+ * that word's normalised text, and the word's box. Null unless exactly one line reads as a printed
+ * date, that line has a four-digit year, and the year lies wholly inside a single word.
+ *
+ * Shares `PRINTED_DATE` and `groupIntoLines` with `readDateLine` rather than keeping its own
+ * grammar, so the line this finds is the line the reader would have used (D-257).
+ */
+function findPrintedYear(words: readonly OcrWord[]): { index: number; offset: number; box: Box } | null {
+  let found: { line: OcrWord[]; yearStart: number } | null = null;
+  for (const line of groupIntoLines(words)) {
+    const match = PRINTED_DATE.exec(normalise(line.map((word) => word.text).join("")));
+    if (!match) continue;
+    if (found !== null || match[3]!.length !== 4) return null;
+    found = { line, yearStart: match.index + match[1]!.length + match[2]!.length };
+  }
+  if (found === null) return null;
+  let cursor = 0;
+  for (const word of found.line) {
+    const start = cursor;
+    cursor += normalise(word.text).length;
+    if (found.yearStart >= start && found.yearStart + 4 <= cursor) {
+      return {
+        index: words.indexOf(word),
+        offset: found.yearStart - start,
+        box: { left: word.left, top: word.top, right: word.right, bottom: word.bottom }
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * The box of the word carrying the printed year, for a second, enlarged read of just that word
+ * (D-257). Vision misreads this font's 6 as 5 when it reads the whole slip, and the same word
+ * cropped and upscaled reads correctly. Null when there is no single date line, its year is not
+ * four digits, or the year is split across words.
+ */
+export function locatePrintedYear(words: readonly OcrWord[]): Box | null {
+  return findPrintedYear(words)?.box ?? null;
+}
+
+/**
+ * `words` with the printed year's four digits replaced by the digits a re-read of the year's crop
+ * gave, or null when that re-read is not exactly four digits. The rest of the word's text and its
+ * box are kept, and the input is not modified.
+ */
+export function withRereadYear(words: readonly OcrWord[], cropWords: readonly OcrWord[]): OcrWord[] | null {
+  const digits = normalise(cropWords.map((word) => word.text).join(""));
+  if (!/^\d{4}$/u.test(digits)) return null;
+  const located = findPrintedYear(words);
+  if (located === null || located.index < 0) return null;
+  return words.map((word, index) => {
+    if (index !== located.index) return word;
+    const text = normalise(word.text);
+    return { ...word, text: text.slice(0, located.offset) + digits + text.slice(located.offset + 4) };
+  });
+}
+
+/**
  * Reads one line as a printed date, or refuses.
  *
  * Returns null rather than a refusal when the line simply is not a date, because most lines on
@@ -473,7 +562,10 @@ export type PrintedDate = {
  * not resolve is a refusal, not a null — that difference is what stops an unresolvable KBANK
  * date being silently skipped and some other line picked up instead.
  */
-function readDateLine(text: string, today: Date): PrintedDate | { unresolvedYear: true } | null {
+function readDateLine(
+  text: string,
+  today: Date
+): PrintedDate | { unresolvedYear: true } | { doubtfulYear: true } | null {
   const match = PRINTED_DATE.exec(normalise(text));
   if (!match) return null;
   const day = Number(match[1]);
@@ -500,6 +592,15 @@ function readDateLine(text: string, today: Date): PrintedDate | { unresolvedYear
   // rolling forward into October, which is what `Date` would do left alone.
   const utc = new Date(Date.UTC(year, month - 1, day));
   if (utc.getUTCFullYear() !== year || utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day) return null;
+
+  // Vision reads Krungthai's printed 6 as 5 ("2569" -> "2559"; measured 2026-10-07, D-257). The
+  // wrong reading usually falls outside the window and is refused, but not always: when a 5<->6
+  // swap on any year digit gives another real date inside the window, the printed year cannot be
+  // trusted, so the line is a refusal rather than a date. Four-digit years only; KBANK's `YY` is
+  // handled above.
+  if (!short && printedYear >= 1000 && hasInWindowYearAlternative(printedYear, month, day, today)) {
+    return { doubtfulYear: true };
+  }
 
   const hour = match[4] === undefined ? null : Number(match[4]);
   const minute = match[5] === undefined ? null : Number(match[5]);
@@ -528,19 +629,30 @@ export function readPrintedDate(words: readonly OcrWord[], today: Date): OcrRead
   const lines = groupIntoLines(words);
   const found: PrintedDate[] = [];
   let sawUnresolvedYear = false;
+  let sawDoubtfulYear = false;
   for (const line of lines) {
     const read = readDateLine(line.map((word) => word.text).join(""), today);
     if (read === null) continue;
     if ("unresolvedYear" in read) { sawUnresolvedYear = true; continue; }
+    if ("doubtfulYear" in read) { sawDoubtfulYear = true; continue; }
     found.push(read);
   }
 
-  if (found.length === 1) return { ok: true, value: found[0]!, source: "printed" };
+  // A doubtful line is a refusal that no other line may override, so it is checked before the
+  // single-line success below; two believable lines stay DATE_AMBIGUOUS.
+  if (found.length === 1 && !sawDoubtfulYear) return { ok: true, value: found[0]!, source: "printed" };
   if (found.length > 1) {
     return {
       ok: false,
       code: "DATE_AMBIGUOUS",
       message: "More than one line on this slip reads as a date, so which one is the transaction's is not decidable."
+    };
+  }
+  if (sawDoubtfulYear) {
+    return {
+      ok: false,
+      code: "DATE_YEAR_DOUBTFUL",
+      message: "The year on this slip could be read as more than one year, so the date is not used. Enter the date yourself."
     };
   }
   if (sawUnresolvedYear) {

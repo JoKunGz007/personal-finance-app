@@ -144,6 +144,34 @@ describe("resolving a batch slip's date", () => {
     expect(resolved.ok).toBe(false);
     expect(!resolved.ok && resolved.reason).toContain("outside the range");
   });
+
+  it("passes the doubtful-year refusal through, and a QR date still wins over it (D-257)", () => {
+    const today = new Date("2026-10-07T04:00:00Z");
+    const window = slipDateWindow(today);
+    const doubtful = resolveSlipDate({
+      reference: "AB12CD34EF56GH78",
+      words: slipWords({ printed: "07 ต.ค. 2569" }),
+      window,
+      today
+    });
+    expect(!doubtful.ok && doubtful.reason).toContain("could be read as more than one year");
+
+    const misread = resolveSlipDate({
+      reference: "AB12CD34EF56GH78",
+      words: slipWords({ printed: "24 ก.ย. 2559" }),
+      window,
+      today
+    });
+    expect(!misread.ok && misread.reason).toContain("outside the range");
+
+    const withQr = resolveSlipDate({
+      reference: "20261007AB12CD34",
+      words: slipWords({ printed: "07 ต.ค. 2569" }),
+      window,
+      today
+    });
+    expect(withQr.ok && withQr.date.occurredOn).toBe("2026-10-07");
+  });
 });
 
 describe("classifying one slip in a batch", () => {

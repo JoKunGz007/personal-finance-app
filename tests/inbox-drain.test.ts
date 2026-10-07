@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { captureSlips, DRAIN_CONCURRENCY, drainInbox, type DrainDeps, type SlipPosted, type SlipScanAttempt } from "@/lib/browser/inbox-importer";
 import type { StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import { readLinemanPage } from "@/lib/delivery-lineman";
@@ -9,7 +9,8 @@ import {
   SLIP_WAITING_REASON, slipPostBody, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON, type ReadySlip, type RememberedKind
 } from "@/lib/inbox-drain";
 import { readScreenshotPage, readScreenshotReceipt } from "@/lib/receipt-screenshot";
-import { proposeSlipText, type OcrWord } from "@/lib/slip-ocr";
+import { proposeSlipText, type Box, type OcrWord } from "@/lib/slip-ocr";
+import type { ImageWordsRead } from "@/lib/browser/ocr-reader";
 import type { SlipScanResult } from "@/lib/slip-scan";
 
 // Every value is invented (docs/FIXTURE_POLICY.md). The word layouts reuse the shapes of
@@ -433,12 +434,14 @@ type FakeOptions = {
   statement?: StatementImportPosted;
   /** What the receipt reader says about any PDF; defaults to "cannot open it" (an encrypted statement). */
   pdf?: PdfReply;
+  /** What the enlarged re-read of one box answers (D-257); defaults to a failure. */
+  crop?: () => ImageWordsRead | Promise<ImageWordsRead>;
 };
 
 /** Fakes for everything outside the drain; `words` maps an image's name to what Vision "read". */
 function fakes(options: FakeOptions = {}) {
   const calls = {
-    statementPosts: [] as string[], ocr: [] as string[], scans: [] as string[], downloads: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, slipPosts: 0,
+    statementPosts: [] as string[], ocr: [] as string[], scans: [] as string[], downloads: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, slipPosts: 0, rereads: [] as Array<{ name: string; box: Box }>,
     // Every scan and read in the order it happened, to show the scan comes first.
     order: [] as string[],
     saved: undefined as undefined | ReadonlyMap<string, RememberedKind>
@@ -452,6 +455,10 @@ function fakes(options: FakeOptions = {}) {
       calls.ocr.push(name);
       calls.order.push(`ocr:${name}`);
       return { ok: true, words: options.words?.[name] ?? [] };
+    },
+    rereadYear: async (blob, box) => {
+      calls.rereads.push({ name: labels.get(blob)!, box });
+      return options.crop ? options.crop() : { ok: false, why: "The year could not be read a second time." };
     },
     scanSlip: async (blob) => {
       const name = labels.get(blob)!;
@@ -939,5 +946,95 @@ describe("captureSlips", () => {
     const result = await captureSlips([ready("a.png", "12.5")], "deposit", deps);
     expect(log).toEqual([]);
     expect(result.reasons["a.png"]).toMatch(/not one this ledger can store/u);
+  });
+});
+
+// --- The printed year, read a second time (D-257) ---
+// A Krungthai slip whose QR reference carries no date (17 characters, no 8-digit run), so the printed
+// date is the only source. Vision reads "2569" as "2559" on the whole slip; the year's own box, cropped
+// and enlarged, reads right. Every value is invented.
+
+describe("drainInbox rereads a printed year the window refused", () => {
+  const status = () => undefined;
+  const KTB_NO_DATE = "ABCDEFGHJKLMNPQRS";
+  const ktbScan = (reference = KTB_NO_DATE): SlipScanResult =>
+    ({ ok: true, identity: { bankCode: "KTB", bankQrCode: "006", reference }, payload: `INVENTED-PAYLOAD-${reference}`, scale: 1, candidates: 1 });
+  /** Krungthai-shaped: the amount under its label and, on a line of its own, the printed date in three words. */
+  const ktbWords = (year: string, day = "24", month = "ก.ย."): OcrWord[] => [
+    ...line(100, [["จำนวนเงิน", 10, 90], ["1,250.00", 300, 380], ["บาท", 390, 420]]),
+    ...line(140, [["ค่าธรรมเนียม", 10, 90], ["0.00", 300, 360], ["บาท", 390, 420]]),
+    ...line(180, [[day, 10, 40], [month, 45, 100], [year, 105, 170]])
+  ];
+
+  afterEach(() => { vi.useRealTimers(); });
+  const today = () => vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-07T05:00:00Z") });
+  const cropWords = (text: string): ImageWordsRead => ({ ok: true, words: [{ text, left: 0, right: 100, top: 0, bottom: 30 }] });
+
+  test("a year misread 2559 and read 2569 on its crop is captured with the corrected date, the amount from the full read", async () => {
+    today();
+    const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2559") }, crop: () => cropWords("2569") });
+    const result = await drainInbox([file("k.png")], status, deps);
+    expect(calls.rereads).toEqual([{ name: "k.png", box: { left: 105, top: 180, right: 170, bottom: 200 } }]);
+    expect(result.slips).toHaveLength(1);
+    expect(result.slips[0]).toMatchObject({ occurredOn: "2026-09-24", amountMinor: "125000" });
+  });
+
+  test("a crop that also reads 2559 leaves the slip in review with the original out-of-range reason", async () => {
+    today();
+    const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2559") }, crop: () => cropWords("2559") });
+    const result = await drainInbox([file("k.png")], status, deps);
+    expect(calls.rereads).toHaveLength(1);
+    expect(result.slips).toEqual([]);
+    expect(result.reasons["k.png"]).toContain("outside the range this ledger accepts");
+  });
+
+  test("a crop read that fails keeps the original reason, not a reader-unreachable one", async () => {
+    today();
+    const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2559") } });
+    const result = await drainInbox([file("k.png")], status, deps);
+    expect(calls.rereads).toHaveLength(1);
+    expect(result.slips).toEqual([]);
+    expect(result.reasons["k.png"]).toContain("outside the range this ledger accepts");
+    expect(result.reasons["k.png"]).not.toMatch(/reader|could not be read/u);
+    // The full read answered, so the slip is remembered as needing a look, as before.
+    expect([...calls.saved!]).toEqual([["k.png", "slip-review"]]);
+  });
+
+  test("a crop read that throws keeps the original reason too", async () => {
+    today();
+    const { deps } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2559") }, crop: () => { throw new Error("boom"); } });
+    const result = await drainInbox([file("k.png")], status, deps);
+    expect(result.slips).toEqual([]);
+    expect(result.reasons["k.png"]).toContain("outside the range this ledger accepts");
+  });
+
+  test("a slip whose QR carries the date never triggers a crop read", async () => {
+    today();
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": [...slipWords(), ...line(180, [["24", 10, 40], ["ก.ย.", 45, 100], ["2559", 105, 170]])] }, crop: () => cropWords("2569") });
+    await drainInbox([file("s.png")], status, deps);
+    expect(calls.rereads).toEqual([]);
+  });
+
+  test("a doubtful year (07 Oct 2569 is still in the window as 2559) never triggers a crop read", async () => {
+    today();
+    const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2569", "07", "ต.ค.") }, crop: () => cropWords("2569") });
+    const result = await drainInbox([file("k.png")], status, deps);
+    expect(calls.rereads).toEqual([]);
+    expect(result.slips).toEqual([]);
+    expect(result.reasons["k.png"]).toContain("Enter the date yourself");
+  });
+
+  test("a slip with no date on it never triggers a crop read", async () => {
+    today();
+    const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": slipWords() }, crop: () => cropWords("2569") });
+    await drainInbox([file("k.png")], status, deps);
+    expect(calls.rereads).toEqual([]);
+  });
+
+  test("a slip whose amount cannot be read never triggers a crop read", async () => {
+    today();
+    const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2559").slice(3) }, crop: () => cropWords("2569") });
+    await drainInbox([file("k.png")], status, deps);
+    expect(calls.rereads).toEqual([]);
   });
 });

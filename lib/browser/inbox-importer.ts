@@ -2,6 +2,7 @@ import { postLinemanCapture, postReceiptCapture } from "@/lib/browser/capture-cl
 import { loadRemembered, saveRemembered } from "@/lib/browser/inbox-memory";
 import { downloadFromInbox, removeFromInbox, type Outcome, type WaitingFile } from "@/lib/browser/inbox-storage";
 import { readImageFileWords, type ImageWordsRead } from "@/lib/browser/ocr-reader";
+import { rereadYearBox } from "@/lib/browser/year-reread";
 import { detectAtScale, resolveDetector, type SlipQrReader } from "@/lib/browser/qr-detector";
 import { readReceiptPdf } from "@/lib/browser/receipt-reader";
 import type { browserSupabase } from "@/lib/browser/supabase";
@@ -16,8 +17,8 @@ import { kindOfObject, lineReceivedAt } from "@/lib/inbox-queue";
 import type { ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import type { CaptureForm } from "@/lib/receipts";
-import { classifySlip, signedSlipAmount } from "@/lib/slip-batch";
-import { proposeSlipText } from "@/lib/slip-ocr";
+import { classifySlipRereadingYear, signedSlipAmount } from "@/lib/slip-batch";
+import { proposeSlipText, type Box } from "@/lib/slip-ocr";
 import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
 import { slipDateWindow, type SlipKind } from "@/lib/slips";
 import { readError } from "@/lib/wire";
@@ -64,6 +65,8 @@ export type DrainDeps = {
   readonly remove: (names: readonly string[]) => Promise<Outcome<number>>;
   readonly readPdf: (file: Blob) => Promise<PdfReply>;
   readonly readImage: (file: Blob) => Promise<ImageWordsRead>;
+  /** A second, enlarged read of one box of the image (the printed year, D-257); any failure is a not-ok result, never a throw. */
+  readonly rereadYear: (file: Blob, box: Box) => Promise<ImageWordsRead>;
   /** The slip QR on this device; any failure is a not-ok result, never a throw. */
   readonly scanSlip: (file: Blob) => Promise<SlipScanAttempt>;
   readonly postReceipt: (form: CaptureForm, receipt: ParsedReceipt) => Promise<Posted>;
@@ -114,6 +117,7 @@ export function browserDrainDeps(supabase: Client, uid: string): DrainDeps {
     remove: (names) => removeFromInbox(supabase, uid, names),
     readPdf: readReceiptPdf,
     readImage: readImageFileWords,
+    rereadYear: rereadYearBox,
     scanSlip: async (file) => {
       let bitmap: ImageBitmap | null = null;
       try {
@@ -280,14 +284,14 @@ export async function drainInbox(
     if (scan.ok) {
       // The words are only compared with each other (labels and the figure beside them), so they need
       // no shared coordinate space with the scanned bitmap; `readImageFileWords` decodes the same file.
-      const verdict = classifySlip({
+      const verdict = await classifySlipRereadingYear({
         reference: scan.identity.reference,
         bankCode: scan.identity.bankCode,
         words: read.ok ? read.words : null,
         readerRefusal: read.ok ? null : read.why,
         window: slipDateWindow(new Date()),
         today: new Date()
-      });
+      }, (box) => deps.rereadYear(downloaded.value, box));
       if (verdict.status === "ready") {
         // Ready means Vision answered, so the words are there; the payee and memo are best-effort.
         const text = read.ok ? proposeSlipText(read.words, scan.identity.bankCode) : { counterparty: null, note: null };

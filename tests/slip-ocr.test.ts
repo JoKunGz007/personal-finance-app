@@ -5,12 +5,14 @@ import {
   groupIntoLines,
   findLabelLine,
   locateAmount,
+  locatePrintedYear,
   paddedCrop,
   proposeAmount,
   proposeSlipText,
   readAmount,
   readPrintedDate,
   valueWordsFor,
+  withRereadYear,
   THAI_MONTH_TOKENS,
   type OcrWord
 } from "@/lib/slip-ocr";
@@ -276,7 +278,9 @@ describe("the Buddhist era, which is the opposite way round from the QR", () => 
 // of which are format knowledge like the labels above.
 describe("reading the printed date", () => {
   // 2026 CE is 2569 BE. `today` is fixed so the plausibility window cannot drift with the clock.
-  const today = new Date(Date.UTC(2026, 6, 1));
+  // Late in the year so that a 6->5 swap of any 2026 date below lands before the window's start and
+  // the doubtful-year refusal (D-257, covered separately) does not apply to these.
+  const today = new Date(Date.UTC(2026, 11, 31));
 
   const dateLine = (text: string) => [{ text, left: 100, right: 400, top: 50, bottom: 74 }];
 
@@ -397,6 +401,121 @@ describe("reading the printed date", () => {
       today
     );
     expect(read.ok && read.value.iso).toBe("2026-07-14");
+  });
+});
+
+// Vision reads Krungthai's printed 6 as 5 (measured 2026-10-07, D-257). A year whose 5<->6 swap is
+// also a believable date is refused rather than guessed. Every date below is invented.
+describe("a printed year that a 6-as-5 misread could have produced", () => {
+  const today = new Date(Date.UTC(2026, 9, 7));
+  const dateLine = (text: string) => [{ text, left: 100, right: 400, top: 50, bottom: 74 }];
+
+  it("refuses 07 Oct 2569 on the day, because 2559 is still inside the window", () => {
+    const read = readPrintedDate(dateLine("07 ต.ค. 2569"), today);
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.code).toBe("DATE_YEAR_DOUBTFUL");
+    expect(read.message).toContain("Enter the date yourself");
+  });
+
+  it("accepts 24 Sep 2569, whose 2559 reading falls before the window", () => {
+    const read = readPrintedDate(dateLine("24 ก.ย. 2569"), today);
+    expect(read.ok && read.value.iso).toBe("2026-09-24");
+  });
+
+  it("refuses a last-digit swap that also lands inside the window", () => {
+    const read = readPrintedDate(dateLine("01 พ.ย. 2565"), today);
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.code).toBe("DATE_YEAR_DOUBTFUL");
+  });
+
+  it("accepts 2568 when 2558 is outside the window", () => {
+    const read = readPrintedDate(dateLine("03 ธ.ค. 2568"), today);
+    expect(read.ok && read.value.iso).toBe("2025-12-03");
+  });
+
+  it("does not let a second, believable line stand in for a doubtful one", () => {
+    const read = readPrintedDate(
+      [
+        { text: "07 ต.ค. 2569", left: 100, right: 400, top: 50, bottom: 74 },
+        { text: "24 ก.ย. 2569", left: 100, right: 400, top: 120, bottom: 144 }
+      ],
+      today
+    );
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.code).toBe("DATE_YEAR_DOUBTFUL");
+  });
+
+  it("leaves the misread year itself to the ledger's window check", () => {
+    // 2559 is believed by the era check, and its 2569 swap is inside the window, but the printed
+    // reading is itself outside the slip window, so nothing changes for it.
+    const read = readPrintedDate(dateLine("24 ก.ย. 2559"), today);
+    expect(read.ok && read.value.iso).toBe("2016-09-24");
+  });
+});
+
+// Finding the printed year's word so it can be read a second time, enlarged (D-257). Invented words.
+describe("locating and replacing the printed year", () => {
+  const w = (text: string, left: number, top: number, right = left + 50): OcrWord => ({ text, left, right, top, bottom: top + 20 });
+  // A Krungthai-shaped screen: an unrelated line, then the date in three words, the year last.
+  const slip = (year: string): OcrWord[] => [
+    w("จำนวนเงิน", 10, 100), w("1,250.00", 300, 100),
+    w("24", 10, 180, 40), w("ก.ย.", 45, 180, 100), w(year, 105, 180, 170)
+  ];
+
+  it("returns the box of the word that carries the four year digits", () => {
+    expect(locatePrintedYear(slip("2559"))).toEqual({ left: 105, top: 180, right: 170, bottom: 200 });
+  });
+
+  it("finds the year inside a word that also carries the time", () => {
+    const words = [w("24", 10, 180, 40), w("ก.ย.", 45, 180, 100), w("2559-14:35", 105, 180, 260)];
+    expect(locatePrintedYear(words)).toEqual({ left: 105, top: 180, right: 260, bottom: 200 });
+  });
+
+  it("is null when two lines read as dates", () => {
+    expect(locatePrintedYear([...slip("2559"), w("01", 10, 260, 40), w("ต.ค.", 45, 260, 100), w("2569", 105, 260, 170)])).toBeNull();
+  });
+
+  it("is null for a two-digit year", () => {
+    expect(locatePrintedYear(slip("69"))).toBeNull();
+  });
+
+  it("is null when the year is split across two words", () => {
+    const words = [w("24", 10, 180, 40), w("ก.ย.", 45, 180, 100), w("25", 105, 180, 130), w("59", 135, 180, 160)];
+    expect(locatePrintedYear(words)).toBeNull();
+  });
+
+  it("is null when there is no date line", () => {
+    expect(locatePrintedYear([w("จำนวนเงิน", 10, 100), w("1,250.00", 300, 100)])).toBeNull();
+  });
+
+  const crop = (...texts: string[]): OcrWord[] => texts.map((text, index) => w(text, index * 60, 0));
+
+  it("replaces the year digits and keeps the word's box, the rest of its text and every other word", () => {
+    const before = slip("2559");
+    const after = withRereadYear(before, crop("2569"))!;
+    expect(after[4]).toEqual({ ...before[4]!, text: "2569" });
+    expect(after.filter((_, index) => index !== 4)).toEqual(before.filter((_, index) => index !== 4));
+    expect(before[4]!.text).toBe("2559");
+    const timed = withRereadYear([w("24", 10, 180, 40), w("ก.ย.", 45, 180, 100), w("2559-14:35", 105, 180, 260)], crop("2569"))!;
+    expect(timed[2]!.text).toBe("2569-14:35");
+  });
+
+  it("accepts Thai digits and spacing from the crop", () => {
+    expect(withRereadYear(slip("2559"), crop("๒๕ ๖๙"))![4]!.text).toBe("2569");
+  });
+
+  it("is null unless the crop is exactly four digits", () => {
+    for (const bad of ["2569x", "256", "25569", "ABCD", ""]) {
+      expect(withRereadYear(slip("2559"), crop(bad)), bad).toBeNull();
+    }
+    expect(withRereadYear(slip("2559"), [])).toBeNull();
+  });
+
+  it("is null when the words have no single year word to replace", () => {
+    expect(withRereadYear(slip("69"), crop("2569"))).toBeNull();
   });
 });
 

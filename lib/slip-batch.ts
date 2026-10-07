@@ -1,5 +1,5 @@
 import { toMinorAmount, type MinorUnitString } from "@/lib/money";
-import { proposeAmount, readPrintedDate, type OcrWord } from "@/lib/slip-ocr";
+import { locatePrintedYear, proposeAmount, readPrintedDate, withRereadYear, type Box, type OcrWord } from "@/lib/slip-ocr";
 import { slipDateFromReference, type SlipKind } from "@/lib/slips";
 import { type BankCode } from "@/lib/statement-frame";
 
@@ -36,7 +36,16 @@ export type ResolvedSlipDate = {
 
 export type SlipDateResolution =
   | { readonly ok: true; readonly date: ResolvedSlipDate }
-  | { readonly ok: false; readonly reason: string };
+  | {
+    readonly ok: false;
+    readonly reason: string;
+    /**
+     * Set only for a printed date the reader believed but this ledger's window refuses. It is the
+     * one refusal a second read of the year can cure (D-257), so the caller keys on this rather than
+     * on the sentence.
+     */
+    readonly code?: "OUT_OF_RANGE";
+  };
 
 /**
  * The transaction's date, from the QR reference first and the printed slip second.
@@ -87,7 +96,7 @@ export function resolveSlipDate(input: {
   // `readPrintedDate` checks the era window, not this ledger's slip window, so a date it believes
   // can still be one `capture_slip` would refuse. Checked here rather than discovered on submit.
   if (printed.value.iso < input.window.earliest || printed.value.iso > input.window.latest) {
-    return { ok: false, reason: "The date printed on this slip is outside the range this ledger accepts." };
+    return { ok: false, reason: "The date printed on this slip is outside the range this ledger accepts.", code: "OUT_OF_RANGE" };
   }
   return { ok: true, date: { occurredOn: printed.value.iso, occurredAtTime: printed.value.time, source: "printed" } };
 }
@@ -186,6 +195,51 @@ export function classifySlip(input: {
   if (!date.ok) return { status: "review", reason: date.reason, date: null, amountMinor };
 
   return { status: "ready", date: date.date, amountMinor };
+}
+
+/**
+ * What a second, enlarged read of one box answered: the same shape as `ImageWordsRead`, restated so
+ * this module stays free of the browser. A failure carries nothing the caller may surface.
+ */
+export type YearReread = (box: Box) => Promise<{ readonly ok: true; readonly words: readonly OcrWord[] } | { readonly ok: false }>;
+
+/**
+ * `classifySlip`, plus one second read of the printed year for the one state it can cure (D-257).
+ *
+ * **Only when the date is refused in one narrow way**: no QR date, and the printed date resolved to
+ * a year the window refuses (`code: "OUT_OF_RANGE"`). Vision reads Krungthai's 6 as 5 on a whole
+ * slip, so "2569" arrives as "2559", a year the era check believes and the window then refuses. The
+ * year's own box, cropped and enlarged, reads correctly (measured 2026-10-07, 10 of 10). A slip with
+ * a QR date, a doubtful year, no date or two dates never reaches the second read.
+ *
+ * **The re-read can only turn a refusal into a date, never the other way, and never touches the
+ * amount.** The year digits are swapped into a copy of the words and the *same* `classifySlip` runs
+ * over it, so the window and the doubtful-year guard both apply to the new year; the amount it finds
+ * is the original's because only the year word changed. If that is not ready, or the crop could not
+ * be read, the original verdict stands unchanged.
+ */
+export async function classifySlipRereadingYear(
+  input: Parameters<typeof classifySlip>[0],
+  reread: YearReread
+): Promise<SlipBatchDecision> {
+  const verdict = classifySlip(input);
+  // `amountMinor` null means the amount is the problem, which a year cannot cure: no second read.
+  if (verdict.status === "ready" || input.words === null || verdict.amountMinor === null) return verdict;
+  const date = resolveSlipDate({ reference: input.reference, words: input.words, window: input.window, today: input.today });
+  if (date.ok || date.code !== "OUT_OF_RANGE") return verdict;
+  const box = locatePrintedYear(input.words);
+  if (box === null) return verdict;
+  let again;
+  try {
+    again = await reread(box);
+  } catch {
+    return verdict;
+  }
+  if (!again.ok) return verdict;
+  const words = withRereadYear(input.words, again.words);
+  if (words === null) return verdict;
+  const second = classifySlip({ ...input, words });
+  return second.status === "ready" ? second : verdict;
 }
 
 /**
