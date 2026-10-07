@@ -1236,12 +1236,13 @@ footer p { margin: 0; }
 .inbox-view-toggle { margin: 0 0 12px; }
 .ledger-table.inbox-table { min-width: 560px; }
 .ledger-table.inbox-table th:nth-child(1) { width: 64px; }
-.ledger-table.inbox-table th:nth-child(2) { width: 72px; }
+.ledger-table.inbox-table th:nth-child(2) { width: 88px; }
 .ledger-table.inbox-table th:nth-child(3) { width: 110px; }
 .ledger-table.inbox-table th:nth-child(4) { width: 80px; }
 .ledger-table.inbox-table th:nth-child(5) { width: auto; }
 .ledger-table.inbox-table th:nth-child(6) { width: 150px; }
 .inbox-table td { vertical-align: middle; overflow-wrap: break-word; }
+.inbox-table td:is([data-label="Type"], [data-label="Added"], [data-label="Size"]) { white-space: nowrap; }
 .inbox-thumb {
   display: grid; place-items: center; width: 40px; height: 56px; padding: 0; overflow: hidden;
   color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong);
