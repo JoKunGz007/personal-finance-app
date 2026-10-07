@@ -1872,6 +1872,7 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
     display: grid; min-height: 0; column-gap: 12px; row-gap: 2px; grid-template-columns: 48px minmax(0, 1fr);
     grid-template-areas: "pre type" "pre added" "pre size" "status status" "act act";
   }
+  .ledger-table.inbox-table { min-width: 0; }
   .ledger-table.inbox-table td { text-align: left !important; }
   .ledger-table.inbox-table td[data-label="Preview"] { grid-area: pre; padding: 5px 0; }
   .ledger-table.inbox-table td[data-label="Type"] { grid-area: type; }
