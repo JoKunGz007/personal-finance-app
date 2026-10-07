@@ -633,17 +633,18 @@ function labelledValue(lines: readonly OcrWord[][], anchor: FieldAnchor): OcrWor
  * on all 15 iconned SCB slips measured 2026-10-07. Its gap to the name overlaps ordinary word
  * spacing, so the token is matched by its text, and only while a name is left after it.
  */
-const SCB_ICON = /^(?:E|EX|E\)|\))$/;
+// `E`, `EX` or `EG`, each with or without `)` (`EX)` seen on a later batch), or a lone `)`.
+const SCB_ICON = /^(?:E[XG]?\)?|\))$/;
 /**
  * 32 more SCB slips (2026-10-07) showed other icons read as a word with at most one letter in it
  * — `3`, `฿3`, `29`, `E3)`, `(`, `อ`, `ปี`, `๛` — and TrueMoney's logo read as lowercase `true move`.
  * A payee's own first word carries two letters or more (`นาย`, a shop name), so a word with one
  * letter or none is stripped too, again only while a name is left after it. The logo words match
- * exactly and lower-case (bar the icon `EG`), so a payee printed `TRUE …` keeps its name.
+ * exactly and lower-case (`EG` is an SCB icon above), so a payee printed `TRUE …` keeps its name.
  */
 const letters = (text: string) => (text.match(/[ก-ฮA-Za-z]/gu) ?? []).length;
 // 50 more (same day): `EG dtac` before a TrueMove H top-up, the combined operator's logo.
-const OPERATOR_LOGO = /^(?:true|move|money|truemoney|truemove|dtac|EG)$/;
+const OPERATOR_LOGO = /^(?:true|move|money|truemoney|truemove|dtac)$/;
 const isIconText = (text: string) => SCB_ICON.test(text) || letters(text) <= 1 || OPERATOR_LOGO.test(text);
 /**
  * Judged per spaced word, not per engine word: Vision splits a Thai name into syllables (`สุ` +
