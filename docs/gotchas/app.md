@@ -359,9 +359,9 @@ the top of `GOTCHAS.md`.
 ## The LINE bot refuses images past a 24-hour count that includes moved ones
 
 - Symptom: LINE replies "Couldn't save N images" partway through a bulk send, though the Inbox is empty.
-- Cause: `line_inbox_enqueue` refuses once 600 images (200 before migration 050) were *received* in the last 24 hours; moved images keep their row, so emptying the queue frees nothing. It is this app's cap, not LINE's.
+- Cause: `line_inbox_enqueue` refuses once 1,000 images (200 before migration 050, 600 before 051) were *received* in the last 24 hours; moved images keep their row, so emptying the queue frees nothing. It is this app's cap, not LINE's.
 - Avoid: count a backfill against the rolling 24 hours before sending; resending a whole batch is safe (stored slips answer "already in the ledger") but spends the cap again.
-- Verify: 2026-10-07 (D-255): 24 of one batch refused at 200; 4 of 10 Krungthai slips refused at 600 the same day.
+- Verify: 2026-10-07 (D-255): 24 of one batch refused at 200; 4 of 10 Krungthai slips refused at 600 the same day. 50 of the Krungthai re-send refused at 600; migration 051 raised it to 1,000 for the backfill.
 
 ## Opening `/inbox` drains and captures, so it is no place to inspect the queue
 
