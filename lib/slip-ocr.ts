@@ -444,7 +444,8 @@ export const MONTH_ALTERNATION = [...THAI_MONTH_TOKENS]
 // Whitespace is already gone by the time this runs (`normalise`), because Thai has no
 // inter-word spaces and where an engine breaks a run is its business (`findLabelLine` makes
 // the same argument). The optional time tolerates the separator each layout prints — Krungthai
-// and SCB a hyphen, KBANK nothing — and the trailing `น.` KBANK appends.
+// and SCB a hyphen, KBANK nothing — and the trailing `น.` KBANK appends. Any number of hyphens:
+// Vision read one Krungthai slip's single hyphen as `- -` (2026-10-07).
 // **The tail is anchored, and that anchor is load-bearing.** Krungthai and SCB separate the
 // year from the time with a hyphen; KBANK separates them with spaces, which `normalise` has
 // already removed — so `… 69  11:38 น.` arrives as `…6911:38น.` and an unanchored `\d{2,4}`
@@ -453,7 +454,7 @@ export const MONTH_ALTERNATION = [...THAI_MONTH_TOKENS]
 // the line makes the four-digit reading fail and the two-digit one succeed, which is the
 // correct split rather than a lucky one.
 const PRINTED_DATE = new RegExp(
-  `(\\d{1,2})(${MONTH_ALTERNATION})(\\d{4}|\\d{2})(?:[-–—]?(\\d{1,2}):(\\d{2}))?(?:น\\.)?$`,
+  `(\\d{1,2})(${MONTH_ALTERNATION})(\\d{4}|\\d{2})(?:[-–—]*(\\d{1,2}):(\\d{2}))?(?:น\\.)?$`,
   "u"
 );
 
@@ -714,6 +715,42 @@ function kbankPayee(lines: readonly OcrWord[][]): OcrWord[] | null {
   return named.length > 0 ? named : null;
 }
 
+// Krungthai's masked accounts: `XXX-X-XX445-1`, a PromptPay `XXX-XXXXXXXX-7322` or `XXX XXX 9572`
+// (spaces are gone after `normalise`), once with a stray `___` before it.
+const KTB_MASKED_ACCOUNT = /^_*x{3}[-x]*\d{3,4}(?:-\d)?$/i;
+
+/**
+ * Krungthai's payee (9 slips measured 2026-10-07).
+ *
+ * A transfer prints `ไปยัง` on its own line, then the payee's name — wrapped onto a second line
+ * when it is long — then the payee's bank (or `พร้อมเพย์`) and the payee's masked account. So the
+ * name is the lines between the label and the line above the next masked account, at most two.
+ * A bill payment prints no label at all: the biller's name is the first line after the sender's
+ * masked account. Either way a bank logo left of the name reads as a one-letter word (`e`) and is
+ * dropped by the same rule as SCB's icons.
+ */
+function ktbPayee(lines: readonly OcrWord[][]): OcrWord[] | null {
+  const masked = (from: number) => lines.findIndex((words, index) => index >= from && KTB_MASKED_ACCOUNT.test(normalise(lineText(words))));
+  const label = findLabelLine(lines, PAYEE_LABEL);
+  let name: OcrWord[][];
+  if (label.ok) {
+    const nextMasked = masked(label.index + 1);
+    const end = nextMasked - 1;
+    const span = nextMasked > 0 && end - (label.index + 1) >= 1 && end - (label.index + 1) <= 2
+      ? lines.slice(label.index + 1, end)
+      : lines.slice(label.index + 1, label.index + 2);
+    name = span.filter((words) => !isLabelText(lineText(words)));
+  } else {
+    if (label.code !== "LABEL_NOT_FOUND") return null;
+    const sender = masked(0);
+    const first = sender < 0 ? undefined : lines[sender + 1];
+    name = first && HAS_LETTER.test(normalise(lineText(first))) && !isLabelText(lineText(first)) ? [first] : [];
+  }
+  if (name.length === 0) return null;
+  const value = withoutScbIcon(name.flat());
+  return value.length > 0 ? value : null;
+}
+
 /**
  * The note: the bank's own note label, plus the generic memo label where the layout's own label
  * is not already that one. Where both carry text (an SCB bill payment with a memo), both are kept.
@@ -747,7 +784,7 @@ export function proposeSlipText(words: readonly OcrWord[], bank: BankCode): Slip
   const payeeAnchor = SLIP_TEXT_ANCHORS[bank].payee;
   const payee = payeeAnchor === null
     ? kbankPayee(lines)
-    : bank === "SCB" ? scbPayee(lines, payeeAnchor) : labelledValue(lines, payeeAnchor);
+    : bank === "SCB" ? scbPayee(lines, payeeAnchor) : ktbPayee(lines);
   return {
     counterparty: payee ? displayText(shownText(payee), COUNTERPARTY_MAX) : null,
     note: slipNote(lines, bank)

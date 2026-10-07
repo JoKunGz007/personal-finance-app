@@ -287,6 +287,11 @@ describe("reading the printed date", () => {
     expect(read.value).toEqual({ iso: "2026-07-14", time: "09:05" });
   });
 
+  it("reads a hyphen the engine doubled before the time", () => {
+    const read = readPrintedDate(dateLine("14 ก.ค. 2569 - - 09:05"), today);
+    expect(read.ok && read.value).toEqual({ iso: "2026-07-14", time: "09:05" });
+  });
+
   it("converts out of the Buddhist era rather than believing the printed year", () => {
     // The whole hazard in one assertion: 2569 must not reach the ledger as the year 2569, and
     // must not be silently accepted as 2026 without the subtraction either (D-031).
@@ -488,6 +493,50 @@ describe("proposing the payee and note", () => {
   it("leaves Krungthai's note null when no memo is printed", () => {
     const words = [...line(100, [["ไปยัง", 10, 60]]), ...line(140, [["INVENTED", 10, 100], ["PERSON", 110, 180]])];
     expect(proposeSlipText(words, "KTB")).toEqual({ counterparty: "INVENTED PERSON", note: null });
+  });
+
+  const ktbSender = [
+    ...line(60, [["นาย", 10, 40], ["ผู้ส่ง", 45, 100]]),
+    ...line(80, [["กรุงไทย", 10, 80]]),
+    ...line(100, [["XXX-X-XX123-4", 10, 150]])
+  ];
+
+  it("joins Krungthai's wrapped payee name and drops the bank logo read as one letter", () => {
+    const words = [
+      ...ktbSender,
+      ...line(120, [["ไปยัง", 10, 60]]),
+      ...line(140, [["e", 10, 20], ["น.ส.", 30, 60], ["หนึ่ง", 65, 120], ["และ", 125, 150]]),
+      ...line(160, [["น.ส.", 30, 60], ["สอง", 65, 120]]),
+      ...line(180, [["พร้อมเพย์", 10, 100]]),
+      ...line(200, [["XXX-XXXXXXXX-0000", 10, 180]])
+    ];
+    expect(proposeSlipText(words, "KTB").counterparty).toBe("น.ส. หนึ่ง และ น.ส. สอง");
+  });
+
+  it("does not read the payee's bank line as part of a one-line Krungthai name", () => {
+    const words = [
+      ...ktbSender,
+      ...line(120, [["ไปยัง", 10, 60]]),
+      ...line(140, [["INVENTED", 10, 100], ["PERSON", 110, 180]]),
+      ...line(160, [["กสิกรไทย", 10, 90]]),
+      ...line(180, [["XXX-X-XX999-0", 10, 150]])
+    ];
+    expect(proposeSlipText(words, "KTB").counterparty).toBe("INVENTED PERSON");
+  });
+
+  it("reads a Krungthai bill payment's biller from the line after the sender's masked account", () => {
+    const words = [
+      ...ktbSender,
+      ...line(120, [["INVENTED", 10, 100], ["CO.,LTD.", 110, 190]]),
+      ...line(140, [["รหัสร้านค้า", 10, 100], ["000000000000001", 200, 380]]),
+      ...line(160, [["จำนวนเงิน", 10, 90], ["10.00", 300, 360]])
+    ];
+    expect(proposeSlipText(words, "KTB").counterparty).toBe("INVENTED CO.,LTD.");
+  });
+
+  it("declines a Krungthai bill payment whose line after the masked account is a label", () => {
+    const words = [...ktbSender, ...line(120, [["จำนวนเงิน", 10, 90], ["10.00", 300, 360]])];
+    expect(proposeSlipText(words, "KTB").counterparty).toBeNull();
   });
 
   const kbankSlip = (masked: OcrWord[][]) => [
