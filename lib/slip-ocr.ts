@@ -79,7 +79,8 @@ export type OcrRefusal =
   | "DATE_NOT_FOUND"
   | "DATE_AMBIGUOUS"
   | "DATE_YEAR_UNRESOLVED"
-  | "DATE_YEAR_DOUBTFUL";
+  | "DATE_YEAR_DOUBTFUL"
+  | "DATE_OUT_OF_RANGE";
 
 export type OcrRead<T> = { ok: true; value: T; source: string } | { ok: false; code: OcrRefusal; message: string };
 
@@ -565,7 +566,7 @@ export function withRereadYear(words: readonly OcrWord[], cropWords: readonly Oc
 function readDateLine(
   text: string,
   today: Date
-): PrintedDate | { unresolvedYear: true } | { doubtfulYear: true } | null {
+): PrintedDate | { unresolvedYear: true } | { doubtfulYear: true } | { outOfRangeYear: true } | null {
   const match = PRINTED_DATE.exec(normalise(text));
   if (!match) return null;
   const day = Number(match[1]);
@@ -585,8 +586,17 @@ function readDateLine(
     ? gregorianFromTwoDigitYear(printedYear, today)
     : short ? null : gregorianFromPrintedYear(printedYear, today);
   if (year === null && short) return { unresolvedYear: true };
-  // Out of era or out of window: date-shaped, but not a date this ledger can believe.
-  if (year === null) return null;
+  // Out of era or out of window: date-shaped, but not a date this ledger can believe. Reported as
+  // its own refusal rather than as "no date" (D-257): Vision reads Krungthai's 2568 as 2558, which
+  // lands here, and a re-read of the year can cure it only if the caller can tell. Only the year
+  // failing counts: an impossible calendar day (31 September) is still a plain null.
+  if (year === null) {
+    const asGregorian = printedYear - BUDDHIST_ERA_OFFSET;
+    const probe = new Date(Date.UTC(2000, month - 1, day));
+    probe.setUTCFullYear(asGregorian);
+    const real = probe.getUTCFullYear() === asGregorian && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+    return real ? { outOfRangeYear: true } : null;
+  }
 
   // A real calendar day, not merely a plausible one: 31 September is refused here rather than
   // rolling forward into October, which is what `Date` would do left alone.
@@ -630,11 +640,13 @@ export function readPrintedDate(words: readonly OcrWord[], today: Date): OcrRead
   const found: PrintedDate[] = [];
   let sawUnresolvedYear = false;
   let sawDoubtfulYear = false;
+  let sawOutOfRangeYear = false;
   for (const line of lines) {
     const read = readDateLine(line.map((word) => word.text).join(""), today);
     if (read === null) continue;
     if ("unresolvedYear" in read) { sawUnresolvedYear = true; continue; }
     if ("doubtfulYear" in read) { sawDoubtfulYear = true; continue; }
+    if ("outOfRangeYear" in read) { sawOutOfRangeYear = true; continue; }
     found.push(read);
   }
 
@@ -654,6 +666,11 @@ export function readPrintedDate(words: readonly OcrWord[], today: Date): OcrRead
       code: "DATE_YEAR_DOUBTFUL",
       message: "The year on this slip could be read as more than one year, so the date is not used. Enter the date yourself."
     };
+  }
+  // Below a doubtful line and above the two-digit refusal; one believable line elsewhere has
+  // already won above, so an out-of-range line never blocks a good one.
+  if (sawOutOfRangeYear) {
+    return { ok: false, code: "DATE_OUT_OF_RANGE", message: "The date printed on this slip is outside the range this ledger accepts." };
   }
   if (sawUnresolvedYear) {
     return {

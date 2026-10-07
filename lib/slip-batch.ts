@@ -91,7 +91,13 @@ export function resolveSlipDate(input: {
   // The refusal's own words, which distinguish a two-digit year (KBANK, and a decision rather
   // than an oversight) from no date at all and from two candidate lines. All three mean the same
   // thing here — the owner types it — but they mean different things to whoever reads the list.
-  if (!printed.ok) return { ok: false, reason: printed.message };
+  if (!printed.ok) {
+    // The reader's own out-of-range refusal carries the same code as the window check below, so one
+    // trigger covers both (D-257).
+    return printed.code === "DATE_OUT_OF_RANGE"
+      ? { ok: false, reason: printed.message, code: "OUT_OF_RANGE" }
+      : { ok: false, reason: printed.message };
+  }
 
   // `readPrintedDate` checks the era window, not this ledger's slip window, so a date it believes
   // can still be one `capture_slip` would refuse. Checked here rather than discovered on submit.

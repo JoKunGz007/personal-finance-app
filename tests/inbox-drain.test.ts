@@ -979,6 +979,14 @@ describe("drainInbox rereads a printed year the window refused", () => {
     expect(result.slips[0]).toMatchObject({ occurredOn: "2026-09-24", amountMinor: "125000" });
   });
 
+  test("a year misread 2558 (out of the era window) and read 2568 on its crop is captured as 2025-11-29", async () => {
+    today();
+    const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2558", "29", "พ.ย.") }, crop: () => cropWords("2568") });
+    const result = await drainInbox([file("k.png")], status, deps);
+    expect(calls.rereads).toHaveLength(1);
+    expect(result.slips[0]).toMatchObject({ occurredOn: "2025-11-29", amountMinor: "125000" });
+  });
+
   test("a crop that also reads 2559 leaves the slip in review with the original out-of-range reason", async () => {
     today();
     const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2559") }, crop: () => cropWords("2559") });

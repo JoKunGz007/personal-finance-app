@@ -387,7 +387,9 @@ describe("reading the printed date", () => {
     // only `ok === false` let both report as "this slip prints a two-digit year", which was
     // false for this input and is exactly the passing-for-the-wrong-reason GOTCHAS warns of.
     if (read.ok) return;
-    expect(read.code).toBe("DATE_NOT_FOUND");
+    // Its own refusal since D-257 (was DATE_NOT_FOUND): the line is a date by grammar and only its
+    // year is out of the window, which a re-read of the year can cure and "no date" could not say.
+    expect(read.code).toBe("DATE_OUT_OF_RANGE");
   });
 
   it("tolerates the word breaks an engine chooses, since Thai has no spaces", () => {
@@ -446,6 +448,41 @@ describe("a printed year that a 6-as-5 misread could have produced", () => {
     expect(read.ok).toBe(false);
     if (read.ok) return;
     expect(read.code).toBe("DATE_YEAR_DOUBTFUL");
+  });
+
+  it("reports Krungthai's 2568 misread as 2558 as out of range, not as no date", () => {
+    const read = readPrintedDate(dateLine("29 พ.ย. 2558 - 00:28"), today);
+    expect(read.ok).toBe(false);
+    if (read.ok) return;
+    expect(read.code).toBe("DATE_OUT_OF_RANGE");
+    expect(read.message).toContain("outside the range this ledger accepts");
+  });
+
+  it("lets one believable line win over an out-of-range one", () => {
+    const read = readPrintedDate(
+      [
+        { text: "29 พ.ย. 2558", left: 100, right: 400, top: 50, bottom: 74 },
+        { text: "24 ก.ย. 2569", left: 100, right: 400, top: 120, bottom: 144 }
+      ],
+      today
+    );
+    expect(read.ok && read.value.iso).toBe("2026-09-24");
+  });
+
+  it("ranks a doubtful line above an out-of-range one", () => {
+    const read = readPrintedDate(
+      [
+        { text: "29 พ.ย. 2558", left: 100, right: 400, top: 50, bottom: 74 },
+        { text: "07 ต.ค. 2569", left: 100, right: 400, top: 120, bottom: 144 }
+      ],
+      today
+    );
+    expect(!read.ok && read.code).toBe("DATE_YEAR_DOUBTFUL");
+  });
+
+  it("still returns no date for an impossible day in an out-of-range year", () => {
+    const read = readPrintedDate(dateLine("31 ก.ย. 2558"), today);
+    expect(!read.ok && read.code).toBe("DATE_NOT_FOUND");
   });
 
   it("leaves the misread year itself to the ledger's window check", () => {
