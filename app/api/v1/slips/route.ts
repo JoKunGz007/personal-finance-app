@@ -70,6 +70,11 @@ export async function POST(request: Request) {
       return routeError("The slip date is outside the plausible window. Check the year is not a Buddhist-era one.", 422);
     }
     if (error.message.includes("category not owned")) return routeError("That category does not exist.", 422);
+    // A slip captured on its printed reference that matches a stored one on everything but the
+    // reference is refused rather than stored or treated as held (migration 052, D-258).
+    if (error.message.includes("slip may already be captured")) {
+      return routeError("A slip with the same bank, date, time and amount is already stored. If this is a different payment, add it on the Slips page.", 409);
+    }
     return routeError("The slip could not be captured.", 400);
   }
 

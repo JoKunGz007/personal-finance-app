@@ -27,10 +27,41 @@ export type SlipKind = (typeof SLIP_KINDS)[number];
 // the same bound server-side; this copy exists so the form can say so before submitting.
 export const SLIP_MAX_AGE_YEARS = 10;
 
+/**
+ * Whether a printed slip reference agrees with the slip's date (D-258).
+ *
+ * A slip whose QR does not decode is captured on its printed reference, which is typed or
+ * OCR-read and so can be wrong where a QR cannot. Both banks allowed a printed identity put
+ * the transaction date first in some references: when the first eight characters (after at most one
+ * letter) are digits
+ * forming a real YYYYMMDD date, that date must be `occurredOn`. SCB references always carry
+ * it, so an SCB reference without one is refused. Any other bank has no printed identity.
+ */
+export function printedReferenceAgrees(bankCode: string, reference: string, occurredOn: string): boolean {
+  if (bankCode !== "KTB" && bankCode !== "SCB") return false;
+  const prefix = referenceDatePrefix(reference);
+  if (prefix === null) return bankCode === "KTB";
+  return prefix === occurredOn;
+}
+
+// SCB's reference starts with the date; Krungthai's bill payment puts one letter first (`DATE_OFFSETS`).
+function referenceDatePrefix(reference: string): string | null {
+  const match = /^[A-Za-z]?(\d{4})(\d{2})(\d{2})/.exec(reference);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() !== Number(month) - 1 || date.getUTCDate() !== Number(day)) {
+    return null;
+  }
+  return `${year}-${month}-${day}`;
+}
+
+// Two identity shapes share one object (D-258): `qrPayload` and `bankQrCode` are both set (QR
+// identity, re-derived below) or both null (printed identity, KTB/SCB only, with a time).
 export const slipCaptureSchema = z.object({
-  qrPayload: z.string().min(1).max(512),
+  qrPayload: z.string().min(1).max(512).nullable(),
   bankCode: z.enum(BANK_CODES),
-  bankQrCode: z.string().regex(/^\d{3}$/),
+  bankQrCode: z.string().regex(/^\d{3}$/).nullable(),
   slipReference: z.string().regex(/^[0-9A-Za-z]{1,64}$/),
   kind: z.enum(SLIP_KINDS),
   amountMinor: minorUnitStringSchema,
@@ -44,6 +75,25 @@ export const slipCaptureSchema = z.object({
   const amount = toMinorAmount(slip.amountMinor);
   if (amount !== null && ((slip.kind === "deposit" && amount <= 0n) || (slip.kind === "withdrawal" && amount >= 0n))) {
     context.addIssue({ code: "custom", message: "The amount's sign does not match the slip's direction.", path: ["amountMinor"] });
+  }
+
+  if (slip.qrPayload === null || slip.bankQrCode === null) {
+    if (slip.qrPayload !== null || slip.bankQrCode !== null) {
+      context.addIssue({ code: "custom", message: "The slip QR payload and bank QR code must both be present or both absent.", path: ["qrPayload"] });
+      return;
+    }
+    // Printed identity: no QR to re-derive from, so the reference is checked against the date.
+    if (slip.bankCode !== "KTB" && slip.bankCode !== "SCB") {
+      context.addIssue({ code: "custom", message: "Only Krungthai and SCB slips can be captured without a readable QR.", path: ["bankCode"] });
+      return;
+    }
+    if (slip.occurredAtTime === null) {
+      context.addIssue({ code: "custom", message: "A slip captured without a readable QR needs its time.", path: ["occurredAtTime"] });
+    }
+    if (!printedReferenceAgrees(slip.bankCode, slip.slipReference, slip.occurredOn)) {
+      context.addIssue({ code: "custom", message: "The printed reference does not agree with the slip's date.", path: ["slipReference"] });
+    }
+    return;
   }
 
   // The identity check. Re-reading the payload here means the bank and reference stored are

@@ -286,13 +286,22 @@ export function planLinemanOrders(pages: readonly OrderPage[]): LinemanGroup[] {
 /** The page that hosts the slip forms, named as the owner sees it. */
 const SLIPS_PAGE = "Slips";
 
+/**
+ * A slip's identity as the drain carries it: the QR's, or one read off the printed text (D-258),
+ * which has no QR code and so a null `bankQrCode`.
+ */
+export type ReadySlipIdentity = Omit<SlipIdentity, "bankQrCode"> & { readonly bankQrCode: string | null };
+
 /** A slip whose amount and date were read exactly, held until the owner says money in or out. */
 export type ReadySlip = {
   /** The queue's object name, which is how its file is removed after the capture. */
   readonly name: string;
-  /** The QR text verbatim: the server re-derives the bank and reference from it. */
-  readonly payload: string;
-  readonly identity: SlipIdentity;
+  /**
+   * The QR text verbatim: the server re-derives the bank and reference from it. Null for a slip
+   * whose identity was read off its printed text (D-258); `identity.bankQrCode` is then null too.
+   */
+  readonly payload: string | null;
+  readonly identity: ReadySlipIdentity;
   readonly occurredOn: string;
   readonly occurredAtTime: string | null;
   /** The **magnitude**, in minor units. The direction supplies the sign at capture. */
@@ -316,9 +325,9 @@ export function slipReviewReason(reason: string): string {
 
 /** The body of `POST /api/v1/slips`: the same one `app/slip-batch.tsx` sends for a slip it has read. */
 export type SlipPostBody = {
-  readonly qrPayload: string;
+  readonly qrPayload: string | null;
   readonly bankCode: string;
-  readonly bankQrCode: string;
+  readonly bankQrCode: string | null;
   readonly slipReference: string;
   readonly kind: SlipKind;
   readonly amountMinor: MinorUnitString;

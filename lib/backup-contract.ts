@@ -282,9 +282,10 @@ const slipRowSchema = z.object({
   id: uuidSchema,
   owner_id: uuidSchema,
   bank_code: z.enum(BANK_CODES),
-  bank_qr_code: z.string().regex(/^\d{3}$/),
+  // Both null for a slip captured on its printed reference (migration 052, D-258).
+  bank_qr_code: z.string().regex(/^\d{3}$/).nullable(),
   slip_reference: z.string().regex(/^[0-9A-Za-z]{1,64}$/),
-  qr_payload: z.string().min(1).max(512),
+  qr_payload: z.string().min(1).max(512).nullable(),
   kind: z.enum(["deposit", "withdrawal"]),
   amount_minor: minorUnitStringSchema,
   currency: z.literal("THB"),
@@ -298,6 +299,9 @@ const slipRowSchema = z.object({
   const amount = toMinorAmount(slip.amount_minor);
   if (amount !== null && ((slip.kind === "deposit" && amount <= 0n) || (slip.kind === "withdrawal" && amount >= 0n))) {
     context.addIssue({ code: "custom", message: "Slip sign does not match its kind." });
+  }
+  if ((slip.qr_payload === null) !== (slip.bank_qr_code === null)) {
+    context.addIssue({ code: "custom", message: "Slip QR payload and bank QR code must both be present or both absent." });
   }
 });
 

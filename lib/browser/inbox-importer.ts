@@ -11,14 +11,15 @@ import { postStatementImport, type StatementImportPosted } from "@/lib/browser/i
 import {
   BUILD_ID, describeDrain, FORGOTTEN_HELD, needsStatementRoute, statementHeldReason, statementNeedsReview, NOT_YET, planLinemanOrders, planPdf, planReceiptScreenshots, planStatement, progressLine, recogniseImage,
   SLIP_AMOUNT_REASON, SLIP_REVIEW_REMEMBERED_REASON, SLIP_UNCONFIRMED_REASON, SLIP_WAITING_REASON, slipPostBody, slipReviewReason,
-  type PdfReply, type ReadySlip, type RememberedKind, type SlipPostBody
+  type PdfReply, type ReadySlip, type ReadySlipIdentity, type RememberedKind, type SlipPostBody
 } from "@/lib/inbox-drain";
 import { kindOfObject, lineReceivedAt } from "@/lib/inbox-queue";
 import type { ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import type { CaptureForm } from "@/lib/receipts";
-import { classifySlipRereadingYear, signedSlipAmount } from "@/lib/slip-batch";
+import { classifySlipRereadingYear, signedSlipAmount, type SlipIdentitySource } from "@/lib/slip-batch";
 import { proposeSlipText, type Box } from "@/lib/slip-ocr";
+import { readPrintedIdentity } from "@/lib/slip-printed";
 import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
 import { slipDateWindow, type SlipKind } from "@/lib/slips";
 import { readError } from "@/lib/wire";
@@ -281,26 +282,40 @@ export async function drainInbox(
     // One Vision read per image per drain; the words go to every recogniser.
     const read = await deps.readImage(downloaded.value);
 
+    // No QR at all (not merely a non-slip QR, which may be a payment-request screen): a Krungthai or
+    // SCB slip may still carry its identity in print (D-258). A refusal falls through unchanged.
+    let slipIdentity: { identity: ReadySlipIdentity; payload: string | null; source: SlipIdentitySource } | null = null;
     if (scan.ok) {
+      slipIdentity = { identity: scan.identity, payload: scan.payload, source: "qr" };
+    } else if (scan.code === "NO_QR_DETECTED" && read.ok) {
+      const printed = readPrintedIdentity(read.words);
+      if (printed.ok) {
+        slipIdentity = { identity: { bankCode: printed.bankCode, bankQrCode: null, reference: printed.reference }, payload: null, source: "printed" };
+      }
+    }
+
+    if (slipIdentity !== null) {
+      const { identity, payload, source } = slipIdentity;
       // The words are only compared with each other (labels and the figure beside them), so they need
       // no shared coordinate space with the scanned bitmap; `readImageFileWords` decodes the same file.
       const verdict = await classifySlipRereadingYear({
-        reference: scan.identity.reference,
-        bankCode: scan.identity.bankCode,
+        reference: identity.reference,
+        bankCode: identity.bankCode,
         words: read.ok ? read.words : null,
         readerRefusal: read.ok ? null : read.why,
         window: slipDateWindow(new Date()),
-        today: new Date()
+        today: new Date(),
+        identity: source
       }, (box) => deps.rereadYear(downloaded.value, box));
       if (verdict.status === "ready") {
         // Ready means Vision answered, so the words are there; the payee and memo are best-effort.
-        const text = read.ok ? proposeSlipText(read.words, scan.identity.bankCode) : { counterparty: null, note: null };
+        const text = read.ok ? proposeSlipText(read.words, identity.bankCode) : { counterparty: null, note: null };
         return {
           reason: SLIP_WAITING_REASON,
           slip: {
             name: file.name,
-            payload: scan.payload,
-            identity: scan.identity,
+            payload,
+            identity,
             occurredOn: verdict.date.occurredOn,
             occurredAtTime: verdict.date.occurredAtTime,
             amountMinor: verdict.amountMinor,
@@ -324,7 +339,7 @@ export async function drainInbox(
       return { linemanPage: { name: file.name, page: recognised.page, createdAt: lineReceivedAt(file.name) ?? file.created_at } };
     }
     // Not when the scan itself failed: the image may be a slip the next open can scan.
-    return { reason: recognised.reason, remember: recognised.reason === NOT_YET && scan.code !== "SCAN_FAILED" ? "unrecognised" : undefined };
+    return { reason: recognised.reason, remember: recognised.reason === NOT_YET && (scan.ok || scan.code !== "SCAN_FAILED") ? "unrecognised" : undefined };
   }
 
   onStatus(progressLine(0, files.length));

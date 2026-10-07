@@ -846,7 +846,8 @@ function kbankPayee(lines: readonly OcrWord[][]): OcrWord[] | null {
 
 // Krungthai's masked accounts: `XXX-X-XX445-1`, a PromptPay `XXX-XXXXXXXX-7322` or `XXX XXX 9572`
 // (spaces are gone after `normalise`), once with a stray `___` before it.
-const KTB_MASKED_ACCOUNT = /^_*x{3}[-x]*\d{3,4}(?:-\d)?$/i;
+// Leading strokes are the slip's arrow graphic read as text (`___`, `//____`, measured 2026-10-07).
+const KTB_MASKED_ACCOUNT = /^[_/\\|]*x{3}[-x]*\d{3,4}(?:-\d)?$/i;
 
 /**
  * Krungthai's payee (9 slips measured 2026-10-07).
@@ -863,11 +864,14 @@ function ktbPayee(lines: readonly OcrWord[][]): OcrWord[] | null {
   const label = findLabelLine(lines, PAYEE_LABEL);
   let name: OcrWord[][];
   if (label.ok) {
-    const nextMasked = masked(label.index + 1);
+    // A logo on a line of its own (`e` for PromptPay, `G` for G-Wallet) is skipped, not taken as the name.
+    let first = label.index + 1;
+    while (first < lines.length && letters(lineText(lines[first]!)) <= 1) first += 1;
+    const nextMasked = masked(first);
     const end = nextMasked - 1;
-    const span = nextMasked > 0 && end - (label.index + 1) >= 1 && end - (label.index + 1) <= 2
-      ? lines.slice(label.index + 1, end)
-      : lines.slice(label.index + 1, label.index + 2);
+    const span = nextMasked > 0 && end - first >= 1 && end - first <= 2
+      ? lines.slice(first, end)
+      : lines.slice(first, first + 1);
     name = span.filter((words) => !isLabelText(lineText(words)));
   } else {
     if (label.code !== "LABEL_NOT_FOUND") return null;

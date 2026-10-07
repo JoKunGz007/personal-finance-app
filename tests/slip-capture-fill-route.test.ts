@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   slip: {} as Record<string, unknown>,
   overlay: { data: null as unknown, error: null as unknown },
   rpcError: null as unknown,
+  captureError: null as unknown,
   calls: [] as { name: string; args: Record<string, unknown> }[]
 }));
 
@@ -24,7 +25,7 @@ vi.mock("@/lib/server/supabase", () => ({
     supabase: {
       rpc: async (name: string, args: Record<string, unknown>) => {
         state.calls.push({ name, args });
-        if (name === "capture_slip") return { data: { captured: state.captured, slip: state.slip }, error: null };
+        if (name === "capture_slip") return state.captureError ? { data: null, error: state.captureError } : { data: { captured: state.captured, slip: state.slip }, error: null };
         if (name === "set_slip_correction") return { data: {}, error: state.rpcError };
         throw new Error(`unexpected rpc ${name}`);
       },
@@ -58,6 +59,7 @@ beforeEach(() => {
   state.slip = { id: SLIP_ID, counterparty: null, note: null };
   state.overlay = { data: null, error: null };
   state.rpcError = null;
+  state.captureError = null;
   state.calls = [];
 });
 
@@ -124,5 +126,21 @@ describe("POST /api/v1/slips filling a duplicate", () => {
     state.captured = true;
     expect(await post()).toMatchObject({ status: 201, body: { filled: false } });
     expect(fillCalls()).toHaveLength(0);
+  });
+});
+
+describe("POST /api/v1/slips refusing a possible duplicate (D-258)", () => {
+  it("maps 'slip may already be captured' to 409 with an owner-facing message", async () => {
+    state.captureError = { message: "slip may already be captured" };
+    const answer = await post({ qrPayload: null, bankQrCode: null, slipReference: "20260720INVENTED0001" });
+    expect(answer.status).toBe(409);
+    expect((answer.body as unknown as { error: string }).error).toContain("same bank, date, time and amount");
+    expect(fillCalls()).toHaveLength(0);
+  });
+
+  it("still fills a printed slip's blank payee on an exact-reference duplicate", async () => {
+    const answer = await post({ qrPayload: null, bankQrCode: null, slipReference: "20260720INVENTED0001" });
+    expect(answer).toMatchObject({ status: 200, body: { filled: true } });
+    expect(fillCalls()).toHaveLength(1);
   });
 });

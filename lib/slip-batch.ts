@@ -1,6 +1,6 @@
 import { toMinorAmount, type MinorUnitString } from "@/lib/money";
 import { locatePrintedYear, proposeAmount, readPrintedDate, withRereadYear, type Box, type OcrWord } from "@/lib/slip-ocr";
-import { slipDateFromReference, type SlipKind } from "@/lib/slips";
+import { printedReferenceAgrees, slipDateFromReference, type SlipKind } from "@/lib/slips";
 import { type BankCode } from "@/lib/statement-frame";
 
 /**
@@ -26,6 +26,12 @@ import { type BankCode } from "@/lib/statement-frame";
 
 /** Where a batch slip's date came from. Both are exact; neither is "today". */
 export type SlipDateSource = "qr" | "printed";
+
+/**
+ * Where a slip's identity came from: its QR (CRC-covered) or its printed text (D-258). A printed
+ * reference is OCR, so it never supplies the date; it is only checked against the printed one.
+ */
+export type SlipIdentitySource = "qr" | "printed";
 
 export type ResolvedSlipDate = {
   readonly occurredOn: string;
@@ -72,10 +78,12 @@ export function resolveSlipDate(input: {
   readonly words: readonly OcrWord[];
   readonly window: { readonly earliest: string; readonly latest: string };
   readonly today: Date;
+  /** Defaults to "qr". A printed reference is OCR, so its date never wins over the printed line. */
+  readonly identity?: SlipIdentitySource;
 }): SlipDateResolution {
   // Already checked against the window by `slipDateFromReference`, which returns null rather
   // than a date the form would then be refused for.
-  const fromQr = slipDateFromReference(input.reference, input.window);
+  const fromQr = input.identity === "printed" ? null : slipDateFromReference(input.reference, input.window);
   const printed = readPrintedDate(input.words, input.today);
 
   if (fromQr !== null) {
@@ -136,6 +144,9 @@ export type SlipBatchDecision =
   };
 
 const READER_UNAVAILABLE = "This slip could not be read, so its amount and date need typing in.";
+const PRINTED_NO_TIME = "This slip has no time printed, and a slip without a readable QR code needs one.";
+const PRINTED_REFERENCE_DISAGREES = "The date in this slip's reference does not match its printed date.";
+const PRINTED_REFERENCE_UNDATED = "This SCB slip's reference does not begin with its date, so it could not be read exactly.";
 
 /**
  * One slip's verdict: file it unseen, or put it in front of the owner.
@@ -162,6 +173,8 @@ export function classifySlip(input: {
   readonly readerRefusal: string | null;
   readonly window: { readonly earliest: string; readonly latest: string };
   readonly today: Date;
+  /** Defaults to "qr". "printed": the reference was read off the slip's text (D-258). */
+  readonly identity?: SlipIdentitySource;
 }): SlipBatchDecision {
   // **Resolved first, and for the reader-unavailable case that is the whole point.** The QR
   // reference carries the date under its own CRC for SCB and the longer Krungthai variant, so it
@@ -173,7 +186,8 @@ export function classifySlip(input: {
     // when the reader could not be reached. The QR half still answers.
     words: input.words ?? [],
     window: input.window,
-    today: input.today
+    today: input.today,
+    identity: input.identity
   });
   const resolvedDate = date.ok ? date.date : null;
 
@@ -199,6 +213,16 @@ export function classifySlip(input: {
   const amountMinor = (magnitude < 0n ? -magnitude : magnitude).toString();
 
   if (!date.ok) return { status: "review", reason: date.reason, date: null, amountMinor };
+
+  // A printed identity has no CRC behind it, so the server keys it on bank, date, time and amount
+  // as well as the reference: a time is required, and the reference's own date must agree.
+  if (input.identity === "printed") {
+    if (date.date.occurredAtTime === null) return { status: "review", reason: PRINTED_NO_TIME, date: date.date, amountMinor };
+    if (!printedReferenceAgrees(input.bankCode, input.reference, date.date.occurredOn)) {
+      const reason = input.bankCode === "SCB" && !/^\d{8}/.test(input.reference) ? PRINTED_REFERENCE_UNDATED : PRINTED_REFERENCE_DISAGREES;
+      return { status: "review", reason, date: null, amountMinor };
+    }
+  }
 
   return { status: "ready", date: date.date, amountMinor };
 }
@@ -231,7 +255,7 @@ export async function classifySlipRereadingYear(
   const verdict = classifySlip(input);
   // `amountMinor` null means the amount is the problem, which a year cannot cure: no second read.
   if (verdict.status === "ready" || input.words === null || verdict.amountMinor === null) return verdict;
-  const date = resolveSlipDate({ reference: input.reference, words: input.words, window: input.window, today: input.today });
+  const date = resolveSlipDate({ reference: input.reference, words: input.words, window: input.window, today: input.today, identity: input.identity });
   if (date.ok || date.code !== "OUT_OF_RANGE") return verdict;
   const box = locatePrintedYear(input.words);
   if (box === null) return verdict;

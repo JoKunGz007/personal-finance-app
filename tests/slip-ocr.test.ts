@@ -690,6 +690,29 @@ describe("proposing the payee and note", () => {
     expect(proposeSlipText(words, "KTB").counterparty).toBe("INVENTED CO.,LTD.");
   });
 
+  it("skips a G-Wallet logo on its own line under Krungthai's payee label", () => {
+    const words = [
+      ...ktbSender,
+      ...line(120, [["ไปยัง", 10, 60]]),
+      ...line(140, [["G", 10, 20]]),
+      ...line(160, [["INVENTED", 30, 120], ["OWNER", 130, 200]]),
+      ...line(180, [["(G-WALLET)", 30, 140]]),
+      ...line(200, [["G-Wallet", 10, 80], ["15", 85, 100], ["หลัก", 105, 140], ["XXX-XXXXXXXX-0000", 150, 330]])
+    ];
+    expect(proposeSlipText(words, "KTB").counterparty).toBe("INVENTED OWNER");
+  });
+
+  it("finds the sender's masked account behind the arrow graphic read as strokes", () => {
+    const words = [
+      ...line(60, [["นาย", 10, 40], ["ผู้ส่ง", 45, 100]]),
+      ...line(80, [["กรุงไทย", 10, 80]]),
+      ...line(100, [["//____XXX-X-XX123-4", 10, 170]]),
+      ...line(120, [["INVENTED", 10, 100], ["FARE", 110, 160]]),
+      ...line(140, [["จำนวนเงิน", 10, 90], ["10.00", 300, 360]])
+    ];
+    expect(proposeSlipText(words, "KTB").counterparty).toBe("INVENTED FARE");
+  });
+
   it("declines a Krungthai bill payment whose line after the masked account is a label", () => {
     const words = [...ktbSender, ...line(120, [["จำนวนเงิน", 10, 90], ["10.00", 300, 360]])];
     expect(proposeSlipText(words, "KTB").counterparty).toBeNull();

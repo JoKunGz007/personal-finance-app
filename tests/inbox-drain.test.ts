@@ -879,7 +879,7 @@ describe("captureSlips", () => {
     const deps = {
       postSlip: async (body: ReturnType<typeof slipPostBody>): Promise<SlipPosted> => {
         bodies.push(body);
-        const name = body.qrPayload.replace("INVENTED-PAYLOAD-", "");
+        const name = (body.qrPayload ?? "").replace("INVENTED-PAYLOAD-", "");
         log.push(`post:${name}`);
         return options.post ? options.post(name) : { ok: true, outcome: "captured" };
       },
@@ -1044,5 +1044,51 @@ describe("drainInbox rereads a printed year the window refused", () => {
     const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2559").slice(3) }, crop: () => cropWords("2569") });
     await drainInbox([file("k.png")], status, deps);
     expect(calls.rereads).toEqual([]);
+  });
+});
+
+describe("drainInbox with a slip whose QR cannot be found (D-258)", () => {
+  const status = () => undefined;
+  // An invented SCB slip: its bank in the header, its printed date and time, and its reference.
+  const PRINTED_REFERENCE = "2026071431a2B3c4D5e6F7g8H";
+  const printedSlip = (): OcrWord[] => [
+    ...line(10, [["›", 5, 10], ["SCB,", 15, 60]]),
+    ...line(60, [["14 ก.ค. 2569 - 09:05", 10, 200]]),
+    ...slipWords(),
+    ...line(400, [["รหัสอ้างอิง:", 10, 110], [PRINTED_REFERENCE, 120, 330]])
+  ];
+
+  test("no QR at all: a printed identity makes a ready slip with no QR payload", async () => {
+    const { deps, calls } = fakes({ words: { "p.png": printedSlip() } });
+    const result = await drainInbox([file("p.png")], status, deps);
+    expect(result.slips).toEqual([{
+      name: "p.png",
+      payload: null,
+      identity: { bankCode: "SCB", bankQrCode: null, reference: PRINTED_REFERENCE },
+      occurredOn: "2026-07-14",
+      occurredAtTime: "09:05",
+      amountMinor: "125000",
+      ...proposeSlipText(printedSlip(), "SCB")
+    }]);
+    expect(result.reasons).toEqual({ "p.png": SLIP_WAITING_REASON });
+    expect(calls.slipPosts).toBe(0);
+  });
+
+  test("a QR that is not a slip's keeps today's path, even over printed slip text", async () => {
+    const { deps } = fakes({
+      scans: { "p.png": { ok: false, code: "NO_SLIP_QR_DETECTED", message: "This QR code is not a slip's." } },
+      words: { "p.png": printedSlip() }
+    });
+    const result = await drainInbox([file("p.png")], status, deps);
+    expect(result.slips).toEqual([]);
+    expect(result.reasons["p.png"]).toBe(NOT_YET);
+  });
+
+  test("a printed slip's capture body carries no QR payload and no QR bank code", () => {
+    const body = slipPostBody({
+      name: "p.png", payload: null, identity: { bankCode: "SCB", bankQrCode: null, reference: PRINTED_REFERENCE },
+      occurredOn: "2026-07-14", occurredAtTime: "09:05", amountMinor: "125000", counterparty: null, note: null
+    }, "withdrawal", "-125000");
+    expect(body).toMatchObject({ qrPayload: null, bankCode: "SCB", bankQrCode: null, slipReference: PRINTED_REFERENCE, occurredAtTime: "09:05" });
   });
 });

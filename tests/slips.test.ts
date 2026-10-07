@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSlipQrPayload } from "@/lib/slip-qr";
-import { slipCaptureSchema, slipDateFromReference, slipDateWindow } from "@/lib/slips";
+import { printedReferenceAgrees, slipCaptureSchema, slipDateFromReference, slipDateWindow } from "@/lib/slips";
 
 const REFERENCE = "202601010000000000000001x";
 const PAYLOAD = buildSlipQrPayload({ bankQrCode: "014", reference: REFERENCE });
@@ -82,6 +82,63 @@ describe("slip capture contract", () => {
     expect(window.latest).toBe("2026-07-31");
     expect(window.earliest).toBe("2016-07-30");
     expect("2569-07-20" > window.latest).toBe(true);
+  });
+});
+
+describe("slip capture on the printed reference (D-258)", () => {
+  // Invented references: SCB-style with a YYYYMMDD prefix, KTB-style without one.
+  const printed = (overrides: Record<string, unknown> = {}) =>
+    capture({ qrPayload: null, bankQrCode: null, slipReference: "20260720INVENTED0001", ...overrides });
+
+  it("accepts a printed SCB slip whose date prefix matches", () => {
+    expect(slipCaptureSchema.safeParse(printed()).success).toBe(true);
+  });
+
+  it("accepts a printed KTB slip with no date prefix", () => {
+    expect(slipCaptureSchema.safeParse(printed({ bankCode: "KTB", slipReference: "A0B1C2D3E4F5" })).success).toBe(true);
+  });
+
+  it("refuses an SCB reference without a date prefix", () => {
+    expect(slipCaptureSchema.safeParse(printed({ slipReference: "A0B1C2D3E4F5" })).success).toBe(false);
+  });
+
+  it("refuses a date prefix that disagrees with the slip date, for either bank", () => {
+    expect(slipCaptureSchema.safeParse(printed({ slipReference: "20260721INVENTED0001" })).success).toBe(false);
+    expect(slipCaptureSchema.safeParse(printed({ bankCode: "KTB", slipReference: "20260721INVENTED0001" })).success).toBe(false);
+  });
+
+  it("refuses a printed KBANK slip", () => {
+    expect(slipCaptureSchema.safeParse(printed({ bankCode: "KBANK" })).success).toBe(false);
+  });
+
+  it("refuses a printed slip with no time", () => {
+    expect(slipCaptureSchema.safeParse(printed({ occurredAtTime: null })).success).toBe(false);
+  });
+
+  it("refuses a half-null QR pair", () => {
+    expect(slipCaptureSchema.safeParse(capture({ qrPayload: null })).success).toBe(false);
+    expect(slipCaptureSchema.safeParse(capture({ bankQrCode: null })).success).toBe(false);
+  });
+
+  it("treats an eight-digit prefix that is not a real date as no prefix", () => {
+    expect(printedReferenceAgrees("KTB", "20261340A0B1", "2026-07-20")).toBe(true);
+    expect(printedReferenceAgrees("SCB", "20261340A0B1", "2026-07-20")).toBe(false);
+    expect(printedReferenceAgrees("KTB", "20260720A0B1", "2026-07-20")).toBe(true);
+    expect(printedReferenceAgrees("KBANK", "20260720A0B1", "2026-07-20")).toBe(false);
+  });
+});
+
+describe("printed reference date after one letter", () => {
+  it("accepts a letter-prefixed Krungthai reference whose date matches", () => {
+    expect(printedReferenceAgrees("KTB", "C20260720123456789", "2026-07-20")).toBe(true);
+  });
+
+  it("refuses a letter-prefixed Krungthai reference whose date differs", () => {
+    expect(printedReferenceAgrees("KTB", "C20260721123456789", "2026-07-20")).toBe(false);
+  });
+
+  it("accepts a hex Krungthai reference, which carries no date", () => {
+    expect(printedReferenceAgrees("KTB", "Ad6e1f0a2b3c4d5e6", "2026-07-20")).toBe(true);
   });
 });
 

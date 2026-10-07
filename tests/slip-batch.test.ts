@@ -367,3 +367,37 @@ describe("applying the batch's direction", () => {
     expect(signedSlipAmount("twelve", "deposit")).toBeNull();
   });
 });
+
+describe("classifying a slip whose identity was read off its print (D-258)", () => {
+  const printed = (reference: string, bankCode: "KTB" | "SCB", print: string | null = "14 ก.ค. 2569 - 09:05") =>
+    classifySlip({ reference, bankCode, words: slipWords({ printed: print }), readerRefusal: null, window: WINDOW, today: TODAY, identity: "printed" });
+
+  it("files a slip whose reference date agrees with its printed date and time", () => {
+    expect(printed("2026071431a2B3c4D5e6F7g8H", "SCB")).toEqual({
+      status: "ready", amountMinor: "125000", date: { occurredOn: "2026-07-14", occurredAtTime: "09:05", source: "printed" }
+    });
+  });
+
+  it("sends a slip to review when its reference date disagrees with its printed date", () => {
+    const verdict = printed("2026071531a2B3c4D5e6F7g8H", "SCB");
+    expect(verdict).toMatchObject({ status: "review", reason: "The date in this slip's reference does not match its printed date.", date: null, amountMinor: "125000" });
+  });
+
+  it("sends an SCB slip whose reference carries no date to review", () => {
+    expect(printed("X1a2B3c4D5e6F7g8H", "SCB")).toMatchObject({
+      status: "review",
+      reason: "This SCB slip's reference does not begin with its date, so it could not be read exactly."
+    });
+  });
+
+  it("sends a slip with no printed time to review", () => {
+    expect(printed("2026071431a2B3c4D5e6F7g8H", "SCB", "14 ก.ค. 2569")).toMatchObject({ status: "review", reason: expect.stringMatching(/no time printed/u) });
+  });
+
+  it("never takes the date from a printed reference, which is OCR", () => {
+    const reference = "20260714000012345";
+    const qr = classifySlip({ reference, bankCode: "SCB", words: slipWords({ printed: null }), readerRefusal: null, window: WINDOW, today: TODAY });
+    expect(qr.status).toBe("ready");
+    expect(printed(reference, "KTB", null)).toMatchObject({ status: "review", date: null });
+  });
+});
