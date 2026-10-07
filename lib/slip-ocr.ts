@@ -457,7 +457,9 @@ export const MONTH_ALTERNATION = [...THAI_MONTH_TOKENS]
 // the line makes the four-digit reading fail and the two-digit one succeed, which is the
 // correct split rather than a lucky one.
 const PRINTED_DATE = new RegExp(
-  `(\\d{1,2})(${MONTH_ALTERNATION})(\\d{4}|\\d{2})(?:[-–—]*(\\d{1,2}):(\\d{2}))?(?:น\\.)?$`,
+  // A trailing mark that is neither letter nor digit is background read as text (`>` after a
+  // Krungthai time, D-262); it can never move the year/time split, which is all digits.
+  `(\\d{1,2})(${MONTH_ALTERNATION})(\\d{4}|\\d{2})(?:[-–—]*(\\d{1,2}):(\\d{2}))?(?:น\\.)?[^\\p{L}\\p{N}]*$`,
   "u"
 );
 

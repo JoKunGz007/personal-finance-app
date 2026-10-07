@@ -291,6 +291,16 @@ describe("reading the printed date", () => {
     expect(read.value).toEqual({ iso: "2026-07-14", time: "09:05" });
   });
 
+  it("reads a date line that ends in a stray mark read off the background", () => {
+    const read = readPrintedDate(dateLine("14 ก.ค. 2569 - 09:05 >"), today);
+    expect(read.ok && read.value).toEqual({ iso: "2026-07-14", time: "09:05" });
+  });
+
+  it("still reports a misread year out of range when a stray mark follows the time", () => {
+    const read = readPrintedDate(dateLine("14 ก.ค. 2558 - 09:05 >"), today);
+    expect(!read.ok && read.code).toBe("DATE_OUT_OF_RANGE");
+  });
+
   it("reads a hyphen the engine doubled before the time", () => {
     const read = readPrintedDate(dateLine("14 ก.ค. 2569 - - 09:05"), today);
     expect(read.ok && read.value).toEqual({ iso: "2026-07-14", time: "09:05" });
