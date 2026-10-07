@@ -92,9 +92,12 @@ type OverlayRow = {
  * own correction path, so the slip row stays append-only and the fill is audited and revisioned.
  *
  * A field is filled only when the request has it and neither the slip nor its correction holds a
- * value; nothing is ever overwritten. Best-effort: any failure leaves the duplicate answer as it
+ * value; nothing is ever overwritten. A payee with at most one letter (a bank logo read as `e`,
+ * stored before D-256) counts as blank, since no real name is that short. Best-effort: any failure leaves the duplicate answer as it
  * was, so a duplicate is never turned into an error. Returns whether a correction was written.
  */
+const isBlankPayee = (payee: string | null) => payee === null || (payee.match(/[ก-ฮA-Za-z]/gu) ?? []).length <= 1;
+
 async function fillBlankPayeeAndMemo(
   supabase: (Awaited<ReturnType<typeof strongOwnerClient>> & { ok: true })["supabase"],
   slip: Record<string, unknown>,
@@ -111,7 +114,8 @@ async function fillBlankPayeeAndMemo(
     if (read.error) return false;
     const existing = (read.data ?? null) as OverlayRow | null;
 
-    const fillCounterparty = request.counterparty !== null && (slip.counterparty ?? null) === null && (existing?.counterparty ?? null) === null;
+    const payeeNow = existing?.counterparty ?? (typeof slip.counterparty === "string" ? slip.counterparty : null);
+    const fillCounterparty = request.counterparty !== null && isBlankPayee(payeeNow) && !isBlankPayee(request.counterparty);
     const fillNote = request.note !== null && (slip.note ?? null) === null && (existing?.note ?? null) === null;
     if (!fillCounterparty && !fillNote) return false;
 

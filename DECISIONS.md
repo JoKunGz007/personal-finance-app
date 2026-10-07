@@ -458,7 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 - **Transfer:** `ไปยัง` alone on its line, then the name (wrapped onto a second line when long), then the payee's bank or `พร้อมเพย์`, then a masked account. The name is the lines between the label and the line above the next masked account, at most two; otherwise the first line. **Bill payment:** no label; the biller is the first lettered, non-label line after the sender's masked account. A one-letter logo word is dropped by SCB's icon rule (`withoutScbIcon`).
 - **Date:** `PRINTED_DATE` accepts any number of hyphens before the time.
 - **`scripts/measure-slip-words.ts`:** reads a folder of slip images through Vision (key from the environment, never printed), caches words under the ignored `.runtime/slip-words/`, and prints lines, payee, memo, date and amount. Its output is real data (D-049).
-- **Stored payees:** the owner's console snippet (D-255's rules, any bank) fixes leading icon words; blank Krungthai payees fill on a re-send through D-253's duplicate fill.
+- **Stored payees:** the owner's console snippet (D-255's rules, any bank) fixes leading icon words; blank Krungthai payees fill on a re-send through D-253's duplicate fill, which now also treats a stored payee of at most one letter (the live `e`) as blank. A payee with a real name is still never overwritten.
 
 ## D-255 — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
 
