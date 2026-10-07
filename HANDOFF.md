@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-10-07 (D-253 — slip payee reader fixed, re-sent duplicates fill a blank payee or memo; pushed).
+Last updated: 2026-10-07 (D-253 and D-254 — slip payee reader fixed, re-sent duplicates fill a blank payee or memo, Inbox as a table or cards with previews; all pushed and live).
 
-**Current headline: D-253, pushed (`dbb4154`), no migration.** The slip reader now finds the payee on 20/20 K PLUS and 16/16 SCB slips measured, with Thai names joined by Vision's own space flags; no slip carried a memo. Re-sending a slip already in the ledger fills its blank payee or memo through the correction overlay, never overwriting. **Owner's next step:** re-send the 16 K PLUS slips through LINE and open `/inbox`; 4 slips stored with spaced names need a hand correction on the row. The 4 spaced payees are corrected. **Inbox redesign live** (D-254: table by default, Cards toggle, tap-to-enlarge previews, `19bf83e`). **Backup:** unchanged since D-252; no `db push` was needed. Two KBank account-card images may still sit in the Inbox queue. Earlier headlines: PLAN and `git log`.
+**Current headline: D-254, live (`19bf83e`, docs `65a5c7d`+), no migration.** Slip payees now read on every measured K PLUS and SCB slip (D-253), and a re-sent duplicate fills its blank payee or memo. The Inbox queue is a table with a Cards toggle and tap-to-enlarge previews (D-254). **The owner is re-sending the K PLUS slips through LINE** — check the Inbox line "payee or memo added to N" and the slip payees on the ledger before relying on them. Next session's order is in PLAN's checkpoint (slip payee → keyword rules, then D-158, then the merged branch). **Backup:** unchanged since D-252; no `db push` since. The Inbox queue was empty at the end of the session. Earlier headlines: PLAN and `git log`.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in
