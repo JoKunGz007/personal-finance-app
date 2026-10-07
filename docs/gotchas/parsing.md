@@ -188,7 +188,7 @@ the top of `GOTCHAS.md`.
 - Symptom: stored SCB payees begin with junk: `3 `, `฿3 `, `29 `, `E3) `, `(E) `, `(B 3) `, `EX) `, `฿ER 3 `, `true move `, `EG dtac `.
 - Cause: SCB draws a merchant, bank or wallet logo left of the payee, and Vision reads it as a short word, often split into pieces with no space flag between them (`E3` + `)`). Each later batch showed a new shape; D-253's text list (`E`, `EX`, `E )`) caught only the first.
 - Avoid: `withoutScbIcon` (`lib/slip-ocr.ts`) joins engine words up to each space flag and drops leading words with at most one letter, an `E`/`EX`/`EG` icon with or without `)`, a word opening with `฿`, or an operator logo word (lower-case `true`/`move`/`money`/`dtac`), while a name remains. A glued icon (`EPH CAPITAL`) is not caught. Check every new batch's payees for a leading short word before trusting them.
-- Verify: 2026-10-07 (D-255): 0 junk-led payees among the then 102 stored payees after the owner's correction snippet; two later ones (`EX) …`, `฿ER 3 …`) were stored before their fix and await the next snippet; red-proofs in `tests/slip-ocr.test.ts`.
+- Verify: 2026-10-07 (D-255): 0 junk-led payees among the then 102 stored payees after the owner's correction snippet; the two stored before their fix (`EX) …`, `฿ER 3 …`) were corrected by the same snippet the same day (D-256), and a re-run found 0; red-proofs in `tests/slip-ocr.test.ts`.
 
 ## An SCB bill-payment slip may print no QR, so the Inbox cannot import it
 
