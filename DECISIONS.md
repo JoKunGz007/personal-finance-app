@@ -439,6 +439,8 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
+- **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
 - **D-258** — A slip with no readable QR imports on its printed reference (Krungthai and SCB; migration 052), guarded against duplicates on bank, date, time and amount; Krungthai payee skips a one-letter logo line
 - **D-257** — Vision reads Krungthai's printed 6 as 5: a doubtful year is refused, and a year the window refuses is read again from an enlarged crop
@@ -453,6 +455,21 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-261 — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
+
+- **Status:** live 2026-10-08 (`33a7763`), no migration. Asked for by the owner: the queue's "Add it on the Slips page" had no link, so a slip meant re-picking the image from his phone.
+- **How:** the queue row shows a `secondary-button` "Add on Slips" for every slip that needs checking (a review verdict, a remembered one, a refused amount, or a capture the ledger refused), not for a network failure. `isInboxImageName` (`lib/inbox-queue.ts`) accepts only an upload's `<uuid>.png|jpg|webp` or a LINE `line-<ms>-<id>.jpg|png` before any Storage call. `app/slip-capture.tsx` downloads that object from the owner's folder and hands it to the same `onFile` a picked file uses (preview through the `blob:` URL that path already made; CSP unchanged). After the ledger answers captured or already stored, the object is removed and the page says so with a link back; a refused capture keeps it; removal failure says the slip is saved but still queued. A file picked by hand afterwards never removes the queued one.
+- **Limits:** the single-slip form takes a QR identity only, so a no-QR slip (D-258) still cannot be finished there (cash entry remains). The amount is not read automatically on arrival — the page's own promise is that nothing goes to Vision until "Read the amount" is pressed.
+- **Live:** the queued Krungthai slip opened from its button with its QR read and reference filled; not saved by the agent.
+- **Evidence:** Vitest 89 files passed (9 new in `tests/slip-inbox.test.tsx`; the removal tests red-proved); tsc clean.
+
+## D-260 — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
+
+- **Status:** live 2026-10-08 (`b09cfe7`), no migration. The owner's choice, after three mailbox statements were held as "Some rows … already in the ledger, so it waits for a look" and he had not seen that "Review on Import" was a link.
+- **Why it is safe:** `rowFingerprint` (`lib/canonical.ts`) covers date, time, label, description, reference, amounts, **post-balance** and branch, so a stored fingerprint is that same bank row; `confirm_import` skips it (`on conflict do nothing`). The old hold existed because the skip is silent, not because it is wrong — the count now makes it visible.
+- **How:** `lib/server/inbox-statement.ts` pre-counts stored fingerprints; some stored → the same `confirmImport` as a clean statement (so the same transfer exclusion and categoriser), returning `existingRows` beside `rowCount`; all stored → nothing confirmed, `{kind: "duplicate"}`, handled like an already-imported file (removed from the queue, mailbox message flagged). `confirm_import` returns only the batch id, so "new" is `rowCount − existingRows` from the pre-count; a concurrent import between count and confirm could make the sentence slightly off, never the ledger. Wording: "Statement X: 12 new rows imported, 30 already in the ledger." The remaining holds keep their reasons, and the mailbox "Bank statements" line's Review on Import is now a `secondary-button`.
+- **Evidence:** Vitest 88 files, 1,722 passed / 18 skipped; the 5 new overlap and all-stored tests red-proved against the old server file; tsc, eslint clean. Not yet seen live with a real overlapping statement (the owner's next Sync).
 
 ## D-259 — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
 
