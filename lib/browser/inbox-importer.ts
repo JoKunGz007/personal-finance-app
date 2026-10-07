@@ -2,7 +2,7 @@ import { postLinemanCapture, postReceiptCapture } from "@/lib/browser/capture-cl
 import { loadRemembered, saveRemembered } from "@/lib/browser/inbox-memory";
 import { downloadFromInbox, removeFromInbox, type Outcome, type WaitingFile } from "@/lib/browser/inbox-storage";
 import { readImageFileWords, type ImageWordsRead } from "@/lib/browser/ocr-reader";
-import { rereadYearBox } from "@/lib/browser/year-reread";
+import { rereadBox } from "@/lib/browser/year-reread";
 import { detectAtScale, resolveDetector, type SlipQrReader } from "@/lib/browser/qr-detector";
 import { readReceiptPdf } from "@/lib/browser/receipt-reader";
 import type { browserSupabase } from "@/lib/browser/supabase";
@@ -17,7 +17,7 @@ import { kindOfObject, lineReceivedAt } from "@/lib/inbox-queue";
 import type { ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import type { CaptureForm } from "@/lib/receipts";
-import { classifySlipRereadingYear, signedSlipAmount, type SlipIdentitySource } from "@/lib/slip-batch";
+import { classifySlipRereadingYear, signedSlipAmount, type BoxCrop, type SlipIdentitySource } from "@/lib/slip-batch";
 import { proposeSlipText, type Box } from "@/lib/slip-ocr";
 import { readPrintedIdentity } from "@/lib/slip-printed";
 import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
@@ -51,7 +51,16 @@ export type Posted = { readonly ok: true; readonly already?: boolean } | { reado
 /** A slip capture's answer: stored now, already in the ledger, or why it is not known to be stored. */
 export type SlipPosted =
   | { readonly ok: true; readonly outcome: "captured" | "duplicate"; /** A duplicate whose blank payee or memo the re-send filled. */ readonly filled?: boolean }
-  | { readonly ok: false; readonly why: string };
+  | {
+    readonly ok: false;
+    readonly why: string;
+    /**
+     * The ledger refused this slip itself (a 4xx with its own reason, e.g. 409 "may already be
+     * captured"), so re-sending the same read would be refused again: the slip is remembered as
+     * needing checking (D-259). Absent for a network failure, a 5xx or an unconfirmed 2xx.
+     */
+    readonly settled?: boolean;
+  };
 
 /**
  * What the device's scan answered. `SCAN_FAILED` is the scan itself failing (the detector would not
@@ -66,8 +75,8 @@ export type DrainDeps = {
   readonly remove: (names: readonly string[]) => Promise<Outcome<number>>;
   readonly readPdf: (file: Blob) => Promise<PdfReply>;
   readonly readImage: (file: Blob) => Promise<ImageWordsRead>;
-  /** A second, enlarged read of one box of the image (the printed year, D-257); any failure is a not-ok result, never a throw. */
-  readonly rereadYear: (file: Blob, box: Box) => Promise<ImageWordsRead>;
+  /** A second, enlarged read of one box of the image (the printed year D-257, the amount D-259); any failure is a not-ok result, never a throw. */
+  readonly rereadBox: (file: Blob, box: Box, crop: BoxCrop) => Promise<ImageWordsRead>;
   /** The slip QR on this device; any failure is a not-ok result, never a throw. */
   readonly scanSlip: (file: Blob) => Promise<SlipScanAttempt>;
   readonly postReceipt: (form: CaptureForm, receipt: ParsedReceipt) => Promise<Posted>;
@@ -83,6 +92,9 @@ export type DrainDeps = {
 
 const NO_SLIP_SCAN = "This image could not be scanned for a slip QR.";
 
+/** 4xx statuses that answer for the session or the server's load, not for the slip: never settled. */
+const NOT_ABOUT_THE_SLIP = new Set([401, 403, 408, 429]);
+
 /** `POST /api/v1/slips`, answered as a `SlipPosted`; the request is the one `app/slip-batch.tsx` sends. */
 async function postSlipCapture(body: SlipPostBody): Promise<SlipPosted> {
   try {
@@ -93,7 +105,10 @@ async function postSlipCapture(body: SlipPostBody): Promise<SlipPosted> {
     });
     if (!response.ok) {
       const failure: unknown = await response.json().catch(() => null);
-      return { ok: false, why: readError(failure, "This slip could not be captured.") };
+      const why = readError(failure, "This slip could not be captured.");
+      const reasoned = typeof failure === "object" && failure !== null && "error" in failure;
+      const settled = reasoned && response.status >= 400 && response.status < 500 && !NOT_ABOUT_THE_SLIP.has(response.status);
+      return settled ? { ok: false, why, settled: true } : { ok: false, why };
     }
     // An unparsable 2xx body means `capture_slip` had already committed, so this is neither a
     // success to remove the file on nor a failure to re-send blindly: the file stays and the owner checks.
@@ -118,7 +133,7 @@ export function browserDrainDeps(supabase: Client, uid: string): DrainDeps {
     remove: (names) => removeFromInbox(supabase, uid, names),
     readPdf: readReceiptPdf,
     readImage: readImageFileWords,
-    rereadYear: rereadYearBox,
+    rereadBox,
     scanSlip: async (file) => {
       let bitmap: ImageBitmap | null = null;
       try {
@@ -306,7 +321,7 @@ export async function drainInbox(
         window: slipDateWindow(new Date()),
         today: new Date(),
         identity: source
-      }, (box) => deps.rereadYear(downloaded.value, box));
+      }, (box, crop) => deps.rereadBox(downloaded.value, box, crop));
       if (verdict.status === "ready") {
         // Ready means Vision answered, so the words are there; the payee and memo are best-effort.
         const text = read.ok ? proposeSlipText(read.words, identity.bankCode) : { counterparty: null, note: null };
@@ -324,9 +339,10 @@ export async function drainInbox(
           }
         };
       }
-      // Remembered only once Vision actually answered: an unreachable reader is not a verdict on
-      // the slip, and the next open may read it cleanly.
-      return { reason: slipReviewReason(verdict.reason), remember: read.ok ? "slip-review" : undefined };
+      // Remembered only when no further read could change it (D-259): an unreachable reader, or a
+      // second, enlarged read that gave nothing usable, is not a verdict on the slip, and the next
+      // open may read it cleanly.
+      return { reason: slipReviewReason(verdict.reason), remember: verdict.retryable ? undefined : "slip-review" };
     }
 
     if (!read.ok) return { reason: read.why };
@@ -431,11 +447,15 @@ export type SlipCaptureResult = {
  * or already-in-ledger and Storage confirmed the removal**; a refusal, an unreadable confirmation or
  * a removal that did not go through keeps the file with its reason (a slip stored but not removed is
  * not counted: the next capture finds it already in the ledger).
+ *
+ * A slip the ledger itself refused (`settled`, e.g. 409) is remembered as needing checking when
+ * `memory` is given, so it is not read through Vision again every open (D-259).
  */
 export async function captureSlips(
-  slips: readonly ReadySlip[], kind: SlipKind, deps: Pick<DrainDeps, "remove" | "postSlip">
+  slips: readonly ReadySlip[], kind: SlipKind, deps: Pick<DrainDeps, "remove" | "postSlip"> & { readonly memory?: DrainDeps["memory"] }
 ): Promise<SlipCaptureResult> {
   const reasons: Record<string, string> = {};
+  const settled: string[] = [];
   let captured = 0;
   let duplicates = 0;
   let filled = 0;
@@ -444,13 +464,23 @@ export async function captureSlips(
     const signed = signedSlipAmount(slip.amountMinor, kind);
     if (signed === null) { reasons[slip.name] = SLIP_AMOUNT_REASON; continue; }
     const posted = await deps.postSlip(slipPostBody(slip, kind, signed));
-    if (!posted.ok) { reasons[slip.name] = posted.why; continue; }
+    if (!posted.ok) {
+      reasons[slip.name] = posted.why;
+      if (posted.settled === true) settled.push(slip.name);
+      continue;
+    }
     if (!(await removeAll(deps, [slip.name]))) { reasons[slip.name] = REMOVE_FAILED; continue; }
     if (posted.outcome === "captured") captured += 1;
     else {
       duplicates += 1;
       if (posted.filled === true) filled += 1;
     }
+  }
+  if (settled.length > 0 && deps.memory) {
+    // The drain saved its memory just before this, already pruned to the queue; these join it.
+    const remembered = deps.memory.load();
+    for (const name of settled) remembered.set(name, "slip-review");
+    deps.memory.save(remembered, [...remembered.keys()]);
   }
   return { captured, duplicates, filled, reasons };
 }

@@ -1,5 +1,5 @@
 import { toMinorAmount, type MinorUnitString } from "@/lib/money";
-import { locatePrintedYear, proposeAmount, readPrintedDate, withRereadYear, type Box, type OcrWord } from "@/lib/slip-ocr";
+import { locateAmount, locatePrintedYear, proposeAmount, readPrintedDate, withRereadYear, type Box, type OcrRead, type OcrWord } from "@/lib/slip-ocr";
 import { printedReferenceAgrees, slipDateFromReference, type SlipKind } from "@/lib/slips";
 import { type BankCode } from "@/lib/statement-frame";
 
@@ -141,6 +141,13 @@ export type SlipBatchDecision =
      */
     readonly date: ResolvedSlipDate | null;
     readonly amountMinor: MinorUnitString | null;
+    /**
+     * True when another read could change this verdict (D-259): the reader was unreachable or
+     * failed, or a second, enlarged read of the amount or the year was tried and gave nothing
+     * usable. Such a verdict is not remembered, so the next open reads the slip again. False for a
+     * definite verdict no second read was possible for (no amount label, dates that disagree).
+     */
+    readonly retryable: boolean;
   };
 
 const READER_UNAVAILABLE = "This slip could not be read, so its amount and date need typing in.";
@@ -175,6 +182,11 @@ export function classifySlip(input: {
   readonly today: Date;
   /** Defaults to "qr". "printed": the reference was read off the slip's text (D-258). */
   readonly identity?: SlipIdentitySource;
+  /**
+   * The amount as an enlarged second read gave it (D-259); defaults to `proposeAmount` over `words`.
+   * Only ever a `proposeAmount` answer, so it is held to the same strict grammar.
+   */
+  readonly amount?: OcrRead<string>;
 }): SlipBatchDecision {
   // **Resolved first, and for the reader-unavailable case that is the whole point.** The QR
   // reference carries the date under its own CRC for SCB and the longer Krungthai variant, so it
@@ -192,11 +204,11 @@ export function classifySlip(input: {
   const resolvedDate = date.ok ? date.date : null;
 
   if (input.words === null) {
-    return { status: "review", reason: input.readerRefusal ?? READER_UNAVAILABLE, date: resolvedDate, amountMinor: null };
+    return { status: "review", reason: input.readerRefusal ?? READER_UNAVAILABLE, date: resolvedDate, amountMinor: null, retryable: true };
   }
 
-  const amount = proposeAmount(input.words, input.bankCode);
-  if (!amount.ok) return { status: "review", reason: amount.message, date: resolvedDate, amountMinor: null };
+  const amount = input.amount ?? proposeAmount(input.words, input.bankCode);
+  if (!amount.ok) return { status: "review", reason: amount.message, date: resolvedDate, amountMinor: null, retryable: false };
 
   const magnitude = toMinorAmount(amount.value);
   // Defensive rather than expected: printed money carries no sign, so the grammar should never
@@ -207,69 +219,107 @@ export function classifySlip(input: {
       status: "review",
       reason: "The amount read off this slip is not one this ledger can store.",
       date: resolvedDate,
-      amountMinor: null
+      amountMinor: null,
+      retryable: false
     };
   }
   const amountMinor = (magnitude < 0n ? -magnitude : magnitude).toString();
 
-  if (!date.ok) return { status: "review", reason: date.reason, date: null, amountMinor };
+  if (!date.ok) return { status: "review", reason: date.reason, date: null, amountMinor, retryable: false };
 
   // A printed identity has no CRC behind it, so the server keys it on bank, date, time and amount
   // as well as the reference: a time is required, and the reference's own date must agree.
   if (input.identity === "printed") {
-    if (date.date.occurredAtTime === null) return { status: "review", reason: PRINTED_NO_TIME, date: date.date, amountMinor };
+    if (date.date.occurredAtTime === null) return { status: "review", reason: PRINTED_NO_TIME, date: date.date, amountMinor, retryable: false };
     if (!printedReferenceAgrees(input.bankCode, input.reference, date.date.occurredOn)) {
       const reason = input.bankCode === "SCB" && !/^\d{8}/.test(input.reference) ? PRINTED_REFERENCE_UNDATED : PRINTED_REFERENCE_DISAGREES;
-      return { status: "review", reason, date: null, amountMinor };
+      return { status: "review", reason, date: null, amountMinor, retryable: false };
     }
   }
 
   return { status: "ready", date: date.date, amountMinor };
 }
 
+/** Which box a second read crops, and how much it enlarges it (D-257, D-259). */
+export type BoxCrop = { readonly field: "year" | "amount"; readonly scale: number };
+
 /**
  * What a second, enlarged read of one box answered: the same shape as `ImageWordsRead`, restated so
  * this module stays free of the browser. A failure carries nothing the caller may surface.
  */
-export type YearReread = (box: Box) => Promise<{ readonly ok: true; readonly words: readonly OcrWord[] } | { readonly ok: false }>;
+export type BoxReread = (box: Box, crop: BoxCrop) => Promise<{ readonly ok: true; readonly words: readonly OcrWord[] } | { readonly ok: false }>;
+
+/** The printed year's crop is enlarged 3× (measured 2026-10-07, D-257). */
+export const YEAR_REREAD_SCALE = 3;
+/** The amount's crop is read at 2×, then 3× only if 2× still fails the grammar: at most two extra reads (D-259). */
+export const AMOUNT_REREAD_SCALES = [2, 3] as const;
+
+async function rereadOnce(reread: BoxReread, box: Box, crop: BoxCrop): ReturnType<BoxReread> {
+  try {
+    return await reread(box, crop);
+  } catch {
+    return { ok: false };
+  }
+}
 
 /**
- * `classifySlip`, plus one second read of the printed year for the one state it can cure (D-257).
+ * `classifySlip`, plus a second, enlarged read of the amount (D-259) and of the printed year
+ * (D-257), each only for the one state it can cure.
  *
- * **Only when the date is refused in one narrow way**: no QR date, and the printed date resolved to
- * a year the window refuses (`code: "OUT_OF_RANGE"`). Vision reads Krungthai's 6 as 5 on a whole
- * slip, so "2569" arrives as "2559", a year the era check believes and the window then refuses. The
- * year's own box, cropped and enlarged, reads correctly (measured 2026-10-07, 10 of 10). A slip with
- * a QR date, a doubtful year, no date or two dates never reaches the second read.
+ * **The amount, first, when the strict grammar refused what sits beside a label that was found.**
+ * Vision read "23.00" as "23,00" on a whole slip and correctly on the amount's own box, cropped and
+ * enlarged (measured on one real slip, ×2 and ×3). The crop is read at 2×, then 3× if 2× still
+ * fails, and its words go through the *same* `proposeAmount` — label and strict grammar — so a
+ * lenient reading is refused exactly as on the full read. No label, or one that appears twice, has
+ * no box to crop: the verdict stands and is definite.
  *
- * **The re-read can only turn a refusal into a date, never the other way, and never touches the
- * amount.** The year digits are swapped into a copy of the words and the *same* `classifySlip` runs
- * over it, so the window and the doubtful-year guard both apply to the new year; the amount it finds
- * is the original's because only the year word changed. If that is not ready, or the crop could not
- * be read, the original verdict stands unchanged.
+ * **Then the year, when the date is refused in one narrow way**: no QR date, and the printed date
+ * resolved to a year the window refuses (`code: "OUT_OF_RANGE"`). Vision reads Krungthai's 6 as 5
+ * on a whole slip, so "2569" arrives as "2559", a year the era check believes and the window then
+ * refuses. The year's own box, cropped and enlarged, reads correctly (measured 2026-10-07, 10 of
+ * 10). A slip with a QR date, a doubtful year, no date or two dates never reaches the second read.
+ *
+ * **A re-read can only turn a refusal into a value, never the other way.** The year digits are
+ * swapped into a copy of the words and the *same* `classifySlip` runs over it, so the window and the
+ * doubtful-year guard both apply to the new year. If a second read was tried and gave nothing
+ * usable, the original verdict stands, marked `retryable` so it is read again next open.
  */
 export async function classifySlipRereadingYear(
   input: Parameters<typeof classifySlip>[0],
-  reread: YearReread
+  reread: BoxReread
 ): Promise<SlipBatchDecision> {
-  const verdict = classifySlip(input);
-  // `amountMinor` null means the amount is the problem, which a year cannot cure: no second read.
-  if (verdict.status === "ready" || input.words === null || verdict.amountMinor === null) return verdict;
-  const date = resolveSlipDate({ reference: input.reference, words: input.words, window: input.window, today: input.today, identity: input.identity });
-  if (date.ok || date.code !== "OUT_OF_RANGE") return verdict;
-  const box = locatePrintedYear(input.words);
-  if (box === null) return verdict;
-  let again;
-  try {
-    again = await reread(box);
-  } catch {
-    return verdict;
+  let verdict = classifySlip(input);
+  if (verdict.status === "ready" || input.words === null) return verdict;
+  const words = input.words;
+
+  let amount: OcrRead<string> | undefined;
+  if (verdict.amountMinor === null) {
+    // Read but not storable (zero) is not a reading problem: no second read.
+    if (proposeAmount(words, input.bankCode).ok) return verdict;
+    const located = locateAmount(words, input.bankCode);
+    if (!located.ok) return verdict;
+    for (const scale of AMOUNT_REREAD_SCALES) {
+      const again = await rereadOnce(reread, located.value, { field: "amount", scale });
+      if (!again.ok) continue;
+      const read = proposeAmount(again.words, input.bankCode);
+      if (read.ok) { amount = read; break; }
+    }
+    if (amount === undefined) return { ...verdict, retryable: true };
+    verdict = classifySlip({ ...input, amount });
+    if (verdict.status === "ready" || verdict.amountMinor === null) return verdict;
   }
-  if (!again.ok) return verdict;
-  const words = withRereadYear(input.words, again.words);
-  if (words === null) return verdict;
-  const second = classifySlip({ ...input, words });
-  return second.status === "ready" ? second : verdict;
+
+  const date = resolveSlipDate({ reference: input.reference, words, window: input.window, today: input.today, identity: input.identity });
+  if (date.ok || date.code !== "OUT_OF_RANGE") return verdict;
+  const box = locatePrintedYear(words);
+  if (box === null) return verdict;
+  const failed: SlipBatchDecision = { ...verdict, retryable: true };
+  const again = await rereadOnce(reread, box, { field: "year", scale: YEAR_REREAD_SCALE });
+  if (!again.ok) return failed;
+  const yearWords = withRereadYear(words, again.words);
+  if (yearWords === null) return failed;
+  const second = classifySlip({ ...input, words: yearWords, amount });
+  return second.status === "ready" ? second : failed;
 }
 
 /**

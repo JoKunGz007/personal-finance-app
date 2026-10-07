@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { captureSlips, DRAIN_CONCURRENCY, drainInbox, type DrainDeps, type SlipPosted, type SlipScanAttempt } from "@/lib/browser/inbox-importer";
+import { browserDrainDeps, captureSlips, DRAIN_CONCURRENCY, drainInbox, type DrainDeps, type SlipPosted, type SlipScanAttempt } from "@/lib/browser/inbox-importer";
 import type { StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import { readLinemanPage } from "@/lib/delivery-lineman";
 import {
@@ -9,6 +9,7 @@ import {
   SLIP_WAITING_REASON, slipPostBody, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON, type ReadySlip, type RememberedKind
 } from "@/lib/inbox-drain";
 import { readScreenshotPage, readScreenshotReceipt } from "@/lib/receipt-screenshot";
+import { classifySlipRereadingYear } from "@/lib/slip-batch";
 import { proposeSlipText, type Box, type OcrWord } from "@/lib/slip-ocr";
 import type { ImageWordsRead } from "@/lib/browser/ocr-reader";
 import type { SlipScanResult } from "@/lib/slip-scan";
@@ -436,12 +437,14 @@ type FakeOptions = {
   pdf?: PdfReply;
   /** What the enlarged re-read of one box answers (D-257); defaults to a failure. */
   crop?: () => ImageWordsRead | Promise<ImageWordsRead>;
+  /** What the enlarged re-read of the amount's box answers at a scale (D-259); defaults to a failure. */
+  amountCrop?: (scale: number) => ImageWordsRead | Promise<ImageWordsRead>;
 };
 
 /** Fakes for everything outside the drain; `words` maps an image's name to what Vision "read". */
 function fakes(options: FakeOptions = {}) {
   const calls = {
-    statementPosts: [] as string[], ocr: [] as string[], scans: [] as string[], downloads: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, slipPosts: 0, rereads: [] as Array<{ name: string; box: Box }>,
+    statementPosts: [] as string[], ocr: [] as string[], scans: [] as string[], downloads: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, slipPosts: 0, rereads: [] as Array<{ name: string; box: Box }>, amountRereads: [] as number[],
     // Every scan and read in the order it happened, to show the scan comes first.
     order: [] as string[],
     saved: undefined as undefined | ReadonlyMap<string, RememberedKind>
@@ -456,7 +459,11 @@ function fakes(options: FakeOptions = {}) {
       calls.order.push(`ocr:${name}`);
       return { ok: true, words: options.words?.[name] ?? [] };
     },
-    rereadYear: async (blob, box) => {
+    rereadBox: async (blob, box, crop) => {
+      if (crop.field === "amount") {
+        calls.amountRereads.push(crop.scale);
+        return options.amountCrop ? options.amountCrop(crop.scale) : { ok: false, why: "The amount could not be read a second time." };
+      }
       calls.rereads.push({ name: labels.get(blob)!, box });
       return options.crop ? options.crop() : { ok: false, why: "The year could not be read a second time." };
     },
@@ -777,8 +784,10 @@ describe("drainInbox with bank slips", () => {
   });
 
   test("a slip needing checking is kept with the reason and where to type it, and remembered", async () => {
-    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords("not-an-amount") } });
+    // No amount label at all: no box to re-read, so the verdict is definite (D-259).
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords().slice(3) } });
     const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.amountRereads).toEqual([]);
     expect(result.slips).toEqual([]);
     expect(calls.removed).toEqual([]);
     expect(result.reasons["s.png"]).toMatch(/Add it on the Slips page, then remove it here\.$/u);
@@ -941,6 +950,46 @@ describe("captureSlips", () => {
     expect(result.reasons["a.png"]).toMatch(/could not be removed/u);
   });
 
+  test("a slip the ledger refused itself (409) is remembered as needing checking; a network failure is not", async () => {
+    let saved: ReadonlyMap<string, RememberedKind> | undefined;
+    const memory = {
+      load: () => new Map<string, RememberedKind>([["old.png", "unrecognised"]]),
+      save: (remembered: ReadonlyMap<string, RememberedKind>) => { saved = new Map(remembered); }
+    };
+    const { deps } = slipFakes({
+      post: (name) => name === "a.png"
+        ? { ok: false, why: "A slip with the same bank, date, time and amount is already stored.", settled: true }
+        : { ok: false, why: "This slip could not be captured." }
+    });
+    const result = await captureSlips([ready("a.png"), ready("b.png")], "withdrawal", { ...deps, memory });
+    expect(result.reasons["a.png"]).toMatch(/already stored/u);
+    expect([...saved!]).toEqual([["old.png", "unrecognised"], ["a.png", "slip-review"]]);
+  });
+
+  test("nothing is saved when no slip was refused by the ledger itself", async () => {
+    let saves = 0;
+    const memory = { load: () => new Map<string, RememberedKind>(), save: () => { saves += 1; } };
+    const { deps } = slipFakes({ post: () => ({ ok: false, why: "This slip could not be captured." }) });
+    await captureSlips([ready("a.png")], "withdrawal", { ...deps, memory });
+    expect(saves).toBe(0);
+  });
+
+  test("the capture request marks a 409 with a reason settled, and a 500 or 401 not", async () => {
+    const answer = (status: number) => vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ error: "invented reason" }), { status }));
+    const post = browserDrainDeps({} as never, "uid").postSlip;
+    const body = slipPostBody(ready("a.png"), "withdrawal", "-125000");
+    try {
+      answer(409);
+      expect(await post(body)).toEqual({ ok: false, why: "invented reason", settled: true });
+      answer(500);
+      expect(await post(body)).toEqual({ ok: false, why: "invented reason" });
+      answer(401);
+      expect(await post(body)).toEqual({ ok: false, why: "invented reason" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("an amount the ledger cannot store is kept without being sent", async () => {
     const { deps, log } = slipFakes();
     const result = await captureSlips([ready("a.png", "12.5")], "deposit", deps);
@@ -953,6 +1002,85 @@ describe("captureSlips", () => {
 // A Krungthai slip whose QR reference carries no date (17 characters, no 8-digit run), so the printed
 // date is the only source. Vision reads "2569" as "2559" on the whole slip; the year's own box, cropped
 // and enlarged, reads right. Every value is invented.
+
+// --- The amount, read a second time from its own enlarged box (D-259) ---
+// Vision read "23.00" as "23,00" on a whole slip and correctly on the amount's crop. Every value is invented.
+
+describe("drainInbox rereads an amount the strict grammar refused", () => {
+  const status = () => undefined;
+  /** The crop's words: the label and the figure beside it, as `locateAmount`'s box holds them. */
+  const amountCrop = (figure: string): ImageWordsRead =>
+    ({ ok: true, words: [{ text: "จำนวนเงิน", left: 0, right: 160, top: 0, bottom: 40 }, { text: figure, left: 400, right: 520, top: 0, bottom: 40 }] });
+
+  test("an amount misread 23,00 and read 23.00 on its 2x crop is captured, with one extra read", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords("23,00") }, amountCrop: () => amountCrop("23.00") });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.amountRereads).toEqual([2]);
+    expect(result.slips).toHaveLength(1);
+    expect(result.slips[0]).toMatchObject({ amountMinor: "2300", occurredOn: "2026-07-14" });
+  });
+
+  test("a 2x crop that still fails the grammar is read again at 3x, and 3x's value is used", async () => {
+    const { deps, calls } = fakes({
+      scans: { "s.png": slipScan() }, words: { "s.png": slipWords("23,00") }, amountCrop: (scale) => amountCrop(scale === 2 ? "23,00" : "23.00")
+    });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.amountRereads).toEqual([2, 3]);
+    expect(result.slips[0]).toMatchObject({ amountMinor: "2300" });
+  });
+
+  test("a crop that reads the same lenient 23,00 at both scales is still refused: no lenient path", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords("23,00") }, amountCrop: () => amountCrop("23,00") });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.amountRereads).toEqual([2, 3]);
+    expect(result.slips).toEqual([]);
+    expect(result.reasons["s.png"]).toMatch(/^That does not read as a plain amount\./u);
+  });
+
+  test("both crop reads failing keeps the original reason and is not remembered, so the next open reads again", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords("23,00") } });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.amountRereads).toEqual([2, 3]);
+    expect(result.slips).toEqual([]);
+    expect(result.reasons["s.png"]).toMatch(/^That does not read as a plain amount\./u);
+    expect([...calls.saved!]).toEqual([]);
+  });
+
+  test("a crop read that throws counts as a failed read and is not remembered", async () => {
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": slipWords("23,00") }, amountCrop: () => { throw new Error("boom"); } });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.amountRereads).toEqual([2, 3]);
+    expect(result.reasons["s.png"]).toMatch(/^That does not read as a plain amount\./u);
+    expect([...calls.saved!]).toEqual([]);
+  });
+
+  test("a slip whose QR and printed dates disagree is a definite verdict: no second read, and remembered", async () => {
+    const words = [...slipWords(), ...line(180, [["15", 10, 40], ["ก.ค.", 45, 100], ["2569", 105, 170]])];
+    const { deps, calls } = fakes({ scans: { "s.png": slipScan() }, words: { "s.png": words } });
+    const result = await drainInbox([file("s.png")], status, deps);
+    expect(calls.amountRereads).toEqual([]);
+    expect(result.reasons["s.png"]).toMatch(/disagree/u);
+    expect([...calls.saved!]).toEqual([["s.png", "slip-review"]]);
+  });
+});
+
+describe("classifySlipRereadingYear marks what a retry could change (D-259)", () => {
+  const base = { reference: identity.reference, bankCode: "SCB" as const, readerRefusal: null, window: { earliest: "2016-01-01", latest: "2027-12-31" }, today: new Date("2026-10-07T05:00:00Z") };
+  const never = async () => ({ ok: false as const });
+
+  test("an unreachable reader is retryable", async () => {
+    expect(await classifySlipRereadingYear({ ...base, words: null, readerRefusal: "The reader could not be reached." }, never)).toMatchObject({ status: "review", retryable: true });
+  });
+
+  test("a refused amount whose crops fail is retryable, with the original reason", async () => {
+    expect(await classifySlipRereadingYear({ ...base, words: slipWords("23,00") }, never))
+      .toMatchObject({ status: "review", retryable: true, reason: expect.stringMatching(/^That does not read as a plain amount\./u) });
+  });
+
+  test("no amount label at all is definite", async () => {
+    expect(await classifySlipRereadingYear({ ...base, words: slipWords().slice(3) }, never)).toMatchObject({ status: "review", retryable: false });
+  });
+});
 
 describe("drainInbox rereads a printed year the window refused", () => {
   const status = () => undefined;
@@ -987,6 +1115,17 @@ describe("drainInbox rereads a printed year the window refused", () => {
     expect(result.slips[0]).toMatchObject({ occurredOn: "2025-11-29", amountMinor: "125000" });
   });
 
+  test("a slip needing both an amount and a year re-read gets both", async () => {
+    today();
+    const words = ktbWords("2559").map((word) => (word.text === "1,250.00" ? { ...word, text: "23,00" } : word));
+    const amountCrop: ImageWordsRead = { ok: true, words: [{ text: "จำนวนเงิน", left: 0, right: 160, top: 0, bottom: 40 }, { text: "23.00", left: 400, right: 520, top: 0, bottom: 40 }] };
+    const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": words }, amountCrop: () => amountCrop, crop: () => cropWords("2569") });
+    const result = await drainInbox([file("k.png")], status, deps);
+    expect(calls.amountRereads).toEqual([2]);
+    expect(calls.rereads).toHaveLength(1);
+    expect(result.slips[0]).toMatchObject({ occurredOn: "2026-09-24", amountMinor: "2300" });
+  });
+
   test("a crop that also reads 2559 leaves the slip in review with the original out-of-range reason", async () => {
     today();
     const { deps, calls } = fakes({ scans: { "k.png": ktbScan() }, words: { "k.png": ktbWords("2559") }, crop: () => cropWords("2559") });
@@ -1004,8 +1143,8 @@ describe("drainInbox rereads a printed year the window refused", () => {
     expect(result.slips).toEqual([]);
     expect(result.reasons["k.png"]).toContain("outside the range this ledger accepts");
     expect(result.reasons["k.png"]).not.toMatch(/reader|could not be read/u);
-    // The full read answered, so the slip is remembered as needing a look, as before.
-    expect([...calls.saved!]).toEqual([["k.png", "slip-review"]]);
+    // A second read was tried and gave nothing usable, so the next open reads it again (D-259).
+    expect([...calls.saved!]).toEqual([]);
   });
 
   test("a crop read that throws keeps the original reason too", async () => {
