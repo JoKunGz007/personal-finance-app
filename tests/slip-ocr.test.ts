@@ -578,6 +578,23 @@ describe("proposing the payee and note", () => {
     expect(proposeSlipText(words, "SCB").counterparty).toBe("สุทด ร้าน");
   });
 
+  it("drops an SCB icon Vision splits into pieces with no space between them, and the EG dtac logo", () => {
+    const icons: Array<Array<[string, boolean]>> = [
+      [["E3", false], [")", true]],
+      [["(", false], ["E", false], [")", true]],
+      [["(", false], ["B", true], ["3", false], [")", true]],
+      [["EG", true], ["dtac", true]]
+    ];
+    for (const icon of icons) {
+      const words = [
+        ...line(100, [["ไปยัง", 10, 60]]),
+        ...[...icon, ["ร้าน", true], ["ทดลอง", true]].map(([text, spaceAfter], index) =>
+          ({ text, left: 100 + index * 30, right: 125 + index * 30, top: 100, bottom: 120, spaceAfter }) as OcrWord)
+      ];
+      expect(proposeSlipText(words, "SCB").counterparty).toBe("ร้าน ทดลอง");
+    }
+  });
+
   it("accepts the generic memo label on SCB and joins it with the provider note", () => {
     const words = [
       ...line(100, [["ข้อมูลเพิ่มเติมจากผู้ให้บริการ", 10, 200]]),

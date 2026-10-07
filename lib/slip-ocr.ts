@@ -638,19 +638,28 @@ const SCB_ICON = /^(?:E|EX|E\)|\))$/;
  * 32 more SCB slips (2026-10-07) showed other icons read as a word with at most one letter in it
  * — `3`, `฿3`, `29`, `E3)`, `(`, `อ`, `ปี`, `๛` — and TrueMoney's logo read as lowercase `true move`.
  * A payee's own first word carries two letters or more (`นาย`, a shop name), so a word with one
- * letter or none is stripped too, again only while a name is left after it. The logo is matched
- * lower-case only, so a payee printed `TRUE …` keeps its name.
+ * letter or none is stripped too, again only while a name is left after it. The logo words match
+ * exactly and lower-case (bar the icon `EG`), so a payee printed `TRUE …` keeps its name.
  */
 const letters = (text: string) => (text.match(/[ก-ฮA-Za-z]/gu) ?? []).length;
-const TRUEMONEY_LOGO = /^(?:true|move|money|truemoney|truemove)$/;
-// Vision splits a Thai name into syllables (`สุ` + `ชาดา`), and a first syllable can carry one
-// letter; only a word the engine ends with a space is an icon. `E`/`EX` keep D-253's text match.
-const isIconWord = (word: OcrWord) =>
-  SCB_ICON.test(word.text) || (word.spaceAfter !== false && (letters(word.text) <= 1 || TRUEMONEY_LOGO.test(word.text)));
+// 50 more (same day): `EG dtac` before a TrueMove H top-up, the combined operator's logo.
+const OPERATOR_LOGO = /^(?:true|move|money|truemoney|truemove|dtac|EG)$/;
+const isIconText = (text: string) => SCB_ICON.test(text) || letters(text) <= 1 || OPERATOR_LOGO.test(text);
+/**
+ * Judged per spaced word, not per engine word: Vision splits a Thai name into syllables (`สุ` +
+ * `ชาดา`) and an icon into pieces (`E3` + `)`, `(` + `E` + `)`) with no space between them, so the
+ * pieces up to each space are joined first. A one-letter first syllable then stays with its name.
+ */
 function withoutScbIcon(value: OcrWord[]): OcrWord[] {
+  const runs: OcrWord[][] = [];
+  for (const word of value) {
+    const last = runs.at(-1);
+    if (last && last.at(-1)!.spaceAfter === false) last.push(word);
+    else runs.push([word]);
+  }
   let start = 0;
-  while (start < value.length - 1 && isIconWord(value[start]!)) start += 1;
-  return value.slice(start);
+  while (start < runs.length - 1 && isIconText(runs[start]!.map((word) => word.text).join(""))) start += 1;
+  return runs.slice(start).flat();
 }
 
 /**
