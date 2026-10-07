@@ -645,7 +645,8 @@ const SCB_ICON = /^(?:E[XG]?\)?|\))$/;
 const letters = (text: string) => (text.match(/[ก-ฮA-Za-z]/gu) ?? []).length;
 // 50 more (same day): `EG dtac` before a TrueMove H top-up, the combined operator's logo.
 const OPERATOR_LOGO = /^(?:true|move|money|truemoney|truemove|dtac)$/;
-const isIconText = (text: string) => SCB_ICON.test(text) || letters(text) <= 1 || OPERATOR_LOGO.test(text);
+// A word opening with `฿` is an icon too (`฿ER` seen once): no payee's name starts with the baht sign.
+const isIconText = (text: string) => SCB_ICON.test(text) || letters(text) <= 1 || OPERATOR_LOGO.test(text) || text.startsWith("฿");
 /**
  * Judged per spaced word, not per engine word: Vision splits a Thai name into syllables (`สุ` +
  * `ชาดา`) and an icon into pieces (`E3` + `)`, `(` + `E` + `)`) with no space between them, so the

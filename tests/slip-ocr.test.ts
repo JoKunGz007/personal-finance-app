@@ -585,7 +585,8 @@ describe("proposing the payee and note", () => {
       [["(", false], ["B", true], ["3", false], [")", true]],
       [["EG", true], ["dtac", true]],
       [["EX", false], [")", true]],
-      [["EX)", true]]
+      [["EX)", true]],
+      [["฿ER", true], ["3", true]]
     ];
     for (const icon of icons) {
       const words = [
