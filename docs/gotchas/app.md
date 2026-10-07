@@ -362,3 +362,10 @@ the top of `GOTCHAS.md`.
 - Cause: `line_inbox_enqueue` refuses once 600 images (200 before migration 050) were *received* in the last 24 hours; moved images keep their row, so emptying the queue frees nothing. It is this app's cap, not LINE's.
 - Avoid: count a backfill against the rolling 24 hours before sending; resending a whole batch is safe (stored slips answer "already in the ledger") but spends the cap again.
 - Verify: 2026-10-07 (D-255): 24 of one batch refused at 200; 4 of 10 Krungthai slips refused at 600 the same day.
+
+## Opening `/inbox` drains and captures, so it is no place to inspect the queue
+
+- Symptom: an agent opens `/inbox` to look at queued images and the queue empties: LINE images move, slips are captured, files older than 7 days are deleted.
+- Cause: `app/inbox-files.tsx` runs the whole drain on page load.
+- Avoid: measure on local copies with `scripts/measure-slip-words.ts`; the queue's images are only reachable with the owner's Supabase session, which the auto-mode classifier refuses the agent reading.
+- Verify: 2026-10-07 (D-256), by reading `app/inbox-files.tsx`.

@@ -196,3 +196,10 @@ the top of `GOTCHAS.md`.
 - Cause: some SCB bill payments (merchant reference lines, sometimes a fee line) print no verification QR; the Inbox recognises a slip by its QR, which is also its dedup identity (D-236).
 - Avoid: enter it by hand on `/slips`, or design a no-QR path keyed on the printed reference before relying on Inbox capture for those payees.
 - Verify: 2026-10-07 (D-255): 7 such images parked in the queue during the SCB backfill (ADVANCED MPAY, MOL Payment2 among them).
+
+## A Krungthai bill payment prints no payee label
+
+- Symptom: Krungthai slips captured with a blank payee, or a payee beginning `e `.
+- Cause: only a Krungthai transfer prints `ไปยัง`; a bill payment prints the biller's name straight under the sender's masked account. A transfer's payee bank logo reads as `e`, and a long name wraps onto a second line.
+- Avoid: `ktbPayee` (`lib/slip-ocr.ts`) reads by layout — the lines under `ไปยัง` up to the bank line above the next masked account, or the line after the sender's masked account when there is no label. Measure new shapes with `scripts/measure-slip-words.ts`.
+- Verify: 2026-10-07 (D-256): 9/9 local Krungthai slips; red-proofs in `tests/slip-ocr.test.ts`.

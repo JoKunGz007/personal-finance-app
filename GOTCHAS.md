@@ -130,6 +130,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A Grab receipt's heading does not say which service it is
 - An SCB slip's payee icon is read as text in many shapes
 - An SCB bill-payment slip may print no QR, so the Inbox cannot import it
+- A Krungthai bill payment prints no payee label
 
 ### Real data, masking and privacy
 
@@ -265,6 +266,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Merging per-account pages into one timeline shows gaps unless it stops at the shallowest paged account
 - A POST to a route that is not deployed yet answers 200, not 404
 - The LINE bot refuses images past a 24-hour count that includes moved ones
+- Opening `/inbox` drains and captures, so it is no place to inspect the queue
 
 ## Traps
 

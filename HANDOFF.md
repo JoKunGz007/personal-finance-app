@@ -1,8 +1,8 @@
 # Private Ledger continuity handoff
 
-Last updated: 2026-10-07 (D-255 — SCB slip backfill through LINE: payee icons stripped, the Inbox reads 3 files at once, LINE cap 600 a day; all pushed and live).
+Last updated: 2026-10-07 (D-256 — Krungthai slip payee and date reader fixed; pushed and live).
 
-**Current headline: D-255, live (`b24dcb5`), migration 050 on hosted.** The owner backfilled about 490 SCB slips through LINE (512 slips in all). Krungthai is next: its first 4 real slips read 1 usable payee, so fix the reader on the Krungthai images still in the `/inbox` queue before the owner sends the remaining ~114. The LINE cap should return to 200 after the backfill (a new migration). **Backup:** exported by the owner before migration 050's `db push` on 2026-10-07; about 330 slips were added after it. Next session's order is in PLAN's checkpoint.
+**Current headline: D-256, live (`73723d8`).** The Krungthai reader now reads payee and date on 9/9 local slips. The owner is to run the payee-cleanup console snippet and send the remaining ~114 Krungthai slips through LINE; the LINE cap returns to 200 by a new migration after the backfill. **Backup:** exported by the owner before migration 050's `db push` on 2026-10-07; about 330 slips were added after it, so ask for a fresh export before the next `db push`. Next session's order is in PLAN's checkpoint.
 
 **Thin entry point.** It carries only what is **mutable and current**: live authorizations, the
 destructive-operation state of this machine, and where to start reading. Project state lives in

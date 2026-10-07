@@ -439,6 +439,7 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-256** — Krungthai slip payee read by layout (a transfer's wrapped name under `ไปยัง`, a bill payment's biller after the sender's masked account, logo dropped); a doubled date hyphen reads; a kept measurement script
 - **D-255** — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
 - **D-254** — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
 - **D-253** — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
@@ -449,6 +450,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-256 — Krungthai slip payee read by layout (a transfer's wrapped name under `ไปยัง`, a bill payment's biller after the sender's masked account, logo dropped); a doubled date hyphen reads; a kept measurement script
+
+- **Status:** live 2026-10-07 (`73723d8`), no migration.
+- **Measured** on the 9 Krungthai slips already in `receipts_sample/` (owner's real-data grant; the word cache was deleted afterwards), because the hosted `/inbox` queue could not be read: the auto-mode classifier refused the agent reading the session cookie in the pane, and opening `/inbox` itself drains and captures (GOTCHAS, app). Payee **9/9** (was 4, one led by the logo's `e`); date **9/9** (one printed `- -` before the time and was refused).
+- **Transfer:** `ไปยัง` alone on its line, then the name (wrapped onto a second line when long), then the payee's bank or `พร้อมเพย์`, then a masked account. The name is the lines between the label and the line above the next masked account, at most two; otherwise the first line. **Bill payment:** no label; the biller is the first lettered, non-label line after the sender's masked account. A one-letter logo word is dropped by SCB's icon rule (`withoutScbIcon`).
+- **Date:** `PRINTED_DATE` accepts any number of hyphens before the time.
+- **`scripts/measure-slip-words.ts`:** reads a folder of slip images through Vision (key from the environment, never printed), caches words under the ignored `.runtime/slip-words/`, and prints lines, payee, memo, date and amount. Its output is real data (D-049).
+- **Stored payees:** the owner's console snippet (D-255's rules, any bank) fixes leading icon words; blank Krungthai payees fill on a re-send through D-253's duplicate fill.
 
 ## D-255 — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
 
