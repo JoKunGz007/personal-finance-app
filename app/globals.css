@@ -1234,14 +1234,14 @@ footer p { margin: 0; }
 /* Inbox "Waiting" queue: a table or cards, each with a thumbnail of a queued image. */
 .slip-actions a.secondary-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .inbox-view-toggle { margin: 0 0 12px; }
-.inbox-table { min-width: 640px; }
-.inbox-table th:nth-child(1) { width: 72px; }
-.inbox-table th:nth-child(2) { width: 90px; }
-.inbox-table th:nth-child(3) { width: 150px; }
-.inbox-table th:nth-child(4) { width: 100px; }
-.inbox-table th:nth-child(5) { width: auto; }
-.inbox-table th:nth-child(6) { width: 190px; }
-.inbox-table td { vertical-align: middle; overflow-wrap: anywhere; }
+.ledger-table.inbox-table { min-width: 560px; }
+.ledger-table.inbox-table th:nth-child(1) { width: 64px; }
+.ledger-table.inbox-table th:nth-child(2) { width: 72px; }
+.ledger-table.inbox-table th:nth-child(3) { width: 110px; }
+.ledger-table.inbox-table th:nth-child(4) { width: 80px; }
+.ledger-table.inbox-table th:nth-child(5) { width: auto; }
+.ledger-table.inbox-table th:nth-child(6) { width: 150px; }
+.inbox-table td { vertical-align: middle; overflow-wrap: break-word; }
 .inbox-thumb {
   display: grid; place-items: center; width: 40px; height: 56px; padding: 0; overflow: hidden;
   color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong);
@@ -1258,24 +1258,10 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
 .inbox-card .inbox-thumb { width: 100%; height: auto; aspect-ratio: 3 / 4; }
 .inbox-card .slip-actions { gap: 8px; }
 .inbox-card .secondary-button { min-height: 38px; padding: 7px 12px; font-size: 13px; }
-.image-dialog { max-width: 95vw; max-height: 95vh; padding: 0; color: var(--navy); border: 1px solid var(--navy); border-radius: var(--radius); background: var(--paper); }
+.image-dialog { margin: auto; max-width: 95vw; max-height: 95vh; padding: 0; color: var(--navy); border: 1px solid var(--navy); border-radius: var(--radius); background: var(--paper); }
 .image-dialog::backdrop { background: color-mix(in srgb, var(--scrim) 65%, transparent); }
 .image-dialog-body { display: grid; justify-items: center; gap: 10px; padding: 10px; }
 .image-dialog-body img { display: block; max-width: 90vw; max-height: calc(90vh - 70px); object-fit: contain; }
-@media (max-width: 700px) {
-  .inbox-table tbody tr {
-    min-height: 0; column-gap: 12px; row-gap: 2px; grid-template-columns: 40px minmax(0, 1fr);
-    grid-template-areas: "pre type" "pre added" "pre size" "status status" "act act";
-  }
-  .inbox-table td[data-label="Preview"] { grid-area: pre; grid-row: 1 / span 3; padding: 5px 0; }
-  .inbox-table td[data-label="Type"] { grid-area: type; }
-  .inbox-table td[data-label="Added"] { grid-area: added; grid-column: auto; }
-  .inbox-table td[data-label="Size"] { grid-area: size; }
-  .inbox-table td[data-label="Status"] { grid-area: status; }
-  .inbox-table td[data-label="Actions"] { grid-area: act; text-align: left !important; }
-  .inbox-table td[data-label="Preview"]::before, .inbox-table td[data-label="Actions"]::before { display: none; }
-  .inbox-table td:empty { display: none; }
-}
 .receipt-list summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
 /* Receipts (D-215): neutral amounts, colour only for meaning. Green and red mean money in and out
    on /ledger, and a receipt is neither, so its amounts stay in the ink colour and only discounts
@@ -1876,4 +1862,24 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
   /* #15: in the settings panel, each (i) sits beside its select. */
   .ui-picker { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
   .ui-picker > :not(label, .note-toggle) { flex-basis: 100%; }
+}
+
+/* Inbox queue table on a phone. Placed last and qualified with `.ledger-table` because the ledger's
+   own phone card rules (D-203) are more specific than `.inbox-table` alone and otherwise lay these
+   cells out as a ledger row: on the deployed build at 375px they overlapped. */
+@media (max-width: 700px) {
+  .ledger-table.inbox-table tbody tr:not(.day-head) {
+    display: grid; min-height: 0; column-gap: 12px; row-gap: 2px; grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-areas: "pre type" "pre added" "pre size" "status status" "act act";
+  }
+  .ledger-table.inbox-table td { text-align: left !important; }
+  .ledger-table.inbox-table td[data-label="Preview"] { grid-area: pre; padding: 5px 0; }
+  .ledger-table.inbox-table td[data-label="Type"] { grid-area: type; }
+  .ledger-table.inbox-table td[data-label="Added"] { grid-area: added; }
+  .ledger-table.inbox-table td[data-label="Size"] { grid-area: size; }
+  .ledger-table.inbox-table td[data-label="Status"] { grid-area: status; }
+  .ledger-table.inbox-table td[data-label="Actions"] { grid-area: act; }
+  .ledger-table.inbox-table td[data-label="Preview"]::before,
+  .ledger-table.inbox-table td[data-label="Actions"]::before { display: none; }
+  .ledger-table.inbox-table td:empty { display: none; }
 }
