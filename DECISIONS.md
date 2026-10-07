@@ -439,6 +439,7 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-262** — A printed date line may end in a stray mark (`>` read off a Krungthai background); the end-anchored date pattern had reported no date, so the year re-read never ran
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
@@ -455,6 +456,14 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-262 — A printed date line may end in a stray mark (`>` read off a Krungthai background); the end-anchored date pattern had reported no date, so the year re-read never ran
+
+- **Status:** live 2026-10-08 (`2106e5b`), no migration. Investigated on the owner's ask, on the last queued slip ("No line on this image reads as a date").
+- **Measured** in the pane (owner's grant; nothing kept): the slip's year was the known 6-read-as-5, and its enlarged year crop read correctly — the re-read was never reached. Encoded the way the Inbox encodes it (`createImageBitmap` → PNG), Vision read the date line with a trailing `>` from the background pattern, 3 of 3 times; drawn from the page's `<img>` it did not. `PRINTED_DATE` is anchored at the end (D-250's KBANK split depends on it), so the line was not a date: `DATE_NOT_FOUND` instead of `DATE_OUT_OF_RANGE`.
+- **Fix:** `PRINTED_DATE` accepts trailing characters that are neither letter nor digit. They cannot move the year/time split, which is digits only. Two tests (a trailing mark reads; a misread year with one still reports out of range) red-proved.
+- **Live:** the slip imported on the next open (632 slips); the queue is empty. **Lesson:** reproduce a drain refusal with the drain's own encoding; the page's `<img>` gives Vision different pixels.
+- **Evidence:** Vitest 89 files, 1,733 passed / 18 skipped; eslint clean.
 
 ## D-261 — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 
