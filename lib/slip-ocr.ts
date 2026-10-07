@@ -634,9 +634,22 @@ function labelledValue(lines: readonly OcrWord[][], anchor: FieldAnchor): OcrWor
  * spacing, so the token is matched by its text, and only while a name is left after it.
  */
 const SCB_ICON = /^(?:E|EX|E\)|\))$/;
+/**
+ * 32 more SCB slips (2026-10-07) showed other icons read as a word with at most one letter in it
+ * — `3`, `฿3`, `29`, `E3)`, `(`, `อ`, `ปี`, `๛` — and TrueMoney's logo read as lowercase `true move`.
+ * A payee's own first word carries two letters or more (`นาย`, a shop name), so a word with one
+ * letter or none is stripped too, again only while a name is left after it. The logo is matched
+ * lower-case only, so a payee printed `TRUE …` keeps its name.
+ */
+const letters = (text: string) => (text.match(/[ก-ฮA-Za-z]/gu) ?? []).length;
+const TRUEMONEY_LOGO = /^(?:true|move|money|truemoney|truemove)$/;
+// Vision splits a Thai name into syllables (`สุ` + `ชาดา`), and a first syllable can carry one
+// letter; only a word the engine ends with a space is an icon. `E`/`EX` keep D-253's text match.
+const isIconWord = (word: OcrWord) =>
+  SCB_ICON.test(word.text) || (word.spaceAfter !== false && (letters(word.text) <= 1 || TRUEMONEY_LOGO.test(word.text)));
 function withoutScbIcon(value: OcrWord[]): OcrWord[] {
   let start = 0;
-  while (start < value.length - 1 && SCB_ICON.test(value[start]!.text)) start += 1;
+  while (start < value.length - 1 && isIconWord(value[start]!)) start += 1;
   return value.slice(start);
 }
 

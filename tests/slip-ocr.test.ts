@@ -553,6 +553,31 @@ describe("proposing the payee and note", () => {
     }
   });
 
+  it("drops other SCB icons read as a word with one letter or none, and TrueMoney's lowercase logo", () => {
+    const icons = [["3"], ["฿3"], ["29"], ["E3)"], ["("], ["อ"], ["ปี"], ["๛"], ["1)"], ["true", "move"]];
+    for (const icon of icons) {
+      const iconWords = icon.map((text, index) => [text, 100 + index * 40, 130 + index * 40] as [string, number, number]);
+      const words = line(100, [["ไปยัง", 10, 60], ...iconWords, ["ร้าน", 200, 250], ["ทดลอง", 260, 330]]);
+      expect(proposeSlipText(words, "SCB").counterparty).toBe("ร้าน ทดลอง");
+    }
+  });
+
+  it("keeps an SCB payee's own first word and a payee printed TRUE in capitals", () => {
+    const words = line(100, [["ไปยัง", 10, 60], ["TRUE", 200, 250], ["INVENTED", 260, 330], ["CO", 340, 370]]);
+    expect(proposeSlipText(words, "SCB").counterparty).toBe("TRUE INVENTED CO");
+    const single = line(100, [["ไปยัง", 10, 60], ["3", 150, 160]]);
+    expect(proposeSlipText(single, "SCB").counterparty).toBe("3");
+  });
+
+  it("keeps an SCB payee's one-letter first syllable when the engine saw no space after it", () => {
+    const words = [
+      ...line(100, [["ไปยัง", 10, 60]]),
+      ...[["สุ", 200, 215, false], ["ทด", 217, 240, true], ["ร้าน", 250, 290, true]]
+        .map(([text, left, right, spaceAfter]) => ({ text, left, right, top: 100, bottom: 120, spaceAfter }) as OcrWord)
+    ];
+    expect(proposeSlipText(words, "SCB").counterparty).toBe("สุทด ร้าน");
+  });
+
   it("accepts the generic memo label on SCB and joins it with the provider note", () => {
     const words = [
       ...line(100, [["ข้อมูลเพิ่มเติมจากผู้ให้บริการ", 10, 200]]),
