@@ -10,10 +10,10 @@ Every call re-reads the whole context, so raw tool output in this session is the
 
 - **"Where is X"** → built-in `Explore`.
 - **"Why does X happen / does X hold"** (debugging, tracing, test or log output) → `finance-investigator` (read-only, session model). Give it one question, where to start, and the answer you need; it returns ≤300 words.
-- **Settled implementation** → `finance-implementer` (Sonnet). Name the files, the exact change and the checks to run. If it returns stuck or the task turns into debugging, re-route to the investigator or re-run it with `model: "opus"`; don't retry it on Sonnet.
+- **Settled implementation** → `finance-implementer` (Sonnet). Name the files, the exact change and the checks to run. If it returns stuck or the task turns into debugging, re-route to the investigator or re-run it with `model: "opus"`; don't retry it on Sonnet. Whenever it runs on Opus, start the description with `[re-run]` (Sonnet failed) or `[opus]` (chosen up front), so usage checks can count them.
 - **High-risk review** → `finance-reviewer` (Sonnet), plus the `/verify` + `/code-review` skills.
 - **Keep each delegation to ~20–40 tool calls.** Split larger work (migration → write path → UI → tests) into sequential delegations. Don't bundle independent items (e.g. several review findings) into one run: give each non-trivial item its own delegation, and group only small items in the same file or function. The only runs past 40 calls so far were bundles (59 and 71 calls). Use `SendMessage` for a short follow-up to the same agent and a fresh spawn for a new topic.
-- **`/ux-review`** can run in a `general-purpose` subagent under the skill's own rules, so screenshots stay out of this context.
+- **`/ux-review`** → `finance-ux-auditor`, one 2–3 page group at a time, in sequence (they share the browser pane). Not `general-purpose`: it starts at ~48K context and ran 41–64 calls per whole-app round.
 - **Do inline**: trivial edits, commands with small output, anything touching `shared-statements/` (D-049), money / idempotency / migration judgement calls, anything involving the owner, and continuity-doc updates. Subagents don't edit continuity docs; record what they find yourself.
 
 ## Local runtime
