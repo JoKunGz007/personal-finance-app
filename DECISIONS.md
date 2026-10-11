@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-271** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-272** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-272** — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
 - **D-271** — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
 - **D-270** — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
 - **D-269** — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
@@ -471,6 +472,16 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-272 — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
+
+- Date: 2026-10-11
+- Status: **Done; pushed to hosted.** Fixes D-271's matching read.
+- **Found on production, after the deploy and the first import.** The Shopee tab refused ("could not be loaded in full"). Every read ran fast as `postgres`; timed as the owner (`authenticated`, aal2 claims), 056's `shopee_ledger_rows()` took about 6 s. Its correlated subqueries (a component sum and an `exists` over every order and refund, per ledger row) re-ran the RLS policy for each inner row. The loader reads it with `count: "exact"`, which runs it twice, past the 8 s statement timeout for `authenticated`. `loadCurrentMatches` reads the same view, so **auto-categorise refused every row** from the deploy until 058 landed.
+- **Fix:** migration 058 reads the orders, the refunds and the component sums once each (materialized CTEs), so each source row passes its policy once. Same contract, security invoker. Measured on hosted as the owner: 119 ms; the same 179 rows as 056 (`except` both ways empty).
+- **Pushed** after the owner exported a fresh backup (the import had moved the sequence; it then equalled the newest backup record) and a dry-run listing only 058. Local: pgTAP 36 files (918), Shopee e2e, loader and match tests green.
+- **Why the gate missed it:** the local database is small, and RLS cost grows with ledger rows × orders. Trap recorded in `docs/gotchas/database.md`.
+- **Hosted import (same day, owner-authorised):** both exports through `/inbox` (Claude in Chrome's file upload; the built-in pane cannot attach files): 171 orders and 8 refunds stored, 82 orders before the ledger's first row skipped, 0 refused.
 
 ## D-271 — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
 

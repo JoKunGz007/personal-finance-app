@@ -177,3 +177,10 @@ the top of `GOTCHAS.md`.
 - Cause: PostgREST serialises `bigint` as a JSON number. The mocks were written with strings, so only a read against a real database shows the mismatch.
 - Avoid: accept `number | string` at the boundary and stringify before the contract (as `lib/server/shopee.ts` does for `movement_minor`), or have the SQL return `::text`. Keep one end-to-end test per new read against the local database.
 - Verify: `tests/shopee-e2e.test.ts` caught it on 2026-10-11 (D-271), before the conversion in `loadShopeeView` existed.
+
+## An invoker SQL function over RLS tables can be fast as `postgres` and time out as the owner
+
+- Symptom: a page refuses its read on hosted ("could not be loaded in full") while the same function, run with `supabase db query --linked`, answers in milliseconds.
+- Cause: `db query` runs as `postgres`, which bypasses row-level security. As `authenticated`, every row a correlated subquery touches re-runs the policy (`private.has_strong_owner_access`), so cost grows with ledger rows × inner rows; a paged `count: "exact"` read runs the function twice; `authenticated` has an 8 s statement timeout. A small local database hides it.
+- Avoid: read each source once (materialized CTEs, a grouped join) rather than a correlated subquery per row. Before pushing a new read RPC, time it on hosted as the owner: in one transaction, `set_config('request.jwt.claims', …)` with the owner's `sub` and `aal2`, `set local role authenticated`, time the call, `rollback`.
+- Verify: 2026-10-11 (D-272): 056's `shopee_ledger_rows()` about 6 s as the owner, 058 119 ms, the same rows.
