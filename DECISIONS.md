@@ -439,6 +439,8 @@ a reason to keep it rather than a reason it cannot ever move.
  this file
 
 - **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-264** — Shopee orders come from the web order-detail page saved as PDF, not from mail; D-158's unbounded candidate scan stays until it is slow
+- **D-263** — The Inbox is the way in: Import and Slips leave the main nav as Inbox fallbacks, and the `/slips` backlog upload is removed
 - **D-262** — A printed date line may end in a stray mark (`>` read off a Krungthai background); the end-anchored date pattern had reported no date, so the year re-read never ran
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
@@ -456,6 +458,19 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
 - **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
 - **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-264 — Shopee orders come from the web order-detail page saved as PDF, not from mail; D-158's unbounded candidate scan stays until it is slow
+
+- **Status:** decided 2026-10-11 (owner), nothing built. Recorded in `PLAN.md` § Current checkpoint.
+- **Shopee source.** The owner places under 10 orders a month (ShopeePay, card/bank, SPayLater) and wants bank-row matching, items and monthly totals. Shopee TH sends no per-order mail: `from:shopee` in his main Gmail holds only 15 e-Tax invoice PDFs since 2025-05 (Scommerce, sent only when a seller issues one). The phone app needs several screenshots per order; the web order-detail page (`shopee.co.th/user/purchase/order/<id>`, read once in Claude in Chrome on the owner's ask, nothing kept) carries order ID, placed and paid times, shop, items, vouchers, total and payment method on one page. **Chosen: print it to PDF and drop it on the Inbox** — expected to carry a text layer (no Vision, exact amounts) and keeps the delivery address off Google Vision. Not chosen: a web screenshot (longer than a screen; sends the address to Vision), a PDPA data-access request (slow, format unknown; at most a one-off backfill), scripting Shopee's API (fragile; no order-list request seen in the page's traffic). **Open:** whether the saved PDF has a text layer and keeps every section; SPayLater pays as one monthly repayment, so its orders cannot match a single bank row.
+- **D-158's scan.** `list_match_candidates` sums every ledger row's components before filtering: 43 ms over 1,812 rows on hosted (`explain analyze` of its `movements` CTE). Left as is (owner). When slow: bound the automatic candidates to `MATCH_WINDOW_DAYS` / `CARD_MATCH_WINDOW_DAYS` (±1 day, `lib/slip-reconcile.ts`, `lib/notification-card-reconcile.ts`) on the in-force (corrected) date, keep the decided-row union, and fetch the manual chooser's unbounded set lazily — the eager "N rows could be this" counts are what tie the page to the unbounded set. A stored movement column with an index would change no answer but is a backup-contract change; a cap with a truncated flag risks a wrong `verified` (D-063).
+
+## D-263 — The Inbox is the way in: Import and Slips leave the main nav as Inbox fallbacks, and the `/slips` backlog upload is removed
+
+- **Status:** live 2026-10-11 (`06f2471`), no migration. Owner's call on the agent's recommendation.
+- **Why not delete the pages:** the Inbox hands off to both — "Review on Import" and "Open the rest on Import" (locked or held statements; password, account choice, review before confirm), and "Add on Slips" (D-261). So `/import` and `/slips` stay, linked from the Inbox intro ("By hand: import a statement · add a slip"), and leave `ROUTES` in `app/site-header.tsx`.
+- **The backlog upload** (`app/slip-batch.tsx`) duplicated Inbox "Add files" and is deleted, which also retires PLAN's old step "the year re-read on the `/slips` batch page". `lib/slip-batch.ts` stays: the Inbox drain uses it. Possibly orphaned `.batch-*` rules remain in `app/globals.css`; some also serve `app/statement-batch.tsx`.
+- **Evidence:** Vitest 89 files, 1,733 passed / 18 skipped; tsc; lint 0 errors; the header e2e in `tests/e2e/ledger.spec.ts` (desktop and mobile) asserts the two links are absent from the header and reachable from `/inbox`.
 
 ## D-262 — A printed date line may end in a stray mark (`>` read off a Krungthai background); the end-anchored date pattern had reported no date, so the year re-read never ran
 
