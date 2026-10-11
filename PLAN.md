@@ -4,7 +4,7 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
-**D-271's leftover findings closed — 2026-10-11** (D-277): two fixed (matches read only the Shopee match state; unknown refund destinations refused), three left on purpose. Committed; production on the owner's push. **Next:** `/ux-review` rounds in progress (first group: Shopee checkbox targets High); intermittent 500s on production (the Shopee API 2 of ~8 loads; more on /statistics or /categories in the UX run). Not a database timeout: every Shopee read finishes in Postgres far under the 8 s limit (pg_stat_statements, owner-role timings), so the error is in the HTTP/PostgREST layer. `readAll` now logs a value-free line (label, reason, error code, status) on failure; read the Vercel logs after the next 500, then fix (likely a one-retry on network/5xx for idempotent reads).
+**D-271's leftover findings closed — 2026-10-11** (D-277): two fixed (matches read only the Shopee match state; unknown refund destinations refused), three left on purpose. Committed; production on the owner's push. **Next:** task 65 (fix all 25 UX findings, `docs/UX_REVIEW_2026-10-11.md`); also intermittent 500s on production (the Shopee API 2 of ~8 loads; more on /statistics or /categories in the UX run). Not a database timeout: every Shopee read finishes in Postgres far under the 8 s limit (pg_stat_statements, owner-role timings), so the error is in the HTTP/PostgREST layer. `readAll` now logs a value-free line (label, reason, error code, status) on failure; read the Vercel logs after the next 500, then fix (likely a one-retry on network/5xx for idempotent reads).
 
 **SPayLater repayments found — 2026-10-11** (D-276): they are leftover ShopeePay outflows on day 7–13 of the month; the Shopee tab lists 6 on hosted for the owner to link (none automatic). Committed; production updates on the owner's push. The owner links the 6 repayment rows on `/orders?view=shopee`.
 
@@ -815,6 +815,8 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 59. **A "duplicate" (or hidden) state for ledger rows.** Owner, 2026-10-11: maybe later. Today a duplicate is marked Excluded like any row the owner hides (D-265), and overlay notes have no edit control. Would separate "same bank row stored twice" from the owner's own exclusions, possibly hiding such rows from the default ledger view. Not needed for correctness: migration 054 stops new duplicates.
 
 60. **The Inbox/mailbox "already in the ledger" count uses the exact fingerprint only** (`lib/server/inbox-statement.ts`, `lib/server/fingerprint-lookup.ts`). A re-printed overlapping statement is reported as new rows and records an all-linked batch instead of `duplicate`; the ledger itself is right (D-265). Fix by counting on the same identity facts as `confirm_import`, or by reading `identity_links` back from the batch's audit detail.
+
+65. **Fix the 25 findings of the 2026-10-11 UX review** (owner approved all 25). The list, priority order, delegation groups and status column live in `docs/UX_REVIEW_2026-10-11.md`; work from that file, mark each row, then run round 2 after the deploy and delete the file once every row is closed.
 
 64. ~~**Shopee: Excluded ledger rows reach the matcher.**~~ **Done 2026-10-11 (D-274):** `loadShopeeView` passes the Excluded ids and the matcher proposes none of them; app code only. Hosted: auto 146 → 147.
 
