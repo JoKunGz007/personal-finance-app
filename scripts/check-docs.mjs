@@ -75,6 +75,7 @@ const SOURCE_DIRS = ["app", "lib", "tests", "scripts", "supabase", "workers", "d
 // in the docs or recorded here with its successor.
 const RETIRED_PATHS = {
   "app/ledger-app.tsx": "split into app/import-bench.tsx and app/recovery-bench.tsx (D-061)",
+  "app/slip-batch.tsx": "the /slips backlog upload, deleted when Inbox Add files covered it; lib/slip-batch.ts stays (D-263)",
   // The local OCR engine and everything that existed only for it. Deleted when slip capture
   // adopted Cloud Vision, which took its last caller with it (D-129).
   "lib/slip-ocr-engine.ts": "deleted with the local OCR engine; lib/vision-ocr.ts is the only engine now (D-129)",
