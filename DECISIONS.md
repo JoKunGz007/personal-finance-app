@@ -4,9 +4,9 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-223 … D-227** — the two open questions this file has
-named since the twelfth boundary, the newest entries, and the sixteenth boundary's own record of
-itself. **D-141**:
+This file carries **D-141, D-158 and D-259 … D-267** — the two open questions this file has
+named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
+itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
 `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. `scripts/check-docs.mjs`
 pools this file with every archive and checks ids for duplicates and omissions across the whole set,
@@ -41,7 +41,9 @@ shipped and confirmed live; and **D-198 … D-211** to
 [`docs/decisions/ARCHIVE-D-198-D-211.md`](docs/decisions/ARCHIVE-D-198-D-211.md) on 2026-09-23
 (the sixteenth boundary, D-213), again on the owner's direct word; and **D-212 … D-222** to
 [`docs/decisions/ARCHIVE-D-212-D-222.md`](docs/decisions/ARCHIVE-D-212-D-222.md) on 2026-09-25
-(the seventeenth boundary, D-227), on the owner's word too. The index below covers all fifteen files, so a reader can find any
+(the seventeenth boundary, D-227), on the owner's word too; later boundaries add **D-223 … D-234** (D-239), **D-235 … D-244** (D-251) and
+**D-245 … D-258** to [`docs/decisions/ARCHIVE-D-245-D-258.md`](docs/decisions/ARCHIVE-D-245-D-258.md)
+on 2026-10-11 (the twentieth boundary, D-267). The index below covers all fifteen files, so a reader can find any
 entry without opening any body.
 
 **Every boundary sits where an argument ends rather than where a number is round**, and the fourth one is the clearest case of that rule so far. It was taken at **93%** of this file's byte budget and moved the whole arc in which both readers went to Cloud Vision and the local OCR engine was deleted. **The third boundary had explicitly refused to move D-120**, on the grounds that whether pre-fill stays was undecided and that question attached to D-120 and D-129 — which was true when written. **What closed it was not an argument but a shipped feature**: D-135 files a machine-read amount into the ledger without the owner looking at it at all, which is a stronger commitment than the trial ever asked for. *A question is closed when the code has stopped asking it*, and that is the test to apply at the next boundary rather than re-reading the prose.
@@ -434,11 +436,29 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-242** — D-241's three known limits fixed, and a sixth /ux-review fix loop
 - **D-243** — Phone nav as one swipeable row with Cash folded (option E, revisits D-226); no-time receipts match a lone TRUE MONEY row (amends D-212); renamed ride types grouped
 - **D-244** — Task 25's category set: 18 flat categories created on hosted through `mutate_category`, no subcategories yet; a read-only export feeds local-llm's measurement
+### Archived 
+—
+ `docs/decisions/ARCHIVE-D-245-D-258.md`
+
+- **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+- **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
+- **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
+- **D-249** — Keyword rules round 2: 11 merchant rules, Transport › Fuel, and TrueMoney charges called top-ups only at round top-up amounts; amount-split descriptions never key history
+- **D-250** — A two-digit printed slip year is completed when exactly one candidate across both eras fits the slip window
+- **D-251** — The nineteenth boundary moves D-235 … D-244 on the owner's word
+- **D-252** — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
+- **D-253** — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
+- **D-254** — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
+- **D-255** — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
+- **D-256** — Krungthai slip payee read by layout (a transfer's wrapped name under `ไปยัง`, a bill payment's biller after the sender's masked account, logo dropped); a doubled date hyphen reads; a kept measurement script
+- **D-257** — Vision reads Krungthai's printed 6 as 5: a doubtful year is refused, and a year the window refuses is read again from an enlarged crop
+- **D-258** — A slip with no readable QR imports on its printed reference (Krungthai and SCB; migration 052), guarded against duplicates on bank, date, time and amount; Krungthai payee skips a one-letter logo line
 ### Current 
 —
  this file
 
-- **D-245** — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
+- **D-267** — The twentieth boundary moves D-245 … D-258 on the owner's word
 - **D-266** — Shopee orders come from a one-click export of the web order pages (a bookmarklet writing JSON), not a printed PDF (amends D-264); order code and link number stored, never the recipient's name, address or phone; import from the ledger's start
 - **D-265** — `confirm_import` links a re-printed bank row by its identity facts instead of inserting a duplicate (migration 054); the four duplicates already stored are Excluded; D-260's safety claim holds one way only
 - **D-264** — Shopee orders come from the web order-detail page saved as PDF, not from mail; D-158's unbounded candidate scan stays until it is slow
@@ -447,19 +467,13 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
-- **D-258** — A slip with no readable QR imports on its printed reference (Krungthai and SCB; migration 052), guarded against duplicates on bank, date, time and amount; Krungthai payee skips a one-letter logo line
-- **D-257** — Vision reads Krungthai's printed 6 as 5: a doubtful year is refused, and a year the window refuses is read again from an enlarged crop
-- **D-256** — Krungthai slip payee read by layout (a transfer's wrapped name under `ไปยัง`, a bill payment's biller after the sender's masked account, logo dropped); a doubled date hyphen reads; a kept measurement script
-- **D-255** — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
-- **D-254** — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
-- **D-253** — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
-- **D-252** — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
-- **D-251** — The nineteenth boundary moves D-235 … D-244 on the owner's word
-- **D-250** — A two-digit printed slip year is completed when exactly one candidate across both eras fits the slip window
-- **D-249** — Keyword rules round 2: 11 merchant rules, Transport › Fuel, and TrueMoney charges called top-ups only at round top-up amounts; amount-split descriptions never key history
-- **D-248** — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
-- **D-247** — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
-- **D-246** — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
+
+## D-267 — The twentieth boundary moves D-245 … D-258 on the owner's word
+
+- Date: 2026-10-11
+- Status: **Done.** D-245 … D-258 relocated unchanged to [`docs/decisions/ARCHIVE-D-245-D-258.md`](docs/decisions/ARCHIVE-D-245-D-258.md); their index bullets moved to that file's Archived section.
+- **Asked for by the owner** with this file at **96%** of its budget after D-266. Same footing as D-251: every entry moved is settled and shipped (categorising and its rules, the Grab services, Libron, the slip readers and the LINE backfill), or is D-251, the previous boundary's record, which this entry supersedes.
+- **A new file**, so no existing link moves. **D-259 … D-266 stay**: the slip re-reads, the overlapping-statement import and its duplicate fix (D-260, D-265), the Inbox as the way in, and the Shopee arc the next session starts from. D-141 and D-158 stay as the two open questions.
 
 ## D-266 — Shopee orders come from a one-click export of the web order pages (a bookmarklet writing JSON), not a printed PDF (amends D-264); order code and link number stored, never the recipient's name, address or phone; import from the ledger's start
 
@@ -522,141 +536,6 @@ a reason to keep it rather than a reason it cannot ever move.
 - **Remembering:** a review decision carries `retryable`, set where it is made: true when the reader failed or a second read (amount or year) was tried and gave nothing usable, and then the verdict is **not** remembered, so the next open reads the slip again. A definite review stays remembered per build. A capture refused with 409 or another 4xx carrying a reason is remembered too, so a refused slip stops costing a Vision read each open; 401, 403, 408 and 429 are not (session or load, not the slip), nor network or 5xx failures. The remembered entry shows the generic "needs checking" reason, not the server's text (the memory format is unchanged).
 - **Cost to know:** a retryable slip is re-read through Vision on every `/inbox` open until it imports or is removed — the queued ฿-amount slip whose year re-read fails is one now.
 - **Evidence:** Vitest 87 files, 1,712 passed / 18 skipped (DB suites skipped locally); 12 new tests; the 2× success and the not-remembered tests red-proved; tsc and eslint clean.
-
-## D-258 — A slip with no readable QR imports on its printed reference (Krungthai and SCB; migration 052), guarded against duplicates on bank, date, time and amount; Krungthai payee skips a one-letter logo line
-
-- **Status:** live 2026-10-07 (`eeb8dc0`; migration 052 on hosted after the owner's fresh export, read 1,232 / 1,232). Owner-approved as PLAN's next step 1 in the D-257 session.
-- **Measured** in the pane on the 19 queued images (owner's real-data grant; nothing kept): SCB's printed `รหัสอ้างอิง` has its QR reference's shape (date first, 25 characters), so the two kinds of capture of one SCB slip meet on the existing key. **Krungthai's does not:** stored QR references are a letter then 18–20 characters, while print shows `A` + 16 lowercase hex (top-ups, transfers; Vision once read a `c` as `C`), 17 digits starting with the date, or `C` + the date + digits on the line under the label (bill payments). So the reference alone cannot catch a Krungthai slip captured both ways.
-- **Schema:** `qr_payload` and `bank_qr_code` become nullable, both or neither (`slips_qr_pair`); null means "identity read from print". No new column, so every `restore_backup` (explicit column lists) passes a null through unchanged and the backup version stays; the backup row schema allows the null pair.
-- **Duplicate guard (`capture_slip`, under the ledger lock):** an exact (owner, bank, reference) hit is a duplicate as before. Otherwise a printed capture that matches **any** stored slip on bank, date, amount and time (equal, or either side without a time), and a QR capture that matches a stored **printed** slip the same way, is refused with 409 ("slip may already be captured"): storing it would double-count, treating it as captured would drop a genuinely different payment. Two QR slips never meet here; their references are exact (a real same-minute, same-amount pair exists).
-- **Reader (`lib/slip-printed.ts`, `classifySlip` with `identity: "printed"`):** only on `NO_QR_DETECTED` (a non-slip QR, e.g. a payment-request screen, keeps today's path); exactly one bank in the header's top third (`Krungthai`, or `SCB` with stray punctuation), exactly one `รหัสอ้างอิง` with its value beside or under it; a Krungthai `A`+hex reference is lower-cased. The date comes **only** from the printed line (the reference is OCR, not CRC-covered), D-257's guards and re-read apply, a time is required, and a date inside the reference (at offset 0, or after one letter) must agree with it; SCB's must exist (`printedReferenceAgrees`, also enforced by the route).
-- **Krungthai payee:** a one-letter line under `ไปยัง` (G-Wallet's `G`, PromptPay's `e`) is skipped, and the sender's masked account is found behind arrow strokes read as `___` / `//____`. On the owner's 7 saved slips, 7/7 payees read (was 3). The 4 stored ones still wrong were corrected through `/api/v1/slips/{id}/correction` (the other 3 had been filled by the re-send). A no-QR top-up has no `ไปยัง` and stores `เติมเงิน G-Wallet` as its payee.
-- **Live:** one `/inbox` open captured 17 no-QR slips (11 Krungthai, 6 SCB), no duplicates by bank/date/time/amount, 630 slips; one Krungthai `2559` misread came in as 2026. 2 stay queued: a comma read in an amount (PLAN step 2) and a slip with no date read.
-- **Review (`/code-review high`)** found 5; 4 fixed before commit (the QR-after-printed guard, the letter-prefixed reference date, the reference under its label, an SCB message), 1 left: a ready slip refused at capture is re-read through Vision on every open (QR slips too).
-- **Evidence:** Vitest 87 files, 1,710 passed / 7 skipped; pgTAP 818 with one failure, `028_line_inbox.sql` test 22, stale since migration 051 raised the cap to 1,000 (GOTCHAS); `032_slip_printed_identity.sql` 22/22, its null-time, QR-after-printed and reference-date cases red-proved; portable recovery passed into the recovery project at 52 migrations (once both local stacks were fully up — GOTCHAS); tsc and eslint clean.
-
-## D-257 — Vision reads Krungthai's printed 6 as 5: a doubtful year is refused, and a year the window refuses is read again from an enlarged crop
-
-- **Status:** live 2026-10-07 (`7b34f03`, `4927cf2`), no migration. Options chosen by the owner ("1, 2") over a third, rejected: always reading a 5 as 6, which is guessing a date (D-031).
-- **Measured** in the pane on the 12 Krungthai images the Krungthai re-send left in `/inbox` as "needs checking" (owner's real-data grant; nothing kept): 11 printed a correct year that Vision read with its 6 as 5 (`2569` → `2559`, `2568` → `2558`); the twelfth printed its amount with a comma, which the money grammar rightly refuses. All 11 carry Krungthai's 17-character reference, which embeds no date (D-059), so the printed line is the only date. The year's own box, padded 12 px, enlarged ×3 and read alone, read correctly **10/10** (9 misread plus 1 already right).
-- **Why a guard as well:** the window (today − 10 years … tomorrow) caught every misread only because the misread is exactly 10 years. A 5↔6 swap that lands inside the window too (a slip dated today or tomorrow, or a year ending 5/6) would have been believed. `readPrintedDate` now refuses such a four-digit year as `DATE_YEAR_DOUBTFUL`; a printed date already outside the window is not doubted.
-- **The re-read:** `classifySlipRereadingYear` (`lib/slip-batch.ts`) runs only when there is no QR date and the printed date is out of range (`code: "OUT_OF_RANGE"`, which covers both a year the window refuses and, after `4927cf2`, a year the era check refuses, now `DATE_OUT_OF_RANGE` instead of "no date"). It crops the year (`lib/browser/year-reread.ts`), swaps the digits into a copy of the words and runs the same `classifySlip`, so window and guard apply again; only a ready verdict is used, and amount and payee stay from the first read. The Inbox drain is wired; the `/slips` batch page is not (`tests/privacy.test.ts` asserts the literal `classifySlip(` in its `readOne`).
-- **Live:** two `/inbox` opens imported 4 + 5 of the misread slips (one more was already in the ledger), each date checked against the image; Krungthai slips 96 → 105, none dated before 2025. Gate: Vitest 83 files passed / 3 skipped (1,577 passed / 107 skipped, DB-backed suites with no local Supabase), tsc, eslint; new tests red-proved against the old code.
-
-## D-256 — Krungthai slip payee read by layout (a transfer's wrapped name under `ไปยัง`, a bill payment's biller after the sender's masked account, logo dropped); a doubled date hyphen reads; a kept measurement script
-
-- **Status:** live 2026-10-07 (`73723d8`), no migration.
-- **Measured** on the 9 Krungthai slips already in `receipts_sample/` (owner's real-data grant; the word cache was deleted afterwards), because the hosted `/inbox` queue could not be read: the auto-mode classifier refused the agent reading the session cookie in the pane, and opening `/inbox` itself drains and captures (GOTCHAS, app). Payee **9/9** (was 4, one led by the logo's `e`); date **9/9** (one printed `- -` before the time and was refused).
-- **Transfer:** `ไปยัง` alone on its line, then the name (wrapped onto a second line when long), then the payee's bank or `พร้อมเพย์`, then a masked account. The name is the lines between the label and the line above the next masked account, at most two; otherwise the first line. **Bill payment:** no label; the biller is the first lettered, non-label line after the sender's masked account. A one-letter logo word is dropped by SCB's icon rule (`withoutScbIcon`).
-- **Date:** `PRINTED_DATE` accepts any number of hyphens before the time.
-- **`scripts/measure-slip-words.ts`:** reads a folder of slip images through Vision (key from the environment, never printed), caches words under the ignored `.runtime/slip-words/`, and prints lines, payee, memo, date and amount. Its output is real data (D-049).
-- **Stored payees:** the owner's console snippet (D-255's rules, any bank) fixes leading icon words; blank Krungthai payees fill on a re-send through D-253's duplicate fill, which now also treats a stored payee of at most one letter (the live `e`) as blank. A payee with a real name is still never overwritten.
-
-## D-255 — Slip backfill through LINE: SCB payee icons stripped per spaced word, the Inbox reads 3 files at once, the LINE cap raised to 600 a day (migration 050); slip payees found to add little to categorising
-
-- **Status:** live 2026-10-07 (`63f4b1d`, `0f89b97`, `d50dbcc`, `24132c3`, `b24dcb5`; migration 050 on hosted after the owner's fresh export). The owner backfilled about 490 SCB slips through LINE; the ledger holds 512 slips.
-- **Measured before building rules (PLAN job 1):** every K PLUS and SCB slip matched a statement row whose description already names the same payee; transfers to people stay blank by D-245's no-names rule; none of the 20 K PLUS slips was a phone top-up, and of 2 SCB TrueMove H top-ups one matched its `รายการผ่าน INTERNET` row uniquely, the other was ambiguous among same-day ฿200 rows. Slip payees therefore settle few categories; the owner backfills anyway to have every slip on the ledger, and the rule work waits for the full set. A blind `รายการผ่าน INTERNET` → Bills & Phone rule was offered and declined for now.
-- **SCB payee icons:** D-253's text list caught only `E`/`EX`/`E )`. Later batches showed one-letter words, split pieces (`E3` + `)`), `EX)`, `฿ER`, and the TrueMoney/dtac logos. `withoutScbIcon` now joins engine words up to each space flag before judging them (GOTCHAS, parsing). Stored payees were cleaned through `/api/v1/slips/{id}/correction` by an owner-run console snippet (26, then 6), after the auto-mode classifier refused the agent's writes.
-- **Concurrency:** `drainInbox` reads `DRAIN_CONCURRENCY = 3` files at once and applies outcomes in queue order; PDFs and statements post afterwards, one at a time. Measured: about 3 s a slip against 8 s; a batch of 50 takes about 4–6 minutes, of which about 60 s is the LINE move. About one Vision "reader could not be reached" per batch, each read cleanly on the next open.
-- **Cap:** 200 images a 24 hours refused 24 of one batch; migration 050 raised it to 600 (owner). The owner agreed it should return to 200 once the backfill ends (a new migration). A time-bounded draft (800, then 200 by itself) was written and deleted unpushed when the owner chose to fix the Krungthai reader first.
-- **Krungthai, first real test (6 saved, 4 refused by the cap):** 4 captured with only 1 usable payee (2 blank, 1 read as `e`), 1 refused as dated outside the window, 1 not imported. The Krungthai reader is the next job, before the remaining ~114 are sent.
-
-## D-254 — The Inbox queue is a table by default with a Cards view one tap away, both showing previews of queued images that enlarge on a tap; Review is a button like Remove
-
-- **Status:** live 2026-10-07 (`0d6e113`, CSS fixes `f9e2531`, `6d7649d`, `19bf83e`), no migration.
-- **Owner, 2026-10-07:** chose mockup A (a ledger-style table) from three drawn on the live `/inbox`, and asked for C (cards) to stay switchable; Review should match Remove. The choice is per device (`localStorage` key `inbox-queue-view`, default table).
-- **Previews:** each listed image is downloaded from the queue bucket on the device (3 at a time) and shown as an object URL, revoked when the file leaves the list or the page closes; a native `<dialog>` enlarges it. PDFs and images the browser cannot decode (HEIC) show a plain tile. **No new storage**: images are still deleted on capture, so only queued files have a preview.
-- **Phone:** the table reuses the ledger's stacked-card layout, but the ledger's D-203 phone rules outrank `.inbox-table` alone and overlapped the cells on the deployed build at 375px; the overrides are qualified `.ledger-table.inbox-table` and sit last in `globals.css`. Verified live at 375px (no sideways scroll) and 1024px with an invented test image, removed afterwards.
-
-## D-253 — Slip payee read from Vision's own space flags, after K PLUS's first masked account, without SCB's icon; a re-sent duplicate fills a blank payee or memo through the correction overlay
-
-- **Status:** live 2026-10-07 (`dbb4154`), no migration. Closes D-252's three known defects.
-- **Measured** on the owner's 22 K PLUS images (20 slips, 2 KBank account cards) and 16 SCB slips, read once through Vision with the owner's grant; the cache was deleted afterwards. Payee: K PLUS **20/20** (was 4), SCB **16/16**. **No slip carried a memo**, so D-252's "no memo on any" was correct, not a defect.
-- **Spaces:** `OcrWord.spaceAfter` carries Vision's `detectedBreak` (SPACE, SURE_SPACE, EOL_SURE_SPACE, LINE_BREAK). Display text joins on it; absent means a space, so other engines and old fixtures are unchanged. A box-gap rule was rejected: in-name syllable gaps (12px) and real spaces (13px) overlap.
-- **K PLUS:** the payee's account is masked too on most transfers, so the payee follows the **first** masked line, not "exactly one". A dropped sender mask still yields null (the next lettered line is the `เลขที่รายการ:` label). Words left of the masked account's column are the payee bank's logo (read as "0") and are dropped.
-- **SCB:** the merchant icon reads as `E`, `EX` or `E )` on every iconned slip; its gap overlaps ordinary word spacing (0.48 vs 0.48 of line height), so it is stripped by text while a name remains.
-- **Backfill (owner: "build a way to correct existing entries"):** `POST /api/v1/slips` on a duplicate fills the stored slip's payee and/or memo through `set_slip_correction`, only where the slip and its correction are both blank, carrying every existing correction field and revision. Best-effort: any failure keeps the plain duplicate answer. The Inbox line says "payee or memo added to N". A payee already stored with D-252's spaced syllables is **not** replaced (4 live slips); the owner corrects those on the row.
-
-## D-252 — Inbox slips are always money out and are captured without a question; the payee and memo read off a slip are stored with it; remembered Inbox verdicts expire with the build
-
-- **Status:** built 2026-10-07. Supersedes D-236's one money in/out answer per batch (archived in `docs/decisions/ARCHIVE-D-235-D-244.md`).
-- **Owner, 2026-10-07:** every slip of every bank is the payer's receipt, so a forwarded slip is always money out. `app/inbox-files.tsx` captures each ready slip as a withdrawal in the same run as the drain; the Money out / Money in buttons are gone. `/slips` keeps both directions for a hand entry.
-- **Payee and memo (owner's request):** `proposeSlipText` (`lib/slip-ocr.ts`) reads the payee (SCB and KTB under `ไปยัง`; K PLUS has no label, so the first lettered line after the sender's masked account) and the memo (SCB `ข้อมูลเพิ่มเติมจากผู้ให้บริการ`, KTB and K PLUS `บันทึกช่วยจำ`), best-effort and null on any doubt. They go to the slip's `counterparty` and `note`, shown on the matched row; the statement's description never changes. Thai names may be misread; the owner corrects them on the row.
-- **Stale memory fixed:** the Inbox's per-device memory of "not recognised" and "needs checking" now stamps every entry with the build and drops it on another, as held statements already did, after 20 K PLUS slips stayed "needs checking" past the deploy that fixed their date (D-250).
-
-## D-251 — The nineteenth boundary moves D-235 … D-244 on the owner's word
-
-- Date: 2026-10-07
-- Status: **Done.** D-235 … D-244 relocated unchanged to [`docs/decisions/ARCHIVE-D-235-D-244.md`](docs/decisions/ARCHIVE-D-235-D-244.md); their index bullets moved to that file's Archived section.
-- **Asked for by the owner** after D-250 left this file at **97%** of its budget. Same footing as D-239: every entry moved is settled and shipped (the Inbox and its slip and statement paths, `/import`'s duplicate warning, the LINE bot and its fixes, the phone nav, the category set), or is D-239, the previous boundary's record, which this entry supersedes.
-- **A new file**, so no existing link moves. **D-245 … D-250 stay**: categorising, the Grab services, Libron and the slip-year arc the next session starts from. D-141 and D-158 stay as the two open questions. D-236 is superseded in part by the next slip entry and is found through the index.
-
-## D-250 — A two-digit printed slip year is completed when exactly one candidate across both eras fits the slip window
-
-- **Status:** built 2026-10-07. Reopens the refusal recorded in `docs/SLIP_CONTRACT.md` (task 21, D-031, D-059) on the owner's word, after all 20 readable K PLUS slips he sent through LINE were refused for printing `YY`.
-- **Rule:** `gregorianFromTwoDigitYear` tries `24YY`–`26YY` BE and `19YY`–`21YY` CE and accepts only a single survivor in the window (ten years back, one ahead). The two eras' readings of one `YY` are 43 or 57 years apart, so the window never holds two; no century is assumed. No survivor still fails closed (`DATE_YEAR_UNRESOLVED`).
-
-## D-249 — Keyword rules round 2: 11 merchant rules, Transport › Fuel, and TrueMoney charges called top-ups only at round top-up amounts; amount-split descriptions never key history
-
-- **Status:** live 2026-10-07 (`2959e79`). The first run on hosted applied **259** rule categories, exactly what the rules predicted against the 2026-10-05 export (only uncategorised rows moved); a second run applied 0.
-- **Owner, 2026-10-07, checked against his SCB slips:** Central Pattana bill payments are mall parking → Transport › Parking (Parking-CTW was already caught). SUANPHLU STATION CO., LTD. is the Shell station at 65 S Sathon Rd → a new **Transport › Fuel** (created on hosted the same day). Swensen's → Dining Out (Coffee & Snacks may become its subcategory later). State Railway fares (฿30–35) → Public Transit: Public Transit is everyday travel in town, Travel is a trip, and a long-distance ticket is moved by hand. A football-pitch rental → Entertainment. ShopeePay → Shopping › Online (D-246).
-- **TrueMoney (D-246's open call):** a rule may now require exact amounts (`amountsMinor`). `SIPS TRUE MONEY` → Wallet Top-up only at ฿100/200/300/400/500/1,000 (46 rows); other round amounts (฿230, ฿110) and every other amount stay blank, as all 16 receipt-matched TrueMoney rows were 7-Eleven purchases at non-round amounts.
-- **Review finding fixed:** history (which runs before rules) keys on the description alone, so one confirmed TrueMoney row would have spread its category to every TrueMoney row past the amount check. A description an amount rule matches no longer keys history (`isAmountGated`); red-proven.
-- **Kept blank:** payment processors and SCB merchant-QR payees, person-named payees, MBK. Bangchak's Greenet shops are Convenience Store, not fuel.
-- **Not solvable by a rule:** phone top-ups print only `รายการผ่าน INTERNET` (22 blank rows). The slip names the operator, so the next step is letting rules read a matched slip's counterparty.
-
-## D-248 — Libron, an OFL book serif, joins the typeface picker and becomes the default; vendored in `app/fonts/libron/`, figures stay in Plex Mono
-
-- **Status:** built locally (2026-10-07), not committed or deployed. Supersedes D-169's default (Pixelify Sans), which stays in the picker one press away.
-- **Owner, 2026-10-07:** asked for Libron (github.com/nicoverbruggen/libron, v0.25) across the whole app and chose "add it and make it the default" over replacing the other faces.
-- **Source:** the release's `Libron_Web.zip` — four woff2 files (400/700, roman and italic) — plus the repo's OFL text, vendored because Fontsource does not carry it and `font-src 'self'` admits no CDN.
-- **Measured:** cap height 70 per 100px, IBM Plex's exactly, so no `size-adjust`, unlike the pixel faces. Prose runs about 3% wider than IBM Plex Sans Thai.
-- **Kept:** "Figures" goes first in its stacks, so digits stay in IBM Plex Mono (D-162, D-202); Thai falls back to IBM Plex Sans Thai. `tests/e2e/font-picker.spec.ts` passes for it at phone width.
-
-## D-247 — Grab Dine Out, GrabMart, GrabExpress and late-delivery mails are read and stored as orders with a `service` column (migration 049); statistics count food only
-
-- **Status:** built and live (2026-10-06, `b13fd0a`, `60e692d`). Builds D-246's reader.
-- **Measured** (`measure-grab-mail.ts --mart --mart-template`, owner's terminal, labels only): GrabMart's layout is GrabFood's with Thai labels, and its money closes. Dine Out has a food subtotal and discounts but no item lines and no delivery fee. GrabExpress prints the ride heading and a date with no time. Its fees are a delivery guarantee plus a carrying fee, less rewards, and they close. A late-delivery mail is an apology carrying the order breakdown of a GrabFood order: amounts have no `฿`, the body has no date, and the `฿` figure in the apology is a voucher, not a charge.
-- **Storage:** `deliveries.service` (`food`, `mart`, `express` or `dine_out`; LINE MAN is always `food`) instead of new platform values, so the platform unions stay as they are. Zero items are allowed for `express` and `dine_out` only.
-- **Owner, 2026-10-06:** late-delivery breakdowns are stored as GrabFood orders, timed by the mail. They link by hand if the automatic 0–120 min rule misses; whether it misses is checked after the first sync. Delivery statistics count `food` only. Categories: Dine Out → Food & Drinks › Dining Out; GrabMart → Groceries & Convenience › Grocery Delivery (the owner creates it); GrabExpress → Services › Courier; late delivery → Food & Drinks › Delivery.
-- **First production sync (2026-10-06):** 6 Dine Out, 1 GrabMart and 1 GrabExpress stored; food receipts still classify as food. All 4 late-delivery mails were refused: their breakdown prints no discounts, and every total was below food plus fees. The gap is now stored as D-219's `unprinted` line. The total is printed only once there, so the exact match to a bank charge is the check. A total above the lines is still refused.
-- **Match windows (owner, 2026-10-07):** Dine Out may be charged up to 10 minutes *after* the receipt (paid at the table; measured 5 of 6 inside the food window, 1 one minute after). GrabExpress may be charged up to 6 hours *before* it (charged at booking; measured 156 minutes). Every other condition stays GrabFood's (`lib/delivery-match.ts`). The owner created Grocery Delivery and Services › Courier through the agent on 2026-10-07. The next ledger open categorised 5 Dine Out orders and the GrabMart order.
-- **Re-read:** the sync flags an all-`other` message as handled, so the flag name changes again (as `PLDelivery` became `PLGrab`, D-222) to make these mails readable.
-
-## D-246 — The 15 unmatched Grab charges traced to services the reader skips (Dine Out, GrabMart, GrabExpress, late-delivery mails), refunds and voucher packages; a reader for those comes next; TRUE MONEY rows get no rule
-
-- Date: 2026-10-06
-- Status: **Investigated; no app code changed.** Harness extended (`87be104`); two rows hand-labelled at the owner's request. The reader is the next build (PLAN).
-- **The 15 Grab charges (D-245's next step 1), all accounted for**, against the owner's mailbox and Grab app, figures kept out of the repo (the owner's private, gitignored `owner-notes/`):
-  - 6 are **Grab Dine Out** (pay-at-the-restaurant) receipts, 1 **GrabMart**, 1 **GrabExpress**: services `classifyGrabReceipt` never reads.
-  - 3 are GrabFood orders for which Grab sent only a **"We're sorry for the late delivery"** mail (order breakdown and total, no e-receipt).
-  - 1 was refunded by a later `POS REFUND` of the same amount (not linked in the app); 1 is a merchant-cancelled order Grab said would not be charged, charged and never refunded (the owner's call whether to chase it).
-  - 2 are **food-voucher package purchases**, which send no receipt (one confirmed in the Grab app, the other inferred: same shape, older than the app's history). Labelled Food & Drinks › Delivery **by the owner's request through `PUT /api/v1/transactions/[id]/overlay`** (the owner's own path, so `owner` provenance).
-  - Checked and ruled out: no charge equals two or three stored rides/orders within a day; no inflow names Grab.
-- **Mail findings** (measured with `scripts/measure-grab-mail.ts --mart`, counts and date/amount tokens to the owner's terminal only): the four backfill bundles held only food and ride receipts (390), which is why none of these services was ever seen. **GrabExpress prints the ride heading, so it is classified `ride`** (today's Sync may store it as a ride). Thai Dine Out receipts never say "Dine Out"; they say `ส่วนลดสำหรับทานที่ร้าน`. The owner forwarded all of them (and the late-delivery mails) to the statement mailbox; the late-delivery layout is not measured yet.
-- **Decided for the reader (owner, 2026-10-06):** read Dine Out, GrabMart, GrabExpress and late-delivery mails, store them as orders, match on the exact total like GrabFood, and categorise: Dine Out → Food & Drinks › Dining Out; GrabMart → Groceries & Convenience › **Grocery Delivery** (a new subcategory: what was bought, not how it arrived; not yet created); late delivery → Food & Drinks › Delivery; GrabExpress → a new **Services › Courier** (owner, 2026-10-06, second session); the owner will create Grocery Delivery). Shopee stays Shopping › Online until its orders are linked.
-- **`SIPS TRUE MONEY` (D-245's step 2): no rule.** 131 outgoing rows; the description, label, reference and account are identical on every one. All 16 receipt-matched rows fall inside the receipt-coverage window and all 115 blank ones before it, so no rule's precision can be measured. Round-฿10 amounts and daytime hours are suggestive only. Left blank; new rows categorise once their receipts match. Whether round-฿10 rows go to Wallet Top-up is the owner's open call (deferred with step 3).
-- **Keyword rules round 2 (step 3): drafted, not shipped.** Public names only; measured on the 2026-10-05 export to touch only blank rows. The owner chose SIPS SHOPEEPAY → Shopping › Online and leaving SCB merchant-QR and payment-processor payees blank; two payees await the owner. Deferred until after the reader.
-
-## D-245 — D-090 built: category provenance and reviews as append-only tables, one-level subcategories, and machine categories applied on their own when the ledger opens; backup v14
-
-- Date: 2026-10-05
-- Status: **Built and gated locally; migration 048 on hosted 2026-10-05** (after a hosted backup read of 503 / 503 and a dry-run naming only 048; read back: no row rewritten, sequence still 503, the new functions not executable by `anon`). `d7f828d` pushed by the owner and deployed; the owner's SQL-editor paste created the 14 subcategories (hosted read: 32 active, 14 parent links, sequence 503 → 531). **Confirmed live 2026-10-05**: the first `/ledger` open applied **748 of 1,778** (487 match: 264 rides, 106 own transfers, 101 deliveries, 16 receipts; 261 rule), 0 skipped, 0 unresolved, and the reload's second pass applied 0. Of 361 Grab rows, 346 matched and 15 stay blank. `PLAN.md` task 25.
-- **Owner's choices.** Build D-090 now, before any row is categorised, so nothing needs a guessed source. Automatic as far as possible, the owner involved as little as possible. Confirming a machine category sets a **reviewed** flag rather than turning it into `owner`. Subcategories now, because the backup version moves anyway (one move, not two). Auto-apply runs on its own.
-- **Storage (D-097: new tables, no new columns).** Migration 048:
-  - `category_parents(category_id pk, owner_id, parent_id)`: one level only. A parent has no parent, a category with children takes none, both owned, the parent not archived. Written only by `set_category_parent` (audited, sequence bump).
-  - `category_provenance(owner_id, transaction_id, overlay_revision, source ∈ owner/rule/match/model, detail jsonb)`, append-only, one row for each overlay revision that changes `category_id`. A transaction's effective source is its latest provenance row; no row means none.
-  - `category_reviews(owner_id, transaction_id, overlay_revision)`, append-only, pointing at the provenance row it confirms. Written by `review_transaction_category` (audited, sequence bump). Reviewed means the latest provenance row has a review.
-  - `update_transaction_overlay` (the owner's editor) records `owner` provenance when the category changes.
-  - `apply_category_proposals(items)` writes machine categories. It preserves every other overlay field (`include_in_reporting`, note), never overwrites a category whose source is `owner` or which is reviewed, may replace one machine source with another, and writes the revision snapshot, provenance and audit like the owner's path.
-- **Backup v14.** The three tables join export and restore; v13 still restores (they arrive empty).
-- **Who decides.** TypeScript, not SQL, because automatic ride, order and receipt matches exist only in the routes' TypeScript (`lib/ledger-match.ts`). A SQL copy would drift from what `/orders` and `/receipts` show. Precedence: own transfer (`include_in_reporting = false`) → Own Transfers; a match (ride → Transport › Ride-hailing; GrabFood or LINE MAN order → Food & Drinks › Delivery; 7-Eleven receipt → Groceries & Convenience › Convenience Store); then keyword rules (`lib/category-rules.ts`, code, reviewable, each with an id recorded in `detail`); otherwise nothing. A rule naming a category that does not exist is skipped, not created.
-- **When.** On every ledger open, beside `auto_exclude_internal_transfers` (D-207's precedent), and after an import is confirmed. Idempotent: an unchanged proposal writes nothing.
-- **Subcategories (owner's set).** Food & Drinks › Delivery, Dining Out, Coffee & Snacks; Groceries & Convenience › Convenience Store, Supermarket; Transport › Ride-hailing, Public Transit, Parking; Shopping › Online, Electronics, Clothing; Subscriptions & Digital › Streaming & Music, Cloud & Apps, AI Tools. Created on hosted after 048 is pushed.
-- **Review and fixes.** `finance-reviewer` found nothing critical or high. Fixed from its mediums: Own Transfers only for rows `list_auto_excluded_transactions` returns (a hand-excluded refund is not a transfer); history needs the same direction and a key of at least 8 letters, so a generic "TR fr" cannot spread one label over dozens of rows; applies go in sequential chunks of 300, so a hosted statement timeout cannot roll back a whole first run and retry it forever; `TOPS`, `CAFE`, `BIG ?C`, `CJ`. Deploy order: 048 before the code, because the ledger page schema is strict and requires the four new row fields.
-- **Behaviour changes worth knowing.** An owner who clears a category keeps it cleared (the latest `owner` provenance blocks proposals whatever the value). The "Auto-excluded" label now survives later revisions that leave reporting off (a category or note edit); an owner toggle still drops it. The ledger runs the categoriser after its auto-excluded read and reloads once if anything applied; the second pass applies nothing, so it stops.
-- **Evidence.** Local, after `pnpm supabase:reset`: pgTAP 771 / 29 files; Vitest 1543 passed / 7 skipped across 83 files; lint 0 errors (2 old warnings), typecheck, `check:docs --strict`, build; Playwright isolated 70 passed / 8 skipped, owner 34 (one TOTP test flaked once and passed alone). Red-proofs: a proposal overwriting `include_in_reporting`, the reviewed guard, the old auto-excluded predicate, a table dropped from export, a skipped `category_reviews` restore, the split-ride second row in `heldRows`. The match refactor is proved by the unchanged `deliveries-route`, `receipts` and `ride-match-route` tests.
-- **Not now.** Category roll-up on statistics (no category breakdown exists yet); a model source (local-llm measures first); the blind labelling sitting (a view that hides the current value, built when the owner wants it).
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
