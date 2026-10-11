@@ -1,6 +1,6 @@
 ---
 name: sync-continuity
-description: Reconcile a repository's maintained SPEC.md, PLAN.md, DECISIONS.md, GOTCHAS.md, and thin HANDOFF.md with the latest verified source, tests, migrations, and operational evidence. Use after substantive implementation, validation, requirement changes, architecture decisions, recovered failures, environment changes, or whenever the user asks to sync, refresh, audit, update, or prepare project continuity documentation.
+description: Reconcile a repository's maintained SPEC.md, PLAN.md, DECISIONS.md, GOTCHAS.md, and docs/LOCAL_DEV.md's machine facts with the latest verified source, tests, migrations, and operational evidence. Use after substantive implementation, validation, requirement changes, architecture decisions, recovered failures, environment changes, or whenever the user asks to sync, refresh, audit, update, or prepare project continuity documentation.
 ---
 
 # Sync Continuity
@@ -17,7 +17,7 @@ Read repository instructions first. Then read, when present:
 2. `PLAN.md`
 3. `DECISIONS.md`
 4. `GOTCHAS.md`
-5. `HANDOFF.md`
+5. `docs/LOCAL_DEV.md` § This machine
 
 Follow links only to artifacts needed to resolve changed or conflicting claims. Treat detailed product, design, architecture, recovery, parser, migration, test, and source files as owners of their exact contracts.
 
@@ -44,7 +44,7 @@ Update only affected files:
 - `PLAN.md`: verified checkpoint, exact test results, completed work, remaining tasks, blockers, and authorization gates. Remove work only when evidence proves completion.
 - `DECISIONS.md`: append durable decisions with date, status, decision, rationale, consequences when relevant, and evidence paths. Do not rewrite history. Supersede an older entry with a new entry that references it.
 - `GOTCHAS.md`: add repeatable, non-obvious traps using symptom, cause, avoidance, and verification. Do not add one-off noise or generic advice.
-- `HANDOFF.md`: a thin index, a short current headline, and only facts that are both mutable and homeless — state that changes (authorizations granted or spent, what is uncommitted or unpushed, machine-specific hazards) and that no other maintained document can hold, because `DECISIONS.md` is append-only and `PLAN.md` owns project state. Per edit, ask whether the fact has a home elsewhere; if it does, put it there and link. A fact true in both files is a defect in this one, not redundancy.
+- `docs/LOCAL_DEV.md` § This machine: machine facts, local-only and ignored files, and local hazards — state that changes with the machine rather than the project. Authorizations are never recorded as standing (`AGENTS.md`: nothing carries into a new session). `HANDOFF.md` is retired (D-268); do not recreate it.
 - `README.md` and `AGENTS.md`: update only if the continuity entry points or maintenance rules changed.
 
 Use the repository's current date. Distinguish "implemented," "applied locally," "tested," and "accepted"; they are not interchangeable.

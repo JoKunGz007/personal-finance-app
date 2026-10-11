@@ -99,7 +99,7 @@ const has = (rel) => existsSync(join(ROOT, rel));
 
 const DECISIONS = "DECISIONS.md";
 const GOTCHAS = "GOTCHAS.md";
-const CONTINUITY = [DECISIONS, GOTCHAS, "SPEC.md", "PLAN.md", "HANDOFF.md"];
+const CONTINUITY = [DECISIONS, GOTCHAS, "SPEC.md", "PLAN.md", "docs/LOCAL_DEV.md"];
 
 // **The traps live in `docs/gotchas/`, one file per section, since 2026-08-25** (D-149). `GOTCHAS.md`
 // keeps the index and nothing else, so every check below that used to read one file now reads these

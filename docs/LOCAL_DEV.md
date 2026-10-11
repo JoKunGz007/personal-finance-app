@@ -42,7 +42,7 @@ The owner config is a second browser suite, for the specs that need a signed-in 
 | --- | --- | --- | --- |
 | `private-ledger-local` | 5432x | Synthetic seed only. **Every suite, seed and pgTAP fixture targets this.** Disposable | `pnpm supabase:stop` |
 | `private-ledger-recovery` | 5433x | Nothing; a destination for proving a backup restores | discards its data |
-| `private-ledger-live` | 5434x | **Real financial records** (D-048). Studio on 54343 | preserves its data |
+| `private-ledger-live` | 5434x | **Historical** real records (D-048), frozen on migration 012 since the hosted project became the real ledger (D-094). Studio on 54343 | preserves its data |
 
 ```powershell
 node scripts/live-ledger.mjs up      # start / migrate / bind
@@ -90,3 +90,34 @@ Passwords are typed at a hidden prompt and are never arguments, environment vari
 ## Docker / Supabase acceptance
 
 Docker acceptance uses only the `private-ledger-local` Supabase project on `supabase_network_private-ledger-local` (its default Docker network — see `DECISIONS.md` D-008, D-009). Do not modify the older PostgreSQL/pgAdmin containers or the Windows PostgreSQL service.
+
+## This machine
+
+Moved from the retired `HANDOFF.md` (D-268). Each line is a reading; re-take it rather than trusting it.
+
+**Local-only and ignored files.**
+
+- `eslint.config.mjs` and `playwright.config.ts` are modified on purpose and never committed. Read `git status --short`, preserve both, and stage by explicit path, never `git add -A`. The local `playwright.config.ts` pins `GOOGLE_VISION_KEY` and all three `STATEMENT_MAILBOX_*` variables empty, ignores the owner specs, and deletes `.next` after a run through `.runtime/clear-next-build.ts`. A fresh clone has none of this.
+- `statement-mailbox.json` is gitignored and holds no secret, but it names an address: never quote it. The mailbox is a separate Gmail account (D-189); its app password is the owner's and is read from stdin only.
+- `GOOGLE_VISION_KEY` is in the owner's Windows user environment, so `next start` inherits it. Every throwaway browser config pins it to `""`.
+- `.runtime/card-ocr-readings.tsv` holds real values and is the owner's to mark or delete. Always name the harness file when running `--config .runtime/vitest.harness.config.ts`, or every `*.harness.ts` runs and overwrites it.
+- `shared-statements/`, `receipts_sample/` (including `shopee/`, `quick_check/`, `food_delivery/`), `phone_screenshots/` and `owner-notes/` hold real material. Never turn any of it into a fixture, a doc line or a commit; never quote `owner-notes/`.
+- `dev-backup/` holds the owner's `.plbak` exports and a password map (temporary, 2026-10-03). On his word agents may read this folder only; never copy a password out of it, and delete the folder when he ends the arrangement.
+
+**Hosted and deploys.**
+
+- The real ledger is the hosted Supabase project; the app on Vercel serves it. The repo stays linked to it (`supabase ... --linked`; the CLI is `node_modules/.bin/supabase`, not on `PATH`). `--linked` can answer from local: check `inet_server_addr()` is non-local before trusting a hosted read.
+- Every push to `main` deploys to production. The remedy for a bad deploy is Instant Rollback in the Vercel dashboard, never a revert push. Trust the commit hash, not the dashboard's relative time (UTC against UTC+7).
+- A Ready badge is not a working page: check the deployed page itself.
+
+**Local stack hazards** (traps with full write-ups are in `GOTCHAS.md`).
+
+- `pnpm supabase:reset` cannot be guarded and destroys the project the working directory names. Never set `ALLOW_DESTRUCTIVE_TESTS=1` to get a green run.
+- `NEXT_PUBLIC_*` and the CSP are inlined at build time from `.env.local`, so a browser config that builds without pinning its target builds against whatever that file names.
+- Docker Desktop stops often and has to be started by hand. With Docker down the database-backed suites **skip** and the totals look the same: run `docker ps` first and read the words, not the colour. An up-but-unreachable stack fails with `ECONNREFUSED` instead (the WinNAT port trap; the exclusion `54320–54349` is persistent machine state).
+- After `supabase db reset` or restarting a `supabase_db_…` container, restart that project's `auth`, `rest`, `realtime`, `storage`, `pg_meta` and `kong` containers; they stay `(healthy)` on dead connections.
+- The owner browser suite wipes the seeded owner's data before and after each test; run database-backed suites one at a time.
+- `pnpm dev` started in the background and stopped with `TaskStop` leaves `next dev` holding port 3000. Find the PID (`netstat -ano | grep :3000`) and `taskkill /PID <pid> /F`.
+- No app server is left running; both browser suites start their own on 3100 and 3200 with `reuseExistingServer: false`.
+- Run `check:docs --strict` as its own command; piping it through `tail` makes `&&` guard `tail`'s exit code.
+- `tests/recovery-portability.test.ts` skips without the recovery project and the totals read the same; read its named lines.
