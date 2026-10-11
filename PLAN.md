@@ -4,6 +4,8 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
+**LINE cap back to 200 — live 2026-10-11** (migration 053, `952e92e`; fresh export first). The Krungthai backfill is over (owner); the 24-hour cap returns from 1,000 to 200, 500-held unchanged. `028_line_inbox.sql` test 22 (the 201st image refused) had been red since 050 and needed no edit; pgTAP passes. **Next, in order:** (1) the year re-read on the `/slips` batch page — or retire that batch upload, pending the owner's call on whether `/slips` and `/import` stay (both are Inbox fallbacks); (2) slip payees → keyword rules on the full set; (3) D-158.
+
 **Inbox queue empty — 2026-10-08** (D-262, `2106e5b`): the last queued slip failed on a stray `>` after its printed time, not on its year; fixed, imported, 632 slips. The "Queue left" lines below are history.
 
 **Overlapping statements import, and queued slips open on Slips — live 2026-10-08** (D-260 `b09cfe7`, D-261 `33a7763`; no migration). A statement whose rows are partly in the ledger imports its new rows and reports both counts (3 such mailbox statements wait for the owner's next Sync — first live check of D-260). A queued slip that needs checking has "Add on Slips", which opens it on `/slips` and removes it from the queue once saved (checked live, not saved). Not yet possible: finishing a **no-QR** slip on `/slips` (the single form takes a QR identity only).
