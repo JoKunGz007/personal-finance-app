@@ -7,7 +7,7 @@ import {
   rideLedgerCandidateSchema, rideMatchDecisionSchema, rideSplitCandidateSchema,
   type DeliveryMatchState
 } from "@/lib/delivery-match";
-import { loadShopeeView } from "@/lib/server/shopee";
+import { loadShopeeMatchState } from "@/lib/server/shopee";
 import type { ShopeeView } from "@/lib/shopee-view";
 import { proposeReceiptMatches, receiptLedgerCandidateSchema, receiptMatchDecisionSchema, type ReceiptMatchState } from "@/lib/receipt-match";
 
@@ -156,7 +156,7 @@ export type CurrentMatch =
   | { transaction_id: string; kind: "shopee_spaylater_repayment"; entity_id: string };
 
 /** The ledger rows Shopee currently holds, from the loaded view (combined proposals do not count). */
-export function shopeeCurrentMatches(view: Pick<ShopeeView, "orders" | "links">): CurrentMatch[] {
+export function shopeeCurrentMatches(view: { orders: Array<Pick<ShopeeView["orders"][number], "id" | "match">>; links: ShopeeView["links"] }): CurrentMatch[] {
   const matches: CurrentMatch[] = [];
   for (const order of view.orders) {
     if ((order.match.state === "matched" || order.match.state === "auto") && order.match.transactionId) {
@@ -184,10 +184,11 @@ export function heldRows(state: DeliveryMatchState | ReceiptMatchState, linked: 
 
 /** Every transaction the app treats as matched today, with its kind and the matched document. */
 export async function loadCurrentMatches(supabase: OwnerClient): Promise<{ ok: true; matches: CurrentMatch[] } | Refusal> {
-  const [orders, receipts, shopee] = await Promise.all([loadOrderMatches(supabase), loadReceiptMatches(supabase), loadShopeeView(supabase)]);
+  const [orders, receipts, shopee] = await Promise.all([loadOrderMatches(supabase), loadReceiptMatches(supabase), loadShopeeMatchState(supabase)]);
   if (!orders.ok) return orders;
   if (!receipts.ok) return receipts;
-  // Like a failed receipt or delivery read, a failed Shopee read refuses everything (no skip).
+  // Like a failed receipt or delivery read, a failed Shopee match read refuses everything (no skip).
+  // D-277: only the match state is read here, so items, price lines and the summary cannot refuse it.
   if (!shopee.ok) return shopee;
   const linkedOrder = new Map(orders.orderDecisions.filter((d) => d.decision === "matched").map((d) => [d.delivery_id, d.transaction_id]));
   const linkedRide = new Map(orders.rideDecisions.filter((d) => d.decision === "matched").map((d) => [d.ride_id, d.transaction_id]));
@@ -199,7 +200,7 @@ export async function loadCurrentMatches(supabase: OwnerClient): Promise<{ ok: t
       .map((transaction_id) => ({ transaction_id, kind: "delivery" as const, platform: delivery.platform as "grabfood" | "lineman", service: ((delivery as { service?: DeliveryService }).service ?? "food"), entity_id: delivery.id }))),
     ...receipts.receipts.flatMap((receipt) => heldRows(receipt.match, linkedReceipt.get(receipt.id))
       .map((transaction_id) => ({ transaction_id, kind: "receipt" as const, entity_id: receipt.id }))),
-    ...shopeeCurrentMatches(shopee.view)
+    ...shopeeCurrentMatches(shopee.currentMatchInput)
   ];
   return { ok: true, matches };
 }

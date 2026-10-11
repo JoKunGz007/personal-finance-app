@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { loadShopeeView } from "@/lib/server/shopee";
+import { loadShopeeMatchState, loadShopeeView } from "@/lib/server/shopee";
+import { loadCurrentMatches } from "@/lib/server/current-matches";
 import { shopeeViewSchema } from "@/lib/shopee-view";
 
 // The loader's join of stored orders to the read-time proposals (PLAN task 62 step 4b). The
@@ -183,5 +184,44 @@ describe("loadShopeeView past 1000 rows", () => {
     const lines = Array.from({ length: 2345 }, (_, i) => ({ id: `id-${i}`, order_id: A, position: i + 1, label: "Invented line", amount_minor: 1 }));
     const loaded = await loadShopeeView(client(reads({ shopee_order_price_lines: { data: lines, error: null } })));
     expect(loaded.ok && loaded.view.orders.find((o) => o.id === A)!.priceLines.length).toBe(2345);
+  });
+});
+
+describe("loadShopeeMatchState (D-277)", () => {
+  const summaryDown = { shopee_monthly_summary: { data: null, error: { message: "invented" } } };
+  const itemsDown = { shopee_order_items: { data: null, error: { message: "invented" } } };
+
+  it("succeeds when only the summary read fails, while the full view refuses", async () => {
+    expect(await loadShopeeView(client(reads(summaryDown)))).toMatchObject({ ok: false, status: 500 });
+    const state = await loadShopeeMatchState(client(reads(summaryDown)));
+    expect(state.ok && state.currentMatchInput.orders.find((o) => o.id === A)!.match)
+      .toEqual({ state: "auto", transactionId: ROW_AUTO, revision: 0 });
+  });
+  it("succeeds when only the items or price-line read fails, while the full view refuses", async () => {
+    expect(await loadShopeeView(client(reads(itemsDown)))).toMatchObject({ ok: false, status: 500 });
+    expect((await loadShopeeMatchState(client(reads(itemsDown)))).ok).toBe(true);
+    const lines = { shopee_order_price_lines: { data: null, error: { message: "invented" } } };
+    expect(await loadShopeeView(client(reads(lines)))).toMatchObject({ ok: false, status: 500 });
+    expect((await loadShopeeMatchState(client(reads(lines)))).ok).toBe(true);
+  });
+  it("still refuses on a match-side read failure, with the view's message", async () => {
+    const failed = await loadShopeeMatchState(client(reads({ shopee_ledger_rows: { data: null, error: { message: "invented" } } })));
+    expect(failed).toEqual({ ok: false, message: "Shopee orders could not be loaded in full, so none are shown.", status: 500 });
+  });
+  it("loadCurrentMatches still lists Shopee matches when the summary read fails", async () => {
+    const data = reads(summaryDown);
+    const base = client(data) as unknown as { from: (t: string) => unknown; rpc: (n: string) => unknown };
+    const empty = { data: [], error: null, count: 0 };
+    // Any table the Shopee fixture does not name reads as empty, through a chain that answers every call.
+    const emptyChain: Record<string, unknown> = {
+      then: (r: (v: unknown) => unknown) => Promise.resolve(empty).then(r)
+    };
+    for (const m of ["select", "order", "range", "eq", "in", "is", "neq", "gte", "lte", "not", "or"]) emptyChain[m] = () => emptyChain;
+    const stub = {
+      from: (t: string) => (t in data ? base.from(t) : emptyChain),
+      rpc: (n: string) => (n in data ? base.rpc(n) : emptyChain)
+    } as unknown as Parameters<typeof loadShopeeView>[0];
+    const loaded = await loadCurrentMatches(stub);
+    expect(loaded.ok && loaded.matches.filter((m) => m.kind === "shopee_order").map((m) => m.entity_id).sort()).toEqual([A, B]);
   });
 });

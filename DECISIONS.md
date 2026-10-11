@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-276** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-277** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-277** — Two of D-271's leftover findings fixed: matches read only the Shopee match state, and an unknown refund destination is refused instead of stored as a bank; three left on purpose
 - **D-276** — A SPayLater repayment is a leftover ShopeePay outflow on day 7–13 of the month; candidate orders reach back 366 days (supersedes D-270/D-275's repayment wording and 10–60 day window)
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
@@ -476,6 +477,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-277 — Two of D-271's leftover findings fixed: matches read only the Shopee match state, and an unknown refund destination is refused instead of stored as a bank; three left on purpose
+
+- Date: 2026-10-11
+- Status: **Done; committed.** App code only.
+- **Fixed — the matches read.** `loadCurrentMatches` (auto-categorise, `/ledger`) loaded the full Shopee view, so a failed summary, items or price-line read refused every row's categorisation (D-272's outage showed the risk). `loadShopeeMatchState` (`lib/server/shopee.ts`) now reads only orders, refunds, overlays, links, ledger rows and Excluded ids and runs the matcher; `loadShopeeView` builds on it. Messages unchanged.
+- **Fixed — the refund destination.** `mapRefund` (`lib/shopee-import.ts`) stored any wording other than exactly "ShopeePay"/"ShopeePay Balance" as `bank`, and `refund_to` cannot change once stored (055 raises "refund differs"). Now: ShopeePay in any case → wallet; a masked account number (two or more `x`/`*` then a digit) → bank; anything else refuses that order (`cancelDestination`). **Not verified against the one real bank refund's printed shape** (its text is never stored); if it does not match, re-importing that order is refused by name, never mis-stored.
+- **Left on purpose:** a refund deposit held by a non-Shopee document can be proposed (only inflows qualify, and the owner confirms); "ledger row not in view" is unreachable from the UI (every confirmable row comes from `shopee_ledger_rows()`); refunds are checked one by one, but the parser reads at most one per order and 057 clamps.
+- Evidence: red-proofs (current matches with a failing summary; lower-case wallet and refusal wordings); Shopee, auto-categorise and current-matches tests 171 passing; `tsc`, `eslint` clean.
 
 ## D-276 — A SPayLater repayment is a leftover ShopeePay outflow on day 7–13 of the month; candidate orders reach back 366 days (supersedes D-270/D-275's repayment wording and 10–60 day window)
 

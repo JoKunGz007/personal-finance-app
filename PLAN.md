@@ -4,7 +4,9 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
-**SPayLater repayments found — 2026-10-11** (D-276): they are leftover ShopeePay outflows on day 7–13 of the month; the Shopee tab lists 6 on hosted for the owner to link (none automatic). Committed; production updates on the owner's push. **Next:** the owner links the 6 repayment rows on `/orders?view=shopee`; then D-271's four low-risk review findings, and `/ux-review` of the SPayLater checkbox target size.
+**D-271's leftover findings closed — 2026-10-11** (D-277): two fixed (matches read only the Shopee match state; unknown refund destinations refused), three left on purpose. Committed; production on the owner's push. **Next:** `/ux-review` rounds in progress (first group: Shopee checkbox targets High); the Shopee API returned an intermittent 500 on production (2 of ~8 loads, and 3 console 500s in the UX run) — investigate.
+
+**SPayLater repayments found — 2026-10-11** (D-276): they are leftover ShopeePay outflows on day 7–13 of the month; the Shopee tab lists 6 on hosted for the owner to link (none automatic). Committed; production updates on the owner's push. The owner links the 6 repayment rows on `/orders?view=shopee`.
 
 **QR orders match; no repayment wording yet — 2026-10-11** (D-275): "Payment to Shopee" rows were PromptPay QR orders; `other`-kind orders now match like bank debits; hosted auto 149, none 4.
 

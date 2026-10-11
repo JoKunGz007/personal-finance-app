@@ -54,7 +54,8 @@ export const REFUSE = {
   item: "An item has an unreadable price or quantity.",
   cancelError: "The cancellation page could not be read when the file was made.",
   cancelOrder: "The cancellation belongs to a different order.",
-  cancelIncomplete: "The cancellation record is incomplete."
+  cancelIncomplete: "The cancellation record is incomplete.",
+  cancelDestination: "The refund destination is not ShopeePay or a bank account."
 } as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -88,6 +89,13 @@ export function bangkokTimeToIso(value: unknown): string | null {
   return `${String(year).padStart(4, "0")}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:00+07:00`;
 }
 
+// D-277: refund_to is immutable once stored, so a destination is classified only when it is clearly one kind.
+// Wallet: the ShopeePay name alone. Bank: a masked account number, i.e. a run of 2+ mask characters (x, X, *)
+// not glued to a letter, followed by mask characters, dashes, spaces or digits and ending in a digit
+// ("xxx-x-x1234-x", "***1234"). Anything else is refused rather than guessed.
+const WALLET_DESTINATION = /^ShopeePay( Balance)?$/iu;
+const BANK_DESTINATION = /(?<![A-Za-z])[xX*]{2,}[-\sxX*\d]*\d/u;
+
 function mapRefund(value: unknown, orderCode: string): { refund: ShopeeCaptureRefund } | { refuse: string } {
   if (!isRecord(value)) return { refuse: REFUSE.cancelIncomplete };
   if (value.error !== undefined) return { refuse: REFUSE.cancelError };
@@ -100,11 +108,13 @@ function mapRefund(value: unknown, orderCode: string): { refund: ShopeeCaptureRe
   if (!requestId || !requestedAt || refundMinor === null || destination === null || (by !== "buyer" && by !== "shopee")) {
     return { refuse: REFUSE.cancelIncomplete };
   }
+  const refundTo = WALLET_DESTINATION.test(destination) ? "wallet" : BANK_DESTINATION.test(destination) ? "bank" : null;
+  if (refundTo === null) return { refuse: REFUSE.cancelDestination };
   return {
     refund: {
       requestId, requestedAt, refundMinor,
       // Only the kind survives; the printed text may hold a masked account number.
-      refundTo: destination === "ShopeePay Balance" || destination === "ShopeePay" ? "wallet" : "bank",
+      refundTo,
       requestedBy: by,
       reason: text(value.reason),
       steps: Array.isArray(value.steps) ? value.steps.filter((step): step is string => typeof step === "string" && REFUND_STEPS.has(step)) : []

@@ -48,13 +48,33 @@ const linkRow = z.object({
 
 const byPosition = <T extends { position: number }>(a: T, b: T) => a.position - b.position;
 
-export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true } & { view: ShopeeView }) | Refusal> {
-  const all = <Row>(table: string, columns: string) => readAll<Row>((from, to) =>
-    supabase.from(table).select(columns, { count: "exact" }).order("id", { ascending: true }).range(from, to));
-  const [orders, items, priceLines, refunds, overlays, links, ledger, excluded, summary] = await Promise.all([
+type Match = ShopeeView["orders"][number]["match"];
+
+const matchOf = (state: ShopeeOrderMatchState | undefined): Match => {
+  if (!state) return { state: "none", transactionId: null, revision: 0 };
+  if (state.state === "matched") return { state: "matched", transactionId: state.transactionId, revision: state.revision };
+  if (state.state === "unmatched") return { state: "unmatched", transactionId: null, revision: state.revision };
+  if (state.state === "auto" || state.state === "combined_proposed") {
+    return { state: state.state, transactionId: state.transactionId, revision: 0 };
+  }
+  return { state: state.state, transactionId: null, revision: 0 };
+};
+
+const LOAD_MESSAGE = "Shopee orders could not be loaded in full, so none are shown.";
+const MATCH_MESSAGE = "Shopee orders could not be matched to the ledger, so none are shown.";
+
+const pagedReader = (supabase: OwnerClient) => <Row>(table: string, columns: string) => readAll<Row>((from, to) =>
+  supabase.from(table).select(columns, { count: "exact" }).order("id", { ascending: true }).range(from, to));
+
+/**
+ * D-277: only what the match needs - orders, refunds, overlays, links, ledger rows and the Excluded
+ * ids. Auto-categorise and /ledger read this alone, so a failed items, price-line or summary read
+ * cannot make them refuse every row (D-272 showed that outage). Same refusals as the full view.
+ */
+export async function loadShopeeMatchState(supabase: OwnerClient) {
+  const all = pagedReader(supabase);
+  const [orders, refunds, overlays, links, ledger, excluded] = await Promise.all([
     all("shopee_orders", "id,order_code,link_id,placed_at,paid_at,shop,payment_method,payment_kind,total_minor"),
-    all("shopee_order_items", "id,order_id,position,name,variation,quantity,price_minor,original_price_minor"),
-    all("shopee_order_price_lines", "id,order_id,position,label,amount_minor"),
     all("shopee_refunds", "id,order_id,request_id,requested_at,refund_minor,refund_to,requested_by,reason,steps"),
     // The overlay's key is its order id.
     readAll((from, to) => supabase.from("shopee_payment_match_overlays")
@@ -67,18 +87,14 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
     // Rows the owner Excluded from reporting: the matcher proposes none of them (task 64, D-274).
     readAll((from, to) => supabase.from("transaction_overlays")
       .select("transaction_id", { count: "exact" }).eq("include_in_reporting", false)
-      .order("transaction_id", { ascending: true }).range(from, to)),
-    // One jsonb document, computed in SQL (migration 057): not a paged table read.
-    supabase.rpc("shopee_monthly_summary")
+      .order("transaction_id", { ascending: true }).range(from, to))
   ]);
 
-  if (!orders.ok || !items.ok || !priceLines.ok || !refunds.ok || !overlays.ok || !links.ok || !ledger.ok || !excluded.ok || summary.error) {
-    return { ok: false, message: "Shopee orders could not be loaded in full, so none are shown.", status: 500 };
+  if (!orders.ok || !refunds.ok || !overlays.ok || !links.ok || !ledger.ok || !excluded.ok) {
+    return { ok: false, message: LOAD_MESSAGE, status: 500 } as Refusal;
   }
   const p = {
     orders: z.array(orderRow).safeParse(orders.data),
-    items: z.array(itemRow).safeParse(items.data),
-    priceLines: z.array(priceLineRow).safeParse(priceLines.data),
     refunds: z.array(refundRow).safeParse(refunds.data),
     overlays: z.array(overlayRow).safeParse(overlays.data),
     links: z.array(linkRow).safeParse(links.data),
@@ -87,12 +103,10 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
       const r = row as { movement_minor?: unknown };
       return typeof r.movement_minor === "number" ? { ...r, movement_minor: String(r.movement_minor) } : r;
     })),
-    excluded: z.array(excludedRow).safeParse(excluded.data),
-    summary: shopeeSummarySchema.safeParse(summary.data)
+    excluded: z.array(excludedRow).safeParse(excluded.data)
   };
-  if (!p.summary.success || !p.orders.success || !p.items.success || !p.priceLines.success || !p.refunds.success
-    || !p.overlays.success || !p.links.success || !p.ledger.success || !p.excluded.success) {
-    return { ok: false, message: "Shopee orders could not be matched to the ledger, so none are shown.", status: 500 };
+  if (!p.orders.success || !p.refunds.success || !p.overlays.success || !p.links.success || !p.ledger.success || !p.excluded.success) {
+    return { ok: false, message: MATCH_MESSAGE, status: 500 } as Refusal;
   }
 
   let proposals: ReturnType<typeof proposeShopeeMatches>;
@@ -115,10 +129,49 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
       }))
     });
   } catch {
-    return { ok: false, message: "Shopee orders could not be matched to the ledger, so none are shown.", status: 500 };
+    return { ok: false, message: MATCH_MESSAGE, status: 500 } as Refusal;
   }
 
   const stateByOrder = new Map<string, ShopeeOrderMatchState>(proposals.orders.map((s) => [s.orderId, s]));
+  const current = currentLinks(p.links.data.map((l) => ({
+    orderId: l.order_id, transactionId: l.transaction_id, kind: l.kind, action: l.action, changedAt: l.changed_at
+  })));
+  return {
+    ok: true as const,
+    orders: p.orders.data,
+    refunds: p.refunds.data,
+    ledger: p.ledger.data,
+    proposals,
+    stateByOrder,
+    current,
+    // What `shopeeCurrentMatches` takes: each order's match and the current links.
+    currentMatchInput: {
+      orders: p.orders.data.map((o) => ({ id: o.id, match: matchOf(stateByOrder.get(o.id)) })),
+      links: current
+    }
+  };
+}
+
+export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true } & { view: ShopeeView }) | Refusal> {
+  const all = pagedReader(supabase);
+  const [state, items, priceLines, summary] = await Promise.all([
+    loadShopeeMatchState(supabase),
+    all("shopee_order_items", "id,order_id,position,name,variation,quantity,price_minor,original_price_minor"),
+    all("shopee_order_price_lines", "id,order_id,position,label,amount_minor"),
+    // One jsonb document, computed in SQL (migration 057): not a paged table read.
+    supabase.rpc("shopee_monthly_summary")
+  ]);
+  if (!state.ok) return state;
+  if (!items.ok || !priceLines.ok || summary.error) return { ok: false, message: LOAD_MESSAGE, status: 500 };
+  const p = {
+    items: z.array(itemRow).safeParse(items.data),
+    priceLines: z.array(priceLineRow).safeParse(priceLines.data),
+    summary: shopeeSummarySchema.safeParse(summary.data)
+  };
+  if (!p.summary.success || !p.items.success || !p.priceLines.success) {
+    return { ok: false, message: MATCH_MESSAGE, status: 500 };
+  }
+  const { proposals, stateByOrder, current } = state;
   const group = <T extends { order_id: string }>(rows: T[]) => {
     const map = new Map<string, T[]>();
     for (const row of rows) map.set(row.order_id, [...(map.get(row.order_id) ?? []), row]);
@@ -126,19 +179,9 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
   };
   const itemsBy = group(p.items.data);
   const linesBy = group(p.priceLines.data);
-  const refundsBy = group(p.refunds.data);
+  const refundsBy = group(state.refunds);
 
-  const matchOf = (state: ShopeeOrderMatchState | undefined): ShopeeView["orders"][number]["match"] => {
-    if (!state) return { state: "none", transactionId: null, revision: 0 };
-    if (state.state === "matched") return { state: "matched", transactionId: state.transactionId, revision: state.revision };
-    if (state.state === "unmatched") return { state: "unmatched", transactionId: null, revision: state.revision };
-    if (state.state === "auto" || state.state === "combined_proposed") {
-      return { state: state.state, transactionId: state.transactionId, revision: 0 };
-    }
-    return { state: state.state, transactionId: null, revision: 0 };
-  };
-
-  const shown = [...p.orders.data]
+  const shown = [...state.orders]
     .sort((a, b) => Date.parse(b.paid_at ?? b.placed_at) - Date.parse(a.paid_at ?? a.placed_at) || a.id.localeCompare(b.id))
     .map((o) => ({
       id: o.id,
@@ -167,10 +210,6 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
       match: matchOf(stateByOrder.get(o.id))
     }));
 
-  const current = currentLinks(p.links.data.map((l) => ({
-    orderId: l.order_id, transactionId: l.transaction_id, kind: l.kind, action: l.action, changedAt: l.changed_at
-  })));
-
   // Only the rows something refers to: a state, a proposal or a current link.
   const referenced = new Set<string>();
   for (const order of shown) if (order.match.transactionId) referenced.add(order.match.transactionId);
@@ -180,7 +219,7 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
   for (const r of proposals.refundDeposits) referenced.add(r.transactionId);
   for (const l of current) referenced.add(l.transactionId);
   const rows: ShopeeView["rows"] = {};
-  for (const row of p.ledger.data) {
+  for (const row of state.ledger) {
     if (!referenced.has(row.transaction_id)) continue;
     rows[row.transaction_id] = {
       id: row.transaction_id, date: row.source_date, time: row.source_time, label: row.transaction_label,

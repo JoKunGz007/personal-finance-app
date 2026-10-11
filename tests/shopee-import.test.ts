@@ -170,7 +170,29 @@ describe("refund mapping", () => {
     expect(refundOf({ refundTo: "ShopeePay Balance" })!.refundTo).toBe("wallet");
     expect(refundOf({ refundTo: "ShopeePay" })!.refundTo).toBe("wallet");
   });
-  it("maps any other destination to bank and never keeps its text", () => {
+  it("D-277: matches the wallet name case-insensitively and trimmed", () => {
+    expect(refundOf({ refundTo: "shopeepay balance" })!.refundTo).toBe("wallet");
+    expect(refundOf({ refundTo: "  SHOPEEPAY  " })!.refundTo).toBe("wallet");
+  });
+  it("D-277: maps a masked account number to bank", () => {
+    for (const shape of [BANK_SHAPED, "INVENTEDBANK xxx-x-x1234-x", "XXX-X-X1234-X", "***1234", "INVENTEDBANK ****5678"]) {
+      expect(refundOf({ refundTo: shape })!.refundTo).toBe("bank");
+    }
+  });
+  it("D-277: refuses a destination that is neither ShopeePay nor a bank account", () => {
+    for (const dest of ["SPayLater", "Shopee Coins", "บัญชีธนาคาร", "Invented card"]) {
+      const parsed = one(order({ cancellation: cancellation({ refundTo: dest }) }));
+      expect(parsed.orders).toEqual([]);
+      expect(parsed.refused[0]!.reason).toBe("The refund destination is not ShopeePay or a bank account.");
+    }
+  });
+  it("D-277: an empty or blank destination stays an incomplete record", () => {
+    for (const dest of ["", "   "]) {
+      expect(one(order({ cancellation: cancellation({ refundTo: dest }) })).refused[0]!.reason)
+        .toBe("The cancellation record is incomplete.");
+    }
+  });
+  it("maps a masked bank destination to bank and never keeps its text", () => {
     const parsed = parseShopeeExport(file([order({ cancellation: cancellation({ refundTo: BANK_SHAPED, requestedBy: "Shopee" }) })]));
     if (!parsed.ok) throw new Error("not ok");
     expect(parsed.orders[0]!.refund).toEqual({
