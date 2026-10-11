@@ -1,8 +1,10 @@
-# Claude Code project handoff
+# Private Ledger — project instructions
 
-Thin Claude Code entry point. Start with `AGENTS.md` — it carries the finance invariants and lists the maintained authority (`SPEC.md`, `PLAN.md`, `DECISIONS.md`, `GOTCHAS.md`) and routes you to the rest, including its authorization rules (nothing carries into a new session).
+The single entry point (D-269 folded `AGENTS.md` in; Codex is no longer used). Maintained authority: `SPEC.md` (scope, invariants, gates), `PLAN.md` (checkpoint and next actions), `DECISIONS.md` (append-only), `GOTCHAS.md` (traps), `docs/LOCAL_DEV.md` (runtime, validation, this machine).
 
-For substantive work, read `PLAN.md` § Current checkpoint first (current state + next actions), then `DECISIONS` / `GOTCHAS` / `SPEC` as the task requires — don't slurp all of them for a trivial task. Do not duplicate project state here; task state lives in `PLAN.md`.
+## Reading order
+
+Start at `PLAN.md` § Current checkpoint: its newest paragraph is the current state and next action. Then read `DECISIONS` / `GOTCHAS` / `SPEC` as the task requires — don't slurp all of them for a trivial task. `DECISIONS.md` opens with an index of every entry, archives included: read the index rather than opening an archive. `GOTCHAS.md` is an index; the trap bodies are in `docs/gotchas/`. A temp note from `/handoff` covers what a session left in flight.
 
 ## Subagents (Claude) — work as orchestrator
 
@@ -22,4 +24,29 @@ System Node is v20; use the ignored project runtime before `pnpm`. Full setup, v
 
 ## Safety (gating — applies before any Read)
 
-Never inspect `private-statements/`, `.env*`, or backup files. Real statements may be read **only** as the re-passworded copies in `shared-statements/` (D-049) — masked dumps stay the first resort, and nothing read there may become a fixture, a commit, a continuity-doc quotation or a screenshot. Fixtures remain invented; see `docs/FIXTURE_POLICY.md`. Preserve exact-money, currency, idempotency, append-only, audit, and least-privilege invariants; do not weaken the strict CSP. Do not commit, push, deploy, create hosted resources, or request the Windows PostgreSQL password without fresh explicit authorization. The working tree holds two deliberately local-only config files (`eslint.config.mjs`, `playwright.config.ts`) alongside ordinary uncommitted work — run `git status --short` and preserve both; `docs/LOCAL_DEV.md` § This machine lists them with the machine's hazards. After substantive changes, run `/sync-continuity` to reconcile the continuity docs (`SPEC`/`PLAN`/`DECISIONS`/`GOTCHAS`, plus `docs/LOCAL_DEV.md` for machine facts) against verified evidence before handoff. Full invariants: `AGENTS.md` § Finance invariants; `PLAN.md` § Working constraints.
+Never inspect `private-statements/`, `.env*`, or backup files. Real statements may be read **only** as the re-passworded copies in `shared-statements/` (D-049) — masked dumps stay the first resort, and nothing read there may become a fixture, a commit, a continuity-doc quotation or a screenshot. Fixtures remain invented; see `docs/FIXTURE_POLICY.md`. Preserve exact-money, currency, idempotency, append-only, audit, and least-privilege invariants; do not weaken the strict CSP. Do not commit, push, deploy, create hosted resources, or request the Windows PostgreSQL password without fresh explicit authorization. The working tree holds two deliberately local-only config files (`eslint.config.mjs`, `playwright.config.ts`) alongside ordinary uncommitted work — run `git status --short` and preserve both; `docs/LOCAL_DEV.md` § This machine lists them with the machine's hazards. After substantive changes, run `/sync-continuity` to reconcile the continuity docs (`SPEC`/`PLAN`/`DECISIONS`/`GOTCHAS`, plus `docs/LOCAL_DEV.md` for machine facts) against verified evidence before handoff. More constraints: `PLAN.md` § Working constraints.
+
+## Finance invariants
+
+- Use integer minor units or exact decimals for authoritative money; never binary floating point.
+- Keep currency explicit; conversions require dated rates and defined rounding. Define time zones, reporting periods, and recurring-date behavior.
+- Make imports, synchronization, retries, transfers, and other replayable operations idempotent.
+- Treat financial data, credentials, PII, migrations, and audit history as high-risk; preserve least privilege and traceability.
+- When relevant, test rounding boundaries, negatives, duplicates/replays, authorization failures, date boundaries, and migration compatibility.
+
+## Authorizations and destructive operations
+
+- **Nothing is inherited by a new session. Ask again.** The owner grants commit, push, `db push`, real-data read, hosted queries and hosted site use per session; what a grant was spent on is recorded in commits and decisions, not kept as a list. Subagents never commit or push.
+- Never under any grant: passwords (statement passwords are in Vercel Sensitive variables the owner set; never seen, read or echoed), reading `private-statements/`, `.env*` or backup files (`dev-backup/` excepted, see `docs/LOCAL_DEV.md`).
+- Ask every time, even within a granted session: importing a new real statement; creating or destroying any hosted resource. Reading `receipts_sample/` is granted per session, through throwaway harnesses that print counts only.
+- `supabase db push` needs its own ask and a backup verified from the database first: the owner exports, then read `mutation_sequences` on hosted (sequence equals last exported) and dry-run before pushing.
+- Every push to `main` is a production deployment. Review (`/code-review`) before asking to commit (D-125).
+- Before anything destructive, read `docs/LOCAL_DEV.md` § This machine: the hosted project is the real ledger, `pnpm supabase:reset` cannot be guarded, and `.env.local` decides what a build targets.
+
+## Continuity documents and protocol
+
+- Each fact has one home: project state in `PLAN.md`, decisions in `DECISIONS.md` (supersede with a new entry, never rewrite), traps in `GOTCHAS.md` (symptom, cause, avoidance, verification), machine facts in `docs/LOCAL_DEV.md`. This file stays instructions only. `HANDOFF.md` was retired into these (D-268).
+- Write entries so a later reader can act without re-deriving: one term per concept, active voice with the actor named, one bounded action per numbered step.
+- **Value-free writing.** Counts, percentages, field names, label wordings and date distances are reportable. Amounts, balances, dates, names, counterparties, account numbers and slip references are not — reading a real value never licenses writing one into a fixture, a doc, a commit or a screenshot.
+- Never score OCR against its own output; measure the shipped function, not a copy of its arithmetic; when a measurement contradicts a conclusion, the measurement wins; reproduce before diagnosing.
+- The database is the authority on what is granted, the Vercel dashboard on what is deployed. An agent cannot widen its own permissions.

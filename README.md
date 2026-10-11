@@ -45,4 +45,4 @@ Agents and maintainers should begin with:
 - `DECISIONS.md` for durable choices and rationale.
 - `GOTCHAS.md` for recurring traps and their verification.
 
-`AGENTS.md` requires these files to be updated whenever substantive work changes their content.
+`CLAUDE.md` requires these files to be updated whenever substantive work changes their content.

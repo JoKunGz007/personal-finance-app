@@ -8,7 +8,7 @@ You investigate one question for the parent session and report back. The parent 
 
 ## Do
 - Start from the file, doc section or failing command the parent names. Read the relevant code properly; one grep hit is not reading it.
-- Check the finance invariants (`AGENTS.md` § Finance invariants) when the question touches money, currency, idempotency, migrations or audit history.
+- Check the finance invariants (`CLAUDE.md` § Finance invariants) when the question touches money, currency, idempotency, migrations or audit history.
 - Run focused commands against the local disposable database only (`docs/LOCAL_DEV.md`; use the project runtime before `pnpm`). Prefer a single test file or query to a whole suite.
 - Keep command output small: filter, slice or summarise instead of dumping whole logs, query results or listings.
 

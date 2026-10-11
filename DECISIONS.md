@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-268** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-269** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-269** — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
 - **D-268** — `HANDOFF.md` is retired into the files that own its facts (supersedes D-052)
 - **D-267** — The twentieth boundary moves D-245 … D-258 on the owner's word
 - **D-266** — Shopee orders come from a one-click export of the web order pages (a bookmarklet writing JSON), not a printed PDF (amends D-264); order code and link number stored, never the recipient's name, address or phone; import from the ledger's start
@@ -468,6 +469,14 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-269 — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
+
+- Date: 2026-10-11
+- Status: **Done.**
+- **Owner, 2026-10-11:** he no longer uses Codex, so `AGENTS.md`, the cross-harness file, has no second reader. `CLAUDE.md` loads on its own in every Claude Code session, so the rules belong there; a stub pointing at `AGENTS.md` would cost a read every session.
+- **Moved:** the finance invariants, the authorization rules and the protocol (D-268's new sections) into `CLAUDE.md`. **Dropped:** the role-routing and coordination prose (`CLAUDE.md` § Subagents already routes to the Claude agents) and the Codex-only section. `.claude/agents/finance-implementer.md`, `finance-investigator.md`, `README.md` and `scripts/check-docs.mjs` now point at `CLAUDE.md`.
+- **Left in place:** `CODEX_AGENT_WORKFLOW.md`, `.codex/` and `.agents/skills/` (Codex's copies of `sync-continuity` and `impeccable`); removing them is a separate call.
 
 ## D-268 — `HANDOFF.md` is retired into the files that own its facts (supersedes D-052)
 

@@ -199,7 +199,7 @@ checkIndex(GOTCHAS, gotchaTitles, { label: "traps" });
 // ------------------------------------------------------- dangling references
 
 const knownIds = new Set(decisionEntries.map((e) => e.id));
-for (const file of [...CONTINUITY, ...archiveFiles(), "AGENTS.md", "CLAUDE.md", "README.md"]) {
+for (const file of [...CONTINUITY, ...archiveFiles(), "CLAUDE.md", "README.md"]) {
   if (!has(file)) continue;
   const text = read(file).join("\n");
   const cited = new Set(text.match(/\bD-\d{3}\b/g) ?? []);
@@ -213,7 +213,7 @@ for (const file of [...CONTINUITY, ...archiveFiles(), "AGENTS.md", "CLAUDE.md", 
 const pathRe = /`([A-Za-z0-9_@./-]+\.(?:ts|tsx|mjs|js|sql|json|yaml|yml|py|md|css|wasm))`/g;
 const linkRe = /\[[^\]]*\]\(([^)#:]+\.md)(?:#[^)]*)?\)/g;
 
-for (const file of [...CONTINUITY, ...archiveFiles(), "AGENTS.md", "CLAUDE.md", "README.md"]) {
+for (const file of [...CONTINUITY, ...archiveFiles(), "CLAUDE.md", "README.md"]) {
   if (!has(file)) continue;
   const text = read(file).join("\n");
 

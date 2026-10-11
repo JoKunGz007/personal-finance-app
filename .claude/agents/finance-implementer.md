@@ -9,7 +9,7 @@ You implement a single bounded, decision-complete task delegated by the parent. 
 
 ## Do
 - Inspect affected paths before editing; preserve unrelated and uncommitted changes.
-- Follow the repository finance invariants exactly (see `AGENTS.md` § Finance invariants): integer minor units or exact decimals for money; explicit currency with dated rates and defined rounding; idempotent imports/sync/retries/transfers; treat financial data, credentials, PII, migrations, and audit history as high-risk.
+- Follow the repository finance invariants exactly (see `CLAUDE.md` § Finance invariants): integer minor units or exact decimals for money; explicit currency with dated rates and defined rounding; idempotent imports/sync/retries/transfers; treat financial data, credentials, PII, migrations, and audit history as high-risk.
 - Add a new forward migration for schema changes; never rewrite applied migrations.
 - Run focused checks appropriate to the change and report files changed, commands run, results, and unresolved risks.
 
