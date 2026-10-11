@@ -56,11 +56,16 @@ describe("wording rules", () => {
     expect(namesShopeePay({ description: "SHOPEE MALL", transaction_label: "Transfer" })).toBe(false);
   });
   it("recognises a SPayLater repayment only as an outflow", () => {
-    const base = { description: "x", transaction_label: "Direct Debit", movement_minor: "-100" };
-    expect(isSpayLaterRepayment({ ...base, description: "SHOPEEPAY" })).toBe(true);
-    expect(isSpayLaterRepayment({ ...base, description: "Payment to Shopee" , transaction_label: "Other" })).toBe(true);
+    const base = { description: "x", transaction_label: "ENET", movement_minor: "-100" };
+    expect(isSpayLaterRepayment({ ...base, description: "INVENTED Payment to Shopee NOTE" })).toBe(true);
     expect(isSpayLaterRepayment({ ...base, description: "Payment to Shopee", movement_minor: "100" })).toBe(false);
-    expect(isSpayLaterRepayment({ ...base, description: "SHOPEEPAY", transaction_label: "Transfer" })).toBe(false);
+  });
+  it("treats a Direct Debit naming ShopeePay as a bank debit, not a repayment (task 63)", () => {
+    // A second bank labels ordinary ShopeePay bank-debit payments this way.
+    const dd = { description: "To INVENTED SHOPEEPAY Ref INVENTED", transaction_label: "Direct Debit", movement_minor: "-100" };
+    expect(isSpayLaterRepayment(dd)).toBe(false);
+    expect(stateOf(run({ orders: [order(1)], rows: [row(1, { label: "Direct Debit" })] }), 1))
+      .toEqual({ orderId: oid(1), state: "auto", transactionId: tid(1) });
   });
 });
 
@@ -86,7 +91,7 @@ describe("automatic single match", () => {
   it("refuses a different amount, a row not naming ShopeePay, and a SPayLater repayment row", () => {
     expect(stateOf(run({ orders: [order(1)], rows: [row(1, { movement: "-10001" })] }), 1)?.state).toBe("none");
     expect(stateOf(run({ orders: [order(1)], rows: [row(1, { description: "INVENTED SHOP" })] }), 1)?.state).toBe("none");
-    expect(stateOf(run({ orders: [order(1)], rows: [row(1, { label: "Direct Debit" })] }), 1)?.state).toBe("none");
+    expect(stateOf(run({ orders: [order(1)], rows: [row(1, { description: "INVENTED SHOPEEPAY Payment to Shopee" })] }), 1)?.state).toBe("none");
   });
   it("refuses two candidate rows for one order", () => {
     const r = run({ orders: [order(1)], rows: [row(1), row(2)] });
@@ -238,7 +243,7 @@ describe("wallet-paid orders", () => {
     const base = { orders: [wallet(1)] };
     const link = [{ orderId: oid(9), transactionId: tid(1), kind: "spaylater_repayment" as const, action: "link" as const, changedAt: "2026-10-11T00:00:00Z" }];
     expect(run({ ...base, rows: [row(1, { time: "09:30:00", movement: "-30000" })], linkEvents: link }).walletTopups).toEqual([]);
-    expect(run({ ...base, rows: [row(1, { time: "09:30:00", movement: "-30000", label: "Direct Debit" })] }).walletTopups).toEqual([]);
+    expect(run({ ...base, rows: [row(1, { time: "09:30:00", movement: "-30000", description: "INVENTED SHOPEEPAY Payment to Shopee" })] }).walletTopups).toEqual([]);
     expect(run({ ...base, rows: [row(1, { time: "09:30:00", movement: "30000" })] }).walletTopups).toEqual([]);
     expect(run({ ...base, rows: [row(1, { time: null, movement: "-30000" })] }).walletTopups).toEqual([]);
     const withAuto = run({
@@ -267,7 +272,7 @@ describe("wallet-paid orders", () => {
 
 describe("SPayLater repayments", () => {
   const spay = (n: number) => order(n, { kind: "spaylater", total: "50000" });
-  const repay = (date: string, n = 1) => row(n, { date, time: "08:00:00", movement: "-12000", label: "Direct Debit", description: "SHOPEEPAY" });
+  const repay = (date: string, n = 1) => row(n, { date, time: "08:00:00", movement: "-12000", label: "ENET", description: "INVENTED Payment to Shopee NOTE" });
   // Order date: 2026-10-10 Bangkok.
   const at = (date: string, orders = [spay(1)]) => run({ orders, rows: [repay(date)] }).spaylaterRepayments[0];
   it("offers orders 10..60 days earlier and preselects a single one", () => {

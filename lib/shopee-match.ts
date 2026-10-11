@@ -141,12 +141,14 @@ export function namesShopeePay(row: Pick<ShopeeLedgerRow, "description" | "trans
   return /SHOPEEPAY/i.test(row.description ?? "") || /SHOPEEPAY/i.test(row.transaction_label ?? "");
 }
 
+/**
+ * A repayment is a bill payment "to Shopee". A `Direct Debit` naming ShopeePay is NOT one: a second
+ * bank prints ordinary bank-debit payments that way (task 63, D-273), so it stays a matchable outflow.
+ */
 export function isSpayLaterRepayment(
   row: Pick<ShopeeLedgerRow, "description" | "transaction_label" | "movement_minor">
 ): boolean {
-  return BigInt(row.movement_minor) < 0n
-    && ((row.transaction_label === "Direct Debit" && namesShopeePay(row))
-      || /Payment to Shopee/i.test(row.description ?? ""));
+  return BigInt(row.movement_minor) < 0n && /Payment to Shopee/i.test(row.description ?? "");
 }
 
 /** An instant as whole Bangkok wall-clock minutes since the epoch. */

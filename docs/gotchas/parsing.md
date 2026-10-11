@@ -217,3 +217,10 @@ the top of `GOTCHAS.md`.
 - Cause: `rowFingerprint` (`lib/canonical.ts`) hashes the printed label, description and branch. KBank prints one row differently in its English and Thai statements (D-238), and wraps Details differently from one statement to the next, so a re-print hashes new and the old `on conflict do nothing` inserted it.
 - Avoid: never treat an exact-fingerprint match as the only test of "already stored". `confirm_import` (migration 054, D-265) also links on identity facts — account, date, a non-empty time, post balance, ordered components — claimed once per batch. Any new "is this row stored?" check (the Inbox pre-count still is not) must use the same facts.
 - Verify: 2026-10-11. A hosted scan for same account, date, time, amount and post balance found 4 pairs, each from overlapping imports; `tests/import-confirm-e2e.test.ts` links a re-worded row and fails without 054.
+
+## KBank-style `Direct Debit … SHOPEEPAY` rows are ordinary ShopeePay bank debits, not SPayLater repayments
+
+- Symptom: on `/orders?view=shopee`, bank-debit orders show "Not matched" while a same-amount, same-minute row is listed as a SPayLater repayment.
+- Cause: one bank labels a ShopeePay bank-debit payment `Direct Debit` with a "To … SHOPEEPAY" description; D-270 had read that wording as a repayment, which removed the row from the matchable outflows.
+- Avoid: `isSpayLaterRepayment` (`lib/shopee-match.ts`) accepts only "Payment to Shopee". Before treating any wording as a repayment, count its rows that equal a bank-debit order within the minute.
+- Verify: 2026-10-11 (D-273): 5 of 5 such rows on hosted equalled one bank-debit order each; red-proof in `tests/shopee-match.test.ts`.

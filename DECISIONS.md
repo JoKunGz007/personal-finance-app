@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-272** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-273** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
 - **D-272** — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
 - **D-271** — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
 - **D-270** — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
@@ -472,6 +473,16 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-273 — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
+
+- Date: 2026-10-11
+- Status: **Done; committed.** No migration, no contract change.
+- **Measured on hosted** (shipped `proposeShopeeMatches` over a read-only dump; 179 ledger rows, 171 orders): `isSpayLaterRepayment` classified 7 rows as repayments. The 5 `Direct Debit` + `SHOPEEPAY` rows were all on one account and each equalled the total of exactly one `bank_debit` order within ±1 minute; none equalled any SPayLater order or subset sum. They are that bank's ordinary ShopeePay bank-debit payments. The 2 `ENET` "Payment to Shopee" rows coincided with no order.
+- **Rule:** a repayment is an outflow whose description matches `Payment to Shopee`; the `Direct Debit` branch is dropped, so those rows return to the matchable outflows. **Corrects D-270's** repayment wording, and its "repayments 15–21 days later" measurement, which was taken on the misread `Direct Debit` rows.
+- **Effect on hosted:** auto 143 → 146, none 10 → 7, repayment rows 7 → 2. The fourth released row is one copy of a duplicate pair (one debit, two overlapping imports, worded differently; D-265); the owner had already marked the other copy Excluded, but `shopee_ledger_rows()` does not filter Excluded rows, so the order sees two candidates and proposes nothing (PLAN task 64).
+- **Open:** the 2 `ENET` rows have no SPayLater order 10–60 days before them, so whether they are repayments is unconfirmed (the orders they repay may predate the import).
+- Evidence: `tests/shopee-match.test.ts` 46/46; the new task-63 test failed on the old rule and passes on the new one; `tsc` and `eslint` clean; `/code-review` low: no findings.
 
 ## D-272 — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
 

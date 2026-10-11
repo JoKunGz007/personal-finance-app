@@ -136,6 +136,8 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Vision reads a Krungthai slip's printed 6 as 5, and the window hides it only by coincidence
 - The same bank row does not always give the same fingerprint: a re-printed statement words it differently
 
+- KBank-style `Direct Debit … SHOPEEPAY` rows are ordinary ShopeePay bank debits, not SPayLater repayments
+
 ### Real data, masking and privacy
 
 - Never use real statements to develop the parser
