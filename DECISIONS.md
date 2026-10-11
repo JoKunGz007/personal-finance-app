@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-269** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-270** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-270** — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
 - **D-269** — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
 - **D-268** — `HANDOFF.md` is retired into the files that own its facts (supersedes D-052)
 - **D-267** — The twentieth boundary moves D-245 … D-258 on the owner's word
@@ -469,6 +470,22 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-270 — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
+
+- Date: 2026-10-11
+- Status: **Decided (owner, `/grilling`), not built.** Answers D-266's open points. Build order: `PLAN.md` task 62.
+- **Storage.** Separate tables, not `deliveries` (Shopee is shopping, needs status, refunds, the link number and SPayLater; the delivery checks and statistics stay untouched): orders, items (display only), price lines, refunds, a payment-match table that lets several orders claim one bank row, and an informational link table (kinds `wallet_topup`, `spaylater_repayment`; many-to-many). Backup moves to v16.
+- **Way in.** The bookmarklet's JSON is dropped on `/inbox` (D-263), recognised by its `source`, read on the server. The order code is the idempotency key: re-exporting the whole history stores only new orders and new refunds; a stored order whose money facts differ is refused and reported. The Inbox reports new, already stored and refused.
+- **Order facts are fixed at payment.** Code, link number, paid time, shop, items, price lines, total and payment method; never the recipient's name, address or phone (D-266). Status changes arrive as separate records. An order cancelled before payment is skipped (none exist).
+- **Matching bank-debit orders.** Automatic when the row's description contains `SHOPEEPAY`, the amount is exact, the row is within ±1 minute of the paid time, and the pairing is unique both ways; anything else is proposed. Undoable, with revisions.
+- **Combined checkout.** Proposed, never automatic: orders paid within the same minute whose totals sum exactly to one `SHOPEEPAY` row, none with its own single match, and exactly one such grouping. Seen once in 142.
+- **Wallet-paid orders.** No bank match, not shown as unmatched. A link to an unmatched `SHOPEEPAY` row up to 60 minutes before the paid time is proposed (one tap) when no other wallet order shares the window. Measured 2026-10-11: 11 of 12 wallet orders since the ledger's start have such a row 0–37 minutes before, and none equals the order amount (smaller same-minute rows look like a part-payment of the shortfall; larger ones like a round top-up).
+- **SPayLater.** No bank match. Repayment rows (`Direct Debit` / `Payment to Shopee`) link to the orders they repay, many-to-many, through a picker listing SPayLater orders paid 10–60 days earlier (pre-ticked when only one), always confirmed. Measured: 4 orders since the ledger's start, repayments 15–21 days later at amounts that are not a clean fraction of any one order.
+- **Cancellations and refunds.** The bookmarklet reads `/user/purchase/cancellation/<id>` (request ID and time, steps, refund amount, refund destination, requested by, original order code, reason; no delivery block). A refund record attaches to its order; the order keeps its bank match. Measured 2026-10-11: 5 cancelled orders, all paid and refunded in full to the ShopeePay balance; the Return Refund tab is empty. A refund to a bank account would be proposed as a deposit match, measured first.
+- **Totals.** Shopee's own totals count every non-cancelled order in its order month, net of refunds in the order's month; they are never added to a ledger total (as D-225). A SPayLater purchase therefore appears once in Shopee's month and again as ledger repayments.
+- **Categories (machine, owner-overridable).** Matched to an order: Shopping. Wallet top-up link: Wallet Top-up. SPayLater repayment link: Shopping. Unmatched at the recurring VIP amount: Subscriptions & Digital, by an amount-specific rule (as D-249). Anything else unmatched: left uncategorised.
+- **Where.** A tab on `/orders` ("Food & rides | Shopee", `?view=shopee`), no new nav item: a monthly strip (order count, spent net of refunds, split by payment: bank debit, wallet, SPayLater, other) with a 12-month bar strip computed in SQL, the order list with match states, and the proposals waiting. A matched ledger row shows its order. Not yet: per-shop spending, item search, item categories.
 
 ## D-269 — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
 
