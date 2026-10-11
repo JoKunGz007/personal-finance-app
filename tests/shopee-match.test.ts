@@ -5,6 +5,7 @@ import {
   currentLinks,
   isSpayLaterRepayment,
   namesShopeePay,
+  paysShopee,
   proposeShopeeMatches,
   shopeeMatchedTransactionIds,
   type ShopeeMatchInput
@@ -55,10 +56,17 @@ describe("wording rules", () => {
     expect(namesShopeePay({ description: null, transaction_label: "ShopeePay" })).toBe(true);
     expect(namesShopeePay({ description: "SHOPEE MALL", transaction_label: "Transfer" })).toBe(false);
   });
-  it("recognises a SPayLater repayment only as an outflow", () => {
+  it("recognises no SPayLater repayment: no wording has been observed (D-275)", () => {
     const base = { description: "x", transaction_label: "ENET", movement_minor: "-100" };
-    expect(isSpayLaterRepayment({ ...base, description: "INVENTED Payment to Shopee NOTE" })).toBe(true);
+    expect(isSpayLaterRepayment({ ...base, description: "INVENTED Payment to Shopee NOTE" })).toBe(false);
     expect(isSpayLaterRepayment({ ...base, description: "Payment to Shopee", movement_minor: "100" })).toBe(false);
+    expect(isSpayLaterRepayment({ ...base, description: "To INVENTED SHOPEEPAY Ref INVENTED", transaction_label: "Direct Debit" })).toBe(false);
+  });
+  it("says a row pays Shopee when it names ShopeePay or reads Payment to Shopee (D-275)", () => {
+    expect(paysShopee({ description: "INVENTED Payment to Shopee NOTE", transaction_label: "ENET" })).toBe(true);
+    expect(paysShopee({ description: "INVENTED SHOPEEPAY", transaction_label: "Transfer" })).toBe(true);
+    expect(paysShopee({ description: "INVENTED SHOP", transaction_label: "Transfer" })).toBe(false);
+    expect(paysShopee({ description: null, transaction_label: null })).toBe(false);
   });
   it("treats a Direct Debit naming ShopeePay as a bank debit, not a repayment (task 63)", () => {
     // A second bank labels ordinary ShopeePay bank-debit payments this way.
@@ -88,10 +96,9 @@ describe("automatic single match", () => {
   it("refuses a row with no time", () => {
     expect(stateOf(run({ orders: [order(1)], rows: [row(1, { time: null })] }), 1)?.state).toBe("none");
   });
-  it("refuses a different amount, a row not naming ShopeePay, and a SPayLater repayment row", () => {
+  it("refuses a different amount and a row not naming Shopee", () => {
     expect(stateOf(run({ orders: [order(1)], rows: [row(1, { movement: "-10001" })] }), 1)?.state).toBe("none");
     expect(stateOf(run({ orders: [order(1)], rows: [row(1, { description: "INVENTED SHOP" })] }), 1)?.state).toBe("none");
-    expect(stateOf(run({ orders: [order(1)], rows: [row(1, { description: "INVENTED SHOPEEPAY Payment to Shopee" })] }), 1)?.state).toBe("none");
   });
   it("refuses two candidate rows for one order", () => {
     const r = run({ orders: [order(1)], rows: [row(1), row(2)] });
@@ -142,8 +149,18 @@ describe("automatic single match", () => {
     expect(stateOf(run({ orders: [order(1, { total: "0" })], rows: [row(1, { movement: "0" })] }), 1)?.state).toBe("none");
     expect(stateOf(run({ orders: [order(1, { total: "-10000" })], rows: [row(1, { movement: "10000" })] }), 1)?.state).toBe("none");
   });
-  it("only matches bank-debit orders", () => {
-    expect(stateOf(run({ orders: [order(1, { kind: "other" })], rows: [row(1)] }), 1)?.state).toBe("none");
+  it("matches an order paid by PromptPay QR or Mobile Banking (kind other) like a bank debit (D-275)", () => {
+    // (a) a same-minute "Payment to Shopee" ENET row of equal amount.
+    const pay = row(1, { label: "ENET", description: "INVENTED Payment to Shopee NOTE : -" });
+    expect(stateOf(run({ orders: [order(1, { kind: "other" })], rows: [pay] }), 1))
+      .toEqual({ orderId: oid(1), state: "auto", transactionId: tid(1) });
+    // (b) a ShopeePay row.
+    expect(stateOf(run({ orders: [order(1, { kind: "other" })], rows: [row(1)] }), 1))
+      .toEqual({ orderId: oid(1), state: "auto", transactionId: tid(1) });
+  });
+  it("still leaves wallet and SPayLater orders out of the automatic match", () => {
+    expect(stateOf(run({ orders: [order(1, { kind: "wallet" })], rows: [row(1)] }), 1)?.state).toBe("wallet");
+    expect(stateOf(run({ orders: [order(1, { kind: "spaylater" })], rows: [row(1)] }), 1)?.state).toBe("spaylater");
   });
 });
 
@@ -239,11 +256,10 @@ describe("wallet-paid orders", () => {
     const r = run({ orders: [wallet(1)], rows: [row(1, { time: "09:30:00", movement: `-${SHOPEE_VIP_AMOUNT_MINOR}` })] });
     expect(r.walletTopups).toEqual([]);
   });
-  it("excludes a row linked elsewhere, a repayment row, an inflow, a null time, and a row an auto match holds", () => {
+  it("excludes a row linked elsewhere, an inflow, a null time, and a row an auto match holds", () => {
     const base = { orders: [wallet(1)] };
     const link = [{ orderId: oid(9), transactionId: tid(1), kind: "spaylater_repayment" as const, action: "link" as const, changedAt: "2026-10-11T00:00:00Z" }];
     expect(run({ ...base, rows: [row(1, { time: "09:30:00", movement: "-30000" })], linkEvents: link }).walletTopups).toEqual([]);
-    expect(run({ ...base, rows: [row(1, { time: "09:30:00", movement: "-30000", description: "INVENTED SHOPEEPAY Payment to Shopee" })] }).walletTopups).toEqual([]);
     expect(run({ ...base, rows: [row(1, { time: "09:30:00", movement: "30000" })] }).walletTopups).toEqual([]);
     expect(run({ ...base, rows: [row(1, { time: null, movement: "-30000" })] }).walletTopups).toEqual([]);
     const withAuto = run({
@@ -271,40 +287,12 @@ describe("wallet-paid orders", () => {
 });
 
 describe("SPayLater repayments", () => {
-  const spay = (n: number) => order(n, { kind: "spaylater", total: "50000" });
-  const repay = (date: string, n = 1) => row(n, { date, time: "08:00:00", movement: "-12000", label: "ENET", description: "INVENTED Payment to Shopee NOTE" });
-  // Order date: 2026-10-10 Bangkok.
-  const at = (date: string, orders = [spay(1)]) => run({ orders, rows: [repay(date)] }).spaylaterRepayments[0];
-  it("offers orders 10..60 days earlier and preselects a single one", () => {
-    expect(at("2026-10-19")?.orderIds).toEqual([]);
-    expect(at("2026-10-20")).toMatchObject({ orderIds: [oid(1)], preselected: [oid(1)] });
-    expect(at("2026-12-09")).toMatchObject({ orderIds: [oid(1)], preselected: [oid(1)] });
-    expect(at("2026-12-10")?.orderIds).toEqual([]);
-  });
-  it("lists the row even with no candidates, with an empty preselection", () => {
-    expect(at("2026-10-12")).toEqual({ transactionId: tid(1), orderIds: [], preselected: [], linkedOrderIds: [] });
-  });
-  it("preselects nothing when several orders qualify, and reports current links", () => {
-    const r = run({
-      orders: [spay(1), spay(2)],
-      rows: [repay("2026-10-30")],
-      linkEvents: [
-        { orderId: oid(1), transactionId: tid(1), kind: "spaylater_repayment", action: "link", changedAt: "2026-11-01T00:00:00Z" },
-        { orderId: oid(2), transactionId: tid(1), kind: "spaylater_repayment", action: "link", changedAt: "2026-11-01T00:00:00Z" },
-        { orderId: oid(2), transactionId: tid(1), kind: "spaylater_repayment", action: "unlink", changedAt: "2026-11-02T00:00:00Z" }
-      ]
-    });
-    expect(r.spaylaterRepayments[0]).toEqual({ transactionId: tid(1), orderIds: [oid(1), oid(2)], preselected: [], linkedOrderIds: [oid(1)] });
-    expect(stateOf(r, 1)).toEqual({ orderId: oid(1), state: "spaylater" });
-  });
-  it("uses the Bangkok date of the order", () => {
-    // 2026-10-09T18:00:00Z is 2026-10-10 01:00 Bangkok, so day 10 is 2026-10-20.
-    const o = order(1, { kind: "spaylater", paidAt: "2026-10-09T18:00:00Z" });
-    expect(at("2026-10-20", [o])?.orderIds).toEqual([oid(1)]);
-    expect(at("2026-10-19", [o])?.orderIds).toEqual([]);
-  });
-  it("ignores a row that is not a repayment", () => {
-    expect(run({ orders: [spay(1)], rows: [row(1, { date: "2026-10-30", label: "Transfer" })] }).spaylaterRepayments).toEqual([]);
+  // No repayment wording has been observed in the bank ledger (D-275), so nothing is offered.
+  it("offers no repayment, not even for a Payment to Shopee row (that pays a PromptPay QR order)", () => {
+    const pay = row(1, { date: "2026-10-30", time: "08:00:00", movement: "-12000", label: "ENET", description: "INVENTED Payment to Shopee NOTE" });
+    const r = run({ orders: [order(9, { kind: "spaylater", total: "50000" })], rows: [pay] });
+    expect(r.spaylaterRepayments).toEqual([]);
+    expect(stateOf(r, 9)).toEqual({ orderId: oid(9), state: "spaylater" });
   });
 });
 
@@ -366,16 +354,11 @@ describe("Excluded rows (task 64)", () => {
     const r = run({ orders: [order(1)], rows, excludedTransactionIds: [tid(1)] });
     expect(stateOf(r, 1)).toEqual({ orderId: oid(1), state: "auto", transactionId: tid(2) });
   });
-  it("does not offer an Excluded row as a wallet top-up, a SPayLater repayment or a refund deposit", () => {
+  it("does not offer an Excluded row as a wallet top-up or a refund deposit", () => {
     const wallet = order(1, { kind: "wallet", total: "20000" });
     const topup = row(1, { time: "09:30:00", movement: "-30000" });
     expect(run({ orders: [wallet], rows: [topup] }).walletTopups).toHaveLength(1);
     expect(run({ orders: [wallet], rows: [topup], excludedTransactionIds: [tid(1)] }).walletTopups).toEqual([]);
-
-    const spay = order(1, { kind: "spaylater", total: "50000" });
-    const repay = row(1, { date: "2026-10-30", time: "08:00:00", movement: "-12000", label: "ENET", description: "INVENTED Payment to Shopee NOTE" });
-    expect(run({ orders: [spay], rows: [repay] }).spaylaterRepayments).toHaveLength(1);
-    expect(run({ orders: [spay], rows: [repay], excludedTransactionIds: [tid(1)] }).spaylaterRepayments).toEqual([]);
 
     const refund = { orderId: oid(1), requestedAt: "2026-10-10T03:00:00Z", refundMinor: "15000", refundTo: "bank" as const };
     const deposit = row(1, { date: "2026-10-12", movement: "15000", description: "INVENTED DEPOSIT", label: "Deposit" });

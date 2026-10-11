@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-274** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-275** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
 - **D-272** — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
@@ -474,6 +475,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-275 — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
+
+- Date: 2026-10-11
+- Status: **Done; committed.** App code only.
+- **Measured on hosted:** the 2 SCB `ENET` "Payment to Shopee" rows D-273 kept as repayments are each exactly one order paid by PromptPay QR (payment kind `other`), lag 0 minutes. No other outflow on any account mentions Shopee, SPayLater, PayLater or SPL, so the bank ledger holds no row D-270's repayment wording describes.
+- **Rule:** `paysShopee` (names ShopeePay, or reads "Payment to Shopee") defines the matchable outflows; orders of kind `bank_debit` or `other` (PromptPay QR, Mobile Banking) match under the same window, uniqueness and combined-checkout rules; `SPAYLATER_REPAYMENT_WORDING` is empty, so the repayment picker lists nothing until a real repayment row's wording is added. The match write (migration 055) and the UI never gated on payment kind, so neither changed.
+- **Effect on hosted:** auto 147 → 149, none 6 → 4, repayment rows 2 → 0. The 4 left have no ledger row of their amount (3 are July 2025 Mobile Banking orders; the paying statements are likely not imported).
+- **Tests:** the repayment day-window tests could no longer be reached and were replaced by one asserting a "Payment to Shopee" row is not a repayment; they come back with the first real wording. Shopee test files 117 passing; new tests red-proved; `tsc`, `eslint` clean; `/code-review` low: no findings.
 
 ## D-274 — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 

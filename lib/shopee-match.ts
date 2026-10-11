@@ -12,6 +12,9 @@ import { z } from "zod";
  * the row's minute minus the order's minute, both truncated to the minute, so a row 20 seconds
  * after the order in the next minute has lag 1. A row with no time never qualifies automatically.
  *
+ * Bank-paid orders (payment kind `bank_debit`, or `other` = PromptPay QR and Mobile Banking, D-275)
+ * match a Shopee-paying outflow row: one naming ShopeePay or reading "Payment to Shopee".
+ *
  * Any ambiguity, on either side, proposes nothing (D-063).
  *
  * Inputs: orders, refunds, ledger rows, the owner's overlays and link events, and the ids of rows
@@ -146,13 +149,21 @@ export function namesShopeePay(row: Pick<ShopeeLedgerRow, "description" | "trans
 }
 
 /**
- * A repayment is a bill payment "to Shopee". A `Direct Debit` naming ShopeePay is NOT one: a second
- * bank prints ordinary bank-debit payments that way (task 63, D-273), so it stays a matchable outflow.
+ * A row pays Shopee when it names ShopeePay or reads "Payment to Shopee". Measured on hosted (D-275):
+ * the "Payment to Shopee" rows are each one order paid by PromptPay QR, not a SPayLater repayment.
  */
+export function paysShopee(row: Pick<ShopeeLedgerRow, "description" | "transaction_label">): boolean {
+  return namesShopeePay(row) || /Payment to Shopee/i.test(row.description ?? "");
+}
+/**
+ * No SPayLater repayment wording has been observed in the bank ledger yet (D-275); add a pattern
+ * here when one is seen. A `Direct Debit` naming ShopeePay is a bank debit (task 63, D-273).
+ */
+const SPAYLATER_REPAYMENT_WORDING: RegExp[] = [];
 export function isSpayLaterRepayment(
   row: Pick<ShopeeLedgerRow, "description" | "transaction_label" | "movement_minor">
 ): boolean {
-  return BigInt(row.movement_minor) < 0n && /Payment to Shopee/i.test(row.description ?? "");
+  return BigInt(row.movement_minor) < 0n && SPAYLATER_REPAYMENT_WORDING.some((re) => re.test(row.description ?? ""));
 }
 
 /** An instant as whole Bangkok wall-clock minutes since the epoch. */
@@ -193,9 +204,9 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
     overlays.filter((o) => o.decision === "matched" && o.transactionId).map((o) => o.transactionId as string)
   );
 
-  // Rows that can pay a bank debit at all: Shopee-named outflows that are not a repayment.
+  // Rows that can pay a bank-paid order at all: Shopee-paying outflows that are not a repayment.
   const outflowRows = candidateRows.filter(
-    (r) => namesShopeePay(r) && !isSpayLaterRepayment(r) && BigInt(r.movement_minor) < 0n
+    (r) => paysShopee(r) && !isSpayLaterRepayment(r) && BigInt(r.movement_minor) < 0n
   );
   const free = (r: ShopeeLedgerRow) => !takenByOwner.has(r.transaction_id) && !linkedTransactions.has(r.transaction_id);
   const lagOf = (row: ShopeeLedgerRow, minute: number): number | null => {
@@ -203,14 +214,15 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
     return m === null ? null : m - minute;
   };
 
-  const undecidedBank = orders.filter(
-    (o) => o.paymentKind === "bank_debit" && !overlayByOrder.has(o.id) && BigInt(o.totalMinor) > 0n
+  // Bank-paid: a bank debit, or PromptPay QR / Mobile Banking (kind `other`, D-275); same rules.
+  const undecidedBankPaid = orders.filter(
+    (o) => (o.paymentKind === "bank_debit" || o.paymentKind === "other") && !overlayByOrder.has(o.id) && BigInt(o.totalMinor) > 0n
   );
 
   // Automatic single match.
   const candidatesByOrder = new Map<string, ShopeeLedgerRow[]>();
   const ordersByRow = new Map<string, string[]>();
-  for (const order of undecidedBank) {
+  for (const order of undecidedBankPaid) {
     const minute = orderMinute(order);
     const total = BigInt(order.totalMinor);
     const found = outflowRows.filter((r) => {
@@ -222,7 +234,7 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
     for (const r of found) ordersByRow.set(r.transaction_id, [...(ordersByRow.get(r.transaction_id) ?? []), order.id]);
   }
   const autoByOrder = new Map<string, string>();
-  for (const order of undecidedBank) {
+  for (const order of undecidedBankPaid) {
     const found = candidatesByOrder.get(order.id) ?? [];
     const only = found[0];
     if (only && found.length === 1 && ordersByRow.get(only.transaction_id)?.length === 1) {
@@ -234,7 +246,7 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
   // Combined checkout: one row, several orders of the same minute, exactly one grouping.
   const combinedByOrder = new Map<string, { transactionId: string; orderIds: string[] }>();
   const groups = new Map<number, ShopeeOrderInput[]>();
-  for (const order of undecidedBank) {
+  for (const order of undecidedBankPaid) {
     if (autoByOrder.has(order.id)) continue;
     const minute = orderMinute(order);
     groups.set(minute, [...(groups.get(minute) ?? []), order]);

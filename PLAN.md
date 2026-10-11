@@ -4,7 +4,9 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
-**Excluded rows leave the Shopee matcher — 2026-10-11** (D-274): app code only; hosted auto 146 → 147, none 6. Committed; production updates on the owner's push. **Open:** the 2 `ENET` "Payment to Shopee" rows (SCB, one day, no SPayLater order within 60 days) look like bill-paid orders, not repayments; the owner is asked whether they pay the 5 `other`-kind orders. Then D-271's four low-risk review findings.
+**QR orders match; no repayment wording yet — 2026-10-11** (D-275): "Payment to Shopee" rows were PromptPay QR orders; `other`-kind orders now match like bank debits; hosted auto 149, none 4. **Next:** the owner says SPayLater repayments land around the 10th (±3 days); find that row's wording and add it to `SPAYLATER_REPAYMENT_WORDING`, restoring the day-window tests. Then D-271's four low-risk review findings.
+
+**Excluded rows leave the Shopee matcher — 2026-10-11** (D-274): app code only; hosted auto 146 → 147, none 6. Committed; production updates on the owner's push. 
 
 **SPayLater rule fixed — 2026-10-11** (D-273): `Direct Debit` + `SHOPEEPAY` rows were one bank's ordinary bank-debit payments, not repayments; dropping that branch auto-matches 3 more orders on hosted (143 → 146). App code only, committed; production updates on the owner's push. 
 
