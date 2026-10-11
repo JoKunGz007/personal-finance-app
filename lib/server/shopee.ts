@@ -64,7 +64,7 @@ const LOAD_MESSAGE = "Shopee orders could not be loaded in full, so none are sho
 const MATCH_MESSAGE = "Shopee orders could not be matched to the ledger, so none are shown.";
 
 const pagedReader = (supabase: OwnerClient) => <Row>(table: string, columns: string) => readAll<Row>((from, to) =>
-  supabase.from(table).select(columns, { count: "exact" }).order("id", { ascending: true }).range(from, to));
+  supabase.from(table).select(columns, { count: "exact" }).order("id", { ascending: true }).range(from, to), table);
 
 /**
  * D-277: only what the match needs - orders, refunds, overlays, links, ledger rows and the Excluded
@@ -79,15 +79,15 @@ export async function loadShopeeMatchState(supabase: OwnerClient) {
     // The overlay's key is its order id.
     readAll((from, to) => supabase.from("shopee_payment_match_overlays")
       .select("order_id,decision,transaction_id,revision", { count: "exact" })
-      .order("order_id", { ascending: true }).range(from, to)),
+      .order("order_id", { ascending: true }).range(from, to), "shopee_payment_match_overlays"),
     // By id: a tie in time is settled by the later id, as the database settles it (migration 055).
     all("shopee_order_links", "id,order_id,transaction_id,kind,action,changed_at"),
     readAll((from, to) => supabase.rpc("shopee_ledger_rows", undefined, { count: "exact" })
-      .order("transaction_id", { ascending: true }).range(from, to)),
+      .order("transaction_id", { ascending: true }).range(from, to), "shopee_ledger_rows"),
     // Rows the owner Excluded from reporting: the matcher proposes none of them (task 64, D-274).
     readAll((from, to) => supabase.from("transaction_overlays")
       .select("transaction_id", { count: "exact" }).eq("include_in_reporting", false)
-      .order("transaction_id", { ascending: true }).range(from, to))
+      .order("transaction_id", { ascending: true }).range(from, to), "transaction_overlays")
   ]);
 
   if (!orders.ok || !refunds.ok || !overlays.ok || !links.ok || !ledger.ok || !excluded.ok) {
@@ -162,6 +162,10 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
     supabase.rpc("shopee_monthly_summary")
   ]);
   if (!state.ok) return state;
+  if (summary.error) {
+    const e = summary.error as { code?: unknown; status?: unknown };
+    console.error("readAll failed", { label: "shopee_monthly_summary", reason: "error", code: e.code ?? null, status: e.status ?? null });
+  }
   if (!items.ok || !priceLines.ok || summary.error) return { ok: false, message: LOAD_MESSAGE, status: 500 };
   const p = {
     items: z.array(itemRow).safeParse(items.data),

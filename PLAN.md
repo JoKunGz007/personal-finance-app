@@ -4,7 +4,7 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
-**D-271's leftover findings closed — 2026-10-11** (D-277): two fixed (matches read only the Shopee match state; unknown refund destinations refused), three left on purpose. Committed; production on the owner's push. **Next:** `/ux-review` rounds in progress (first group: Shopee checkbox targets High); the Shopee API returned an intermittent 500 on production (2 of ~8 loads, and 3 console 500s in the UX run) — investigate.
+**D-271's leftover findings closed — 2026-10-11** (D-277): two fixed (matches read only the Shopee match state; unknown refund destinations refused), three left on purpose. Committed; production on the owner's push. **Next:** `/ux-review` rounds in progress (first group: Shopee checkbox targets High); intermittent 500s on production (the Shopee API 2 of ~8 loads; more on /statistics or /categories in the UX run). Not a database timeout: every Shopee read finishes in Postgres far under the 8 s limit (pg_stat_statements, owner-role timings), so the error is in the HTTP/PostgREST layer. `readAll` now logs a value-free line (label, reason, error code, status) on failure; read the Vercel logs after the next 500, then fix (likely a one-retry on network/5xx for idempotent reads).
 
 **SPayLater repayments found — 2026-10-11** (D-276): they are leftover ShopeePay outflows on day 7–13 of the month; the Shopee tab lists 6 on hosted for the owner to link (none automatic). Committed; production updates on the owner's push. The owner links the 6 repayment rows on `/orders?view=shopee`.
 

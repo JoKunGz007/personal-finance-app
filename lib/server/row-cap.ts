@@ -19,17 +19,25 @@ type Page = { data: readonly unknown[] | null; error: unknown; count: number | n
  * pages, or a short page before the count is reached: a cut list is never returned as a whole one.
  */
 export async function readAll<Row>(
-  page: (from: number, to: number) => PromiseLike<Page>
+  page: (from: number, to: number) => PromiseLike<Page>,
+  label = "read"
 ): Promise<{ ok: true; data: Row[] } | { ok: false }> {
+  // Value-free: an error's code and HTTP status only, never its message (it can quote a value).
+  const fail = (reason: string, error?: unknown) => {
+    const e = (error ?? {}) as { code?: unknown; status?: unknown; name?: unknown };
+    console.error("readAll failed", { label, reason, code: e.code ?? e.name ?? null, status: e.status ?? null });
+    return { ok: false as const };
+  };
   const rows: Row[] = [];
   let total: number | null = null;
   for (;;) {
     const read: Page = await page(rows.length, rows.length + PAGE_SIZE - 1);
-    if (read.error || typeof read.count !== "number" || !Array.isArray(read.data)) return { ok: false };
+    if (read.error) return fail("error", read.error);
+    if (typeof read.count !== "number" || !Array.isArray(read.data)) return fail("no count or rows");
     if (total === null) total = read.count;
-    else if (read.count !== total) return { ok: false };
+    else if (read.count !== total) return fail("count changed");
     rows.push(...(read.data as Row[]));
     if (rows.length === total) return { ok: true, data: rows };
-    if (rows.length > total || read.data.length < PAGE_SIZE) return { ok: false };
+    if (rows.length > total || read.data.length < PAGE_SIZE) return fail("short page");
   }
 }
