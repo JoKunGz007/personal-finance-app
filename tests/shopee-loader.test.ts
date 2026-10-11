@@ -61,6 +61,7 @@ function reads(overrides: Record<string, Read> = {}): Record<string, Read> {
       ],
       error: null
     },
+    transaction_overlays: { data: [], error: null },
     shopee_monthly_summary: {
       data: {
         months: [{
@@ -82,6 +83,7 @@ function client(data: Record<string, Read>) {
     let range: [number, number] = [0, Number.MAX_SAFE_INTEGER];
     const chain = {
       order: () => chain,
+      eq: () => chain,
       range: (from: number, to: number) => { range = [from, to]; return chain; },
       then: (resolve: (value: unknown) => unknown) => Promise.resolve({
         data: rows ? rows.slice(range[0], range[1] + 1) : read.data,
@@ -149,6 +151,30 @@ describe("loadShopeeView", () => {
     expect(failed).toMatchObject({ ok: false, status: 500 });
     const off = await loadShopeeView(client(reads({ shopee_monthly_summary: { data: { months: [{ month: "2026-09", spentMinor: 3.5 }] }, error: null } })));
     expect(off).toMatchObject({ ok: false, status: 500 });
+  });
+});
+
+describe("loadShopeeView Excluded rows (task 64)", () => {
+  const ROW_DUP = "bbbbbbbb-0000-4000-8000-000000000004";
+  it("filters an Excluded duplicate so the order auto-matches", async () => {
+    const withDup = {
+      shopee_ledger_rows: {
+        data: [ledgerRow(ROW_AUTO, "2026-09-01", "19:00:30", -25000), ledgerRow(ROW_DUP, "2026-09-01", "19:00:40", -25000),
+          ledgerRow(ROW_OWNER, "2026-09-02", "19:30:00", -9900)],
+        error: null
+      }
+    };
+    const both = await loadShopeeView(client(reads(withDup)));
+    expect(both.ok && both.view.orders.find((o) => o.id === A)!.match.state).toBe("none");
+    const loaded = await loadShopeeView(client(reads({
+      ...withDup, transaction_overlays: { data: [{ transaction_id: ROW_DUP }], error: null }
+    })));
+    expect(loaded.ok && loaded.view.orders.find((o) => o.id === A)!.match)
+      .toEqual({ state: "auto", transactionId: ROW_AUTO, revision: 0 });
+  });
+  it("refuses the view when the Excluded read fails", async () => {
+    const failed = await loadShopeeView(client(reads({ transaction_overlays: { data: null, error: { message: "invented" } } })));
+    expect(failed).toEqual({ ok: false, message: "Shopee orders could not be loaded in full, so none are shown.", status: 500 });
   });
 });
 

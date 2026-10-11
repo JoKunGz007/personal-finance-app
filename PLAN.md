@@ -4,7 +4,9 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
-**SPayLater rule fixed — 2026-10-11** (D-273): `Direct Debit` + `SHOPEEPAY` rows were one bank's ordinary bank-debit payments, not repayments; dropping that branch auto-matches 3 more orders on hosted (143 → 146). App code only, committed; production updates on the owner's push. **Next:** task 64 (Excluded rows reach the Shopee matcher; owner decision), then the owner confirms the 2 `ENET` repayment rows.
+**Excluded rows leave the Shopee matcher — 2026-10-11** (D-274): app code only; hosted auto 146 → 147, none 6. Committed; production updates on the owner's push. **Open:** the 2 `ENET` "Payment to Shopee" rows (SCB, one day, no SPayLater order within 60 days) look like bill-paid orders, not repayments; the owner is asked whether they pay the 5 `other`-kind orders. Then D-271's four low-risk review findings.
+
+**SPayLater rule fixed — 2026-10-11** (D-273): `Direct Debit` + `SHOPEEPAY` rows were one bank's ordinary bank-debit payments, not repayments; dropping that branch auto-matches 3 more orders on hosted (143 → 146). App code only, committed; production updates on the owner's push. 
 
 **Shopee live on production; a read timeout fixed; the first import done — 2026-10-11** (D-272). After the deploy the Shopee read timed out as the owner on hosted, which also stopped auto-categorise; migration 058 fixed it (6 s → 119 ms, same rows) and is pushed (hosted at 058). The owner's exports are imported on hosted (171 orders, 8 refunds, 0 refused). Verified on production: the tab loads at desktop; at 375px nothing overflows, but the SPayLater checkboxes measure 13px (check whether their wrapping label meets the 44px target). **Unpushed:** commit `82ef0ee` (058) and the docs commit after it; the owner runs `git push`. **Next:** task 63.
 
@@ -808,7 +810,7 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
 60. **The Inbox/mailbox "already in the ledger" count uses the exact fingerprint only** (`lib/server/inbox-statement.ts`, `lib/server/fingerprint-lookup.ts`). A re-printed overlapping statement is reported as new rows and records an all-linked batch instead of `duplicate`; the ledger itself is right (D-265). Fix by counting on the same identity facts as `confirm_import`, or by reading `identity_links` back from the batch's audit detail.
 
-64. **Shopee: Excluded ledger rows reach the matcher.** `public.shopee_ledger_rows()` (migration 058) does not read `transaction_overlays.include_in_reporting`, so a duplicate copy the owner Excluded (D-265) still competes: on hosted one bank-debit order sees both copies and proposes nothing (D-273). Owner to decide whether the matcher drops Excluded rows (a migration, or the overlay passed to `proposeShopeeMatches`).
+64. ~~**Shopee: Excluded ledger rows reach the matcher.**~~ **Done 2026-10-11 (D-274):** `loadShopeeView` passes the Excluded ids and the matcher proposes none of them; app code only. Hosted: auto 146 → 147.
 
 63. ~~**Shopee: SPayLater repayment detection swallows ordinary bank debits.**~~ **Done 2026-10-11 (D-273):** a repayment is "Payment to Shopee" only; a `Direct Debit` naming ShopeePay is a bank debit. Hosted: auto 143 → 146. Still open: whether the 2 `ENET` rows are repayments (owner), and D-271's four low-risk review findings.
 

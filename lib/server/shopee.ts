@@ -41,6 +41,7 @@ const overlayRow = z.object({
   order_id: uuid, decision: z.enum(["matched", "unmatched"]), transaction_id: uuid.nullable(),
   revision: z.number().int().nonnegative()
 });
+const excludedRow = z.object({ transaction_id: uuid });
 const linkRow = z.object({
   order_id: uuid, transaction_id: uuid, kind: shopeeLinkKindSchema, action: z.enum(["link", "unlink"]), changed_at: instant
 });
@@ -50,7 +51,7 @@ const byPosition = <T extends { position: number }>(a: T, b: T) => a.position - 
 export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true } & { view: ShopeeView }) | Refusal> {
   const all = <Row>(table: string, columns: string) => readAll<Row>((from, to) =>
     supabase.from(table).select(columns, { count: "exact" }).order("id", { ascending: true }).range(from, to));
-  const [orders, items, priceLines, refunds, overlays, links, ledger, summary] = await Promise.all([
+  const [orders, items, priceLines, refunds, overlays, links, ledger, excluded, summary] = await Promise.all([
     all("shopee_orders", "id,order_code,link_id,placed_at,paid_at,shop,payment_method,payment_kind,total_minor"),
     all("shopee_order_items", "id,order_id,position,name,variation,quantity,price_minor,original_price_minor"),
     all("shopee_order_price_lines", "id,order_id,position,label,amount_minor"),
@@ -63,11 +64,15 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
     all("shopee_order_links", "id,order_id,transaction_id,kind,action,changed_at"),
     readAll((from, to) => supabase.rpc("shopee_ledger_rows", undefined, { count: "exact" })
       .order("transaction_id", { ascending: true }).range(from, to)),
+    // Rows the owner Excluded from reporting: the matcher proposes none of them (task 64, D-274).
+    readAll((from, to) => supabase.from("transaction_overlays")
+      .select("transaction_id", { count: "exact" }).eq("include_in_reporting", false)
+      .order("transaction_id", { ascending: true }).range(from, to)),
     // One jsonb document, computed in SQL (migration 057): not a paged table read.
     supabase.rpc("shopee_monthly_summary")
   ]);
 
-  if (!orders.ok || !items.ok || !priceLines.ok || !refunds.ok || !overlays.ok || !links.ok || !ledger.ok || summary.error) {
+  if (!orders.ok || !items.ok || !priceLines.ok || !refunds.ok || !overlays.ok || !links.ok || !ledger.ok || !excluded.ok || summary.error) {
     return { ok: false, message: "Shopee orders could not be loaded in full, so none are shown.", status: 500 };
   }
   const p = {
@@ -82,10 +87,11 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
       const r = row as { movement_minor?: unknown };
       return typeof r.movement_minor === "number" ? { ...r, movement_minor: String(r.movement_minor) } : r;
     })),
+    excluded: z.array(excludedRow).safeParse(excluded.data),
     summary: shopeeSummarySchema.safeParse(summary.data)
   };
   if (!p.summary.success || !p.orders.success || !p.items.success || !p.priceLines.success || !p.refunds.success
-    || !p.overlays.success || !p.links.success || !p.ledger.success) {
+    || !p.overlays.success || !p.links.success || !p.ledger.success || !p.excluded.success) {
     return { ok: false, message: "Shopee orders could not be matched to the ledger, so none are shown.", status: 500 };
   }
 
@@ -100,6 +106,7 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
         orderId: r.order_id, requestedAt: r.requested_at, refundMinor: r.refund_minor, refundTo: r.refund_to
       })),
       rows: p.ledger.data,
+      excludedTransactionIds: p.excluded.data.map((e) => e.transaction_id),
       overlays: p.overlays.data.map((o) => ({
         orderId: o.order_id, decision: o.decision, transactionId: o.transaction_id, revision: o.revision
       })),

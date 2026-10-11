@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-273** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-274** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
 - **D-272** — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
 - **D-271** — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
@@ -473,6 +474,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-274 — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
+
+- Date: 2026-10-11
+- Status: **Done; committed.** App code only: no migration, no `db push`, no contract change.
+- **Why:** a duplicate copy the owner Excluded (D-265) still reached the matcher through `shopee_ledger_rows()`, so its order saw two candidates and proposed nothing (D-063's ambiguity rule).
+- **Change:** `loadShopeeView` reads `transaction_overlays` ids with `include_in_reporting = false` (paged, refuses on failure) and passes them as `excludedTransactionIds`; `proposeShopeeMatches` leaves those rows out of auto, combined, wallet top-up, SPayLater repayment and refund-deposit proposals. Owner overlays and links are unchanged, and the view still receives every row, so a matched Excluded row still displays. Filtering in the app rather than in SQL avoided a migration and a `db push`.
+- **Measured on hosted** (shipped function, read-only dump): auto 146 → 147, none 7 → 6; the duplicate-pair order auto-matches its non-Excluded copy. The overlay read, timed as the owner (aal2, `authenticated`): under 6 ms, 116 rows.
+- Evidence: `tests/shopee-match.test.ts` + `tests/shopee-loader.test.ts` 56/56; 2 of the 3 new matcher tests failed before the change (the third guards owner overlays and passed by design); `tsc`, `eslint` clean; `/code-review` low: no findings.
 
 ## D-273 — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
 

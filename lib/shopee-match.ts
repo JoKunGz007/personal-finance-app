@@ -13,6 +13,9 @@ import { z } from "zod";
  * after the order in the next minute has lag 1. A row with no time never qualifies automatically.
  *
  * Any ambiguity, on either side, proposes nothing (D-063).
+ *
+ * Inputs: orders, refunds, ledger rows, the owner's overlays and link events, and the ids of rows
+ * the owner Excluded from reporting (never proposed; an owner match or link on one is kept).
  */
 
 /** The automatic match: the row falls within this many minutes either side of the order. */
@@ -86,7 +89,8 @@ export const shopeeMatchInputSchema = z.object({
   refunds: z.array(shopeeRefundInputSchema),
   rows: z.array(shopeeLedgerRowSchema),
   overlays: z.array(shopeeOverlayInputSchema),
-  linkEvents: z.array(shopeeLinkEventSchema)
+  linkEvents: z.array(shopeeLinkEventSchema),
+  excludedTransactionIds: z.array(uuid).default([])
 });
 
 export type ShopeeOrderInput = z.infer<typeof shopeeOrderInputSchema>;
@@ -178,6 +182,10 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
   const { orders, refunds, rows, overlays } = input;
   const links = currentLinks(input.linkEvents);
 
+  // Task 64 / D-274: a row the owner Excluded is never proposed; `movement` and owner state still see all rows.
+  const excluded = new Set(input.excludedTransactionIds);
+  const candidateRows = rows.filter((r) => !excluded.has(r.transaction_id));
+
   const movement = new Map(rows.map((r) => [r.transaction_id, BigInt(r.movement_minor)]));
   const overlayByOrder = new Map(overlays.map((o) => [o.orderId, o]));
   const linkedTransactions = new Set(links.map((l) => l.transactionId));
@@ -186,7 +194,7 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
   );
 
   // Rows that can pay a bank debit at all: Shopee-named outflows that are not a repayment.
-  const outflowRows = rows.filter(
+  const outflowRows = candidateRows.filter(
     (r) => namesShopeePay(r) && !isSpayLaterRepayment(r) && BigInt(r.movement_minor) < 0n
   );
   const free = (r: ShopeeLedgerRow) => !takenByOwner.has(r.transaction_id) && !linkedTransactions.has(r.transaction_id);
@@ -289,7 +297,7 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
   // SPayLater repayments: always confirmed by the owner, never automatic.
   const spayOrders = orders.filter((o) => o.paymentKind === "spaylater");
   const spaylaterRepayments: ShopeeMatchResult["spaylaterRepayments"] = [];
-  for (const row of rows.filter(isSpayLaterRepayment)) {
+  for (const row of candidateRows.filter(isSpayLaterRepayment)) {
     const day = rowDay(row);
     const orderIds = spayOrders
       .filter((o) => {
@@ -314,7 +322,7 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
     if (links.some((l) => l.orderId === refund.orderId && l.kind === "refund_deposit")) continue;
     const day = instantDay(refund.requestedAt);
     const amount = BigInt(refund.refundMinor);
-    const found = rows.filter((r) => {
+    const found = candidateRows.filter((r) => {
       const age = rowDay(r) - day;
       return free(r) && !autoRows.has(r.transaction_id) && !combinedRows.has(r.transaction_id)
         && movement.get(r.transaction_id) === amount && age >= 0 && age <= SHOPEE_REFUND_DEPOSIT_DAYS;

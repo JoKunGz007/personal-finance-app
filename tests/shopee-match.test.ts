@@ -359,6 +359,38 @@ describe("refund deposits", () => {
   });
 });
 
+describe("Excluded rows (task 64)", () => {
+  it("skips an Excluded duplicate so the other row matches automatically", () => {
+    const rows = [row(1), row(2)];
+    expect(stateOf(run({ orders: [order(1)], rows }), 1)?.state).toBe("none");
+    const r = run({ orders: [order(1)], rows, excludedTransactionIds: [tid(1)] });
+    expect(stateOf(r, 1)).toEqual({ orderId: oid(1), state: "auto", transactionId: tid(2) });
+  });
+  it("does not offer an Excluded row as a wallet top-up, a SPayLater repayment or a refund deposit", () => {
+    const wallet = order(1, { kind: "wallet", total: "20000" });
+    const topup = row(1, { time: "09:30:00", movement: "-30000" });
+    expect(run({ orders: [wallet], rows: [topup] }).walletTopups).toHaveLength(1);
+    expect(run({ orders: [wallet], rows: [topup], excludedTransactionIds: [tid(1)] }).walletTopups).toEqual([]);
+
+    const spay = order(1, { kind: "spaylater", total: "50000" });
+    const repay = row(1, { date: "2026-10-30", time: "08:00:00", movement: "-12000", label: "ENET", description: "INVENTED Payment to Shopee NOTE" });
+    expect(run({ orders: [spay], rows: [repay] }).spaylaterRepayments).toHaveLength(1);
+    expect(run({ orders: [spay], rows: [repay], excludedTransactionIds: [tid(1)] }).spaylaterRepayments).toEqual([]);
+
+    const refund = { orderId: oid(1), requestedAt: "2026-10-10T03:00:00Z", refundMinor: "15000", refundTo: "bank" as const };
+    const deposit = row(1, { date: "2026-10-12", movement: "15000", description: "INVENTED DEPOSIT", label: "Deposit" });
+    expect(run({ orders: [order(1)], refunds: [refund], rows: [deposit] }).refundDeposits).toHaveLength(1);
+    expect(run({ orders: [order(1)], refunds: [refund], rows: [deposit], excludedTransactionIds: [tid(1)] }).refundDeposits).toEqual([]);
+  });
+  it("keeps an owner match on an Excluded row", () => {
+    const r = run({
+      orders: [order(1)], rows: [row(1)], excludedTransactionIds: [tid(1)],
+      overlays: [{ orderId: oid(1), decision: "matched", transactionId: tid(1), revision: 3 }]
+    });
+    expect(stateOf(r, 1)).toEqual({ orderId: oid(1), state: "matched", transactionId: tid(1), revision: 3 });
+  });
+});
+
 describe("currentLinks", () => {
   it("keeps the newest event per (order, transaction, kind), whatever the input order", () => {
     const e = (action: "link" | "unlink", changedAt: string, kind: "wallet_topup" | "refund_deposit" = "wallet_topup") =>
