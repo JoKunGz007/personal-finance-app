@@ -255,11 +255,9 @@ function OrderLine({ order }: { order: ShopeeViewOrder }) {
 function WaitingForYou({ view, busy, act }: { view: ShopeeView; busy: boolean; act: Act }) {
   const byId = new Map(view.orders.map((o) => [o.id, o]));
   const pick = (ids: readonly string[]) => ids.flatMap((id) => byId.get(id) ?? []);
-  // A repayment waits for the owner only while one of its candidates is not yet linked.
-  const repayments = view.spaylaterRepayments.filter((r) => {
-    const linked = new Set(r.linkedOrderIds);
-    return r.orderIds.some((id) => !linked.has(id));
-  });
+  // A repayment waits for the owner until any order is linked to it: with candidates reaching back a
+  // year (D-276), a finished plan's order stays a candidate forever and would hold the card open.
+  const repayments = view.spaylaterRepayments.filter((r) => r.linkedOrderIds.length === 0);
   const empty = view.combined.length + view.walletTopups.length + repayments.length + view.refundDeposits.length === 0;
   return (
     <section className="captured-slips" aria-labelledby="shopee-waiting-title">

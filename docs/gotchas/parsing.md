@@ -222,5 +222,5 @@ the top of `GOTCHAS.md`.
 
 - Symptom: on `/orders?view=shopee`, bank-debit orders show "Not matched" while a same-amount, same-minute row is listed as a SPayLater repayment.
 - Cause: one bank labels a ShopeePay bank-debit payment `Direct Debit` with a "To … SHOPEEPAY" description; D-270 had read that wording as a repayment, which removed the row from the matchable outflows.
-- Avoid: `isSpayLaterRepayment` (`lib/shopee-match.ts`) accepts only "Payment to Shopee". Before treating any wording as a repayment, count its rows that equal a bank-debit order within the minute.
+- Avoid: no wording marks a repayment; `proposeShopeeMatches` (`lib/shopee-match.ts`) lists repayments only among leftover ShopeePay outflows on day 7–13 of the month, after order matching (D-276). Before treating any wording as a repayment, count its rows that equal an order within the minute.
 - Verify: 2026-10-11 (D-273): 5 of 5 such rows on hosted equalled one bank-debit order each; red-proof in `tests/shopee-match.test.ts`.

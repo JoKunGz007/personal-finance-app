@@ -15,6 +15,13 @@ import { z } from "zod";
  * Bank-paid orders (payment kind `bank_debit`, or `other` = PromptPay QR and Mobile Banking, D-275)
  * match a Shopee-paying outflow row: one naming ShopeePay or reading "Payment to Shopee".
  *
+ * A SPayLater repayment has no wording of its own (D-276, measured on hosted): it is an ordinary
+ * ShopeePay-named outflow, one a month on about the 10th, matching no order. So a repayment row is
+ * a leftover: a free Shopee-paying outflow that no automatic match, combined checkout or wallet
+ * top-up holds, is not the monthly VIP charge, and falls on day 7..13 of the month. An order that
+ * matches a row automatically always wins over the repayment listing. A row the owner already
+ * linked as a repayment is always listed.
+ *
  * Any ambiguity, on either side, proposes nothing (D-063).
  *
  * Inputs: orders, refunds, ledger rows, the owner's overlays and link events, and the ids of rows
@@ -25,9 +32,18 @@ import { z } from "zod";
 export const SHOPEE_MATCH_WINDOW_MINUTES = 1;
 /** A wallet top-up lands up to this long before the wallet order's time. */
 export const SHOPEE_WALLET_TOPUP_WINDOW_MINUTES = 60;
-/** A SPayLater repayment lands 10..60 days after the order's Bangkok date (D-270, measured 15-21). */
+/**
+ * A SPayLater repayment row falls on this day of the month (the row's `source_date`, Bangkok local).
+ * D-276: owner: "repayment on the 10th, plus or minus 3 days".
+ */
+export const SPAYLATER_REPAY_DAY_FIRST = 7;
+export const SPAYLATER_REPAY_DAY_LAST = 13;
+/**
+ * A SPayLater repayment lands 10..366 days after the order's Bangkok date. D-276: instalments were
+ * measured over 5 months (so up to about 150 days); 366 leaves headroom for longer plans.
+ */
 export const SPAYLATER_REPAY_MIN_DAYS = 10;
-export const SPAYLATER_REPAY_MAX_DAYS = 60;
+export const SPAYLATER_REPAY_MAX_DAYS = 366;
 /** A refund to a bank account is deposited within this many days after the request. */
 export const SHOPEE_REFUND_DEPOSIT_DAYS = 30;
 /** The monthly Shopee VIP charge, owner-identified (D-270); never a wallet top-up. */
@@ -155,17 +171,6 @@ export function namesShopeePay(row: Pick<ShopeeLedgerRow, "description" | "trans
 export function paysShopee(row: Pick<ShopeeLedgerRow, "description" | "transaction_label">): boolean {
   return namesShopeePay(row) || /Payment to Shopee/i.test(row.description ?? "");
 }
-/**
- * No SPayLater repayment wording has been observed in the bank ledger yet (D-275); add a pattern
- * here when one is seen. A `Direct Debit` naming ShopeePay is a bank debit (task 63, D-273).
- */
-const SPAYLATER_REPAYMENT_WORDING: RegExp[] = [];
-export function isSpayLaterRepayment(
-  row: Pick<ShopeeLedgerRow, "description" | "transaction_label" | "movement_minor">
-): boolean {
-  return BigInt(row.movement_minor) < 0n && SPAYLATER_REPAYMENT_WORDING.some((re) => re.test(row.description ?? ""));
-}
-
 /** An instant as whole Bangkok wall-clock minutes since the epoch. */
 function orderMinute(order: ShopeeOrderInput): number {
   return Math.floor((Date.parse(order.paidAt ?? order.placedAt) + BANGKOK_OFFSET_MS) / MS_PER_MINUTE);
@@ -204,10 +209,8 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
     overlays.filter((o) => o.decision === "matched" && o.transactionId).map((o) => o.transactionId as string)
   );
 
-  // Rows that can pay a bank-paid order at all: Shopee-paying outflows that are not a repayment.
-  const outflowRows = candidateRows.filter(
-    (r) => paysShopee(r) && !isSpayLaterRepayment(r) && BigInt(r.movement_minor) < 0n
-  );
+  // Rows that can pay a bank-paid order at all: Shopee-paying outflows.
+  const outflowRows = candidateRows.filter((r) => paysShopee(r) && BigInt(r.movement_minor) < 0n);
   const free = (r: ShopeeLedgerRow) => !takenByOwner.has(r.transaction_id) && !linkedTransactions.has(r.transaction_id);
   const lagOf = (row: ShopeeLedgerRow, minute: number): number | null => {
     const m = rowMinute(row);
@@ -306,10 +309,20 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
     if (!shared) walletTopups.push({ orderId: order.id, transactionIds: mine });
   }
 
-  // SPayLater repayments: always confirmed by the owner, never automatic.
+  // SPayLater repayments (D-276): always confirmed by the owner, never automatic. A repayment row is
+  // a leftover outflow near the 10th, or a row the owner already linked as one.
   const spayOrders = orders.filter((o) => o.paymentKind === "spaylater");
+  const walletTopupRows = new Set(walletTopups.flatMap((w) => w.transactionIds));
+  const outflowIds = new Set(outflowRows.map((r) => r.transaction_id));
+  const linkedRepaymentRows = new Set(links.filter((l) => l.kind === "spaylater_repayment").map((l) => l.transactionId));
+  const dayOfMonth = (r: ShopeeLedgerRow) => Number(r.source_date.slice(8, 10));
+  const isLeftover = (r: ShopeeLedgerRow) => outflowIds.has(r.transaction_id) && free(r)
+    && !autoRows.has(r.transaction_id) && !combinedRows.has(r.transaction_id)
+    && !walletTopupRows.has(r.transaction_id)
+    && movement.get(r.transaction_id) !== -SHOPEE_VIP_AMOUNT_MINOR
+    && dayOfMonth(r) >= SPAYLATER_REPAY_DAY_FIRST && dayOfMonth(r) <= SPAYLATER_REPAY_DAY_LAST;
   const spaylaterRepayments: ShopeeMatchResult["spaylaterRepayments"] = [];
-  for (const row of candidateRows.filter(isSpayLaterRepayment)) {
+  for (const row of rows.filter((r) => linkedRepaymentRows.has(r.transaction_id) || isLeftover(r))) {
     const day = rowDay(row);
     const orderIds = spayOrders
       .filter((o) => {

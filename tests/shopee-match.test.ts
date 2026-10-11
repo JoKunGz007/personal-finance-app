@@ -3,7 +3,10 @@ import {
   SHOPEE_REFUND_DEPOSIT_DAYS,
   SHOPEE_VIP_AMOUNT_MINOR,
   currentLinks,
-  isSpayLaterRepayment,
+  SPAYLATER_REPAY_DAY_FIRST,
+  SPAYLATER_REPAY_DAY_LAST,
+  SPAYLATER_REPAY_MAX_DAYS,
+  SPAYLATER_REPAY_MIN_DAYS,
   namesShopeePay,
   paysShopee,
   proposeShopeeMatches,
@@ -56,22 +59,14 @@ describe("wording rules", () => {
     expect(namesShopeePay({ description: null, transaction_label: "ShopeePay" })).toBe(true);
     expect(namesShopeePay({ description: "SHOPEE MALL", transaction_label: "Transfer" })).toBe(false);
   });
-  it("recognises no SPayLater repayment: no wording has been observed (D-275)", () => {
-    const base = { description: "x", transaction_label: "ENET", movement_minor: "-100" };
-    expect(isSpayLaterRepayment({ ...base, description: "INVENTED Payment to Shopee NOTE" })).toBe(false);
-    expect(isSpayLaterRepayment({ ...base, description: "Payment to Shopee", movement_minor: "100" })).toBe(false);
-    expect(isSpayLaterRepayment({ ...base, description: "To INVENTED SHOPEEPAY Ref INVENTED", transaction_label: "Direct Debit" })).toBe(false);
-  });
   it("says a row pays Shopee when it names ShopeePay or reads Payment to Shopee (D-275)", () => {
     expect(paysShopee({ description: "INVENTED Payment to Shopee NOTE", transaction_label: "ENET" })).toBe(true);
     expect(paysShopee({ description: "INVENTED SHOPEEPAY", transaction_label: "Transfer" })).toBe(true);
     expect(paysShopee({ description: "INVENTED SHOP", transaction_label: "Transfer" })).toBe(false);
     expect(paysShopee({ description: null, transaction_label: null })).toBe(false);
   });
-  it("treats a Direct Debit naming ShopeePay as a bank debit, not a repayment (task 63)", () => {
+  it("treats a Direct Debit naming ShopeePay as a bank debit (task 63)", () => {
     // A second bank labels ordinary ShopeePay bank-debit payments this way.
-    const dd = { description: "To INVENTED SHOPEEPAY Ref INVENTED", transaction_label: "Direct Debit", movement_minor: "-100" };
-    expect(isSpayLaterRepayment(dd)).toBe(false);
     expect(stateOf(run({ orders: [order(1)], rows: [row(1, { label: "Direct Debit" })] }), 1))
       .toEqual({ orderId: oid(1), state: "auto", transactionId: tid(1) });
   });
@@ -286,12 +281,110 @@ describe("wallet-paid orders", () => {
   });
 });
 
-describe("SPayLater repayments", () => {
-  // No repayment wording has been observed in the bank ledger (D-275), so nothing is offered.
-  it("offers no repayment, not even for a Payment to Shopee row (that pays a PromptPay QR order)", () => {
-    const pay = row(1, { date: "2026-10-30", time: "08:00:00", movement: "-12000", label: "ENET", description: "INVENTED Payment to Shopee NOTE" });
-    const r = run({ orders: [order(9, { kind: "spaylater", total: "50000" })], rows: [pay] });
-    expect(r.spaylaterRepayments).toEqual([]);
+describe("SPayLater repayments (D-276)", () => {
+  const spay = (n: number, paidAt: string) => order(n, { kind: "spaylater", total: "50000", paidAt });
+  const listed = (r: ReturnType<typeof run>) => r.spaylaterRepayments.map((x) => x.transactionId);
+  const leftover = (n: number, date: string, extra: RowOpts = {}) => row(n, { date, time: "08:00:00", movement: "-12000", ...extra });
+  const link = (orderId: string, transactionId: string) =>
+    [{ orderId, transactionId, kind: "spaylater_repayment" as const, action: "link" as const, changedAt: "2026-10-11T00:00:00Z" }];
+
+  it("has the day window 7..13 and the age window 10..366", () => {
+    expect([SPAYLATER_REPAY_DAY_FIRST, SPAYLATER_REPAY_DAY_LAST]).toEqual([7, 13]);
+    expect([SPAYLATER_REPAY_MIN_DAYS, SPAYLATER_REPAY_MAX_DAYS]).toEqual([10, 366]);
+  });
+  it("lists a leftover ShopeePay outflow on day 7 and 13, not on day 6 or 14", () => {
+    const at = (date: string) => listed(run({ rows: [leftover(1, date)] }));
+    expect(at("2026-10-07")).toEqual([tid(1)]);
+    expect(at("2026-10-13")).toEqual([tid(1)]);
+    expect(at("2026-10-06")).toEqual([]);
+    expect(at("2026-10-14")).toEqual([]);
+  });
+  it("does not list a row an automatic match holds", () => {
+    const r = run({ orders: [order(1)], rows: [row(1)] });
+    expect(stateOf(r, 1)?.state).toBe("auto");
+    expect(listed(r)).toEqual([]);
+  });
+  it("does not list a row in a wallet top-up proposal", () => {
+    const r = run({
+      orders: [order(1, { kind: "wallet", total: "20000" })],
+      rows: [row(1, { time: "09:30:00", movement: "-30000" })]
+    });
+    expect(r.walletTopups).toHaveLength(1);
+    expect(listed(r)).toEqual([]);
+  });
+  it("does not list a combined-checkout row", () => {
+    const r = run({
+      orders: [order(1, { total: "10000" }), order(2, { total: "5000" })],
+      rows: [row(1, { movement: "-15000" })]
+    });
+    expect(r.combined).toHaveLength(1);
+    expect(listed(r)).toEqual([]);
+  });
+  it("does not list the VIP amount on the 11th", () => {
+    expect(listed(run({ rows: [leftover(1, "2026-10-11", { movement: `-${SHOPEE_VIP_AMOUNT_MINOR}` })] }))).toEqual([]);
+    expect(listed(run({ rows: [leftover(1, "2026-10-11")] }))).toEqual([tid(1)]);
+  });
+  it("does not list an Excluded row or an owner-matched row", () => {
+    expect(listed(run({ rows: [leftover(1, "2026-10-10")], excludedTransactionIds: [tid(1)] }))).toEqual([]);
+    const owner = run({
+      orders: [order(2)],
+      rows: [leftover(1, "2026-10-10")],
+      overlays: [{ orderId: oid(2), decision: "matched", transactionId: tid(1), revision: 1 }]
+    });
+    expect(listed(owner)).toEqual([]);
+  });
+  it("does not list an inflow or a row that does not pay Shopee", () => {
+    expect(listed(run({ rows: [leftover(1, "2026-10-10", { movement: "12000" })] }))).toEqual([]);
+    expect(listed(run({ rows: [leftover(1, "2026-10-10", { description: "INVENTED SHOP" })] }))).toEqual([]);
+  });
+  it("lists a row linked as a repayment outside the day window, with linkedOrderIds", () => {
+    const r = run({
+      orders: [spay(9, "2026-08-01T03:00:00Z")],
+      rows: [leftover(1, "2026-10-20")],
+      linkEvents: link(oid(9), tid(1))
+    });
+    expect(r.spaylaterRepayments).toEqual([
+      { transactionId: tid(1), orderIds: [oid(9)], preselected: [oid(9)], linkedOrderIds: [oid(9)] }
+    ]);
+  });
+  it("keeps a linked row listed even when it was later Excluded", () => {
+    const r = run({
+      orders: [spay(9, "2026-08-01T03:00:00Z")],
+      rows: [leftover(1, "2026-10-20")],
+      linkEvents: link(oid(9), tid(1)),
+      excludedTransactionIds: [tid(1)]
+    });
+    expect(listed(r)).toEqual([tid(1)]);
+  });
+  it("keeps input row order", () => {
+    const r = run({ rows: [leftover(3, "2026-10-09"), leftover(1, "2026-10-08"), leftover(2, "2026-10-10")] });
+    expect(listed(r)).toEqual([tid(3), tid(1), tid(2)]);
+  });
+  it("offers an order 10 and 366 days before, not 9 or 367", () => {
+    const offered = (paidAt: string) => run({ orders: [spay(9, paidAt)], rows: [leftover(1, "2026-10-10")] }).spaylaterRepayments[0]?.orderIds;
+    expect(offered("2026-09-30T03:00:00Z")).toEqual([oid(9)]); // 10 days
+    expect(offered("2025-10-09T03:00:00Z")).toEqual([oid(9)]); // 366 days
+    expect(offered("2026-10-01T03:00:00Z")).toEqual([]); // 9 days
+    expect(offered("2025-10-08T03:00:00Z")).toEqual([]); // 367 days
+  });
+  it("offers an order 150 days before (the five-instalment case)", () => {
+    const r = run({ orders: [spay(9, "2026-05-13T03:00:00Z")], rows: [leftover(1, "2026-10-10")] });
+    expect(r.spaylaterRepayments[0]?.orderIds).toEqual([oid(9)]);
+  });
+  it("reads the order's date in Bangkok", () => {
+    const offered = (paidAt: string) => run({ orders: [spay(9, paidAt)], rows: [leftover(1, "2026-10-10")] }).spaylaterRepayments[0]?.orderIds;
+    expect(offered("2026-09-30T16:59:00Z")).toEqual([oid(9)]); // 2026-09-30 23:59 Bangkok: 10 days
+    expect(offered("2026-09-30T18:00:00Z")).toEqual([]); // 2026-10-01 01:00 Bangkok: 9 days
+  });
+  it("preselects with exactly one candidate order, none with two", () => {
+    const one = run({ orders: [spay(9, "2026-08-01T03:00:00Z")], rows: [leftover(1, "2026-10-10")] });
+    expect(one.spaylaterRepayments[0]?.preselected).toEqual([oid(9)]);
+    const two = run({ orders: [spay(9, "2026-08-01T03:00:00Z"), spay(8, "2026-07-01T03:00:00Z")], rows: [leftover(1, "2026-10-10")] });
+    expect(two.spaylaterRepayments[0]?.orderIds).toEqual([oid(9), oid(8)]);
+    expect(two.spaylaterRepayments[0]?.preselected).toEqual([]);
+  });
+  it("leaves the order SPayLater state alone", () => {
+    const r = run({ orders: [spay(9, "2026-08-01T03:00:00Z")], rows: [leftover(1, "2026-10-10")] });
     expect(stateOf(r, 9)).toEqual({ orderId: oid(9), state: "spaylater" });
   });
 });

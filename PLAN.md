@@ -4,7 +4,9 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
-**QR orders match; no repayment wording yet — 2026-10-11** (D-275): "Payment to Shopee" rows were PromptPay QR orders; `other`-kind orders now match like bank debits; hosted auto 149, none 4. **Next:** the owner says SPayLater repayments land around the 10th (±3 days); find that row's wording and add it to `SPAYLATER_REPAYMENT_WORDING`, restoring the day-window tests. Then D-271's four low-risk review findings.
+**SPayLater repayments found — 2026-10-11** (D-276): they are leftover ShopeePay outflows on day 7–13 of the month; the Shopee tab lists 6 on hosted for the owner to link (none automatic). Committed; production updates on the owner's push. **Next:** the owner links the 6 repayment rows on `/orders?view=shopee`; then D-271's four low-risk review findings, and `/ux-review` of the SPayLater checkbox target size.
+
+**QR orders match; no repayment wording yet — 2026-10-11** (D-275): "Payment to Shopee" rows were PromptPay QR orders; `other`-kind orders now match like bank debits; hosted auto 149, none 4.
 
 **Excluded rows leave the Shopee matcher — 2026-10-11** (D-274): app code only; hosted auto 146 → 147, none 6. Committed; production updates on the owner's push. 
 

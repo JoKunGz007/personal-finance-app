@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-275** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-276** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-276** — A SPayLater repayment is a leftover ShopeePay outflow on day 7–13 of the month; candidate orders reach back 366 days (supersedes D-270/D-275's repayment wording and 10–60 day window)
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
@@ -475,6 +476,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-276 — A SPayLater repayment is a leftover ShopeePay outflow on day 7–13 of the month; candidate orders reach back 366 days (supersedes D-270/D-275's repayment wording and 10–60 day window)
+
+- Date: 2026-10-11
+- Status: **Done; committed.** App code only.
+- **Owner's fact:** the repayment lands on the 10th of the month, ±3 days.
+- **Measured on hosted:** the repayments carry the same `SIPI` / "SIPS SHOPEEPAY" wording as ordinary order payments on the same account, one a month, matching no order; one SPayLater order was repaid in 5 monthly instalments, the last about 140 days after the order. No wording separates a repayment, so D-275's empty wording list is replaced by position.
+- **Rule:** after the automatic, combined and wallet top-up passes, a repayment row is a free Shopee-paying outflow that none of them holds, is not the 49.00 VIP charge, is not Excluded, and falls on day 7–13 (`SPAYLATER_REPAY_DAY_FIRST/LAST`); a row already linked as a repayment is always listed. Candidate orders are SPayLater orders 10–366 days earlier (`SPAYLATER_REPAY_MAX_DAYS` 60 → 366). An automatic order match always wins; a repayment is never linked automatically.
+- **UI:** the "Waiting for you" card now waits only until any order is linked; under the old "until every candidate is linked" rule, a finished plan's order would hold every later card open for a year.
+- **Measured on hosted (shipped function):** exactly the 6 expected repayment rows listed; order states unchanged (auto 149, none 4); five preselect the instalment order, the latest lists 4 candidates and preselects none.
+- Evidence: 16 new repayment tests, 10 red-proved against the old rule; `tests/shopee*` 131 passing; `tsc`, `eslint` clean; `/code-review` low: no findings.
 
 ## D-275 — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 
