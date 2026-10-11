@@ -132,6 +132,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - An SCB bill-payment slip may print no QR, so the Inbox cannot import it
 - A Krungthai bill payment prints no payee label
 - Vision reads a Krungthai slip's printed 6 as 5, and the window hides it only by coincidence
+- The same bank row does not always give the same fingerprint: a re-printed statement words it differently
 
 ### Real data, masking and privacy
 

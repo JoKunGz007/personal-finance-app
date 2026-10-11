@@ -210,3 +210,10 @@ the top of `GOTCHAS.md`.
 - Cause: on a whole-slip read Vision returns the year with its 6 as 5 (`2559`, `2558`). The slip window (today − 10 years … tomorrow) refuses most of these only because the misread is exactly 10 years; a 17-character Krungthai reference carries no date to cross-check (D-059).
 - Avoid: never "correct" a 5 to a 6. A four-digit year whose 5↔6 swap is also in the window is refused (`DATE_YEAR_DOUBTFUL`); an out-of-range year is read again from its own box, padded 12 px and enlarged ×3, and the result must pass the same rules (`classifySlipRereadingYear`, `lib/browser/year-reread.ts`). The `/slips` batch page does not re-read.
 - Verify: 2026-10-07 (D-257): crop read 10/10 on real queued slips; two live `/inbox` opens captured all 9 distinct misread slips with their printed dates; red-proofs in `tests/slip-ocr.test.ts`, `tests/inbox-drain.test.ts`.
+
+## The same bank row does not always give the same fingerprint: a re-printed statement words it differently
+
+- Symptom: two ledger rows in one account with the same date, minute, amount and post balance, from two statements whose periods overlap. Both count in Statistics.
+- Cause: `rowFingerprint` (`lib/canonical.ts`) hashes the printed label, description and branch. KBank prints one row differently in its English and Thai statements (D-238), and wraps Details differently from one statement to the next, so a re-print hashes new and the old `on conflict do nothing` inserted it.
+- Avoid: never treat an exact-fingerprint match as the only test of "already stored". `confirm_import` (migration 054, D-265) also links on identity facts — account, date, a non-empty time, post balance, ordered components — claimed once per batch. Any new "is this row stored?" check (the Inbox pre-count still is not) must use the same facts.
+- Verify: 2026-10-11. A hosted scan for same account, date, time, amount and post balance found 4 pairs, each from overlapping imports; `tests/import-confirm-e2e.test.ts` links a re-worded row and fails without 054.
