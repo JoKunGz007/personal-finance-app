@@ -32,8 +32,6 @@ test("reaches every route from the header, without a signed-in owner", async ({ 
   for (const [label, path, heading] of [
     ["Statistics", "/statistics", "Statistics"],
     ["Inbox", "/inbox", "Inbox"],
-    ["Import", "/import", "Open a statement locally"],
-    ["Slips", "/slips", "Capture a transfer slip"],
     ["Categories", "/categories", "Categories"],
     ["Recovery", "/recovery", "Back up and restore the ledger"],
     ["Ledger", "/ledger", "Transactions"]
@@ -44,6 +42,18 @@ test("reaches every route from the header, without a signed-in owner", async ({ 
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
     await expect(link).toHaveAttribute("aria-current", "page");
   }
+
+  // Import and Slips are Inbox fallbacks (2026-10-11): off the header, linked from the Inbox.
+  await expect(nav.getByRole("link", { name: "Import", exact: true })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Slips", exact: true })).toHaveCount(0);
+  await page.goto("/inbox");
+  await page.getByRole("link", { name: "import a statement" }).click();
+  await expect(page).toHaveURL(/\/import$/u);
+  await expect(page.getByRole("heading", { name: "Open a statement locally" })).toBeVisible();
+  await page.goto("/inbox");
+  await page.getByRole("link", { name: "add a slip" }).click();
+  await expect(page).toHaveURL(/\/slips$/u);
+  await expect(page.getByRole("heading", { name: "Capture a transfer slip" })).toBeVisible();
 });
 
 test("reviews and confirms the synthetic statement without a PDF", async ({ page }) => {

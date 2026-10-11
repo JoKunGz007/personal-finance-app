@@ -351,7 +351,7 @@ export function slipHref(objectName: string): string {
   return `/slips?inbox=${encodeURIComponent(objectName)}`;
 }
 
-/** The body of `POST /api/v1/slips`: the same one `app/slip-batch.tsx` sends for a slip it has read. */
+/** The body of `POST /api/v1/slips`: the one the former `/slips` backlog upload sent for a slip it had read (removed 2026-10-11). */
 export type SlipPostBody = {
   readonly qrPayload: string | null;
   readonly bankCode: string;

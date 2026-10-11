@@ -865,7 +865,7 @@ describe("privacy guardrails", () => {
     expect(existsSync("lib/slip-ocr-engine.ts"), "the local engine is deleted, not disabled").toBe(false);
     expect(readFileSync("package.json", "utf8"), "no OCR engine is a dependency of this app")
       .not.toMatch(/"tesseract\.js"|"@tesseract\.js-data\//u);
-    for (const file of ["app/slip-capture.tsx", "app/slip-batch.tsx", "app/notification-card-capture.tsx", "lib/notification-card-form.ts", "lib/slip-ocr.ts", "lib/slip-scan.ts", "lib/slip-batch.ts", "lib/browser/ocr-reader.ts", "lib/browser/qr-detector.ts"]) {
+    for (const file of ["app/slip-capture.tsx", "app/notification-card-capture.tsx", "lib/notification-card-form.ts", "lib/slip-ocr.ts", "lib/slip-scan.ts", "lib/slip-batch.ts", "lib/browser/ocr-reader.ts", "lib/browser/qr-detector.ts"]) {
       expect(readFileSync(file, "utf8"), `${file} must not reach a local engine`)
         .not.toMatch(/readSlipWords|releaseSlipOcr|slip-ocr-engine|import\("tesseract/u);
     }
@@ -1123,51 +1123,17 @@ describe("privacy guardrails", () => {
     }
   });
 
-  // **Bulk upload files slips the owner has not looked at, so its two doors are worth their own
-  // test** (PLAN task 39, D-135). A figure may reach a row only through the strict grammar, as the
-  // single-slip form is held above — and a date may reach one only from the QR's CRC-covered
-  // reference or from the printed line, never from today. The second half has no counterpart in the
-  // single form, where today is a correct default; in a batch it is the failure that cannot heal,
-  // because a slip dated today that happened last month can never pair inside the one-day window.
+  // **The Inbox files slips the owner has not looked at, so the policy module's two doors are worth
+  // their own test** (PLAN task 39, D-135; the /slips bulk form was removed 2026-10-11, the policy
+  // stayed because the Inbox uses it). A figure may reach a row only through the strict grammar, and
+  // a date only from the QR's CRC-covered reference or from the printed line, never from today: a
+  // slip dated today that happened last month can never pair inside the one-day window.
   it("fills a batch row from the strict grammar and never dates one today", () => {
-    const form = readFileSync("app/slip-batch.tsx", "utf8");
     const policy = readFileSync("lib/slip-batch.ts", "utf8");
 
-    // The single door for the amount. The component never runs a grammar of its own: it fills a row
-    // from `classifySlip`'s value and reads a typed one back through `parseThb`, the same exact-money
-    // reader every other path uses.
     expect(policy, "the amount must come through the strict grammar").toContain("proposeAmount(");
-    expect(form, "the component must not read the amount for itself").not.toMatch(/proposeAmount\(|locateAmount\(/u);
-
-    // **Every** `plainThb` call in the component, not the one that happens to end a line. The first
-    // version of this assertion anchored on a trailing newline and a second fill written one line
-    // later slipped straight past it — the trap `GOTCHAS.md` records as a source-grep test passing
-    // over code that has moved out from under it, hit again while writing the test meant to prevent
-    // it. The set is what matters: one call, and its argument is the strict grammar's own value.
-    // **Two fills now, and the count is not the invariant — the source is.** A review row carries
-    // whatever resolved, so an amount that passed the grammar is pre-filled even when the *date* is
-    // the half that failed; that is a second call site, not a second grammar. What must stay true
-    // is that every fill takes `classifySlip`'s own value and nothing else, so this asserts the set
-    // of distinct arguments rather than pinning how many times it appears.
-    const fills = [...form.matchAll(/plainThb\(([^)]*)\)/gu)].map((match) => match[1]!);
-    expect(fills.length, "the component must fill a row's amount somewhere").toBeGreaterThan(0);
-    expect([...new Set(fills)], "every fill takes the strict grammar's own value and nothing else")
-      .toEqual(["verdict.amountMinor"]);
-
-    // And the function that fills it holds no grammar of its own — no lenient parse, no regex over
-    // the words, no "tidy this up" helper written for the occasion. The same scoped rule the
-    // single-slip form's `readAmountOnImage` is held to above.
-    const reader = /async function readOne\([\s\S]*?\n  \}/u.exec(form)?.[0] ?? "";
-    expect(reader, "readOne must exist for this test to mean anything").toContain("classifySlip(");
-    expect(reader, "a figure may only be offered when the strict grammar said ok")
-      .not.toMatch(/parseThb\(|\.replace\(|new RegExp\(/u);
-
-    // Never today, in either half. `toISOString().slice(0, 10)` is the UTC form D-110 fixed twice
-    // and is wrong here for a second, larger reason — a backlog is not today whatever the clock says.
-    for (const [name, source] of [["app/slip-batch.tsx", form], ["lib/slip-batch.ts", policy]] as const) {
-      expect(source, `${name} must not date a slip from the clock`).not.toMatch(/toISOString\(\)|bangkokToday\(/u);
-    }
-    // And the two exact sources it may use instead, both named in the policy rather than the form.
+    expect(policy, `lib/slip-batch.ts must not date a slip from the clock`).not.toMatch(/toISOString\(\)|bangkokToday\(/u);
+    // And the two exact sources it may use instead.
     expect(policy).toContain("slipDateFromReference(");
     expect(policy).toContain("readPrintedDate(");
   });

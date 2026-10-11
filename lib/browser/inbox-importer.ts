@@ -95,7 +95,7 @@ const NO_SLIP_SCAN = "This image could not be scanned for a slip QR.";
 /** 4xx statuses that answer for the session or the server's load, not for the slip: never settled. */
 const NOT_ABOUT_THE_SLIP = new Set([401, 403, 408, 429]);
 
-/** `POST /api/v1/slips`, answered as a `SlipPosted`; the request is the one `app/slip-batch.tsx` sends. */
+/** `POST /api/v1/slips`, answered as a `SlipPosted`; the request is the one the former `/slips` backlog upload sent. */
 async function postSlipCapture(body: SlipPostBody): Promise<SlipPosted> {
   try {
     const response = await fetch("/api/v1/slips", {

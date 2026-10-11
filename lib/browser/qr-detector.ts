@@ -2,7 +2,7 @@
  * The browser's half of reading a slip's QR: a file in, payload strings back.
  *
  * **This is a module rather than a pair of functions in a form because there are now two forms.**
- * `app/slip-capture.tsx` had both halves inline while it was the only caller; `app/slip-batch.tsx`
+ * `app/slip-capture.tsx` had both halves inline while it was the only caller; the Inbox importer
  * reads the same QR off many files at once, and a second copy would be two chances to disagree
  * about which scales to try, whether a native detector may be trusted, or where the WebAssembly
  * reader's binary lives. That is the argument `lib/browser/ocr-reader.ts` already makes for the

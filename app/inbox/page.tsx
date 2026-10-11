@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { LedgerNote } from "@/app/ledger-note";
 import { InboxBench } from "@/app/inbox-bench";
 import { InboxFiles } from "@/app/inbox-files";
@@ -23,6 +24,9 @@ export default function InboxPage() {
               payee and memo they print.
             </LedgerNote>
           </div>
+          <p className="field-help">
+            By hand: <Link href="/import" className="inbox-link">import a statement</Link> · <Link href="/slips" className="inbox-link">add a slip</Link>.
+          </p>
         </div>
       </section>
       <InboxBench />
