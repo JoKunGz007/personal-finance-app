@@ -82,6 +82,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A table-returning RPC is cut at 1,000 rows by PostgREST, silently
 - A SQL `delete from storage.objects` is refused by a trigger, whatever the policies say
 - Automatic ride, order and receipt matches exist only in TypeScript, never in the database
+- A `bigint` column from an RPC arrives as a JSON number, not text
 
 ### Backup, restore and recovery
 
@@ -282,7 +283,7 @@ these section headings rather than a third raise. The owner chose the split.
 | --- | --- | --- |
 | Environment, shell and toolchain | 21 | [`docs/gotchas/environment.md`](docs/gotchas/environment.md) |
 | Docker and the local Supabase projects | 15 | [`docs/gotchas/docker-supabase.md`](docs/gotchas/docker-supabase.md) |
-| Database, migrations and pgTAP | 19 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
+| Database, migrations and pgTAP | 20 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
 | Backup, restore and recovery | 11 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |
 | Statement and slip parsing | 28 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |

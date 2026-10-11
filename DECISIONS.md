@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-270** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-271** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-271** — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
 - **D-270** — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
 - **D-269** — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
 - **D-268** — `HANDOFF.md` is retired into the files that own its facts (supersedes D-052)
@@ -470,6 +471,17 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-271 — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
+
+- Date: 2026-10-11
+- Status: **Built and tested locally; `db push` of 055–057 and the deploy follow in the same session.** Implements D-270.
+- **Built.** Migration 055: seven tables, `capture_shopee_orders` (idempotent per order code, a changed order refused, one bad order never sinks the batch), `set_shopee_payment_match` (a group of orders on one row; amounts must sum exactly; a combined checkout is undone whole), `set_shopee_order_links` (an append-only event log), backup v16. Migration 056: `shopee_ledger_rows()`, the read beneath matching. Migration 057: `shopee_monthly_summary()`, twelve Bangkok months, refunds in the order's month, no table. `lib/shopee-match.ts` computes every proposal at read time; nothing automatic is stored. The Inbox takes the export (both versions). `/orders?view=shopee` shows the month figures, a 12-month bar strip, what is waiting for the owner, and the order list with Undo / Unlink. A matched ledger row shows its order; categories follow D-270.
+- **Measured with the shipped code on the owner's exports (counts only):** the parser reads all 253 orders (244 + 9), 0 refused, 9 refunds (8 to the wallet, 1 to a bank). 143 of 150 bank-debit orders match automatically, 2 are one proposed combined checkout, and no VIP charge is claimed.
+- **Corrects D-270's "11 of 12 wallet orders".** That count included rows already matched to other orders. With those excluded, the shipped rule proposes a top-up for **4 of 12** wallet orders; the rest stay unproposed (the owner links them, or not).
+- **Deploy order matters.** `loadCurrentMatches` (auto-categorise) refuses everything when the Shopee read fails, like a failed receipt or delivery read. So 055–057 are pushed to hosted **before** the code that reads them; the reverse order stops auto-categorising for every row.
+- **Review (`/code-review` high, 10 findings).** Fixed: an import cut mid-batch now says how many orders landed; the parser refuses an order with no payment method itself (the database refused it as "invalid order"); refund-deposit candidates skip rows Shopee already holds; the waiting list drops repayments with nothing left to link; wallet and SPayLater chips say "linked", "Proposal" or the payment kind, not always "Proposal"; Undo on one order of a combined checkout undoes the whole row. **Left, low risk:** the full Shopee view is loaded for auto-categorise and `/ledger` (a lighter read would also stop a summary failure from refusing categorisation); a refund-deposit candidate already matched to a non-Shopee document can still be proposed; a combined match to a row without `SHOPEE` text shows "ledger row not in view"; a refund destination other than the two ShopeePay wordings is read as a bank; refunds are checked one by one against the total, not as a sum (057 clamps).
+- **Evidence:** Vitest 97 files, 1,870 passed / 7 skipped (including `tests/shopee-e2e.test.ts` against the local database, which caught the movement arriving as a JSON number); pgTAP 36 files, 918; tsc; lint 0 errors; docs check strict.
 
 ## D-270 — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
 

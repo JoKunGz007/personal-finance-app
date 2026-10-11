@@ -15,6 +15,15 @@ import { discardLineImage, lineBotStatus, moveLineImages, type StuckImage } from
 import { addedLabel, kindOfObject, planFile, sizeLabel, type InboxPlan } from "@/lib/inbox-queue";
 import { kindLabel, loadInboxView, saveInboxView, type InboxView } from "@/lib/inbox-view";
 import { useInboxPreviews } from "@/app/use-inbox-previews";
+import { postShopeeExport } from "@/lib/browser/capture-client";
+import { describeShopeeImport, SHOPEE_MAX_BYTES, type ShopeeRefusal } from "@/lib/shopee-import";
+
+type ShopeeLine = {
+  readonly key: number; readonly name: string; readonly text: string; readonly ok: boolean;
+  readonly refused: readonly ShopeeRefusal[];
+};
+
+const isJsonFile = (file: File) => /\.json$/iu.test(file.name);
 
 type Status =
   | { readonly state: "uploading" }
@@ -76,6 +85,7 @@ async function toPng(file: File): Promise<Blob | null> {
 export function InboxFiles() {
   const [supabase] = useState(browserSupabase);
   const [picked, setPicked] = useState<Picked[]>([]);
+  const [shopeeLines, setShopeeLines] = useState<ShopeeLine[]>([]);
   const [waiting, setWaiting] = useState<WaitingFile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(0);
@@ -233,15 +243,36 @@ export function InboxFiles() {
   async function choose(files: FileList | null) {
     if (!files || files.length === 0 || !supabase || !claim()) return;
     try {
-      await addAndDrain(files);
+      const all = [...files];
+      for (const file of all.filter(isJsonFile)) await importShopee(file);
+      const rest = all.filter((file) => !isJsonFile(file));
+      if (rest.length > 0) await addAndDrain(rest);
     } finally {
       release();
     }
   }
 
-  async function addAndDrain(files: FileList) {
+  /** A Shopee order export skips Storage and the drain: it is read here and sent as parsed JSON (D-270). */
+  async function importShopee(file: File) {
+    const key = counter.current++;
+    const add = (text: string, ok: boolean, refused: readonly ShopeeRefusal[] = []) =>
+      setShopeeLines((current) => [...current, { key, name: file.name, text, ok, refused }]);
+    if (file.size > SHOPEE_MAX_BYTES) { add("The file is larger than 5 MB.", false); return; }
+    let json: unknown;
+    try {
+      json = JSON.parse(await file.text());
+    } catch {
+      add("The file is not valid JSON.", false);
+      return;
+    }
+    const sent = await postShopeeExport(json);
+    if (!sent.ok) { add(sent.why, false); return; }
+    add(describeShopeeImport(sent.data), true, sent.data.refused);
+  }
+
+  async function addAndDrain(files: readonly File[]) {
     if (!supabase) return;
-    const chosen = [...files].map((file) => ({ file, key: counter.current++, plan: planFile(file) }));
+    const chosen = files.map((file) => ({ file, key: counter.current++, plan: planFile(file) }));
     setPicked((current) => [
       ...current,
       ...chosen.map(({ file, key, plan }): Picked => ({
@@ -360,12 +391,29 @@ export function InboxFiles() {
           <span>Images and PDFs</span>
           <input
             type="file"
-            accept="image/*,application/pdf,.pdf"
+            accept="image/*,application/pdf,.pdf,.json,application/json"
             multiple
             disabled={busy || !supabase}
             onChange={(event) => { void choose(event.target.files); event.target.value = ""; }}
           />
         </label>
+        {shopeeLines.length > 0 ? (
+          <ul className="receipt-queue">
+            {shopeeLines.map((entry) => (
+              <li key={entry.key}>
+                <strong>{entry.name}</strong>
+                <span className={entry.ok ? undefined : "status error"} role={entry.ok ? "status" : "alert"}>{entry.text}</span>
+                {entry.refused.length > 0 ? (
+                  <ul>
+                    {entry.refused.map((refusal, index) => (
+                      <li key={index}>{refusal.orderCode ?? "Unknown order"}: {refusal.reason}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {picked.length > 0 ? (
           <ul className="receipt-queue">
             {picked.map((entry) => (

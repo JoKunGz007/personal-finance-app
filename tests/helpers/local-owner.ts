@@ -216,6 +216,14 @@ export function resetOwnerImportSurface(owner: string, accountIds: readonly stri
     delete from public.ride_match_overlays where owner_id = '${owner}';
     delete from public.ride_adjustments where owner_id = '${owner}';
     delete from public.rides where owner_id = '${owner}';
+    -- Shopee orders (migration 055): children first, for the reason the delivery tables below are.
+    delete from public.shopee_order_links where owner_id = '${owner}';
+    delete from public.shopee_payment_match_revisions where owner_id = '${owner}';
+    delete from public.shopee_payment_match_overlays where owner_id = '${owner}';
+    delete from public.shopee_refunds where owner_id = '${owner}';
+    delete from public.shopee_order_price_lines where owner_id = '${owner}';
+    delete from public.shopee_order_items where owner_id = '${owner}';
+    delete from public.shopee_orders where owner_id = '${owner}';
     delete from public.delivery_match_revisions where owner_id = '${owner}';
     delete from public.delivery_match_overlays where owner_id = '${owner}';
     delete from public.lineman_order_details where owner_id = '${owner}';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decideCategories, normaliseDescription, type CategoryInput, type CategoryNode } from "@/lib/server/auto-categorise";
-import { heldRows, type CurrentMatch } from "@/lib/server/current-matches";
+import { heldRows, shopeeCurrentMatches, type CurrentMatch } from "@/lib/server/current-matches";
 import type { CategoryRule } from "@/lib/category-rules";
 
 // The pure decision of the auto-categoriser (D-245): precedence, history, fallback and skips.
@@ -96,6 +96,26 @@ describe("decideCategories precedence", () => {
     // With the mart child absent it falls back to Groceries & Convenience.
     const noChild = decideCategories([row(4)], categories, [at(4, "mart")], new Set());
     expect(noChild.proposals.map((p) => p.category_id)).toEqual([cat(5)]);
+  });
+
+  it("categorises Shopee matches, wallet top-ups and SPayLater repayments (D-270)", () => {
+    const tree: CategoryNode[] = [
+      ...categories,
+      { id: cat(30), name: "Shopping", archived: false, parent_id: null },
+      { id: cat(31), name: "Online", archived: false, parent_id: cat(30) },
+      { id: cat(32), name: "Wallet Top-up", archived: false, parent_id: null }
+    ];
+    const matches: CurrentMatch[] = [
+      { transaction_id: id(1), kind: "shopee_order", entity_id: id(901) },
+      { transaction_id: id(2), kind: "shopee_wallet_topup", entity_id: id(902) },
+      { transaction_id: id(3), kind: "shopee_spaylater_repayment", entity_id: id(903) }
+    ];
+    const result = decideCategories([row(1), row(2), row(3), row(4)], tree, matches, new Set(), rules);
+    expect(result.proposals.map((p) => [p.transaction_id, p.category_id, p.source, p.detail])).toEqual([
+      [id(1), cat(31), "match", { kind: "shopee_order", entity_id: id(901) }],
+      [id(2), cat(32), "match", { kind: "shopee_wallet_topup", entity_id: id(902) }],
+      [id(3), cat(31), "match", { kind: "shopee_spaylater_repayment", entity_id: id(903) }]
+    ]);
   });
 
   it("history beats a keyword rule", () => {
@@ -202,6 +222,30 @@ describe("decideCategories resolution and skips", () => {
 
   it("proposes nothing for a row no step fits", () => {
     expect(decide([row(1)])).toEqual({ proposals: [], unresolved: 0 });
+  });
+});
+
+describe("shopeeCurrentMatches", () => {
+  const order = (n: number, state: string, transactionId: string | null) =>
+    ({ id: id(900 + n), match: { state, transactionId, revision: 0 } }) as never;
+  it("counts matched and auto orders and wallet/SPayLater links, never a combined proposal, unmatched order or refund link", () => {
+    const view = {
+      orders: [
+        order(1, "matched", id(1)), order(2, "auto", id(2)), order(3, "combined_proposed", id(3)),
+        order(4, "unmatched", null), order(5, "none", null)
+      ],
+      links: [
+        { orderId: id(906), transactionId: id(6), kind: "wallet_topup" as const },
+        { orderId: id(907), transactionId: id(7), kind: "spaylater_repayment" as const },
+        { orderId: id(908), transactionId: id(8), kind: "refund_deposit" as const }
+      ]
+    };
+    expect(shopeeCurrentMatches(view)).toEqual([
+      { transaction_id: id(1), kind: "shopee_order", entity_id: id(901) },
+      { transaction_id: id(2), kind: "shopee_order", entity_id: id(902) },
+      { transaction_id: id(6), kind: "shopee_wallet_topup", entity_id: id(906) },
+      { transaction_id: id(7), kind: "shopee_spaylater_repayment", entity_id: id(907) }
+    ]);
   });
 });
 

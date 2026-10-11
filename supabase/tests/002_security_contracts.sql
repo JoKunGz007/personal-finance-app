@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(50);
+select plan(51);
 
 -- Canonical signed-int64 text boundaries.
 select ok(private.is_canonical_int64_text('-9223372036854775808'), 'signed int64 minimum is canonical');
@@ -254,8 +254,16 @@ create temporary table snapshot_result as
 select public.export_backup_snapshot() as value;
 select is(
   (select value->>'schemaVersion' from snapshot_result),
-  '15',
-  'snapshot export succeeds with schema version 15'
+  '16',
+  'snapshot export succeeds with schema version 16'
+);
+-- The seven Shopee tables (migration 055) have to be in the export too, key and count.
+select ok(
+  (select bool_and(value#>array['data',k] is not null and value#>array['tableCounts',k] is not null)
+     from snapshot_result,
+          unnest(array['shopee_orders','shopee_order_items','shopee_order_price_lines','shopee_refunds',
+            'shopee_payment_match_overlays','shopee_payment_match_revisions','shopee_order_links']) k),
+  'snapshot export carries the seven Shopee tables and their counts'
 );
 -- Each new table has to be *in* the export, not merely permitted by it. A version bump that
 -- forgot to emit the new key would still read as the right version here and would silently

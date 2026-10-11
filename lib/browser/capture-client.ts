@@ -2,6 +2,7 @@ import { captureLinemanRequest, deliveryCaptureResultSchema } from "@/lib/delive
 import type { ParsedLinemanOrder } from "@/lib/delivery-lineman";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import { receiptCaptureBody, receiptCaptureResultSchema, type CaptureForm } from "@/lib/receipts";
+import { shopeeImportResultSchema } from "@/lib/shopee-import";
 import { ledgerRequest } from "@/lib/wire";
 
 /**
@@ -19,6 +20,18 @@ export function postReceiptCapture(form: CaptureForm, receipt: ParsedReceipt) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(receiptCaptureBody(form, receipt))
+  });
+}
+
+/** The Shopee order export, already parsed from JSON in the browser (D-270). Capture is idempotent. */
+export function postShopeeExport(exportJson: unknown) {
+  return ledgerRequest("/api/v1/inbox/shopee", shopeeImportResultSchema, {
+    fallback: "The Shopee export could not be saved.",
+    unreachable: "The ledger could not be reached, so the Shopee export was not saved."
+  }, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(exportJson)
   });
 }
 

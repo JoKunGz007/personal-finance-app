@@ -7,6 +7,8 @@ import {
   rideLedgerCandidateSchema, rideMatchDecisionSchema, rideSplitCandidateSchema,
   type DeliveryMatchState
 } from "@/lib/delivery-match";
+import { loadShopeeView } from "@/lib/server/shopee";
+import type { ShopeeView } from "@/lib/shopee-view";
 import { proposeReceiptMatches, receiptLedgerCandidateSchema, receiptMatchDecisionSchema, type ReceiptMatchState } from "@/lib/receipt-match";
 
 /**
@@ -146,7 +148,27 @@ export async function loadReceiptMatches(supabase: OwnerClient) {
 export type CurrentMatch =
   | { transaction_id: string; kind: "ride"; entity_id: string }
   | { transaction_id: string; kind: "delivery"; platform: "grabfood" | "lineman"; /** Absent reads as food. */ service?: DeliveryService; entity_id: string }
-  | { transaction_id: string; kind: "receipt"; entity_id: string };
+  | { transaction_id: string; kind: "receipt"; entity_id: string }
+  // Shopee (D-270): an owner-matched or automatically matched order; a wallet top-up row and a
+  // SPayLater repayment row the owner linked. A combined-checkout proposal holds nothing.
+  | { transaction_id: string; kind: "shopee_order"; entity_id: string }
+  | { transaction_id: string; kind: "shopee_wallet_topup"; entity_id: string }
+  | { transaction_id: string; kind: "shopee_spaylater_repayment"; entity_id: string };
+
+/** The ledger rows Shopee currently holds, from the loaded view (combined proposals do not count). */
+export function shopeeCurrentMatches(view: Pick<ShopeeView, "orders" | "links">): CurrentMatch[] {
+  const matches: CurrentMatch[] = [];
+  for (const order of view.orders) {
+    if ((order.match.state === "matched" || order.match.state === "auto") && order.match.transactionId) {
+      matches.push({ transaction_id: order.match.transactionId, kind: "shopee_order", entity_id: order.id });
+    }
+  }
+  for (const link of view.links) {
+    if (link.kind === "wallet_topup") matches.push({ transaction_id: link.transactionId, kind: "shopee_wallet_topup", entity_id: link.orderId });
+    else if (link.kind === "spaylater_repayment") matches.push({ transaction_id: link.transactionId, kind: "shopee_spaylater_repayment", entity_id: link.orderId });
+  }
+  return matches;
+}
 
 /**
  * The ledger rows a match currently holds: an owner's link (by its stored row, which a link outside
@@ -162,9 +184,11 @@ export function heldRows(state: DeliveryMatchState | ReceiptMatchState, linked: 
 
 /** Every transaction the app treats as matched today, with its kind and the matched document. */
 export async function loadCurrentMatches(supabase: OwnerClient): Promise<{ ok: true; matches: CurrentMatch[] } | Refusal> {
-  const [orders, receipts] = await Promise.all([loadOrderMatches(supabase), loadReceiptMatches(supabase)]);
+  const [orders, receipts, shopee] = await Promise.all([loadOrderMatches(supabase), loadReceiptMatches(supabase), loadShopeeView(supabase)]);
   if (!orders.ok) return orders;
   if (!receipts.ok) return receipts;
+  // Like a failed receipt or delivery read, a failed Shopee read refuses everything (no skip).
+  if (!shopee.ok) return shopee;
   const linkedOrder = new Map(orders.orderDecisions.filter((d) => d.decision === "matched").map((d) => [d.delivery_id, d.transaction_id]));
   const linkedRide = new Map(orders.rideDecisions.filter((d) => d.decision === "matched").map((d) => [d.ride_id, d.transaction_id]));
   const linkedReceipt = new Map(receipts.decisions.filter((d) => d.decision === "matched").map((d) => [d.receipt_id, d.transaction_id]));
@@ -174,7 +198,8 @@ export async function loadCurrentMatches(supabase: OwnerClient): Promise<{ ok: t
     ...orders.deliveries.flatMap((delivery) => heldRows(delivery.match, linkedOrder.get(delivery.id))
       .map((transaction_id) => ({ transaction_id, kind: "delivery" as const, platform: delivery.platform as "grabfood" | "lineman", service: ((delivery as { service?: DeliveryService }).service ?? "food"), entity_id: delivery.id }))),
     ...receipts.receipts.flatMap((receipt) => heldRows(receipt.match, linkedReceipt.get(receipt.id))
-      .map((transaction_id) => ({ transaction_id, kind: "receipt" as const, entity_id: receipt.id })))
+      .map((transaction_id) => ({ transaction_id, kind: "receipt" as const, entity_id: receipt.id }))),
+    ...shopeeCurrentMatches(shopee.view)
   ];
   return { ok: true, matches };
 }

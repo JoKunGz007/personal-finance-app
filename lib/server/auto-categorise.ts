@@ -56,7 +56,10 @@ export interface CategoryDecision {
 
 const MATCH_CATEGORY: Record<Exclude<CurrentMatch["kind"], "delivery">, string> = {
   ride: "Transport › Ride-hailing",
-  receipt: "Groceries & Convenience › Convenience Store"
+  receipt: "Groceries & Convenience › Convenience Store",
+  shopee_order: "Shopping › Online",
+  shopee_wallet_topup: "Wallet Top-up",
+  shopee_spaylater_repayment: "Shopping › Online"
 };
 
 /** A delivery order's category by its Grab service (D-247); an absent service reads as food. */

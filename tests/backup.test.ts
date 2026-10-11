@@ -15,6 +15,7 @@ import {
   BACKUP_TABLE_KINDS_V11,
   BACKUP_TABLE_KINDS_V12,
   BACKUP_TABLE_KINDS_V13,
+  BACKUP_TABLE_KINDS_V14,
   backupDataSchema,
   backupDataSchemaV2,
   backupDataSchemaV3,
@@ -28,9 +29,11 @@ import {
   backupDataSchemaV12,
   backupDataSchemaV13,
   backupDataSchemaV14,
+  backupDataSchemaV15,
   backupSnapshotSchema,
   backupSnapshotSchemaV14,
   backupSnapshotSchemaV15,
+  backupSnapshotSchemaV16,
   describeBackupSnapshot,
   restoreActionSchemas,
   restoreManifestSchema,
@@ -45,7 +48,8 @@ import {
   restoreManifestSchemaV10,
   restoreManifestSchemaV11,
   restoreManifestSchemaV12,
-  restoreManifestSchemaV13
+  restoreManifestSchemaV13,
+  restoreManifestSchemaV14
 } from "@/lib/backup-contract";
 
 describe("portable encrypted backup", () => {
@@ -78,7 +82,7 @@ function manifestOver(kinds: readonly string[]) {
 describe("restore manifest", () => {
   it("requires the exact ordered table set and canonical snapshot sequence", () => {
     const manifest = manifestOver(BACKUP_TABLE_KINDS);
-    expect(restoreManifestSchema.parse(manifest).chunks).toHaveLength(42);
+    expect(restoreManifestSchema.parse(manifest).chunks).toHaveLength(49);
     expect(() => restoreManifestSchema.parse({ ...manifest, snapshotSequence: "01" })).toThrow();
     expect(() => restoreManifestSchema.parse({ ...manifest, chunks: [...manifest.chunks].reverse() })).toThrow();
   });
@@ -101,7 +105,8 @@ describe("restore manifest", () => {
     const v11 = manifestOver(BACKUP_TABLE_KINDS_V11);
     const v12 = manifestOver(BACKUP_TABLE_KINDS_V12);
     const v13 = manifestOver(BACKUP_TABLE_KINDS_V13);
-    const v14 = manifestOver(BACKUP_TABLE_KINDS);
+    const v14 = manifestOver(BACKUP_TABLE_KINDS_V14);
+    const v16 = manifestOver(BACKUP_TABLE_KINDS);
     expect(restoreManifestSchemaV2.parse(v2).chunks).toHaveLength(11);
     expect(restoreManifestSchemaV3.parse(v3).chunks).toHaveLength(12);
     expect(restoreManifestSchemaV4.parse(v4).chunks).toHaveLength(14);
@@ -114,6 +119,8 @@ describe("restore manifest", () => {
     expect(restoreManifestSchemaV11.parse(v11).chunks).toHaveLength(34);
     expect(restoreManifestSchemaV12.parse(v12).chunks).toHaveLength(38);
     expect(restoreManifestSchemaV13.parse(v13).chunks).toHaveLength(39);
+    expect(restoreManifestSchemaV14.parse(v14).chunks).toHaveLength(42);
+    expect(restoreManifestSchema.parse(v16).chunks).toHaveLength(49);
 
     // Accepting an old version must not mean accepting anything. Each version pins its own
     // table count, so no manifest passes as another.
@@ -129,6 +136,8 @@ describe("restore manifest", () => {
     expect(restoreManifestSchemaV11.safeParse(v12).success).toBe(false);
     expect(restoreManifestSchemaV12.safeParse(v13).success).toBe(false);
     expect(restoreManifestSchemaV13.safeParse(v14).success).toBe(false);
+    expect(restoreManifestSchemaV14.safeParse(v16).success).toBe(false);
+    expect(restoreManifestSchema.safeParse(v14).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v2).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v3).success).toBe(false);
     expect(restoreManifestSchema.safeParse(v4).success).toBe(false);
@@ -161,10 +170,14 @@ describe("restore manifest", () => {
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 11, manifest: manifestOver(BACKUP_TABLE_KINDS_V11) }).success).toBe(true);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 12, manifest: manifestOver(BACKUP_TABLE_KINDS_V12) }).success).toBe(true);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 13, manifest: manifestOver(BACKUP_TABLE_KINDS_V13) }).success).toBe(true);
-    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 14, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
-    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 15, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
-    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 16, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 14, manifest: manifestOver(BACKUP_TABLE_KINDS_V14) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 15, manifest: manifestOver(BACKUP_TABLE_KINDS_V14) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 16, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(true);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 17, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
     expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 15, manifest: manifestOver(BACKUP_TABLE_KINDS_V13) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 16, manifest: manifestOver(BACKUP_TABLE_KINDS_V14) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 15, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
+    expect(restoreActionSchemas.stage.safeParse({ ...identity, schemaVersion: 14, manifest: manifestOver(BACKUP_TABLE_KINDS) }).success).toBe(false);
     // The pairing is the point: a version and a manifest that disagree about how many
     // tables exist cannot both be right, and the server would otherwise stage one and
     // then refuse chunks against the other.
@@ -223,7 +236,7 @@ describe("restore manifest", () => {
     const parsed = backupSnapshotSchema.parse({
       schemaVersion: BACKUP_SCHEMA_VERSION, exportedAt: "2026-07-24T00:00:00.000Z", snapshotSequence: "9223372036854775807", tableCounts, data
     });
-    expect(parsed.schemaVersion).toBe(15);
+    expect(parsed.schemaVersion).toBe(16);
     expect(parsed.data.source_transactions).toHaveLength(1001);
     expect(parsed.data.source_transactions[0]).toMatchObject({ post_balance_minor: "-9223372036854775808" });
     expect(parsed.data.source_transactions[1000]).toMatchObject({ post_balance_minor: "9223372036854775807" });
@@ -301,13 +314,19 @@ describe("restore manifest", () => {
     expect(v13).toContain("schema version 13");
     expect(v13).not.toContain(`${BACKUP_TABLE_KINDS.length} tables`);
 
-    const v14 = describeBackupSnapshot({ schemaVersion: 14, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
-    expect(v14).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    const v14 = describeBackupSnapshot({ schemaVersion: 14, tableCounts: countsFor(BACKUP_TABLE_KINDS_V14) });
+    expect(v14).toContain(`${BACKUP_TABLE_KINDS_V14.length} tables`);
     expect(v14).toContain("schema version 14");
+    expect(v14).not.toContain(`${BACKUP_TABLE_KINDS.length} tables`);
 
-    const v15 = describeBackupSnapshot({ schemaVersion: 15, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
-    expect(v15).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    const v15 = describeBackupSnapshot({ schemaVersion: 15, tableCounts: countsFor(BACKUP_TABLE_KINDS_V14) });
+    expect(v15).toContain(`${BACKUP_TABLE_KINDS_V14.length} tables`);
     expect(v15).toContain("schema version 15");
+    expect(v15).not.toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+
+    const v16 = describeBackupSnapshot({ schemaVersion: 16, tableCounts: countsFor(BACKUP_TABLE_KINDS) });
+    expect(v16).toContain(`${BACKUP_TABLE_KINDS.length} tables`);
+    expect(v16).toContain("schema version 16");
 
     // Rows are summed from the counts, so the sentence cannot claim rows the file lacks.
     const rows = BACKUP_TABLE_KINDS_V3.reduce((sum, _kind, index) => sum + index, 0);
@@ -379,8 +398,9 @@ describe("backup row shapes are shared by every version that carries the table",
     { name: "v11", data: backupDataSchemaV11, kinds: BACKUP_TABLE_KINDS_V11 },
     { name: "v12", data: backupDataSchemaV12, kinds: BACKUP_TABLE_KINDS_V12 },
     { name: "v13", data: backupDataSchemaV13, kinds: BACKUP_TABLE_KINDS_V13 },
-    { name: "v14", data: backupDataSchemaV14, kinds: BACKUP_TABLE_KINDS },
-    { name: "v15", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
+    { name: "v14", data: backupDataSchemaV14, kinds: BACKUP_TABLE_KINDS_V14 },
+    { name: "v15", data: backupDataSchemaV15, kinds: BACKUP_TABLE_KINDS_V14 },
+    { name: "v16", data: backupDataSchema, kinds: BACKUP_TABLE_KINDS }
   ] as const;
 
   it("uses one row schema per table across every version, so a column cannot diverge them", () => {
@@ -392,7 +412,7 @@ describe("backup row shapes are shared by every version that carries the table",
         expect(row, `${version.name} carries no row schema for ${table}`).toBeDefined();
         if (!first.has(table)) {
           first.set(table, row);
-        } else if (first.get(table) !== row && !(table === "deliveries" && version.name === "v15")) {
+        } else if (first.get(table) !== row && !(table === "deliveries" && (version.name === "v15" || version.name === "v16"))) {
           // The one deliberate exception to D-097: v15 gives `deliveries` a `service` column
           // (migration 049, D-247), so its row schema is the v10-v14 one plus that key.
           divergent.push(`${table} diverges at ${version.name}`);
@@ -414,7 +434,7 @@ describe("backup row shapes are shared by every version that carries the table",
         newer.kinds.slice(0, older.kinds.length),
         `${newer.name} does not begin with ${older.name}'s table list`
       ).toEqual([...older.kinds]);
-      // v15 adds a column, not a table, so its list equals v14's.
+      // v15 adds a column, not a table, so its list equals v14's. v16 appends the seven Shopee tables.
       if (newer.name === "v15") expect(newer.kinds).toEqual(older.kinds);
       else expect(newer.kinds.length).toBeGreaterThan(older.kinds.length);
     }
@@ -458,10 +478,11 @@ describe("backup v15 delivery service", () => {
   };
 
   function snapshotWith(version: 14 | 15, deliveries: unknown[]) {
-    const data = Object.fromEntries(BACKUP_TABLE_KINDS.map((kind) => [kind, []])) as Record<string, unknown[]>;
+    const kinds = BACKUP_TABLE_KINDS_V14;
+    const data = Object.fromEntries(kinds.map((kind) => [kind, []])) as Record<string, unknown[]>;
     data.deliveries = deliveries;
     data.mutation_sequences = [{ owner_id: ownerId, sequence: "7", last_exported_sequence: "0", updated_at: "2026-10-01T00:00:00.000Z" }];
-    const tableCounts = Object.fromEntries(BACKUP_TABLE_KINDS.map((kind) => [kind, data[kind]!.length]));
+    const tableCounts = Object.fromEntries(kinds.map((kind) => [kind, data[kind]!.length]));
     return { schemaVersion: version, exportedAt: "2026-10-01T00:00:00.000Z", snapshotSequence: "7", tableCounts, data };
   }
 
@@ -489,5 +510,79 @@ describe("backup v15 delivery service", () => {
       const request = { ...base, schemaVersion: version, chunk: { kind: "deliveries", rows: [row] } };
       expect(restoreActionSchemas.chunk.safeParse(request).success, `v${version}`).toBe(true);
     }
+  });
+});
+
+// Backup v16 carries the seven Shopee tables (migration 055, D-270). v15 and older have none.
+describe("backup v16 Shopee tables", () => {
+  const ownerId = "11111111-1111-4111-8111-111111111111";
+  const orderId = "22222222-2222-4222-8222-222222222222";
+  const txId = "44444444-4444-4444-8444-444444444444";
+  const at = "2026-09-02T03:00:00.000Z";
+  const rows = {
+    shopee_orders: { id: orderId, owner_id: ownerId, order_code: "BKPORDER0001", link_id: "9000000000000001",
+      placed_at: at, paid_at: null, shop: "Invented Shop", payment_method: "ShopeePay", payment_kind: "wallet",
+      total_minor: "30000", item_price_is: "line total", facts_digest: "a".repeat(64), created_at: at },
+    shopee_order_items: { id: "55555555-5555-4555-8555-555555555555", owner_id: ownerId, order_id: orderId, position: 1,
+      name: "Invented widget", variation: null, quantity: 2, price_minor: null, original_price_minor: null },
+    shopee_order_price_lines: { id: "66666666-6666-4666-8666-666666666666", owner_id: ownerId, order_id: orderId,
+      position: 1, label: "Voucher", amount_minor: "-2000" },
+    shopee_refunds: { id: "77777777-7777-4777-8777-777777777777", owner_id: ownerId, order_id: orderId,
+      request_id: "BKPREFUND01", requested_at: at, refund_minor: "15000", refund_to: "bank", requested_by: "buyer",
+      reason: null, steps: ["Cancellation Requested", "Refunded"], created_at: at },
+    shopee_payment_match_overlays: { order_id: orderId, owner_id: ownerId, decision: "matched", transaction_id: txId,
+      revision: 1, updated_at: at },
+    shopee_payment_match_revisions: { id: "88888888-8888-4888-8888-888888888888", owner_id: ownerId, order_id: orderId,
+      revision: 1, snapshot: { decision: "matched" }, changed_at: at, changed_by: ownerId },
+    shopee_order_links: { id: "99999999-9999-4999-8999-999999999999", owner_id: ownerId, order_id: orderId,
+      transaction_id: txId, kind: "refund_deposit", action: "link", changed_at: at, changed_by: ownerId }
+  } as const;
+
+  function snapshot16(version: 15 | 16, shopee: Record<string, unknown[]>) {
+    const kinds = version === 16 ? BACKUP_TABLE_KINDS : BACKUP_TABLE_KINDS_V14;
+    const data = Object.fromEntries(kinds.map((kind) => [kind, shopee[kind] ?? []])) as Record<string, unknown[]>;
+    data.mutation_sequences = [{ owner_id: ownerId, sequence: "7", last_exported_sequence: "0", updated_at: at }];
+    const tableCounts = Object.fromEntries(kinds.map((kind) => [kind, data[kind]!.length]));
+    return { schemaVersion: version, exportedAt: at, snapshotSequence: "7", tableCounts, data };
+  }
+
+  it("accepts a valid row and refuses an unknown column on each Shopee table", () => {
+    const dataShape = (backupDataSchema as unknown as { shape: Record<string, { element: { safeParse: (v: unknown) => { success: boolean } } }> }).shape;
+    for (const [table, row] of Object.entries(rows)) {
+      const schema = dataShape[table]!.element;
+      expect(schema.safeParse(row).success, `${table} refuses a valid row`).toBe(true);
+      expect(schema.safeParse({ ...row, extra: "x" }).success, `${table} accepts an unknown column`).toBe(false);
+    }
+  });
+
+  it("holds the money to canonical int64 text, and a price line to a signed one", () => {
+    const dataShape = (backupDataSchema as unknown as { shape: Record<string, { element: { safeParse: (v: unknown) => { success: boolean } } }> }).shape;
+    expect(dataShape.shopee_orders!.element.safeParse({ ...rows.shopee_orders, total_minor: 30000 }).success).toBe(false);
+    expect(dataShape.shopee_orders!.element.safeParse({ ...rows.shopee_orders, total_minor: "030000" }).success).toBe(false);
+    expect(dataShape.shopee_order_items!.element.safeParse({ ...rows.shopee_order_items, price_minor: "1.5" }).success).toBe(false);
+    expect(dataShape.shopee_order_price_lines!.element.safeParse({ ...rows.shopee_order_price_lines, amount_minor: "-9223372036854775808" }).success).toBe(true);
+    expect(dataShape.shopee_refunds!.element.safeParse({ ...rows.shopee_refunds, refund_minor: 15000 }).success).toBe(false);
+    expect(dataShape.shopee_refunds!.element.safeParse({ ...rows.shopee_refunds, steps: ["Invented step"] }).success).toBe(false);
+    expect(dataShape.shopee_payment_match_overlays!.element.safeParse({ ...rows.shopee_payment_match_overlays, transaction_id: null }).success).toBe(false);
+  });
+
+  it("round-trips a v16 file, and keeps v15 and v16 distinct", async () => {
+    const shopee = Object.fromEntries(Object.entries(rows).map(([table, row]) => [table, [row]]));
+    const snapshot = backupSnapshotSchemaV16.parse(snapshot16(16, shopee));
+    const carried = await decryptBackup(await encryptBackup(snapshot, "v16 shopee round trip passphrase 2026"), "v16 shopee round trip passphrase 2026");
+    const parsed = backupSnapshotSchema.parse(carried);
+    expect(parsed.schemaVersion).toBe(16);
+    expect((parsed.data as { shopee_order_links: unknown[] }).shopee_order_links).toHaveLength(1);
+    // A v15 file has no Shopee tables and must not grow them; a v16 file must carry all seven.
+    expect(backupSnapshotSchema.safeParse(snapshot16(15, {})).success).toBe(true);
+    expect(backupSnapshotSchemaV15.safeParse({ ...snapshot16(15, {}), data: { ...snapshot16(15, {}).data, shopee_orders: [] } }).success).toBe(false);
+    expect(backupSnapshotSchemaV16.safeParse({ ...snapshot16(15, {}), schemaVersion: 16 }).success).toBe(false);
+  }, 30_000);
+
+  it("accepts a Shopee chunk at v16 only through the v16 kind list", () => {
+    const base = { restoreId: "33333333-3333-4333-8333-333333333333", idempotencyKey: "44444444-4444-4444-8444-444444444444", digest: "a".repeat(64), chunkIndex: 42, chunkDigest: "b".repeat(64) };
+    const request = { ...base, schemaVersion: 16, chunk: { kind: "shopee_orders", rows: [rows.shopee_orders] } };
+    expect(restoreActionSchemas.chunk.safeParse(request).success).toBe(true);
+    expect(restoreActionSchemas.chunk.safeParse({ ...request, schemaVersion: 17 }).success).toBe(false);
   });
 });

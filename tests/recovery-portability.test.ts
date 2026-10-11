@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { canonicalJson } from "@/lib/canonical";
 import { decryptBackup, encryptBackup } from "@/lib/backup";
 import {
-  backupSnapshotSchema, backupSnapshotSchemaV4, backupSnapshotSchemaV5, backupSnapshotSchemaV6, backupSnapshotSchemaV7, backupSnapshotSchemaV8, backupSnapshotSchemaV9, backupSnapshotSchemaV10, backupSnapshotSchemaV11, backupSnapshotSchemaV12, backupSnapshotSchemaV13,
+  backupSnapshotSchema, backupSnapshotSchemaV4, backupSnapshotSchemaV5, backupSnapshotSchemaV6, backupSnapshotSchemaV7, backupSnapshotSchemaV8, backupSnapshotSchemaV9, backupSnapshotSchemaV10, backupSnapshotSchemaV11, backupSnapshotSchemaV12, backupSnapshotSchemaV13, backupSnapshotSchemaV15,
   BACKUP_SCHEMA_VERSION,
-  BACKUP_TABLE_KINDS, BACKUP_TABLE_KINDS_V4, BACKUP_TABLE_KINDS_V5, BACKUP_TABLE_KINDS_V6, BACKUP_TABLE_KINDS_V7, BACKUP_TABLE_KINDS_V8, BACKUP_TABLE_KINDS_V9, BACKUP_TABLE_KINDS_V10, BACKUP_TABLE_KINDS_V11, BACKUP_TABLE_KINDS_V12, BACKUP_TABLE_KINDS_V13
+  BACKUP_TABLE_KINDS, BACKUP_TABLE_KINDS_V4, BACKUP_TABLE_KINDS_V5, BACKUP_TABLE_KINDS_V6, BACKUP_TABLE_KINDS_V7, BACKUP_TABLE_KINDS_V8, BACKUP_TABLE_KINDS_V9, BACKUP_TABLE_KINDS_V10, BACKUP_TABLE_KINDS_V11, BACKUP_TABLE_KINDS_V12, BACKUP_TABLE_KINDS_V13, BACKUP_TABLE_KINDS_V14
 } from "@/lib/backup-contract";
 import { buildRestorePlan } from "@/lib/restore-plan";
 import {
@@ -304,10 +304,59 @@ commit;
   if (!result.ok) throw new Error(`source category populate failed: ${result.output}`);
 }
 
+// Two invented Shopee orders paid by one combined bank debit, the matching decisions and their
+// revisions, a refund, an item without a price, a signed price line and a link event: all seven v16
+// tables. Written directly for the reason the delivery above is; each revision's snapshot embeds the
+// owner id. Both overlays name the ledger row populateSource() writes.
+const SHOPEE_ORDER_A = ID(60);
+const SHOPEE_ORDER_B = ID(61);
+function populateSourceShopee(): void {
+  const result = psql(`
+begin;
+set local session_replication_role = replica;
+insert into public.shopee_orders(id, owner_id, order_code, link_id, placed_at, paid_at, shop, payment_method, payment_kind,
+  total_minor, item_price_is, facts_digest)
+values ('${SHOPEE_ORDER_A}', '${SOURCE_OWNER}', 'REHEARSAL0001', '9100000000000001', '2026-01-02T10:00:00+07:00', null,
+  'Rehearsal shop', 'ShopeePay - ตัดบัญชีธนาคาร', 'bank_debit', 10000, 'line total', repeat('a', 64)),
+ ('${SHOPEE_ORDER_B}', '${SOURCE_OWNER}', 'REHEARSAL0002', '9100000000000002', '2026-01-02T10:05:00+07:00', '2026-01-02T10:06:00+07:00',
+  'Rehearsal shop', 'ShopeePay - ตัดบัญชีธนาคาร', 'bank_debit', 5000, null, repeat('b', 64));
+insert into public.shopee_order_items(id, owner_id, order_id, position, name, variation, quantity, price_minor, original_price_minor)
+values ('${ID(62)}', '${SOURCE_OWNER}', '${SHOPEE_ORDER_A}', 1, 'Rehearsal widget', 'Blue', 2, 6000, 7000),
+ ('${ID(63)}', '${SOURCE_OWNER}', '${SHOPEE_ORDER_A}', 2, 'Rehearsal gift', null, 1, null, null),
+ ('${ID(64)}', '${SOURCE_OWNER}', '${SHOPEE_ORDER_B}', 1, 'Rehearsal gadget', null, 1, 5000, null);
+insert into public.shopee_order_price_lines(id, owner_id, order_id, position, label, amount_minor)
+values ('${ID(65)}', '${SOURCE_OWNER}', '${SHOPEE_ORDER_A}', 1, 'Merchandise Subtotal', 12000),
+ ('${ID(66)}', '${SOURCE_OWNER}', '${SHOPEE_ORDER_A}', 2, 'Voucher', -2000),
+ ('${ID(67)}', '${SOURCE_OWNER}', '${SHOPEE_ORDER_B}', 1, 'Merchandise Subtotal', 5000);
+insert into public.shopee_refunds(id, owner_id, order_id, request_id, requested_at, refund_minor, refund_to, requested_by, reason, steps)
+values ('${ID(68)}', '${SOURCE_OWNER}', '${SHOPEE_ORDER_B}', 'REHEARSALREFUND1', '2026-01-03T09:00:00+07:00', 5000, 'bank', 'buyer',
+  'Rehearsal reason', '{"Cancellation Requested","Refunded"}');
+insert into public.shopee_payment_match_overlays(order_id, owner_id, decision, transaction_id, revision)
+values ('${SHOPEE_ORDER_A}', '${SOURCE_OWNER}', 'matched', 'f0000000-0000-4000-8000-100000000001', 1),
+ ('${SHOPEE_ORDER_B}', '${SOURCE_OWNER}', 'matched', 'f0000000-0000-4000-8000-100000000001', 1);
+insert into public.shopee_payment_match_revisions(id, owner_id, order_id, revision, snapshot, changed_by)
+select (case o.order_id when '${SHOPEE_ORDER_A}' then '${ID(69)}' else '${ID(70)}' end)::uuid, '${SOURCE_OWNER}', o.order_id, 1, to_jsonb(o), '${SOURCE_OWNER}'
+from public.shopee_payment_match_overlays o where o.owner_id = '${SOURCE_OWNER}';
+insert into public.shopee_order_links(id, owner_id, order_id, transaction_id, kind, action, changed_by)
+values ('${ID(71)}', '${SOURCE_OWNER}', '${SHOPEE_ORDER_B}', 'f0000000-0000-4000-8000-100000000001', 'refund_deposit', 'link', '${SOURCE_OWNER}');
+update public.mutation_sequences set sequence = sequence + 1, updated_at = now() where owner_id = '${SOURCE_OWNER}';
+set local session_replication_role = origin;
+commit;
+`);
+  if (!result.ok) throw new Error(`source shopee populate failed: ${result.output}`);
+}
+
 function cleanSourceReceipt(): void {
   psql(`
 begin;
 set local session_replication_role = replica;
+delete from public.shopee_order_links where owner_id = '${SOURCE_OWNER}';
+delete from public.shopee_payment_match_revisions where owner_id = '${SOURCE_OWNER}';
+delete from public.shopee_payment_match_overlays where owner_id = '${SOURCE_OWNER}';
+delete from public.shopee_refunds where owner_id = '${SOURCE_OWNER}';
+delete from public.shopee_order_price_lines where owner_id = '${SOURCE_OWNER}';
+delete from public.shopee_order_items where owner_id = '${SOURCE_OWNER}';
+delete from public.shopee_orders where owner_id = '${SOURCE_OWNER}';
 delete from public.category_reviews where transaction_id = '${CATEGORISED_TRANSACTION}';
 delete from public.category_provenance where transaction_id = '${CATEGORISED_TRANSACTION}';
 delete from public.category_parents where category_id = '${CHILD_CATEGORY_ID}';
@@ -372,6 +421,8 @@ function sourceOwnerTraces(): number {
     `select count(*) from public.receipt_match_revisions where changed_by = '${SOURCE_OWNER}'`,
     `select count(*) from public.delivery_match_revisions where changed_by = '${SOURCE_OWNER}'`,
     `select count(*) from public.ride_match_revisions where changed_by = '${SOURCE_OWNER}'`,
+    `select count(*) from public.shopee_payment_match_revisions where changed_by = '${SOURCE_OWNER}'`,
+    `select count(*) from public.shopee_order_links where changed_by = '${SOURCE_OWNER}'`,
     `select count(*) from public.audit_events where actor_id = '${SOURCE_OWNER}'`,
     `select count(*) from public.ledger_owners where owner_id = '${SOURCE_OWNER}'`
   ];
@@ -393,6 +444,7 @@ const NEWER_THAN_V10 = newerThan(BACKUP_TABLE_KINDS_V10);
 const NEWER_THAN_V11 = newerThan(BACKUP_TABLE_KINDS_V11);
 const NEWER_THAN_V12 = newerThan(BACKUP_TABLE_KINDS_V12);
 const NEWER_THAN_V13 = newerThan(BACKUP_TABLE_KINDS_V13);
+const NEWER_THAN_V14 = newerThan(BACKUP_TABLE_KINDS_V14);
 
 /**
  * Turns a current export into the file an older ledger would have written.
@@ -1004,6 +1056,7 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       populateSourceRide();
       populateSourceLineman();
       populateSourceCategories();
+      populateSourceShopee();
 
       const exported = await rpc(API, sourceSession, "export_backup_snapshot");
       expect(exported.status, exported.body).toBe(200);
@@ -1038,10 +1091,19 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       expect(current.tableCounts.category_parents).toBe(1);
       expect(current.tableCounts.category_provenance).toBe(1);
       expect(current.tableCounts.category_reviews).toBe(1);
+      expect(current.tableCounts.shopee_orders, "two Shopee orders paid by one debit").toBe(2);
+      expect(current.tableCounts.shopee_order_items).toBe(3);
+      expect(current.tableCounts.shopee_order_price_lines).toBe(3);
+      expect(current.tableCounts.shopee_refunds).toBe(1);
+      expect(current.tableCounts.shopee_payment_match_overlays).toBe(2);
+      expect(current.tableCounts.shopee_payment_match_revisions).toBe(2);
+      expect(current.tableCounts.shopee_order_links).toBe(1);
       for (const kind of ["categories", "receipts", "receipt_match_overlays", "receipt_match_revisions", "deliveries", "delivery_items",
         "delivery_adjustments", "delivery_match_overlays", "delivery_match_revisions",
         "rides", "ride_adjustments", "ride_match_overlays", "ride_match_revisions", "lineman_order_details",
-        "category_parents", "category_provenance", "category_reviews"] as const) {
+        "category_parents", "category_provenance", "category_reviews",
+        "shopee_orders", "shopee_order_items", "shopee_order_price_lines", "shopee_refunds",
+        "shopee_payment_match_overlays", "shopee_payment_match_revisions", "shopee_order_links"] as const) {
         const rebound = canonicalJson(current.data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
         expect(canonicalJson(landed.data[kind]), `${kind} did not survive the restore`).toBe(rebound);
       }
@@ -1397,6 +1459,80 @@ describe.skipIf(!ready)("portable recovery into an empty separately bound projec
       expect(landed.tableCounts.lineman_order_details, "the LINE MAN details must have travelled").toBe(1);
       expect(landed.tableCounts.delivery_match_overlays, "its match decision must have travelled").toBe(1);
       expect(landed.tableCounts.rides, "the ride must have travelled").toBe(1);
+    } finally {
+      cleanSourceReceipt();
+      cleanSource();
+      clearFactors(CONTAINER, SOURCE_OWNER);
+      clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
+    }
+  }, 180_000);
+
+  // A v15 file — what the owner's hosted backups are written at until migration 055 lands —
+  // restored into a v16 destination, the same method: a genuine v15 artifact made by dropping the
+  // seven Shopee tables v15 predates, which must be empty for that to be lossless. The LINE MAN
+  // order and the categories ride along so v15's own tables are proven to travel at v15.
+  it("restores a v15 file into a v16 destination, leaving the Shopee tables empty", async () => {
+    assertOnlyDisposableLedgerData([ID(1)]);
+
+    clearFactors(CONTAINER, SOURCE_OWNER);
+    clearFactors(DESTINATION_CONTAINER, DESTINATION_OWNER);
+    const sourceSession = await sessionAt(API, OWNER_EMAIL, OWNER_PASSWORD);
+    const destinationSession = await sessionAt(DESTINATION_API, DESTINATION_EMAIL, DESTINATION_PASSWORD);
+
+    emptyDestination();
+    expect(sourceOwnerTraces(), "the destination must not already hold source-owned rows").toBe(0);
+
+    try {
+      populateSource();
+      populateSourceReceipt();
+      populateSourceReceiptMatch();
+      populateSourceDelivery();
+      populateSourceDeliveryMatch();
+      populateSourceRide();
+      populateSourceLineman();
+      populateSourceCategories();
+
+      const exported = await rpc(API, sourceSession, "export_backup_snapshot");
+      expect(exported.status, exported.body).toBe(200);
+      const current = exported.json() as Snapshot;
+      expect(current.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
+      for (const kind of NEWER_THAN_V14) {
+        expect(current.tableCounts[kind], `${kind} must be empty for the downgrade to be lossless`).toBe(0);
+      }
+
+      const v15 = downgradeTo(current, 15, BACKUP_TABLE_KINDS_V14);
+      const validated = backupSnapshotSchemaV15.safeParse(v15);
+      expect(validated.success, JSON.stringify(validated.error?.issues?.slice(0, 3))).toBe(true);
+
+      const envelope = await encryptBackup(v15, "v15 into v16 rehearsal passphrase 2026");
+      const carried = await decryptBackup(envelope, "v15 into v16 rehearsal passphrase 2026");
+      const plan = await buildRestorePlan(carried);
+      expect(plan.stage.schemaVersion).toBe(15);
+      expect(plan.chunks.map((chunk) => chunk.chunk.kind)).toEqual([...BACKUP_TABLE_KINDS_V14]);
+
+      const staged = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "stage", p_request: plan.stage });
+      expect(staged.status, staged.body).toBe(200);
+      for (const chunk of plan.chunks) {
+        const sent = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "chunk", p_request: chunk });
+        expect(sent.status, `chunk ${chunk.chunk.kind}: ${sent.body}`).toBe(200);
+      }
+      const committed = await rpc(DESTINATION_API, destinationSession, "restore_backup", { p_action: "commit", p_request: plan.commit });
+      expect(committed.status, committed.body).toBe(200);
+      expect(sourceOwnerTraces()).toBe(0);
+
+      const reExported = await rpc(DESTINATION_API, destinationSession, "export_backup_snapshot");
+      expect(reExported.status, reExported.body).toBe(200);
+      const landed = reExported.json() as Snapshot;
+      expect(landed.schemaVersion).toBe(BACKUP_SCHEMA_VERSION);
+      for (const kind of BACKUP_TABLE_KINDS_V14.filter((table) => table !== "mutation_sequences")) {
+        const rebound = canonicalJson((v15 as Snapshot).data[kind]).split(SOURCE_OWNER).join(DESTINATION_OWNER);
+        expect(canonicalJson(landed.data[kind]), `${kind} did not survive the version change`).toBe(rebound);
+      }
+      for (const kind of NEWER_THAN_V14) {
+        expect(landed.tableCounts[kind], `${kind} must be present and empty in the re-export`).toBe(0);
+      }
+      expect(landed.tableCounts.deliveries, "both delivery orders must have travelled").toBe(2);
+      expect(landed.tableCounts.category_parents, "the subcategory link must have travelled").toBe(1);
     } finally {
       cleanSourceReceipt();
       cleanSource();

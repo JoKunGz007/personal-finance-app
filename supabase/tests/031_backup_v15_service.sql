@@ -122,7 +122,8 @@ insert into public.deliveries(id, owner_id, platform, booking_id, restaurant, pa
 values ('eeeeeeee-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111', 'grabfood',
   'A-BACKUP0002', 'Invented Express', 'Invented card', '2026-10-02T12:30:00Z', 0, 3000, 3000,
   '2026-10-02T12:31:00Z', 'express');
-select is(public.export_backup_snapshot()->>'schemaVersion', '15', 'the export writes schema version 15');
+-- Migration 055 moved the export to 16; `service` is carried unchanged.
+select is(public.export_backup_snapshot()->>'schemaVersion', '16', 'the export writes schema version 16');
 select is(
   public.export_backup_snapshot()#>>'{data,deliveries,0,service}', 'express',
   'the export carries each order service');
@@ -157,11 +158,11 @@ select is(
   (select service from public.deliveries where id = 'eeeeeeee-0000-4000-8000-000000000001'),
   'food', 'a v14 restore leaves the order as food');
 
--- A version beyond 15 is still refused.
+-- A version beyond 16 is still refused.
 select throws_ok(
   $$select public.restore_backup('stage', jsonb_build_object('restoreId', 'cccccccc-0000-4000-8000-000000000053',
-    'idempotencyKey', 'dddddddd-0000-4000-8000-000000000053', 'schemaVersion', 16, 'digest', repeat('a', 64)))$$,
-  'P0001', 'invalid restore contract', 'schema version 16 is refused');
+    'idempotencyKey', 'dddddddd-0000-4000-8000-000000000053', 'schemaVersion', 17, 'digest', repeat('a', 64)))$$,
+  'P0001', 'invalid restore contract', 'schema version 17 is refused');
 
 select * from finish();
 rollback;

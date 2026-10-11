@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CATEGORY_RULES, firstMatchingRule } from "@/lib/category-rules";
+import { CATEGORY_RULES, firstMatchingRule, isAmountGated } from "@/lib/category-rules";
 
 // One invented description per rule (D-245). The text is description + " " + label, as the
 // categoriser builds it. Merchant names are public; nothing here is a real statement line.
@@ -20,6 +20,7 @@ const cases: [id: string, text: string, sign: number, amountMinor?: bigint][] = 
   ["supermarket", "TOPS INVENTED BRANCH Card payment", OUT],
   ["convenience-store", "7-ELEVEN INVENTED 00000 Card payment", OUT],
   ["pharmacy", "WATSONS INVENTED MALL Card payment", OUT],
+  ["shopee-vip", "SIPS SHOPEEPAY (THAILAND) CO.,LTD. NOTE : -", OUT, -4900n],
   ["shopeepay", "SIPS SHOPEEPAY (THAILAND) CO.,LTD. NOTE : -", OUT],
   ["clothing", "UNIQLO INVENTED MALL Card payment", OUT],
   ["electronics", "APPLE STORE INVENTED Card payment", OUT],
@@ -45,6 +46,19 @@ describe("CATEGORY_RULES", () => {
     // ฿230 is round but not a top-up amount; ฿164 is a purchase; no amount at all fits nothing.
     for (const amount of [-23000n, -16400n, -20001n]) expect(firstMatchingRule(text, OUT, CATEGORY_RULES, amount)).toBeNull();
     expect(firstMatchingRule(text, OUT)).toBeNull();
+  });
+
+  it("calls a ShopeePay charge the Shopee VIP subscription only at its exact amount (D-270)", () => {
+    const text = "SIPS SHOPEEPAY (THAILAND) CO.,LTD. NOTE : -";
+    expect(firstMatchingRule(text, OUT, CATEGORY_RULES, -4900n)?.id).toBe("shopee-vip");
+    expect(CATEGORY_RULES.find((rule) => rule.id === "shopee-vip")?.category).toBe("Subscriptions & Digital");
+    for (const amount of [-4800n, -4901n, -9800n]) expect(firstMatchingRule(text, OUT, CATEGORY_RULES, amount)?.id).toBe("shopeepay");
+    expect(firstMatchingRule(text, OUT)?.id).toBe("shopeepay");
+    // Money in is never the charge.
+    expect(firstMatchingRule(text, IN, CATEGORY_RULES, 4900n)).toBeNull();
+    // The amount gate keeps ShopeePay descriptions out of history; other merchants stay in it.
+    expect(isAmountGated(text, OUT)).toBe(true);
+    expect(isAmountGated("INVENTED COFFEE ROASTERY", OUT)).toBe(false);
   });
 
   it("names the round-2 merchants that share an existing rule", () => {

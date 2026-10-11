@@ -170,3 +170,10 @@ the top of `GOTCHAS.md`.
 - Cause: the overlays store only the owner's own link or decline. The candidate RPCs return amount-and-date candidates, and the GET routes decide the automatic match in TypeScript (`lib/ledger-match.ts`: windows, wording, uniqueness, claims, split rides).
 - Avoid: never reproduce the decision in SQL; a copy drifts from what the pages show in at least five edge cases (฿0 orders, held rows, split rides, refund gaps, RLS under `postgres`). Call `lib/server/current-matches.ts`, which the routes themselves use (D-245).
 - Verify: 2026-10-05, a hosted count of matched overlays (0) against the pages' matched totals; the route tests passed unchanged after the decision moved into `current-matches.ts`.
+
+## A `bigint` column from an RPC arrives as a JSON number, not text
+
+- Symptom: a loader whose zod schema takes money as int64 text (`/^-?\d+$/` on a string) rejects every row of an RPC read, and the page refuses "could not be matched", while the mocked unit tests pass.
+- Cause: PostgREST serialises `bigint` as a JSON number. The mocks were written with strings, so only a read against a real database shows the mismatch.
+- Avoid: accept `number | string` at the boundary and stringify before the contract (as `lib/server/shopee.ts` does for `movement_minor`), or have the SQL return `::text`. Keep one end-to-end test per new read against the local database.
+- Verify: `tests/shopee-e2e.test.ts` caught it on 2026-10-11 (D-271), before the conversion in `loadShopeeView` existed.

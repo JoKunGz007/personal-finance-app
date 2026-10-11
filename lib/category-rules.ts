@@ -7,6 +7,8 @@
  * `category` is `"Parent"` or `"Parent › Child"`. A child that does not exist falls back to its
  * parent; a parent that does not exist leaves the row alone (`lib/server/auto-categorise.ts`).
  */
+import { SHOPEE_VIP_AMOUNT_MINOR } from "@/lib/shopee-match";
+
 export interface CategoryRule {
   id: string;
   /** `out` for a negative amount, `in` for a positive one, `any` for either. */
@@ -40,6 +42,9 @@ export const CATEGORY_RULES: readonly CategoryRule[] = [
   { id: "supermarket", direction: "out", match: /\bTOPS\b|BIG ?C\b|LOTUS|MAKRO/i, category: "Groceries & Convenience › Supermarket" },
   { id: "convenience-store", direction: "out", match: /\bCJ\b|7-?ELEVEN|FAMILYMART|LAWSON|GREENET|กรีนเนท/i, category: "Groceries & Convenience › Convenience Store" },
   { id: "pharmacy", direction: "out", match: /PHARMACY|STARDRUG|WATSON|วัตสัน|BOOTS/i, category: "Health & Personal Care" },
+  // The monthly Shopee VIP charge is owner-identified (D-270). Orders matched to a row are decided
+  // before any rule runs, so a matched order of this amount stays Shopping.
+  { id: "shopee-vip", direction: "out", match: /SHOPEEPAY/i, amountsMinor: [SHOPEE_VIP_AMOUNT_MINOR], category: "Subscriptions & Digital" },
   { id: "shopeepay", direction: "out", match: /SHOPEEPAY/i, category: "Shopping › Online" },
   { id: "clothing", direction: "out", match: /UNIQLO|ยูนิโคล่/i, category: "Shopping › Clothing" },
   { id: "electronics", direction: "out", match: /APPLE CENTRAL|APPLE STORE/i, category: "Shopping › Electronics" },

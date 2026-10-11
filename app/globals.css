@@ -1885,3 +1885,18 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
   .ledger-table.inbox-table td[data-label="Actions"]::before { display: none; }
   .ledger-table.inbox-table td:empty { display: none; }
 }
+
+/* The /orders view switch (Food & rides | Shopee): two links, the current one filled. */
+.view-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.view-tabs a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--blue); border-radius: 999px; color: var(--blue); font-weight: 600; text-decoration: none; }
+.view-tabs a[aria-current="page"] { background: var(--blue); color: var(--paper, #fff); }
+/* The Shopee strip's bars are SVG shapes; the month text is theirs, not a colour's. */
+.shopee-strip { margin: 12px 0 0; }
+.shopee-strip svg { display: block; width: 100%; height: auto; max-height: 200px; }
+.shopee-strip text { fill: var(--muted); font-size: 11px; }
+.shopee-bar { fill: var(--chart-out); }
+.shopee-bar-now { fill: var(--blue); }
+.shopee-baseline { stroke: var(--line); }
+.shopee-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px 18px; margin: 12px 0 0; }
+.shopee-figures dt { color: var(--muted); font-size: 12px; }
+.shopee-figures dd { margin: 2px 0 0; font-family: var(--font-money); }

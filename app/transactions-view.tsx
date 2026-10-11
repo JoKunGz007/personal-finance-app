@@ -24,6 +24,8 @@ import {
 } from "@/lib/transactions";
 import { categoryListSchema, type Category } from "@/lib/categories";
 import { receiptListSchema, receiptsOnRows, type StoredReceipt } from "@/lib/receipts";
+import { getShopeeView } from "@/lib/browser/shopee-client";
+import { shopeeOrdersOnRows, type ShopeeViewOrder } from "@/lib/shopee-view";
 import { deliveriesOnRows, deliveryListSchema, ridesOnRows, type StoredDelivery, type StoredRide } from "@/lib/deliveries";
 import {
   deeperPages,
@@ -120,6 +122,8 @@ import { ledgerRequest, readError } from "@/lib/wire";
  * `app/api/v1/accounts/[id]/transactions/route.ts` drops the one field nothing read, 28.4% of
  * the object. Paging this properly means computing balances in SQL, which means a migration.
  */
+const NO_SHOPEE: readonly ShopeeViewOrder[] = [];
+
 export function TransactionsView() {
   const [accounts, setAccounts] = useState<LedgerAccount[] | null>(null);
   /**
@@ -203,6 +207,8 @@ export function TransactionsView() {
   const [deliveryByRow, setDeliveryByRow] = useState<Map<string, StoredDelivery>>(new Map());
   // And rides (D-222), from the same read.
   const [rideByRow, setRideByRow] = useState<Map<string, StoredRide>>(new Map());
+  // And Shopee orders (D-270), from `/api/v1/shopee`; a combined-checkout proposal is not here.
+  const [shopeeByRow, setShopeeByRow] = useState<Map<string, ShopeeViewOrder[]>>(new Map());
   // The category/note write's own error line, on the same convention as `reportingError` and
   // `correctionError` — cleared by `toggleCorrecting`, so a stale refusal from a previous panel
   // is never read as belonging to the one just opened.
@@ -887,6 +893,7 @@ export function TransactionsView() {
         fallback: "Delivery orders could not be loaded.",
         offContract: "The orders response did not match its contract."
       });
+      const shopeeRequest = getShopeeView();
       const categoriesRequest = ledgerRequest("/api/v1/categories", categoryListSchema, {
         fallback: "Categories could not be loaded.",
         offContract: "The categories response did not match its contract, so none are shown."
@@ -1008,6 +1015,9 @@ export function TransactionsView() {
       if (superseded()) return;
       setDeliveryByRow(new Map(deliveriesResult.ok ? deliveriesOnRows(deliveriesResult.data.deliveries) : []));
       setRideByRow(new Map(deliveriesResult.ok ? ridesOnRows(deliveriesResult.data.rides) : []));
+      const shopeeResult = await shopeeRequest;
+      if (superseded()) return;
+      setShopeeByRow(shopeeResult.ok ? shopeeOrdersOnRows(shopeeResult.data.orders) : new Map());
 
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
@@ -1654,6 +1664,7 @@ export function TransactionsView() {
                         receipt={receiptByRow.get(row.transaction.id) ?? null}
                         delivery={deliveryByRow.get(row.transaction.id) ?? null}
                         ride={rideByRow.get(row.transaction.id) ?? null}
+                        shopee={shopeeByRow.get(row.transaction.id) ?? NO_SHOPEE}
                         actions={actions}
                       />
                     )];

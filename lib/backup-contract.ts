@@ -95,9 +95,18 @@ export const BACKUP_TABLE_KINDS_V13 = [
 
 // v14 appends one-level subcategories, category provenance and category reviews (migration 048,
 // D-245), each after what it references. Indices 0..38 keep meaning what they meant in v13.
-export const BACKUP_TABLE_KINDS = [
+export const BACKUP_TABLE_KINDS_V14 = [
   ...BACKUP_TABLE_KINDS_V13,
   "category_parents", "category_provenance", "category_reviews"
+] as const;
+
+// v16 appends the Shopee orders (migration 055, PLAN task 62, D-270), parents first: every child
+// carries an order id, and the overlay and the links also reference a ledger row the restore has
+// already written. Indices 0..41 keep meaning what they meant in v14 and v15.
+export const BACKUP_TABLE_KINDS = [
+  ...BACKUP_TABLE_KINDS_V14,
+  "shopee_orders", "shopee_order_items", "shopee_order_price_lines", "shopee_refunds",
+  "shopee_payment_match_overlays", "shopee_payment_match_revisions", "shopee_order_links"
 ] as const;
 
 export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
@@ -112,8 +121,11 @@ export type BackupTableKind = (typeof BACKUP_TABLE_KINDS)[number];
 // v15 adds no table: it adds `service` to each `deliveries` row (migration 049, D-247), so v14 and
 // v15 share one table list and differ only in that row shape. A v2-v14 file has no `service`
 // and restores every order as food.
-export const BACKUP_SCHEMA_VERSION = 15;
-export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] as const;
+//
+// v16 adds the seven Shopee tables (migration 055, D-270); a v2-v15 file has none and restores
+// them empty.
+export const BACKUP_SCHEMA_VERSION = 16;
+export const SUPPORTED_BACKUP_SCHEMA_VERSIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] as const;
 
 export function backupTableKindsFor(schemaVersion: number): readonly BackupTableKind[] {
   if (schemaVersion === 2) return BACKUP_TABLE_KINDS_V2;
@@ -128,6 +140,7 @@ export function backupTableKindsFor(schemaVersion: number): readonly BackupTable
   if (schemaVersion === 11) return BACKUP_TABLE_KINDS_V11;
   if (schemaVersion === 12) return BACKUP_TABLE_KINDS_V12;
   if (schemaVersion === 13) return BACKUP_TABLE_KINDS_V13;
+  if (schemaVersion === 14 || schemaVersion === 15) return BACKUP_TABLE_KINDS_V14;
   return BACKUP_TABLE_KINDS;
 }
 
@@ -715,6 +728,98 @@ const rideMatchRevisionRowSchema = z.object({
   changed_by: uuidSchema
 }).strict();
 
+// A Shopee order (migration 055, D-270). Never money in the ledger sense; its total is still
+// canonical int64 text. The recipient and the address have no column to carry.
+const shopeeOrderRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  order_code: z.string().regex(/^[0-9A-Z]{10,20}$/),
+  link_id: z.string().regex(/^[0-9]{10,20}$/),
+  placed_at: timestampSchema,
+  paid_at: timestampSchema.nullable(),
+  shop: z.string().min(1),
+  payment_method: z.string().min(1),
+  payment_kind: z.enum(["bank_debit", "wallet", "spaylater", "other"]),
+  total_minor: minorUnitStringSchema,
+  item_price_is: z.enum(["line total", "unit price"]).nullable(),
+  facts_digest: digestSchema,
+  created_at: timestampSchema
+}).strict();
+
+const shopeeOrderItemRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  order_id: uuidSchema,
+  position: z.number().int(),
+  name: z.string().min(1),
+  variation: nullableText,
+  quantity: z.number().int(),
+  // Null for a gift line that prints no price.
+  price_minor: minorUnitStringSchema.nullable(),
+  original_price_minor: minorUnitStringSchema.nullable()
+}).strict();
+
+// Signed: a voucher or a shipping discount is negative.
+const shopeeOrderPriceLineRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  order_id: uuidSchema,
+  position: z.number().int(),
+  label: z.string().min(1),
+  amount_minor: minorUnitStringSchema
+}).strict();
+
+const shopeeRefundRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  order_id: uuidSchema,
+  request_id: z.string().regex(/^[0-9A-Z]{10,20}$/),
+  requested_at: timestampSchema,
+  refund_minor: minorUnitStringSchema,
+  refund_to: z.enum(["wallet", "bank"]),
+  requested_by: z.enum(["buyer", "shopee"]),
+  reason: nullableText,
+  steps: z.array(z.enum(["Cancellation Requested", "Cancellation Accepted", "Refunded", "Refund Completed"])),
+  created_at: timestampSchema
+}).strict();
+
+// The owner's say over which ledger row pays for an order (migration 055). Several orders may name
+// one row, so unlike the delivery pair there is no one-claim rule to restate here.
+const shopeePaymentMatchOverlayRowSchema = z.object({
+  order_id: uuidSchema,
+  owner_id: uuidSchema,
+  decision: z.enum(["matched", "unmatched"]),
+  transaction_id: uuidSchema.nullable(),
+  revision: z.number().int().nonnegative(),
+  updated_at: timestampSchema
+}).strict().superRefine((overlay, context) => {
+  if ((overlay.decision === "matched") !== (overlay.transaction_id !== null)) {
+    context.addIssue({ code: "custom", message: "A matched decision must name a transaction, and an unmatched one must not." });
+  }
+});
+
+const shopeePaymentMatchRevisionRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  order_id: uuidSchema,
+  revision: z.number().int().positive(),
+  snapshot: jsonObjectSchema,
+  changed_at: timestampSchema,
+  changed_by: uuidSchema
+}).strict();
+
+// An append-only event: the newest event of an (order, transaction, kind) is its current state.
+const shopeeOrderLinkRowSchema = z.object({
+  id: uuidSchema,
+  owner_id: uuidSchema,
+  order_id: uuidSchema,
+  transaction_id: uuidSchema,
+  kind: z.enum(["wallet_topup", "spaylater_repayment", "refund_deposit"]),
+  action: z.enum(["link", "unlink"]),
+  changed_at: timestampSchema,
+  changed_by: uuidSchema
+}).strict();
+
 const v2DataShape = {
   accounts: z.array(accountRowSchema),
   categories: z.array(categoryRowSchema),
@@ -811,10 +916,22 @@ const v14DataShape = {
 } as const;
 export const backupDataSchemaV14 = z.object(v14DataShape).strict();
 // v15 changes one table's row shape and adds none, so only `deliveries` is replaced.
-export const backupDataSchema = z.object({
+const v15DataShape = {
   ...v14DataShape,
   deliveries: z.array(deliveryRowSchemaV15)
-}).strict();
+} as const;
+export const backupDataSchemaV15 = z.object(v15DataShape).strict();
+const v16DataShape = {
+  ...v15DataShape,
+  shopee_orders: z.array(shopeeOrderRowSchema),
+  shopee_order_items: z.array(shopeeOrderItemRowSchema),
+  shopee_order_price_lines: z.array(shopeeOrderPriceLineRowSchema),
+  shopee_refunds: z.array(shopeeRefundRowSchema),
+  shopee_payment_match_overlays: z.array(shopeePaymentMatchOverlayRowSchema),
+  shopee_payment_match_revisions: z.array(shopeePaymentMatchRevisionRowSchema),
+  shopee_order_links: z.array(shopeeOrderLinkRowSchema)
+} as const;
+export const backupDataSchema = z.object(v16DataShape).strict();
 
 function chunkSchema<const Kind extends (typeof BACKUP_TABLE_KINDS)[number], Row extends z.ZodType>(
   kind: Kind,
@@ -867,7 +984,14 @@ export const backupChunkSchema = z.discriminatedUnion("kind", [
   chunkSchema("lineman_order_details", linemanOrderDetailRowSchema),
   chunkSchema("category_parents", categoryParentRowSchema),
   chunkSchema("category_provenance", categoryProvenanceRowSchema),
-  chunkSchema("category_reviews", categoryReviewRowSchema)
+  chunkSchema("category_reviews", categoryReviewRowSchema),
+  chunkSchema("shopee_orders", shopeeOrderRowSchema),
+  chunkSchema("shopee_order_items", shopeeOrderItemRowSchema),
+  chunkSchema("shopee_order_price_lines", shopeeOrderPriceLineRowSchema),
+  chunkSchema("shopee_refunds", shopeeRefundRowSchema),
+  chunkSchema("shopee_payment_match_overlays", shopeePaymentMatchOverlayRowSchema),
+  chunkSchema("shopee_payment_match_revisions", shopeePaymentMatchRevisionRowSchema),
+  chunkSchema("shopee_order_links", shopeeOrderLinkRowSchema)
 ]);
 
 function tableCountsFor(kinds: readonly BackupTableKind[]) {
@@ -912,6 +1036,7 @@ export const restoreManifestSchemaV10 = manifestFor(BACKUP_TABLE_KINDS_V10);
 export const restoreManifestSchemaV11 = manifestFor(BACKUP_TABLE_KINDS_V11);
 export const restoreManifestSchemaV12 = manifestFor(BACKUP_TABLE_KINDS_V12);
 export const restoreManifestSchemaV13 = manifestFor(BACKUP_TABLE_KINDS_V13);
+export const restoreManifestSchemaV14 = manifestFor(BACKUP_TABLE_KINDS_V14);
 export const restoreManifestSchema = manifestFor(BACKUP_TABLE_KINDS);
 
 // Version is part of the request rather than a constant, and the manifest that travels
@@ -937,6 +1062,7 @@ const baseV12 = z.object({ ...identity, schemaVersion: z.literal(12) }).strict()
 const baseV13 = z.object({ ...identity, schemaVersion: z.literal(13) }).strict();
 const baseV14 = z.object({ ...identity, schemaVersion: z.literal(14) }).strict();
 const baseV15 = z.object({ ...identity, schemaVersion: z.literal(15) }).strict();
+const baseV16 = z.object({ ...identity, schemaVersion: z.literal(16) }).strict();
 
 // Each version keeps its own kind list, so a v2 request is still checked against eleven
 // chunks and a v3 against twelve. Widening the union is not the same as relaxing it.
@@ -954,8 +1080,9 @@ function actionUnion<Shape extends z.ZodRawShape>(extend: (kinds: readonly Backu
     baseV11.extend(extend(BACKUP_TABLE_KINDS_V11)).strict(),
     baseV12.extend(extend(BACKUP_TABLE_KINDS_V12)).strict(),
     baseV13.extend(extend(BACKUP_TABLE_KINDS_V13)).strict(),
-    baseV14.extend(extend(BACKUP_TABLE_KINDS)).strict(),
-    baseV15.extend(extend(BACKUP_TABLE_KINDS)).strict()
+    baseV14.extend(extend(BACKUP_TABLE_KINDS_V14)).strict(),
+    baseV15.extend(extend(BACKUP_TABLE_KINDS_V14)).strict(),
+    baseV16.extend(extend(BACKUP_TABLE_KINDS)).strict()
   ]);
 }
 
@@ -966,8 +1093,8 @@ export const restoreActionSchemas = {
     chunkDigest: digestSchema,
     chunk: backupChunkSchema
   })),
-  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13, baseV14, baseV15]),
-  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13, baseV14, baseV15])
+  commit: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13, baseV14, baseV15, baseV16]),
+  abort: z.discriminatedUnion("schemaVersion", [baseV2, baseV3, baseV4, baseV5, baseV6, baseV7, baseV8, baseV9, baseV10, baseV11, baseV12, baseV13, baseV14, baseV15, baseV16])
 } as const;
 
 function snapshotFor<Data extends z.ZodType>(
@@ -1008,8 +1135,9 @@ export const backupSnapshotSchemaV10 = snapshotFor(10, BACKUP_TABLE_KINDS_V10, b
 export const backupSnapshotSchemaV11 = snapshotFor(11, BACKUP_TABLE_KINDS_V11, backupDataSchemaV11);
 export const backupSnapshotSchemaV12 = snapshotFor(12, BACKUP_TABLE_KINDS_V12, backupDataSchemaV12);
 export const backupSnapshotSchemaV13 = snapshotFor(13, BACKUP_TABLE_KINDS_V13, backupDataSchemaV13);
-export const backupSnapshotSchemaV14 = snapshotFor(14, BACKUP_TABLE_KINDS, backupDataSchemaV14);
-export const backupSnapshotSchemaV15 = snapshotFor(15, BACKUP_TABLE_KINDS, backupDataSchema);
+export const backupSnapshotSchemaV14 = snapshotFor(14, BACKUP_TABLE_KINDS_V14, backupDataSchemaV14);
+export const backupSnapshotSchemaV15 = snapshotFor(15, BACKUP_TABLE_KINDS_V14, backupDataSchemaV15);
+export const backupSnapshotSchemaV16 = snapshotFor(16, BACKUP_TABLE_KINDS, backupDataSchema);
 
 // What a restore accepts. A snapshot read off disk is one of these and nothing else — the
 // union discriminates on the payload's own declared version rather than sniffing for a
@@ -1028,7 +1156,8 @@ export const backupSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   backupSnapshotSchemaV12,
   backupSnapshotSchemaV13,
   backupSnapshotSchemaV14,
-  backupSnapshotSchemaV15
+  backupSnapshotSchemaV15,
+  backupSnapshotSchemaV16
 ]);
 
 /**

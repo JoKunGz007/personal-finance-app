@@ -11,6 +11,7 @@ import { formatDate, formatDateParts, formatTime, splitFigures, type LedgerActio
 import { OverlayCategoryForm } from "@/app/overlay-category-form";
 import { type StoredDelivery, type StoredRide } from "@/lib/deliveries";
 import { type StoredReceipt } from "@/lib/receipts";
+import { type ShopeeViewOrder } from "@/lib/shopee-view";
 
 /**
  * A confirmed statement row, and whichever captured records collapsed onto it.
@@ -41,6 +42,7 @@ export function LedgerStatementRow({
   receipt,
   delivery,
   ride,
+  shopee,
   actions
 }: {
   row: Extract<ReconciledRow, { kind: "confirmed" }>;
@@ -78,6 +80,8 @@ export function LedgerStatementRow({
   delivery: StoredDelivery | null;
   /** The Grab ride this row paid for, when one is matched or linked (D-222). Itemization only. */
   ride: StoredRide | null;
+  /** The Shopee orders this row paid for, owner-matched or automatically matched (D-270). Itemization only. */
+  shopee: readonly ShopeeViewOrder[];
   actions: LedgerActions;
 }) {
   // The row actions fold behind "⋯" (D-205 on a phone, every viewport since D-207).
@@ -150,6 +154,7 @@ export function LedgerStatementRow({
           {receipt ? <LedgerReceipt receipt={receipt} /> : null}
           {delivery ? <LedgerDelivery delivery={delivery} /> : null}
           {ride ? <LedgerRide ride={ride} /> : null}
+          {shopee.map((order) => <LedgerShopee key={order.id} order={order} />)}
         </td>
         {/* No chip for a statement row with no slip. It is the ledger's default
             state — on this ledger, essentially every row — so a badge on each
@@ -595,6 +600,25 @@ function LedgerDelivery({ delivery }: { delivery: StoredDelivery }) {
         ))}
       </ul>
       <a href="/orders#stored-orders">Open on Orders</a>
+    </details>
+  );
+}
+
+/** A Shopee order the row paid for (D-270): shop, order code, total, item count, and a link to the order. Never money. */
+function LedgerShopee({ order }: { order: ShopeeViewOrder }) {
+  const units = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  return (
+    <details className="ledger-receipt">
+      <summary>Shopee · {order.shop} · {order.orderCode} · {formatThb(order.totalMinor)} · {units} item{units === 1 ? "" : "s"}</summary>
+      <ul>
+        {order.items.map((item) => (
+          <li key={item.position}>
+            <span>{item.quantity > 1 ? `${item.quantity} × ` : ""}{item.name}</span>
+            {item.priceMinor === null ? null : <span className="numeric">{formatThb(item.priceMinor)}</span>}
+          </li>
+        ))}
+      </ul>
+      <a href={order.orderUrl} target="_blank" rel="noopener noreferrer">Open on Shopee</a>
     </details>
   );
 }

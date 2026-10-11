@@ -7,3 +7,29 @@
 export function isComplete(read: { data: readonly unknown[] | null; count: number | null }): boolean {
   return typeof read.count === "number" && (read.data?.length ?? 0) === read.count;
 }
+
+export const PAGE_SIZE = 1000;
+
+type Page = { data: readonly unknown[] | null; error: unknown; count: number | null };
+
+/**
+ * Reads every row past PostgREST's max_rows by paging. `page(from, to)` must already ask for
+ * `{ count: "exact" }` and carry a stable unique `.order(...)`, then apply `.range(from, to)`
+ * itself. Fails closed (`ok: false`) on any error, a missing count, a count that changes between
+ * pages, or a short page before the count is reached: a cut list is never returned as a whole one.
+ */
+export async function readAll<Row>(
+  page: (from: number, to: number) => PromiseLike<Page>
+): Promise<{ ok: true; data: Row[] } | { ok: false }> {
+  const rows: Row[] = [];
+  let total: number | null = null;
+  for (;;) {
+    const read: Page = await page(rows.length, rows.length + PAGE_SIZE - 1);
+    if (read.error || typeof read.count !== "number" || !Array.isArray(read.data)) return { ok: false };
+    if (total === null) total = read.count;
+    else if (read.count !== total) return { ok: false };
+    rows.push(...(read.data as Row[]));
+    if (rows.length === total) return { ok: true, data: rows };
+    if (rows.length > total || read.data.length < PAGE_SIZE) return { ok: false };
+  }
+}
