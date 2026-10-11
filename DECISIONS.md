@@ -476,7 +476,7 @@ a reason to keep it rather than a reason it cannot ever move.
 - Status: **Done.**
 - **Owner, 2026-10-11:** he no longer uses Codex, so `AGENTS.md`, the cross-harness file, has no second reader. `CLAUDE.md` loads on its own in every Claude Code session, so the rules belong there; a stub pointing at `AGENTS.md` would cost a read every session.
 - **Moved:** the finance invariants, the authorization rules and the protocol (D-268's new sections) into `CLAUDE.md`. **Dropped:** the role-routing and coordination prose (`CLAUDE.md` § Subagents already routes to the Claude agents) and the Codex-only section. `.claude/agents/finance-implementer.md`, `finance-investigator.md`, `README.md` and `scripts/check-docs.mjs` now point at `CLAUDE.md`.
-- **Left in place:** `CODEX_AGENT_WORKFLOW.md`, `.codex/` and `.agents/skills/` (Codex's copies of `sync-continuity` and `impeccable`); removing them is a separate call.
+- **Removed the same day on the owner's word:** `CODEX_AGENT_WORKFLOW.md`, `.codex/` and `.agents/skills/` (Codex's copies of `sync-continuity` and `impeccable`), 136 files; recoverable from `git log`. The `.agents/**` and `.codex/**` lint ignores are now inert and left alone.
 
 ## D-268 — `HANDOFF.md` is retired into the files that own its facts (supersedes D-052)
 
