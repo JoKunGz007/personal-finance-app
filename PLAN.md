@@ -800,6 +800,8 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
 60. **The Inbox/mailbox "already in the ledger" count uses the exact fingerprint only** (`lib/server/inbox-statement.ts`, `lib/server/fingerprint-lookup.ts`). A re-printed overlapping statement is reported as new rows and records an all-linked batch instead of `duplicate`; the ledger itself is right (D-265). Fix by counting on the same identity facts as `confirm_import`, or by reading `identity_links` back from the batch's audit detail.
 
+61. **Retire `HANDOFF.md` into the files that own its facts** (owner, 2026-10-11: `/handoff` covers the session note). Headline and unpushed state → PLAN checkpoint; start-here and destructive-operation protocol → `AGENTS.md`/`CLAUDE.md`; local-only config files, databases, machine facts and hazards → `docs/LOCAL_DEV.md`; the grants history is dropped (never inherited; spending is in commits and decisions), leaving one "ask again" rule in `AGENTS.md`. Update every reference: `CLAUDE.md`, `AGENTS.md`, `scripts/check-docs.mjs`, the `/handoff` skill, the saved session-start prompts. Verify nothing is orphaned before deleting.
+
 ## Later authorization gates
 
 Only after every local task above passes:
