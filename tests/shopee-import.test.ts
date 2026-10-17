@@ -175,7 +175,9 @@ describe("refund mapping", () => {
     expect(refundOf({ refundTo: "  SHOPEEPAY  " })!.refundTo).toBe("wallet");
   });
   it("D-277: maps a masked account number to bank", () => {
-    for (const shape of [BANK_SHAPED, "INVENTEDBANK xxx-x-x1234-x", "XXX-X-X1234-X", "***1234", "INVENTEDBANK ****5678"]) {
+    // The last entry has the real bank refund's printed shape (one mask, four digits, bracketed; measured
+    // 2026-10-17 by a counts-only harness, D-282), which the first version of this rule refused.
+    for (const shape of [BANK_SHAPED, "INVENTEDBANK xxx-x-x1234-x", "XXX-X-X1234-X", "***1234", "INVENTEDBANK ****5678", "INVENTEDBANK (Savings) [*4321]"]) {
       expect(refundOf({ refundTo: shape })!.refundTo).toBe("bank");
     }
   });

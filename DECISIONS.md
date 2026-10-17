@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-281** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-282** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-282** — D-277's bank-refund rule checked against the real export and widened: one mask character then four or more digits is also a masked account number
 - **D-281** — Owner's 2026-10-17 visual asks: no divider under Cash payments on `/ledger`; Grab and LINE MAN chips in brand green on `/orders`; a "Libron (book figures)" typeface choice to trial Libron digits
 - **D-280** — Inbox/mailbox statement counts read back what `confirm_import` linked (task 60): a re-printed overlapping statement reports its linked rows, an all-linked batch reports duplicate; no migration
 - **D-279** — UX review 2026-10-11 closed: 23 of 25 fixed (two reduced), 2 declined (desktop calendar cells stay 38px wide; "Use synthetic statement" stays per D-204)
@@ -481,6 +482,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-282 — D-277's bank-refund rule checked against the real export and widened: one mask character then four or more digits is also a masked account number
+
+- Date: 2026-10-17
+- Status: **Done; committed.** Closes D-277's "not verified" item.
+- Found: the owner's real exports are in `receipts_sample/shopee/` (orders and cancelled, 2026-10-11). Read under this session's real-data grant through throwaway harnesses printing counts and character-class shapes only. The shipped `parseShopeeExport` refused 1 of the 9 cancelled orders as "not ShopeePay or a bank account". Its destination prints a bank name, a bracketed single `*` and four digits. `BANK_DESTINATION` required two or more mask characters.
+- Chosen: `BANK_DESTINATION` also accepts one mask character followed by at least four digits, still not preceded by a letter. Measured after the change on the same files: 9 parsed, 0 refused, 8 wallet and 1 bank. The order stored on hosted under the pre-D-277 rule is already `bank`, so a re-import cannot raise "refund differs".
+- Evidence: an invented string of the same shape added to the D-277 test, red-proved against the old rule. Shopee import and route tests 57 passing; `tsc`, `eslint` clean.
+- Process note: one harness run's broken regex escapes printed the destination only partly masked (the bank name and some digits). That output went to this conversation only; nothing was written to a file, doc or commit, and the harness was deleted.
 
 ## D-281 — Owner's 2026-10-17 visual asks: no divider under Cash payments on `/ledger`; Grab and LINE MAN chips in brand green on `/orders`; a "Libron (book figures)" typeface choice to trial Libron digits
 

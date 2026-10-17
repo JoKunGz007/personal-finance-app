@@ -94,7 +94,9 @@ export function bangkokTimeToIso(value: unknown): string | null {
 // not glued to a letter, followed by mask characters, dashes, spaces or digits and ending in a digit
 // ("xxx-x-x1234-x", "***1234"). Anything else is refused rather than guessed.
 const WALLET_DESTINATION = /^ShopeePay( Balance)?$/iu;
-const BANK_DESTINATION = /(?<![A-Za-z])[xX*]{2,}[-\sxX*\d]*\d/u;
+// A masked account number: two or more mask characters then a digit, or one mask character then at
+// least four digits — the real bank refund prints `[*` and four digits (D-282).
+const BANK_DESTINATION = /(?<![A-Za-z])(?:[xX*]{2,}[-\sxX*\d]*\d|[xX*]\d{4,})/u;
 
 function mapRefund(value: unknown, orderCode: string): { refund: ShopeeCaptureRefund } | { refuse: string } {
   if (!isRecord(value)) return { refuse: REFUSE.cancelIncomplete };
