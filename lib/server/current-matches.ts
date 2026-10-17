@@ -110,7 +110,7 @@ export async function loadReceiptMatches(supabase: OwnerClient) {
   // and the owner's stored decisions.
   const [receiptRead, candidates, decisions] = await Promise.all([supabase
     .from("receipts")
-    .select("id,store_code,branch_name,receipt_number,purchased_on,purchased_at_time,payment_method,subtotal_minor,net_minor,unit_count,completeness,failed_checks,sources,items_source,items_complete,updated_at,items:receipt_items(position,quantity,name,display_name,amount_minor,is_promotion,vat_exempt),discounts:receipt_discounts(position,amount_minor)", { count: "exact" })
+    .select("id,store_code,branch_name,receipt_number,purchased_on,purchased_at_time,payment_method,subtotal_minor,net_minor,unit_count,completeness,failed_checks,sources,items_source,items_complete,updated_at,items:receipt_items(position,quantity,name,display_name,amount_minor,is_promotion,vat_exempt),discounts:receipt_discounts(position,name,amount_minor)", { count: "exact" })
     .order("purchased_on", { ascending: false })
     .order("purchased_at_time", { ascending: false, nullsFirst: false }),
     supabase.rpc("receipt_ledger_candidates"),

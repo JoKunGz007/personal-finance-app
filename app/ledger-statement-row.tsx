@@ -560,7 +560,7 @@ function LedgerReceipt({ receipt }: { receipt: StoredReceipt }) {
         ))}
         {receipt.discounts.map((discount) => (
           <li key={`d${discount.position}`} className="receipt-discount">
-            <span>Discount</span>
+            <span>{discount.name ?? "Discount"}</span>
             <span className="numeric">−{formatThb(discount.amount_minor)}</span>
           </li>
         ))}

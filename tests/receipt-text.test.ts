@@ -229,7 +229,7 @@ describe("full invoice: the discount block (correction #12/#13)", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.discounts).toEqual(["500"]);
+    expect(result.value.discounts).toEqual([{ name: "ส่วนลดคูปอง", amountMinor: "500" }]);
     // 3000 + 1000 (items) − 500 (discount) = 3500 = net.
     expect(result.value.netMinor).toBe("3500");
     expect(result.value.completeness).toBe("complete");
@@ -248,7 +248,7 @@ describe("full invoice: the discount block (correction #12/#13)", () => {
     if (!result.ok) return;
     // Exactly one entry — the coupon line — not two (which double-counting the total line
     // would produce).
-    expect(result.value.discounts).toEqual(["500"]);
+    expect(result.value.discounts).toEqual([{ name: "ส่วนลดคูปอง", amountMinor: "500" }]);
   });
 
   test("a disagreeing ส่วนลดที่ได้ทั้งหมด is refused, not reconciled", () => {
@@ -273,7 +273,7 @@ describe("full invoice: classification applies to the item table's own row shape
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.items.some((item) => item.name === "ส่วนลดพิเศษ")).toBe(false);
-    expect(result.value.discounts).toContain("500");
+    expect(result.value.discounts).toContainEqual({ name: "ส่วนลดพิเศษ", amountMinor: "500" });
   });
 });
 
@@ -303,7 +303,7 @@ describe("parseReceiptText — condensed form", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.subtotalMinor).toBe("4000");
-    expect(result.value.discounts).toEqual(["500"]);
+    expect(result.value.discounts).toEqual([{ name: "ส่วนลดคูปอง", amountMinor: "500" }]);
     expect(result.value.completeness).toBe("complete");
   });
 });
@@ -386,7 +386,7 @@ describe("discount and promotional lines are not merchandise", () => {
 
     // The discount is not in `items` at all — it lives only in `discounts`.
     expect(result.value.items.some((item) => item.name.startsWith("ส่วนลด"))).toBe(false);
-    expect(result.value.discounts).toEqual(["500"]);
+    expect(result.value.discounts).toEqual([{ name: "ส่วนลดคูปอง", amountMinor: "500" }]);
 
     // The promotion is in `items`, flagged, and excluded from the unit-count check.
     const promo = result.value.items.find((item) => item.isPromotion);
@@ -565,7 +565,7 @@ describe("parseReceiptText — full invoice rows as pdf.js groups them", () => {
 describe("parseReceiptText — condensed lines the name vocabulary did not know", () => {
   test("every priced line between ยอดรวม and ยอดสุทธิ is a discount, whatever its name", () => {
     const result = parseReceiptText(condensedFixture({ withSubtotal: true }).replace("1 ส่วนลดคูปอง 5.00", "1 TMWลดขนมปัง 5.00"), "condensed");
-    expect(result.ok && result.value.discounts).toEqual(["500"]);
+    expect(result.ok && result.value.discounts).toEqual([{ name: "TMWลดขนมปัง", amountMinor: "500" }]);
     expect(result.ok && result.value.completeness).toBe("complete");
   });
 
@@ -587,6 +587,20 @@ describe("parseReceiptText — condensed lines the name vocabulary did not know"
 
 test("a discount printed with an @unit inside the discount block is still a discount", () => {
   const result = parseReceiptText(condensedFixture({ withSubtotal: true }).replace("1 ส่วนลดคูปอง 5.00", "2 ฟรีขนม @2.50 5.00"), "condensed");
-  expect(result.ok && result.value.discounts).toEqual(["500"]);
+  expect(result.ok && result.value.discounts).toEqual([{ name: "ฟรีขนม", amountMinor: "500" }]);
   expect(result.ok && result.value.completeness).toBe("complete");
+});
+
+test("a full-invoice discount block line keeps its printed name, trimmed", () => {
+  const result = parseReceiptText(fullFixture({ discountLines: ["  ส่วนลดคูปอง   5.00  "], discountTotalLine: "ส่วนลดที่ได้ทั้งหมด 5.00" }), "full");
+  expect(result.ok, result.ok ? "" : result.message).toBe(true);
+  if (!result.ok) return;
+  expect(result.value.discounts).toEqual([{ name: "ส่วนลดคูปอง", amountMinor: "500" }]);
+});
+
+test("a condensed discount block line keeps its printed name, trimmed", () => {
+  const result = parseReceiptText(condensedFixture({ withSubtotal: true }).replace("1 ส่วนลดคูปอง 5.00", "1 ส่วนลดสมาชิก   5.00"), "condensed");
+  expect(result.ok, result.ok ? "" : result.message).toBe(true);
+  if (!result.ok) return;
+  expect(result.value.discounts).toEqual([{ name: "ส่วนลดสมาชิก", amountMinor: "500" }]);
 });

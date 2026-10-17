@@ -65,7 +65,7 @@ describe("readScreenshotReceipt", () => {
     expect(read.ok, read.ok ? "" : read.message).toBe(true);
     if (!read.ok) return;
     expect(read.value).toMatchObject({ storeCode: "30219", branchName: "ทดสอบ", receiptNumber: "0000012345", purchasedAt: "2026-06-01", purchasedAtTime: "14:35", netMinor: "3500", paymentMethod: "ทรูวอลเล็ท", completeness: "complete" });
-    expect(read.value.discounts).toEqual(["500"]);
+    expect(read.value.discounts).toEqual([{ name: "TMW ลดขนม", amountMinor: "500" }]);
     expect(read.value.items.map((item) => [item.isPromotion, item.vatExempt])).toEqual([[false, false], [false, true], [true, true]]);
   });
 

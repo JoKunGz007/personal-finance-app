@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, test, vi } from "vitest";
 import type { ParsedReceipt } from "@/lib/receipt-text";
-import { captureReceiptRequest, receiptCaptureBody, receiptCaptureSchema, receiptListSchema, receiptsOnRows, type StoredReceipt } from "@/lib/receipts";
+import { captureReceiptRequest, receiptCaptureBody, receiptCaptureSchema, receiptListSchema, receiptsOnRows, storedReceiptSchema, type StoredReceipt } from "@/lib/receipts";
 import { receiptStatisticsSchema } from "@/lib/receipt-statistics";
 import {
   API, OWNER_EMAIL, PUBLISHABLE, containerReachable, ownerId as lookupOwnerId,
@@ -23,7 +23,7 @@ const condensed: ParsedReceipt = {
     { lineNo: 2, quantity: 2, name: "ขนมปังไส้ครีมรสช็", unitPriceMinor: "1500", amountMinor: "3000", vatExempt: false, isPromotion: false },
     { lineNo: 3, quantity: 1, name: "น้ำดื่ม", unitPriceMinor: null, amountMinor: "1000", vatExempt: true, isPromotion: false }
   ],
-  discounts: ["500"],
+  discounts: [{ name: "ส่วนลดคูปอง", amountMinor: "500" }],
   subtotalMinor: "4000",
   netMinor: "3500",
   unitCount: 3,
@@ -73,6 +73,10 @@ describe("receipts on ledger rows", () => {
 });
 
 describe("receipt capture contract", () => {
+  test("a stored discount captured before names were read keeps a null name", () => {
+    expect(storedReceiptSchema.shape.discounts.parse([{ position: 0, name: null, amount_minor: "500" }])).toEqual([{ position: 0, name: null, amount_minor: "500" }]);
+  });
+
   test("a full invoice is keyed on the condensed number it replaces, never its own", () => {
     const request = captureReceiptRequest(receiptCaptureSchema.parse(receiptCaptureBody("full", full)));
     expect(request.receiptNumber).toBe("0000000012");
@@ -201,11 +205,11 @@ describe.skipIf(!reachable)("receipts route", () => {
     expect(stored.payment_method).toBe("เงินสด");
     expect(stored.purchased_at_time).toMatch(/^14:35/);
     expect(stored.net_minor).toBe("3500");
-    expect(stored.discounts).toEqual([{ position: 0, amount_minor: "500" }]);
+    expect(stored.discounts).toEqual([{ position: 0, name: "ส่วนลดคูปอง", amount_minor: "500" }]);
   });
 
   it("refuses a second reading that disagrees about the money, and changes nothing", async () => {
-    const disagreeing = { ...condensed, netMinor: "3400", discounts: ["600"] };
+    const disagreeing = { ...condensed, netMinor: "3400", discounts: [{ name: "ส่วนลดคูปอง", amountMinor: "600" }] };
     const response = await post(receiptCaptureBody("condensed", disagreeing));
     expect(response.status, JSON.stringify(response.body)).toBe(409);
     const stored = receiptListSchema.parse((await list()).body).receipts[0]!;

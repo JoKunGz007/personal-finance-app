@@ -114,6 +114,8 @@ export type VatBreakdown = {
  */
 export type CompletenessCheck = "NET_CHECK" | "UNIT_COUNT_CHECK" | "VAT_IDENTITY_CHECK";
 
+export type ReceiptDiscount = { name: string; amountMinor: MinorUnitString };
+
 export type ParsedReceipt = {
   receiptNumber: string;
   storeCode: string;
@@ -150,9 +152,9 @@ export type ParsedReceipt = {
    * Printed as positive figures to be subtracted, per the contract. Condensed form: the lines
    * under `ยอดรวม`. Full form: the `หักส่วนลด` … `ส่วนลดที่ได้ทั้งหมด` block, and that block's own
    * total is cross-checked against this sum rather than folded into it — see
-   * `DISCOUNT_TOTAL_MISMATCH`.
+   * `DISCOUNT_TOTAL_MISMATCH`. Each carries the printed line's text, trimmed, as `name`.
    */
-  discounts: MinorUnitString[];
+  discounts: ReceiptDiscount[];
   /**
    * Condensed form: absent when there are no discounts (`ยอดรวม` prints only when discounts
    * follow). Full form: `มูลค่าสินค้ารวม`, which is always printed.
@@ -421,7 +423,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
   // against this reader's sum of the discount block's lines (correction #13).
   let fullDiscountTotalMinor: MinorUnitString | null = null;
   const items: ReceiptItem[] = [];
-  const discounts: MinorUnitString[] = [];
+  const discounts: ReceiptDiscount[] = [];
 
   // Set the line immediately after the net line is read (`ยอดสุทธิ` on the condensed form,
   // `มูลค่าสินค้ารวมภาษีมูลค่าเพิ่ม` on the full form), since the payment line has no label of its
@@ -507,7 +509,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
         // A discount printed in the item table's own columns is not a per-unit product, so the
         // quantity cross-check below — which assumes `unitPrice × quantity = amount` — does not
         // apply to it and is skipped for this row.
-        discounts.push(amountMinor);
+        discounts.push({ name, amountMinor });
         continue;
       }
       // Quantity cross-check: unit price times the parsed quantity must equal the amount. The
@@ -527,16 +529,16 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       if (unitPriceMinor === null || amountMinor === null) {
         return malformed(lineNo, "An item line's price or amount does not read as a plain figure.");
       }
+      const name = match[2]!.trim();
       // Position decides here too: a line with an `@unit` between `ยอดรวม` and `ยอดสุทธิ` is a
       // discount like any other there, and must not reach the item list.
       if (inCondensedDiscountBlock) {
-        discounts.push(amountMinor);
+        discounts.push({ name, amountMinor });
         continue;
       }
       if (BigInt(unitPriceMinor) * BigInt(quantity) !== BigInt(amountMinor)) {
         return { ok: false, code: "QUANTITY_MISMATCH", message: "Unit price times quantity does not equal the printed amount.", lineNo };
       }
-      const name = match[2]!.trim();
       items.push({ lineNo, quantity, name, unitPriceMinor, amountMinor, vatExempt: Boolean(match[5]), isPromotion: notMerchandise(classifyQtyNameAmountLine(name), amountMinor) });
       continue;
     }
@@ -555,7 +557,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
       const quantity = Number(match[1]);
       const kind = inCondensedDiscountBlock ? "discount" : classifyQtyNameAmountLine(name);
       if (kind === "discount") {
-        discounts.push(amountMinor);
+        discounts.push({ name, amountMinor });
       } else if (kind === "promotion") {
         items.push({ lineNo, quantity, name, unitPriceMinor: null, amountMinor, vatExempt: Boolean(match[4]), isPromotion: true });
       } else {
@@ -595,7 +597,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
     if (form === "full" && inFullDiscountBlock && (match = FULL_DISCOUNT_LINE.exec(line))) {
       const parsed = toMinor(match[2]!);
       if (parsed === null) return malformed(lineNo, "A discount line's amount does not read as a plain figure.");
-      discounts.push(parsed);
+      discounts.push({ name: match[1]!.trim(), amountMinor: parsed });
       continue;
     }
     if ((match = NET_LINE.exec(line))) {
@@ -721,7 +723,7 @@ export function parseReceiptText(text: string, form: "condensed" | "full"): Rece
   // reconciled on disagreement, in the same spirit as the quantity cross-check above. Only
   // checked when the block was present at all; a full invoice with no discounts never opens it.
   if (form === "full" && fullDiscountTotalMinor !== null) {
-    const discountTotal = discounts.reduce((sum, discount) => sum + BigInt(discount), 0n);
+    const discountTotal = discounts.reduce((sum, discount) => sum + BigInt(discount.amountMinor), 0n);
     if (discountTotal !== BigInt(fullDiscountTotalMinor)) {
       return {
         ok: false,
@@ -773,7 +775,7 @@ export function assessReceipt(receipt: Pick<ParsedReceipt, "items" | "discounts"
   // a zero amount, so they contribute nothing either way. Always applicable — every form prints
   // a net figure.
   const itemTotal = items.reduce((sum, item) => sum + BigInt(item.amountMinor), 0n);
-  const discountTotal = discounts.reduce((sum, discount) => sum + BigInt(discount), 0n);
+  const discountTotal = discounts.reduce((sum, discount) => sum + BigInt(discount.amountMinor), 0n);
   if (itemTotal - discountTotal !== BigInt(netMinor)) failedChecks.push("NET_CHECK");
 
   // Check 2 (condensed only, correction #14): summed quantities of non-promotional items ===

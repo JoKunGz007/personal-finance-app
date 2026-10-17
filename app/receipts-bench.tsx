@@ -379,7 +379,7 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
                       ))}
                       {receipt.discounts.map((discount) => (
                         <tr key={`d${discount.position}`} className="receipt-discount">
-                          <td data-label="Item">Discount</td>
+                          <td data-label="Item">{discount.name ?? "Discount"}</td>
                           <td data-label="Qty" className="numeric"></td>
                           <td data-label="Amount" className="numeric">−{formatThb(discount.amount_minor)}</td>
                         </tr>

@@ -31,6 +31,8 @@ const receiptItemSchema = z.object({
   isPromotion: z.boolean()
 }).strict();
 
+const receiptDiscountSchema = z.object({ name: z.string().trim().min(1).max(240), amountMinor: minorUnitStringSchema }).strict();
+
 /**
  * Where a parse came from. A screenshot is the condensed receipt rendered by the app and read by
  * OCR (`lib/receipt-screenshot.ts`), so it carries exactly the condensed form's fields.
@@ -47,7 +49,7 @@ export const receiptCaptureSchema = z.object({
     purchasedAtTime: printedTime.nullable(),
     paymentMethod: z.string().trim().min(1).max(120).nullable(),
     items: z.array(receiptItemSchema).max(400),
-    discounts: z.array(minorUnitStringSchema).max(200),
+    discounts: z.array(receiptDiscountSchema).max(200),
     subtotalMinor: minorUnitStringSchema.nullable(),
     netMinor: minorUnitStringSchema,
     unitCount: z.number().int().min(0).max(100_000).nullable(),
@@ -139,8 +141,7 @@ export function captureReceiptRequest({ form, receipt }: ReceiptCapture) {
     failedChecks: assessed.failedChecks,
     inapplicableChecks: assessed.inapplicableChecks,
     items: receipt.items.map((item, position) => ({ ...item, position })),
-    // The reader keeps discount amounts only; `receipt_discounts.name` waits for it (PLAN task 56).
-    discounts: receipt.discounts.map((amountMinor, position) => ({ position, name: null, amountMinor }))
+    discounts: receipt.discounts.map((discount, position) => ({ position, name: discount.name, amountMinor: discount.amountMinor }))
   };
 }
 
@@ -173,7 +174,7 @@ export const storedReceiptSchema = z.object({
     is_promotion: z.boolean(),
     vat_exempt: z.boolean()
   }).strict()),
-  discounts: z.array(z.object({ position: z.number().int(), amount_minor: minorUnitStringSchema }).strict()),
+  discounts: z.array(z.object({ position: z.number().int(), name: z.string().nullable(), amount_minor: minorUnitStringSchema }).strict()),
   match: receiptMatchStateSchema
 }).strict();
 

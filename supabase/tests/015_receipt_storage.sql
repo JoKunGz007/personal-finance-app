@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(40);
 
 -- Receipt storage and its write path (migration 027, PLAN task 56, `docs/RECEIPT_CONTRACT.md`).
 --
@@ -136,7 +136,10 @@ select public.capture_receipt(jsonb_build_object(
 -- one that turns red.
 select is((select payment_method from public.receipts), 'Cash', 'Rule 1: a later null payment_method does not clear the stored value');
 select is((select purchased_at_time::text from public.receipts), '10:15:00', 'Rule 1: a later null purchased_at_time does not clear the stored value');
-select is((select completeness from public.receipts), 'partial', 'Rule 1: a not-null scalar field (completeness) takes the incoming value');
+-- Migration 060: the assessment describes the stored items, which capture 2 did not replace, so
+-- the stored complete reading's completeness and checks stay (029 overwrote them with 'partial').
+select is((select completeness from public.receipts), 'complete', '060: a lower-ranked partial capture keeps the stored completeness');
+select is((select failed_checks from public.receipts), '{}'::text[], '060: a lower-ranked capture keeps the stored failed checks');
 select is((select sources from public.receipts), array['condensed', 'full'], 'sources accumulates rather than being overwritten');
 
 -- Rule 3: the lower-ranked full+partial source did not replace the higher-ranked condensed+complete items.
@@ -185,6 +188,23 @@ select is(
   'a position with no prior owner display_name stays null after a replace'
 );
 select is((select vat_minor::text from public.receipts), '100', 'Rule 1: a VAT figure absent from earlier captures is filled in by a later one');
+select is((select inapplicable_checks from public.receipts), array['UNIT_COUNT_CHECK'], '060: a capture that replaces the items brings its own assessment');
+
+-- Capture 3b: the same full, complete reading again (equal rank 6), now carrying a named
+-- discount. Equal rank replaces, so re-capturing a stored receipt backfills discount names.
+select public.capture_receipt(jsonb_build_object(
+  'merchant', '7-eleven', 'storeCode', '0001', 'branchName', 'Invented branch',
+  'receiptNumber', '123', 'purchasedOn', '2026-09-01', 'netMinor', '1000',
+  'completeness', 'complete', 'failedChecks', '[]'::jsonb, 'inapplicableChecks', jsonb_build_array('UNIT_COUNT_CHECK'),
+  'source', 'full', 'vatPreMinor', '900', 'vatMinor', '100', 'vatTotalMinor', '1000',
+  'items', jsonb_build_array(
+    jsonb_build_object('lineNo', 1, 'position', 1, 'quantity', 1, 'name', 'Invented item A untruncated',
+      'unitPriceMinor', null, 'amountMinor', '1100', 'vatExempt', false, 'isPromotion', false)
+  ),
+  'discounts', jsonb_build_array(jsonb_build_object('position', 0, 'name', 'Invented discount', 'amountMinor', '100'))
+));
+select is((select name from public.receipt_discounts), 'Invented discount', 'an equal-rank re-capture stores the discount name');
+select is((select count(*)::text from public.receipt_items where receipt_id = (select id from public.receipts)), '1', 'an equal-rank re-capture replaces the item rows');
 
 -- Rule 2: a disagreeing net_minor is refused, not merged.
 select throws_ok(

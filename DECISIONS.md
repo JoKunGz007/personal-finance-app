@@ -4,9 +4,9 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-284** — the two open questions this file has
+This file carries **D-141, D-158 and D-273 … D-286** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
-itself (D-267). **D-141**:
+itself (D-286). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
 `list_match_candidates`' unbounded scan, recorded in its own migration and unfixed. `scripts/check-docs.mjs`
 pools this file with every archive and checks ids for duplicates and omissions across the whole set,
@@ -43,7 +43,9 @@ shipped and confirmed live; and **D-198 … D-211** to
 [`docs/decisions/ARCHIVE-D-212-D-222.md`](docs/decisions/ARCHIVE-D-212-D-222.md) on 2026-09-25
 (the seventeenth boundary, D-227), on the owner's word too; later boundaries add **D-223 … D-234** (D-239), **D-235 … D-244** (D-251) and
 **D-245 … D-258** to [`docs/decisions/ARCHIVE-D-245-D-258.md`](docs/decisions/ARCHIVE-D-245-D-258.md)
-on 2026-10-11 (the twentieth boundary, D-267). The index below covers all fifteen files, so a reader can find any
+on 2026-10-11 (the twentieth boundary, D-267), and **D-259 … D-272** to
+[`docs/decisions/ARCHIVE-D-259-D-272.md`](docs/decisions/ARCHIVE-D-259-D-272.md) on 2026-10-17 (the
+twenty-first boundary, D-286). The index below covers every file, so a reader can find any
 entry without opening any body.
 
 **Every boundary sits where an argument ends rather than where a number is round**, and the fourth one is the clearest case of that rule so far. It was taken at **93%** of this file's byte budget and moved the whole arc in which both readers went to Cloud Vision and the local OCR engine was deleted. **The third boundary had explicitly refused to move D-120**, on the grounds that whether pre-fill stays was undecided and that question attached to D-120 and D-129 — which was true when written. **What closed it was not an argument but a shipped feature**: D-135 files a machine-read amount into the ledger without the owner looking at it at all, which is a stronger commitment than the trial ever asked for. *A question is closed when the code has stopped asking it*, and that is the test to apply at the next boundary rather than re-reading the prose.
@@ -278,6 +280,24 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-232** — 7-Eleven e-tax invoices are read from the statement mailbox, on the server, by a Sync on /receipts
 - **D-233** — The Claude session works as an orchestrator: a read-only investigator joins the subagents, and every delegation is kept short
 - **D-234** — Plain table reads ask for an exact count and refuse when the 1,000-row cap cuts them
+### Archived 
+—
+ `docs/decisions/ARCHIVE-D-259-D-272.md`
+
+- **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+- **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
+- **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
+- **D-262** — A printed date line may end in a stray mark (`>` read off a Krungthai background); the end-anchored date pattern had reported no date, so the year re-read never ran
+- **D-263** — The Inbox is the way in: Import and Slips leave the main nav as Inbox fallbacks, and the `/slips` backlog upload is removed
+- **D-264** — Shopee orders come from the web order-detail page saved as PDF, not from mail; D-158's unbounded candidate scan stays until it is slow
+- **D-265** — `confirm_import` links a re-printed bank row by its identity facts instead of inserting a duplicate (migration 054); the four duplicates already stored are Excluded; D-260's safety claim holds one way only
+- **D-266** — Shopee orders come from a one-click export of the web order pages (a bookmarklet writing JSON), not a printed PDF (amends D-264); order code and link number stored, never the recipient's name, address or phone; import from the ledger's start
+- **D-267** — The twentieth boundary moves D-245 … D-258 on the owner's word
+- **D-268** — `HANDOFF.md` is retired into the files that own its facts (supersedes D-052)
+- **D-269** — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
+- **D-270** — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
+- **D-271** — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
+- **D-272** — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
 ### Current 
 —
  this file
@@ -458,6 +478,8 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-286** — The twenty-first boundary moves D-259 … D-272 on the owner's word
+- **D-285** — Receipt discounts keep their printed names; a receipt's completeness and checks change only when its items are replaced (migration 060); stored receipts get names by an equal-rank re-capture
 - **D-284** — `/statistics` sections collapse, the spending calendar shows newest month first with a toggle, the header line no longer touches `/statistics` and `/orders` content, and "Libron (book figures)" now reaches amounts
 - **D-283** — D-280's leftover fixed: a read-only `count_existing_import_rows` (migration 059) shares `confirm_import`'s linking rule, so an all-linked re-printed statement records no import batch
 - **D-282** — D-277's bank-refund rule checked against the real export and widened: one mask character then four or more digits is also a masked account number
@@ -470,20 +492,22 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
-- **D-272** — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
-- **D-271** — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
-- **D-270** — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
-- **D-269** — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
-- **D-268** — `HANDOFF.md` is retired into the files that own its facts (supersedes D-052)
-- **D-267** — The twentieth boundary moves D-245 … D-258 on the owner's word
-- **D-266** — Shopee orders come from a one-click export of the web order pages (a bookmarklet writing JSON), not a printed PDF (amends D-264); order code and link number stored, never the recipient's name, address or phone; import from the ledger's start
-- **D-265** — `confirm_import` links a re-printed bank row by its identity facts instead of inserting a duplicate (migration 054); the four duplicates already stored are Excluded; D-260's safety claim holds one way only
-- **D-264** — Shopee orders come from the web order-detail page saved as PDF, not from mail; D-158's unbounded candidate scan stays until it is slow
-- **D-263** — The Inbox is the way in: Import and Slips leave the main nav as Inbox fallbacks, and the `/slips` backlog upload is removed
-- **D-262** — A printed date line may end in a stray mark (`>` read off a Krungthai background); the end-anchored date pattern had reported no date, so the year re-read never ran
-- **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
-- **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
-- **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-286 — The twenty-first boundary moves D-259 … D-272 on the owner's word
+
+- Date: 2026-10-17
+- Status: **Done.** D-259 … D-272 relocated unchanged to [`docs/decisions/ARCHIVE-D-259-D-272.md`](docs/decisions/ARCHIVE-D-259-D-272.md); their index bullets moved to that file's Archived section.
+- **Asked for by the owner** in the session prompt, with this file at **99%** of its budget after D-284. Same footing as D-267: every entry moved is settled and shipped (the slip re-reads, the overlapping-statement import and its duplicate fix, the Inbox as the way in, the Shopee design, build and read fix, `HANDOFF.md` and `AGENTS.md` retired), or is D-267, the previous boundary's record, which this entry supersedes.
+- **A new file**, so no existing link moves. **D-273 … D-284 stay**: the Shopee matching corrections, the UX review, and the current receipt and statistics work. D-141 and D-158 stay as the two open questions.
+
+## D-285 — Receipt discounts keep their printed names; a receipt's completeness and checks change only when its items are replaced (migration 060); stored receipts get names by an equal-rank re-capture
+
+- Date: 2026-10-17
+- Status: **Built; migration 060 on hosted** (backup verified at sequence 1292, dry run 060 only, sequence unchanged after the push). Owner chose both follow-ups of task 56 the same day (PLAN Open item 5). Backfill not yet run: on hosted all 44 discount rows have no name (19 on 11 receipts whose items came from a full invoice, 25 on 9 from a screenshot).
+- **Names (TS only):** `ParsedReceipt.discounts` is `{ name, amountMinor }[]`; every reader branch (full item-table discount rows, the full `หักส่วนลด` block, the condensed discount block in both line shapes) keeps the printed line's text, trimmed. The capture schema accepts a name of 1–240 characters, the same cap as an item name; `captureReceiptRequest` passes it to `capture_receipt`, which already stored `receipt_discounts.name` (027). The stored schema and the `/receipts` read select `name`, nullable for receipts captured before; `/receipts` and the ledger row show it, "Discount" when null.
+- **Completeness (migration 060):** 029's merge set `completeness`, `failed_checks` and `inapplicable_checks` from every capture, so a lower-ranked partial screenshot merged onto a complete full invoice marked the receipt partial while its items (and `items_complete`) stayed the invoice's. Now the three change only when `v_replace_items`, so they describe the stored items. Rule 3 ranks complete before partial, so this keeps the better one. Rest of `capture_receipt` unchanged; no table, column or grant change, backup contract unchanged.
+- **Backfill path** (finance-investigator, before building): an equal-rank capture replaces items and discounts, so re-capturing a stored receipt writes its names. Mailbox Sync skips any message carrying the IMAP keyword `PLReceipt` and nothing clears it, so full invoices re-capture only after that keyword is removed from them; screenshots re-upload on `/receipts`, but a screenshot (rank ≤4) never replaces a full invoice's (rank 6) discounts.
+- Evidence: pgTAP 37 files (940); `015_receipt_storage.sql` plan 40, its two 060 assertions red-proved (fail on 029's function, pass on 060's); tsc, eslint 0 errors, Vitest 97 files (1,894 passed / 19 skipped). `/code-review` high: 4 findings, 3 fixed (named discount schema, one name extraction per branch, a null-name stored-schema test), 1 left: an over-long printed discount name refuses the whole capture, as an over-long item name already does.
 
 ## D-284 — `/statistics` sections collapse, the spending calendar shows newest month first with a toggle, the header line no longer touches `/statistics` and `/orders` content, and "Libron (book figures)" now reaches amounts
 
@@ -596,128 +620,6 @@ a reason to keep it rather than a reason it cannot ever move.
 - **Effect on hosted:** auto 143 → 146, none 10 → 7, repayment rows 7 → 2. The fourth released row is one copy of a duplicate pair (one debit, two overlapping imports, worded differently; D-265); the owner had already marked the other copy Excluded, but `shopee_ledger_rows()` does not filter Excluded rows, so the order sees two candidates and proposes nothing (PLAN task 64).
 - **Open:** the 2 `ENET` rows have no SPayLater order 10–60 days before them, so whether they are repayments is unconfirmed (the orders they repay may predate the import).
 - Evidence: `tests/shopee-match.test.ts` 46/46; the new task-63 test failed on the old rule and passes on the new one; `tsc` and `eslint` clean; `/code-review` low: no findings.
-
-## D-272 — Migration 058: `shopee_ledger_rows()` reads each source once; 056 timed out as the owner on hosted
-
-- Date: 2026-10-11
-- Status: **Done; pushed to hosted.** Fixes D-271's matching read.
-- **Found on production, after the deploy and the first import.** The Shopee tab refused ("could not be loaded in full"). Every read ran fast as `postgres`; timed as the owner (`authenticated`, aal2 claims), 056's `shopee_ledger_rows()` took about 6 s. Its correlated subqueries (a component sum and an `exists` over every order and refund, per ledger row) re-ran the RLS policy for each inner row. The loader reads it with `count: "exact"`, which runs it twice, past the 8 s statement timeout for `authenticated`. `loadCurrentMatches` reads the same view, so **auto-categorise refused every row** from the deploy until 058 landed.
-- **Fix:** migration 058 reads the orders, the refunds and the component sums once each (materialized CTEs), so each source row passes its policy once. Same contract, security invoker. Measured on hosted as the owner: 119 ms; the same 179 rows as 056 (`except` both ways empty).
-- **Pushed** after the owner exported a fresh backup (the import had moved the sequence; it then equalled the newest backup record) and a dry-run listing only 058. Local: pgTAP 36 files (918), Shopee e2e, loader and match tests green.
-- **Why the gate missed it:** the local database is small, and RLS cost grows with ledger rows × orders. Trap recorded in `docs/gotchas/database.md`.
-- **Hosted import (same day, owner-authorised):** both exports through `/inbox` (Claude in Chrome's file upload; the built-in pane cannot attach files): 171 orders and 8 refunds stored, 82 orders before the ledger's first row skipped, 0 refused.
-
-## D-271 — Shopee import built (task 62 steps 2–6); D-270's wallet top-up count corrected
-
-- Date: 2026-10-11
-- Status: **Built and tested locally; `db push` of 055–057 and the deploy follow in the same session.** Implements D-270.
-- **Built.** Migration 055: seven tables, `capture_shopee_orders` (idempotent per order code, a changed order refused, one bad order never sinks the batch), `set_shopee_payment_match` (a group of orders on one row; amounts must sum exactly; a combined checkout is undone whole), `set_shopee_order_links` (an append-only event log), backup v16. Migration 056: `shopee_ledger_rows()`, the read beneath matching. Migration 057: `shopee_monthly_summary()`, twelve Bangkok months, refunds in the order's month, no table. `lib/shopee-match.ts` computes every proposal at read time; nothing automatic is stored. The Inbox takes the export (both versions). `/orders?view=shopee` shows the month figures, a 12-month bar strip, what is waiting for the owner, and the order list with Undo / Unlink. A matched ledger row shows its order; categories follow D-270.
-- **Measured with the shipped code on the owner's exports (counts only):** the parser reads all 253 orders (244 + 9), 0 refused, 9 refunds (8 to the wallet, 1 to a bank). 143 of 150 bank-debit orders match automatically, 2 are one proposed combined checkout, and no VIP charge is claimed.
-- **Corrects D-270's "11 of 12 wallet orders".** That count included rows already matched to other orders. With those excluded, the shipped rule proposes a top-up for **4 of 12** wallet orders; the rest stay unproposed (the owner links them, or not).
-- **Deploy order matters.** `loadCurrentMatches` (auto-categorise) refuses everything when the Shopee read fails, like a failed receipt or delivery read. So 055–057 are pushed to hosted **before** the code that reads them; the reverse order stops auto-categorising for every row.
-- **Review (`/code-review` high, 10 findings).** Fixed: an import cut mid-batch now says how many orders landed; the parser refuses an order with no payment method itself (the database refused it as "invalid order"); refund-deposit candidates skip rows Shopee already holds; the waiting list drops repayments with nothing left to link; wallet and SPayLater chips say "linked", "Proposal" or the payment kind, not always "Proposal"; Undo on one order of a combined checkout undoes the whole row. **Left, low risk:** the full Shopee view is loaded for auto-categorise and `/ledger` (a lighter read would also stop a summary failure from refusing categorisation); a refund-deposit candidate already matched to a non-Shopee document can still be proposed; a combined match to a row without `SHOPEE` text shows "ledger row not in view"; a refund destination other than the two ShopeePay wordings is read as a bank; refunds are checked one by one against the total, not as a sum (057 clamps).
-- **Evidence:** Vitest 97 files, 1,870 passed / 7 skipped (including `tests/shopee-e2e.test.ts` against the local database, which caught the movement arriving as a JSON number); pgTAP 36 files, 918; tsc; lint 0 errors; docs check strict.
-
-## D-270 — Shopee import design: own tables, JSON dropped on the Inbox, orders fixed at payment, automatic match only when unique, proposed links for combined checkout, wallet top-ups and SPayLater repayments; a tab on `/orders`
-
-- Date: 2026-10-11
-- Status: **Decided (owner, `/grilling`), not built.** Answers D-266's open points. Build order: `PLAN.md` task 62.
-- **Storage.** Separate tables, not `deliveries` (Shopee is shopping, needs status, refunds, the link number and SPayLater; the delivery checks and statistics stay untouched): orders, items (display only), price lines, refunds, a payment-match table that lets several orders claim one bank row, and an informational link table (kinds `wallet_topup`, `spaylater_repayment`; many-to-many). Backup moves to v16.
-- **Way in.** The bookmarklet's JSON is dropped on `/inbox` (D-263), recognised by its `source`, read on the server. The order code is the idempotency key: re-exporting the whole history stores only new orders and new refunds; a stored order whose money facts differ is refused and reported. The Inbox reports new, already stored and refused.
-- **Order facts are fixed at payment.** Code, link number, paid time, shop, items, price lines, total and payment method; never the recipient's name, address or phone (D-266). Status changes arrive as separate records. An order cancelled before payment is skipped (none exist).
-- **Matching bank-debit orders.** Automatic when the row's description contains `SHOPEEPAY`, the amount is exact, the row is within ±1 minute of the paid time, and the pairing is unique both ways; anything else is proposed. Undoable, with revisions.
-- **Combined checkout.** Proposed, never automatic: orders paid within the same minute whose totals sum exactly to one `SHOPEEPAY` row, none with its own single match, and exactly one such grouping. Seen once in 142.
-- **Wallet-paid orders.** No bank match, not shown as unmatched. A link to an unmatched `SHOPEEPAY` row up to 60 minutes before the paid time is proposed (one tap) when no other wallet order shares the window. Measured 2026-10-11: 11 of 12 wallet orders since the ledger's start have such a row 0–37 minutes before, and none equals the order amount (smaller same-minute rows look like a part-payment of the shortfall; larger ones like a round top-up).
-- **SPayLater.** No bank match. Repayment rows (`Direct Debit` / `Payment to Shopee`) link to the orders they repay, many-to-many, through a picker listing SPayLater orders paid 10–60 days earlier (pre-ticked when only one), always confirmed. Measured: 4 orders since the ledger's start, repayments 15–21 days later at amounts that are not a clean fraction of any one order.
-- **Cancellations and refunds.** The bookmarklet reads `/user/purchase/cancellation/<id>` (request ID and time, steps, refund amount, refund destination, requested by, original order code, reason; no delivery block). A refund record attaches to its order; the order keeps its bank match. Measured 2026-10-11: 5 cancelled orders, all paid and refunded in full to the ShopeePay balance; the Return Refund tab is empty. **Corrected the same day by the step-1 export: 9 cancelled orders** (the list lazy-loads; the first count stopped early). All 9 paid and refunded in full; 8 to the ShopeePay balance (printed as `ShopeePay Balance` or `ShopeePay`) and **1 to a bank account** (a QR-paid order; printed as the bank's name and a masked account), which is the first case for the deposit match. 7 of the 9 order pages print no `Order Paid`, only `Order Placed` and `Order Cancelled`; the placed time stands in. A refund to a bank account is proposed as a deposit match, never automatic until measured.
-- **Totals.** Shopee's own totals count every non-cancelled order in its order month, net of refunds in the order's month; they are never added to a ledger total (as D-225). A SPayLater purchase therefore appears once in Shopee's month and again as ledger repayments.
-- **Categories (machine, owner-overridable).** Matched to an order: Shopping. Wallet top-up link: Wallet Top-up. SPayLater repayment link: Shopping. Unmatched at the recurring VIP amount: Subscriptions & Digital, by an amount-specific rule (as D-249). Anything else unmatched: left uncategorised.
-- **Where.** A tab on `/orders` ("Food & rides | Shopee", `?view=shopee`), no new nav item: a monthly strip (order count, spent net of refunds, split by payment: bank debit, wallet, SPayLater, other) with a 12-month bar strip computed in SQL, the order list with match states, and the proposals waiting. A matched ledger row shows its order. Not yet: per-shop spending, item search, item categories.
-
-## D-269 — `AGENTS.md` is folded into `CLAUDE.md`; Codex is no longer used
-
-- Date: 2026-10-11
-- Status: **Done.**
-- **Owner, 2026-10-11:** he no longer uses Codex, so `AGENTS.md`, the cross-harness file, has no second reader. `CLAUDE.md` loads on its own in every Claude Code session, so the rules belong there; a stub pointing at `AGENTS.md` would cost a read every session.
-- **Moved:** the finance invariants, the authorization rules and the protocol (D-268's new sections) into `CLAUDE.md`. **Dropped:** the role-routing and coordination prose (`CLAUDE.md` § Subagents already routes to the Claude agents) and the Codex-only section. `.claude/agents/finance-implementer.md`, `finance-investigator.md`, `README.md` and `scripts/check-docs.mjs` now point at `CLAUDE.md`.
-- **Removed the same day on the owner's word:** `CODEX_AGENT_WORKFLOW.md`, `.codex/` and `.agents/skills/` (Codex's copies of `sync-continuity` and `impeccable`), 136 files; recoverable from `git log`. The `.agents/**` and `.codex/**` lint ignores are now inert and left alone.
-
-## D-268 — `HANDOFF.md` is retired into the files that own its facts (supersedes D-052)
-
-- Date: 2026-10-11
-- Status: **Done** (PLAN task 61, owner's call).
-- **Why.** D-052 gave `HANDOFF.md` the facts that were mutable and homeless. In practice it grew to 796 lines, most of them a history of spent grants that no session ever inherits, and every fact it kept had a better home. The `/handoff` skill now writes the per-session note (what is in flight, unpushed, ungranted) outside the repo, so nothing is left for a repo file to carry between sessions.
-- **Where each part went.** The headline and next action: `PLAN.md` § Current checkpoint, which was already the first thing read. The reading order, authorization rules and protocol: `AGENTS.md` (§ Continuity documents, § Authorizations and destructive operations, § Protocol). Local-only files, ignored folders, hosted and deploy facts, and local hazards: `docs/LOCAL_DEV.md` § This machine. The per-session grants history is dropped: grants never carried over, and what each one was spent on is in the commits and in the decision entries. Gate histories are dropped: `git log` and the decisions carry them.
-- **What else changed.** `CLAUDE.md` starts at the PLAN checkpoint; `scripts/check-docs.mjs` checks `docs/LOCAL_DEV.md` in place of `HANDOFF.md`; the Codex `sync-continuity` skill and the owner's memory prompts point to the new homes. The archives and older gotchas still name `HANDOFF.md` as history; two code comments (`lib/krungthai-layout.ts`, `lib/statement-frame.ts`) cite it as the source of a past rule, read through `git log` if needed.
-
-## D-267 — The twentieth boundary moves D-245 … D-258 on the owner's word
-
-- Date: 2026-10-11
-- Status: **Done.** D-245 … D-258 relocated unchanged to [`docs/decisions/ARCHIVE-D-245-D-258.md`](docs/decisions/ARCHIVE-D-245-D-258.md); their index bullets moved to that file's Archived section.
-- **Asked for by the owner** with this file at **96%** of its budget after D-266. Same footing as D-251: every entry moved is settled and shipped (categorising and its rules, the Grab services, Libron, the slip readers and the LINE backfill), or is D-251, the previous boundary's record, which this entry supersedes.
-- **A new file**, so no existing link moves. **D-259 … D-266 stay**: the slip re-reads, the overlapping-statement import and its duplicate fix (D-260, D-265), the Inbox as the way in, and the Shopee arc the next session starts from. D-141 and D-158 stay as the two open questions.
-
-## D-266 — Shopee orders come from a one-click export of the web order pages (a bookmarklet writing JSON), not a printed PDF (amends D-264); order code and link number stored, never the recipient's name, address or phone; import from the ledger's start
-
-- **Status:** measured and decided 2026-10-11 (owner), import not built. Amends D-264's source; D-264's open questions are answered below.
-- **Why not the PDF:** the owner's printed order page keeps a text layer but drops all Thai text and the ฿ sign, and shifts the discount amounts down one row (a reader would store wrong numbers silently). "Webpage, Single File" (MHTML) and "Complete" HTML keep every field exactly; "HTML only" is Shopee's empty app shell.
-- **The export:** `scripts/shopee-orders-bookmarklet.js` (uncommitted on purpose: it ships with the import), installed by dragging a link the script prints (`--print`). On the order list it scrolls until the list stops growing, opens each order in a hidden same-origin iframe, reads only order code, status, timeline, shop, items, price rows, total and payment method (never the delivery block), checks in satang that the price rows sum to the total, and downloads one JSON. About 5–15 s per order; the tab must stay open. The owner ran it on his whole history (244 orders, 2020–2026): every order total reconciled; item prices do not sum on gift and bundle-deal orders (Shopee spreads the bundle discount by a few baht), so items are display-only. **Cancelled orders are skipped:** their card links to `/user/purchase/cancellation/<id>`, a different page (refund amount, "Refund to ShopeePay Balance", the original order code) — the script must learn it.
-- **Matching, measured against hosted (read-only):** of the 163 orders since the ledger's first row, 139 of the 142 paid "ShopeePay - ตัดบัญชีธนาคาร" matched a `SIPS SHOPEEPAY` bank row by **exact amount in the same minute** (one case had two candidates). Leftovers: one combined checkout (two orders in one minute, one charge equal to their sum); wallet-balance "ShopeePay" orders, which reach the bank only as top-ups; SPayLater, repaid in equal monthly instalments; a monthly Shopee VIP charge (owner); cancelled orders refunded to the wallet; four orders before the first Shopee bank row.
-- **Owner decisions:** store the order code (the idempotency key) and the number in the order link (build the URL from it; `?type=6` is only the list tab); never store the recipient's name, address or phone (some are other people's); export everything, import from the ledger's first row onward. The JSON export stays in `receipts_sample/shopee/` (ignored).
-- **Open (next: `/grilling`):** SPayLater instalments ↔ orders, wallet top-ups, the combined-checkout rule, cancellations and refunds, and where the import lives (beside `/orders`).
-
-## D-265 — `confirm_import` links a re-printed bank row by its identity facts instead of inserting a duplicate (migration 054); the four duplicates already stored are Excluded; D-260's safety claim holds one way only
-
-- **Status:** live 2026-10-11 — migration 054 pushed to hosted (dry-run named only 054; the hosted function carries the change and `anon` still has no execute), commit `a50f8fa` (not yet pushed to GitHub).
-- **Found** while matching Shopee orders: two KBank rows with the same account, minute, amount and post balance. A hosted scan found four such pairs, each from two statements whose periods overlap: three are KBank's English and Thai prints of the same rows (D-238), one is the same row with its Details wrapped differently. `rowFingerprint` (`lib/canonical.ts`) hashes the printed label, description and branch, so each re-print hashed new and was inserted. **D-260's "a stored fingerprint is that same bank row" holds one way only:** the same bank row does not always give the same fingerprint.
-- **Fix:** when no row has the exact fingerprint, `confirm_import` links to an existing row of the same owner and account with the same date, a non-empty equal time, the same post balance and the same ordered components, not already claimed by the current batch, oldest first; otherwise it inserts. Rows without a time keep exact-only matching. Two genuinely different rows cannot share all of these in a running balance (components are never zero). The audit detail counts `identity_links`. The per-owner advisory lock already serialises writers, so the plain select-then-insert replaces `on conflict do nothing`; a clash raises rather than merging.
-- **The stored duplicates:** the four later copies were marked Excluded with the ledger's Exclude button (owner preferred that to a new "duplicate" kind; rows are never deleted). Overlay notes have no edit control and are not shown, so they carry no note; this entry is the record.
-- **Known gaps:** the Inbox and mailbox pre-count (`lib/server/inbox-statement.ts`, `lib/server/fingerprint-lookup.ts`) still counts stored rows by exact fingerprint, so a re-printed overlapping statement is reported as new rows and records an all-linked batch (the ledger is right; the sentence is not). Claim-once within a batch has no test (no reconciling statement can contain two such rows).
-- **Evidence:** three cases in `tests/import-confirm-e2e.test.ts`, the link case red-proved (fails with 054 removed, passes with it); Vitest 89 files, 1,736 passed / 18 skipped; pgTAP 32 files, 818; tsc clean; lint 0 errors; `finance-reviewer`: ship.
-
-## D-264 — Shopee orders come from the web order-detail page saved as PDF, not from mail; D-158's unbounded candidate scan stays until it is slow
-
-- **Status:** decided 2026-10-11 (owner), nothing built. Recorded in `PLAN.md` § Current checkpoint.
-- **Shopee source.** The owner places under 10 orders a month (ShopeePay, card/bank, SPayLater) and wants bank-row matching, items and monthly totals. Shopee TH sends no per-order mail: `from:shopee` in his main Gmail holds only 15 e-Tax invoice PDFs since 2025-05 (Scommerce, sent only when a seller issues one). The phone app needs several screenshots per order; the web order-detail page (`shopee.co.th/user/purchase/order/<id>`, read once in Claude in Chrome on the owner's ask, nothing kept) carries order ID, placed and paid times, shop, items, vouchers, total and payment method on one page. **Chosen: print it to PDF and drop it on the Inbox** — expected to carry a text layer (no Vision, exact amounts) and keeps the delivery address off Google Vision. Not chosen: a web screenshot (longer than a screen; sends the address to Vision), a PDPA data-access request (slow, format unknown; at most a one-off backfill), scripting Shopee's API (fragile; no order-list request seen in the page's traffic). **Open:** whether the saved PDF has a text layer and keeps every section; SPayLater pays as one monthly repayment, so its orders cannot match a single bank row.
-- **D-158's scan.** `list_match_candidates` sums every ledger row's components before filtering: 43 ms over 1,812 rows on hosted (`explain analyze` of its `movements` CTE). Left as is (owner). When slow: bound the automatic candidates to `MATCH_WINDOW_DAYS` / `CARD_MATCH_WINDOW_DAYS` (±1 day, `lib/slip-reconcile.ts`, `lib/notification-card-reconcile.ts`) on the in-force (corrected) date, keep the decided-row union, and fetch the manual chooser's unbounded set lazily — the eager "N rows could be this" counts are what tie the page to the unbounded set. A stored movement column with an index would change no answer but is a backup-contract change; a cap with a truncated flag risks a wrong `verified` (D-063).
-
-## D-263 — The Inbox is the way in: Import and Slips leave the main nav as Inbox fallbacks, and the `/slips` backlog upload is removed
-
-- **Status:** live 2026-10-11 (`06f2471`), no migration. Owner's call on the agent's recommendation.
-- **Why not delete the pages:** the Inbox hands off to both — "Review on Import" and "Open the rest on Import" (locked or held statements; password, account choice, review before confirm), and "Add on Slips" (D-261). So `/import` and `/slips` stay, linked from the Inbox intro ("By hand: import a statement · add a slip"), and leave `ROUTES` in `app/site-header.tsx`.
-- **The backlog upload** (`app/slip-batch.tsx`) duplicated Inbox "Add files" and is deleted, which also retires PLAN's old step "the year re-read on the `/slips` batch page". `lib/slip-batch.ts` stays: the Inbox drain uses it. Possibly orphaned `.batch-*` rules remain in `app/globals.css`; some also serve `app/statement-batch.tsx`.
-- **Evidence:** Vitest 89 files, 1,733 passed / 18 skipped; tsc; lint 0 errors; the header e2e in `tests/e2e/ledger.spec.ts` (desktop and mobile) asserts the two links are absent from the header and reachable from `/inbox`.
-
-## D-262 — A printed date line may end in a stray mark (`>` read off a Krungthai background); the end-anchored date pattern had reported no date, so the year re-read never ran
-
-- **Status:** live 2026-10-08 (`2106e5b`), no migration. Investigated on the owner's ask, on the last queued slip ("No line on this image reads as a date").
-- **Measured** in the pane (owner's grant; nothing kept): the slip's year was the known 6-read-as-5, and its enlarged year crop read correctly — the re-read was never reached. Encoded the way the Inbox encodes it (`createImageBitmap` → PNG), Vision read the date line with a trailing `>` from the background pattern, 3 of 3 times; drawn from the page's `<img>` it did not. `PRINTED_DATE` is anchored at the end (D-250's KBANK split depends on it), so the line was not a date: `DATE_NOT_FOUND` instead of `DATE_OUT_OF_RANGE`.
-- **Fix:** `PRINTED_DATE` accepts trailing characters that are neither letter nor digit. They cannot move the year/time split, which is digits only. Two tests (a trailing mark reads; a misread year with one still reports out of range) red-proved.
-- **Live:** the slip imported on the next open (632 slips); the queue is empty. **Lesson:** reproduce a drain refusal with the drain's own encoding; the page's `<img>` gives Vision different pixels.
-- **Evidence:** Vitest 89 files, 1,733 passed / 18 skipped; eslint clean.
-
-## D-261 — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
-
-- **Status:** live 2026-10-08 (`33a7763`), no migration. Asked for by the owner: the queue's "Add it on the Slips page" had no link, so a slip meant re-picking the image from his phone.
-- **How:** the queue row shows a `secondary-button` "Add on Slips" for every slip that needs checking (a review verdict, a remembered one, a refused amount, or a capture the ledger refused), not for a network failure. `isInboxImageName` (`lib/inbox-queue.ts`) accepts only an upload's `<uuid>.png|jpg|webp` or a LINE `line-<ms>-<id>.jpg|png` before any Storage call. `app/slip-capture.tsx` downloads that object from the owner's folder and hands it to the same `onFile` a picked file uses (preview through the `blob:` URL that path already made; CSP unchanged). After the ledger answers captured or already stored, the object is removed and the page says so with a link back; a refused capture keeps it; removal failure says the slip is saved but still queued. A file picked by hand afterwards never removes the queued one.
-- **Limits:** the single-slip form takes a QR identity only, so a no-QR slip (D-258) still cannot be finished there (cash entry remains). The amount is not read automatically on arrival — the page's own promise is that nothing goes to Vision until "Read the amount" is pressed.
-- **Live:** the queued Krungthai slip opened from its button with its QR read and reference filled; not saved by the agent.
-- **Evidence:** Vitest 89 files passed (9 new in `tests/slip-inbox.test.tsx`; the removal tests red-proved); tsc clean.
-
-## D-260 — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
-
-- **Status:** live 2026-10-08 (`b09cfe7`), no migration. The owner's choice, after three mailbox statements were held as "Some rows … already in the ledger, so it waits for a look" and he had not seen that "Review on Import" was a link.
-- **Why it is safe:** `rowFingerprint` (`lib/canonical.ts`) covers date, time, label, description, reference, amounts, **post-balance** and branch, so a stored fingerprint is that same bank row; `confirm_import` skips it (`on conflict do nothing`). The old hold existed because the skip is silent, not because it is wrong — the count now makes it visible.
-- **How:** `lib/server/inbox-statement.ts` pre-counts stored fingerprints; some stored → the same `confirmImport` as a clean statement (so the same transfer exclusion and categoriser), returning `existingRows` beside `rowCount`; all stored → nothing confirmed, `{kind: "duplicate"}`, handled like an already-imported file (removed from the queue, mailbox message flagged). `confirm_import` returns only the batch id, so "new" is `rowCount − existingRows` from the pre-count; a concurrent import between count and confirm could make the sentence slightly off, never the ledger. Wording: "Statement X: 12 new rows imported, 30 already in the ledger." The remaining holds keep their reasons, and the mailbox "Bank statements" line's Review on Import is now a `secondary-button`.
-- **Evidence:** Vitest 88 files, 1,722 passed / 18 skipped; the 5 new overlap and all-stored tests red-proved against the old server file; tsc, eslint clean. Not yet seen live with a real overlapping statement (the owner's next Sync).
-
-## D-259 — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
-
-- **Status:** live 2026-10-08 (`54dac39`), no migration. Owner-approved (D-258's PLAN steps 1 and 2); he wants a slip that still fails to stay queued so it can be studied.
-- **Amount:** when `proposeAmount` refuses beside a label it found, `locateAmount`'s box is cropped (`paddedCrop`) and read at 2×, then 3× only if 2× still fails: at most 2 extra Vision calls. The crop's words go through the *same* `proposeAmount` (label and strict grammar), so nothing lenient is added; a label Vision misreads in the crop leaves the slip in review. The year re-read (D-257) became one case of `rereadBox(file, box, crop)` with its own crop unchanged (3×). Live: the queued slip whose `23.00` Vision read as `23,00` imported on the first open.
-- **Remembering:** a review decision carries `retryable`, set where it is made: true when the reader failed or a second read (amount or year) was tried and gave nothing usable, and then the verdict is **not** remembered, so the next open reads the slip again. A definite review stays remembered per build. A capture refused with 409 or another 4xx carrying a reason is remembered too, so a refused slip stops costing a Vision read each open; 401, 403, 408 and 429 are not (session or load, not the slip), nor network or 5xx failures. The remembered entry shows the generic "needs checking" reason, not the server's text (the memory format is unchanged).
-- **Cost to know:** a retryable slip is re-read through Vision on every `/inbox` open until it imports or is removed — the queued ฿-amount slip whose year re-read fails is one now.
-- **Evidence:** Vitest 87 files, 1,712 passed / 18 skipped (DB suites skipped locally); 12 new tests; the 2× success and the not-remembered tests red-proved; tsc and eslint clean.
 
 ## D-141 — Bulk statement import splits at the authentication boundary: many PDFs read in one pass, each bound and confirmed by hand
 
