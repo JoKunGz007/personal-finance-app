@@ -295,10 +295,10 @@ the top of `GOTCHAS.md`.
 
 ## A per-account balance walk is exact under paging; the merged one across accounts is not
 
-- Symptom: with two accounts loaded to different depths, the all-accounts balance column prints a figure that is too high on older rows — and pressing *Load older rows* silently rewrites a number already on screen.
-- Cause: `combinedBalanceByTransaction` seeds each account from `post_balance − movement` of the oldest row it was handed. **Per account that is exact at any depth**, because the expression is the balance immediately before whatever row it is applied to. The merged figure is the sum of *every* account's balance at that moment, and the walk supplies an account's seed for every row older than that account's oldest **held** row — so a shallow account's mid-history balance is added to rows that predate it. Unpaged the seed is the account's real opening and none of this arises.
-- Avoid: do not try to fix it with a balance from the server — the value it would send is the *same quantity* as the seed the client already derives. What is needed is a **floor**: each account with more to fetch contributes its oldest held row's date, a complete window contributes none, and the figure is exact at and after the newest floor. Below it, render nothing. **Never fall back to the row's own account balance**, which is a different number under a heading that says "All accounts".
-- Verify: 2026-08-27, found by `/code-review` on the paging change (D-158). A loaded to its opening and B windowed to its newest row printed 1100 against A's January row where the truth was 100 — exactly B's unfetched February movement. Pinned in `tests/ledger-window.test.ts`, which records the wrong number as well as the right one.
+- **Retired to its generalisation on 2026-10-17.** `combinedBalanceByTransaction` is deliberately gone (`lib/transactions.ts` says so where it used to live), so the all-accounts running balance this trap was about no longer exists to go wrong. The full symptom, cause and the 2026-08-27 reproduction (D-158) are in `git log`; `tests/ledger-window.test.ts` still pins the wrong and the right number.
+- What survives: **a balance seeded from the oldest row held is exact per account at any depth, and wrong once summed across accounts loaded to different depths.** Any future merged figure needs a floor — exact only at and after the newest account's oldest held row, nothing below it — and must never fall back to one account's balance under an "All accounts" heading.
+- Verify: 2026-10-17. `combinedBalanceByTransaction` appears in no code under `lib/`, `app/` or `tests/`, only in that comment.
+
 
 ## A control with no class inherits the prose around it, and a suite that asks whether it exists cannot see that
 

@@ -48,11 +48,11 @@ the top of `GOTCHAS.md`.
 
 ## A "value-free" probe leaks values when its allow-list assumes a flat structure
 
-- Symptom: a script written to print only tag identifiers, field lengths and a whitelisted bank code prints entire transaction references instead.
-- Cause: the whitelist named tag `00` as reportable, on the assumption that the payload was flat TLV. A Thai slip QR nests everything — bank code *and* reference — inside tag `00`, so "print tag 00's value" printed the whole identity block. The allow-list was correct about which *tags* were safe and wrong about what a tag contains.
+- **The same incident as "A masking parser that fails open prints exactly what it was written to hide"** (2026-07-30, the task 20 slip QR probe), recorded twice the same day; read that trap for the symptom and cause. Kept for the two rules it adds, marked 2026-10-17.
 - Avoid: allow-list on the leaf that will actually be printed, after parsing, rather than on a container whose contents are the thing being determined. When probing an unknown format, print lengths and character classes on the first pass and add values only once the structure is known.
 - Note what it does and does not cost: reading a real value is permitted under D-049's successor scope, and this was a read. The rule it puts pressure on is the one that matters — nothing read may become a fixture, quotation or commit. Every slip fixture in this repo is built by `buildSlipQrPayload` from an invented reference for exactly that reason (D-056).
 - Verify: 2026-07-30, during the task 20 sizing probe. Re-running with the allow-list moved to the inner tags printed lengths and character classes only.
+
 
 ## A placeholder that looks like a real value reads as a failed autofill
 

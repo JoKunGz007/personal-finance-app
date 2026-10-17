@@ -16,7 +16,7 @@ the top of `GOTCHAS.md`.
 - Symptom: the safe editor reports an incorrect folder owner or `Access is denied`.
 - Cause: the project root ACL owner differs from the logged-in user.
 - Avoid: repair only the exact project root from an elevated PowerShell session. Do not recursively change unrelated directories.
-- Verify: a small `apply_patch` succeeds and `Get-Acl` reports the expected owner. **Checked live 2026-08-10 rather than dated from a commit — this one is about the machine, not the code, so the history could not answer it.** `Get-Acl` on the project root reports `JOHN_LEGION\jozak`, which is the logged-in user, so **the condition is not currently present**: the trap is kept for a fresh clone or a restored backup, not because it is live. Re-check after any move, restore or copy of the project root, which is when ownership changes.
+- Verify: a small file edit succeeds and `Get-Acl` reports the expected owner. Re-checked 2026-10-17: the owner is still the logged-in user. **Checked live 2026-08-10 rather than dated from a commit — this one is about the machine, not the code, so the history could not answer it.** `Get-Acl` on the project root reports `JOHN_LEGION\jozak`, which is the logged-in user, so **the condition is not currently present**: the trap is kept for a fresh clone or a restored backup, not because it is live. Re-check after any move, restore or copy of the project root, which is when ownership changes.
 
 ## System Node is too old
 
@@ -27,12 +27,10 @@ the top of `GOTCHAS.md`.
 
 ## pnpm 11 requires an explicit build-script allowlist
 
-- Symptom: a clean install ends with `ERR_PNPM_IGNORED_BUILDS` after packages are linked.
-- Cause: pnpm 11 replaced `onlyBuiltDependencies` with the stricter `allowBuilds` map.
-- Avoid: review each pending lifecycle script and allow only the required named packages in `pnpm-workspace.yaml`; never enable all dependency builds.
-- Verify: `pnpm install --frozen-lockfile --offline` succeeds and `pnpm ignored-builds` reports none.
-- **Fixed for a fresh clone on 2026-08-11 (D-095).** The `allowBuilds` map is now committed, so this trap is closed everywhere rather than only on this machine. Until then the file's single commit `9203a87` carried pnpm 10's `onlyBuiltDependencies` naming three packages, and the map — which adds `unrs-resolver` and denies `tesseract.js` — lived only in the deliberately uncommitted working copy. **What proved it was a real blocker rather than a tidiness issue:** a frozen install on a clone of `HEAD` under pnpm 11.17.0 exits 1 with `ERR_PNPM_IGNORED_BUILDS` naming `esbuild@0.28.1`, `sharp@0.34.5`, `tesseract.js@7.0.0`, `unrs-resolver@1.12.2`. A hosted build clones `HEAD`, so it met exactly that.
-- Note on the older provenance, kept because the correction is the lesson: this line once read `Dated 2026-07-25 from 5e4c5bb, the commit that introduced the named allowBuilds allowlist`. `git show 5e4c5bb -- pnpm-workspace.yaml` is empty, and no commit introduced `allowBuilds` until this one.
+- **Retired to its generalisation on 2026-10-17.** The `allowBuilds` map has been committed since 2026-08-11 (D-095), so a frozen install of `HEAD` no longer meets `ERR_PNPM_IGNORED_BUILDS`. The full history, including the corrected provenance note about `5e4c5bb`, is in `git log`.
+- What survives: when pnpm reports ignored builds, review each pending lifecycle script and allow only the named packages that need one in `pnpm-workspace.yaml`; never enable all dependency builds. A working local install proves nothing about a clone of `HEAD` while the config is uncommitted.
+- Verify: 2026-10-17. `git show HEAD:pnpm-workspace.yaml` carries `allowBuilds` naming `esbuild`, `sharp`, `supabase` and `unrs-resolver`.
+
 
 ## A hosted build succeeds without its environment variables
 
@@ -50,10 +48,10 @@ the top of `GOTCHAS.md`.
 
 ## The skill validator inherits the Windows locale encoding
 
-- Symptom: `quick_validate.py` raises a `UnicodeDecodeError` under the Thai Windows locale.
-- Cause: the validator reads `SKILL.md` with the platform default encoding rather than forcing UTF-8.
-- Avoid: keep project-local skill instructions in ASCII punctuation unless the validator is updated to specify UTF-8.
-- Verify: the official `quick_validate.py` reports `Skill is valid!`. Dated 2026-07-24, the day `PLAN.md` records the project-local skill passing the official validator; treat it as dated rather than current, since the validator could not be located to re-run on 2026-07-28.
+- **Retired on 2026-10-17.** The project-local skill it was about is gone: the repo has no `.agents/` or `.claude/skills/` directory, and the validator could not be located even on 2026-07-28. The original entry is in `git log`.
+- What survives is already its own trap here: a Python tool that reads a file with the platform default encoding fails under the Thai Windows locale, so force UTF-8.
+- Verify: 2026-10-17. Neither directory exists at the repository root.
+
 
 ## Untracked files are absent from ordinary diffs
 

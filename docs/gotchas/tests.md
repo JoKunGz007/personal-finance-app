@@ -152,10 +152,10 @@ the top of `GOTCHAS.md`.
 
 ## The isolated suite's "no dev sign-in" test fails once `.env.local` opts in
 
-- Symptom: `ledger.spec.ts` "offers no development sign-in in a build that did not opt into one" fails on desktop and mobile, 12/14 instead of 14/14, against code that did not change.
-- Cause: D-048's migration requires `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION=1` in `.env.local` permanently, and `playwright.isolated.config.ts` does not pin it, so the build *does* opt in and the test's premise is false. The same shape as D-047: a milestone changed the environment and an existing command silently became wrong.
-- Avoid: pin `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION` to `"0"` — **not** `""`. On Windows, `$env:VAR = ""` deletes the variable rather than blanking it, so `.env.local` wins and the failure persists, which reads misleadingly like the pin not working.
-- Verify: 12/14 with the flag inherited, 14/14 with it pinned to `"0"`, no code change between the two runs. Dated 2026-07-28 from `663f626`, the D-048 work that made the opt-in flag permanent in `.env.local`.
+- **Retired to its generalisation on 2026-10-17.** `playwright.isolated.config.ts` now pins `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION` to `"0"` in its committed form, so `.env.local`'s permanent opt-in (D-048) no longer reaches that build. The original 12/14 → 14/14 evidence (dated from `663f626`) is in `git log`.
+- What survives: pin an env var to `"0"`, **not** `""` — on Windows `$env:VAR = ""` deletes the variable, so `.env.local` wins and the pin looks like it failed. And a milestone that changes the environment can silently make an existing command wrong (D-047's shape).
+- Verify: 2026-10-17. `git show HEAD:playwright.isolated.config.ts` sets `NEXT_PUBLIC_ALLOW_DEV_OWNER_SESSION: "0"`.
+
 
 ## Stubbing a browser API can hide which code path the test is exercising
 
