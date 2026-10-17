@@ -204,7 +204,7 @@ function OrderItem({ order, view, busy, act }: { order: ShopeeViewOrder; view: S
           <a className="shopee-order-link" href={order.orderUrl} target="_blank" rel="noopener noreferrer">Order {order.orderCode}</a>
         </p>
         {row ? (
-          <p className="ledger-status">Ledger row: {formatDate(row.date)}{row.description ? ` · ${row.description}` : ""}</p>
+          <p className="ledger-status">Ledger row: {formatDate(row.date)}{row.description ? ` · ${withoutEmptyNote(row.description)}` : ""}</p>
         ) : null}
         <ul>
           {order.items.map((item) => (
@@ -240,10 +240,14 @@ function OrderItem({ order, view, busy, act }: { order: ShopeeViewOrder; view: S
 
 const LINK_LABEL = { wallet_topup: "wallet top-up", spaylater_repayment: "SPayLater repayment", refund_deposit: "refund deposit" } as const;
 
+/** Display only: the bank's text often ends in an empty "NOTE : -". */
+function withoutEmptyNote(text: string): string {
+  return text.replace(/\s+NOTE\s*:\s*-\s*$/i, "");
+}
+
 function rowText(row: ShopeeViewRow | undefined): string {
   if (!row) return "ledger row not in view";
-  // Display only: the bank's text often ends in an empty "NOTE : -".
-  const text = (row.description ?? row.label ?? "").replace(/\s+NOTE\s*:\s*-\s*$/i, "");
+  const text = withoutEmptyNote(row.description ?? row.label ?? "");
   return `${formatDate(row.date)}${text ? ` · ${text}` : ""} · ${formatThb(row.movement)}`;
 }
 

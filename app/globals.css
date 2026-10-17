@@ -1928,6 +1928,9 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
 /* Desktop: a fixed branch column so the count and chips start at the same x on every row. */
 @media (min-width: 701px) {
   .receipt-list-stored .receipt-branch { flex: 0 0 16em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The date (with or without a time) and the item count vary too, so they get fixed columns as well. */
+  .receipt-list-stored .receipt-when { flex: 0 0 164px; white-space: nowrap; }
+  .receipt-list-stored .receipt-count { flex: 0 0 72px; white-space: nowrap; }
 }
 /* Phone: the /import heading note is the same 26px circle as the inline ones, with a 44px tap area. */
 @media (max-width: 700px) {
