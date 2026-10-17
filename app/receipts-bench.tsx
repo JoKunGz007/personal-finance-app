@@ -353,9 +353,9 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
                   <span className="receipt-count">{itemCount(receipt.items.filter((item) => !item.is_promotion).length)}</span>
                   <span className={`receipt-chip ${MATCH_CHIP[receipt.match.status].tone}`}>{MATCH_CHIP[receipt.match.status].label}</span>
                   {receipt.match.status === "none" && receipt.purchased_at_time === null ? <span className="receipt-chip quiet">no time on invoice</span> : null}
-                  {/* `items_complete`, not `completeness`: capture overwrites the latter with the latest
-                      source's verdict even when it keeps the stored items, and "partial" here means
-                      the items shown are not trusted — the rule the statistics count by. */}
+                  {/* `items_complete`: "partial" here means the items shown are not trusted — the rule
+                      the statistics count by. Since migration 060 `completeness` follows the stored
+                      items too (D-285); before it, a capture that kept the items still overwrote it. */}
                   {receipt.items_complete ? null : <span className="receipt-chip warn">partial</span>}
                   <span className="receipt-amount numeric">{formatThb(receipt.net_minor)}</span>
                 </summary>
