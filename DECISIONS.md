@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-273 … D-286**. D-141 (whether the mailbox source is deleted after import, deferred by the owner) and D-158 (`list_match_candidates`' unbounded scan, unfixed) are the two open questions. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-273 … D-287**. D-141 (whether the mailbox source is deleted after import, deferred by the owner) and D-158 (`list_match_candidates`' unbounded scan, unfixed) are the two open questions. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -410,6 +410,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-287** — `PLAN.md` holds the current state only; finished work moves unchanged to `docs/archive/`, and dead traps retire to their generalisations
 - **D-286** — The twenty-first boundary moves D-259 … D-272 on the owner's word
 - **D-285** — Receipt discounts keep their printed names; a receipt's completeness and checks change only when its items are replaced (migration 060); stored receipts get names by an equal-rank re-capture
 - **D-284** — `/statistics` sections collapse, the spending calendar shows newest month first with a toggle, the header line no longer touches `/statistics` and `/orders` content, and "Libron (book figures)" now reaches amounts
@@ -424,6 +425,16 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
+
+## D-287 — `PLAN.md` holds the current state only; finished work moves unchanged to `docs/archive/`, and dead traps retire to their generalisations
+
+- Date: 2026-10-17
+- Status: **Done** (`b9591c0`, `702f1a0`; docs only, not pushed). Asked for by the owner through a brief from another session, approved after a proposed split.
+- **`PLAN.md` is the current state, not a log**: one checkpoint paragraph, one Open list with each item once and its D-id, undone tasks only, the authorization-gate line and the working constraints (999 → 38 lines). Older checkpoint paragraphs, finished tasks (numbers kept, so "`PLAN.md` task N" resolves there), the resolved review blockers, completed hardening and discharged gates moved unchanged to [`docs/archive/PLAN-2026-10-17.md`](docs/archive/PLAN-2026-10-17.md). The next time PLAN outgrows ~200 lines, the same move makes a new dated archive file.
+- **Task 25 reworded, task 28 closed** on the owner's word: categorising already runs without an LLM (D-245, D-249); an LLM step needs its own research in the local-llm repo first. Task 28's phone leftovers were overtaken by the later UX rounds (D-279).
+- **Headers cut, not entries**: the `DECISIONS.md` and `GOTCHAS.md` header essays moved unchanged to [`docs/archive/DOC-HEADERS-2026-10-17.md`](docs/archive/DOC-HEADERS-2026-10-17.md); the decisions header keeps the open questions, the size rule and a range → file → date table.
+- **Traps retire only after a check against the committed tree**, not the local working copy: an audit of `docs/gotchas/` flagged 29; four were retired to their generalisations (merged balance walk, pnpm allowlist, isolated dev-sign-in pin, skill validator), one duplicate privacy trap now points to its twin, and the default-config Playwright traps stayed because the committed `playwright.config.ts` still lacks `testIgnore` and a webServer timeout (the audit had read the local-only copy).
+- Evidence: `check:docs --strict` green after each commit (286 decisions, 237 traps); the token-preservation checker clean for PLAN (new + archive), both headers; every original PLAN line found verbatim in the new PLAN or its archive. `docs/archive/` is not scanned by `check:docs`, so references in moved text are no longer checked.
 
 ## D-286 — The twenty-first boundary moves D-259 … D-272 on the owner's word
 

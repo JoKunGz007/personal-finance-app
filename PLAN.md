@@ -4,7 +4,7 @@ Last verified: 2026-10-17
 
 ## Current checkpoint
 
-**Receipt discount names shipped; nothing in flight — 2026-10-17** (D-285, D-286). Discounts keep their printed names on `/receipts` and the ledger row; migration 060 is on hosted (a receipt's completeness and checks change only when its items are replaced). Backfill done: 44 of 44 discount rows named, still 25 receipts, sequence 1318. `DECISIONS.md` is at 78% after the twenty-first boundary. Last gate: pgTAP 37 files (940), tsc, eslint 0 errors, Vitest 97 files (1,894 / 19 skipped). **Next:** take an item from Open below; none is started.
+**Receipt discount names shipped; nothing in flight — 2026-10-17** (D-285, D-286). Discounts keep their printed names on `/receipts` and the ledger row; migration 060 is on hosted (a receipt's completeness and checks change only when its items are replaced). Backfill done: 44 of 44 discount rows named, still 25 receipts, sequence 1318. `DECISIONS.md` is at 78% after the twenty-first boundary. Last gate: pgTAP 37 files (940), tsc, eslint 0 errors, Vitest 97 files (1,894 / 19 skipped). **Continuity docs slimmed the same day** (D-287, `b9591c0`, `702f1a0`): this file now holds the current state only. `main` is 4 docs-only commits ahead of `origin/main` (with this sync) (pushing deploys, though no app code changed). **Next:** take an item from Open below; none is started.
 
 Older checkpoint paragraphs, finished tasks, the resolved review blockers, completed hardening and the discharged authorization gates are in [`docs/archive/PLAN-2026-10-17.md`](docs/archive/PLAN-2026-10-17.md), unchanged. Finished tasks keep their numbers there, so "`PLAN.md` task N" for a finished task resolves in that file.
 
