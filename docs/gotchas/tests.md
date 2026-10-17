@@ -316,3 +316,10 @@ the top of `GOTCHAS.md`.
 - Cause: the fixture is uniform where the real data is clustered. One seeded row per day gives every day heading a short date, "1 row" and a two-figure total; a real ledger's day holds ten rows and a four-figure total, which wraps a line further. The guard is then measuring a milder version of the defect than the one that was reported, and the margin it clears by is luck rather than design.
 - Avoid: compare the red-proof's magnitude against the magnitude in the original report, not just its sign. If the fixture is out by 3px where the real thing was out by 39px, reshape the fixture. Where a fixture's values are load-bearing — a printed-balance chain, an ordering — work out what constrains them before changing the shape, and keep the constraint explicit in a comment. Expect a newly representative fixture to fail things that were passing; that is the fixture working.
 - Verify: 2026-09-04. Reseeding the phone audit from one row on each of 120 days to ten rows on each of twelve took its spill check from 3px on 85 headings of 102 to 20–21px on 12 of 12, and immediately failed a second page that had been green throughout (D-188).
+
+## In a hidden browser pane, `element.focus()` takes focus but `:focus` styles never apply
+
+- Symptom: a skip link focused by script in the built-in browser pane is `document.activeElement`, yet it stays off-screen: `matches(':focus')` is false and its transform is the unfocused one. It reads as a broken skip link.
+- Cause: while the pane is hidden the page runs as a background page, and the document has no system focus, so `:focus` and `:focus-visible` never match, whatever has been focused.
+- Avoid: check focus styling in Claude in Chrome with a real key press (`shift+Tab` from a neighbouring field), or with the pane shown. In a hidden pane, only report `activeElement` and where activation moved focus.
+- Verify: 2026-10-17 (D-279). The `/statistics` Skip calendar link in the hidden pane: active, `:focus` false, translated off-screen. In Chrome, a real `shift+Tab` onto the `/recovery` file picker drew its focus ring (solid outline).

@@ -4,6 +4,10 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
+**UX review 2026-10-11 closed — 2026-10-17** (D-279, task 65; `4780f96`, `b0357a2`, pushed and live). 23 of 25 findings fixed (two reduced), 2 declined; round 2 re-measured every fixed item on production at 375px and 1280px. Gate: tsc, eslint 0, Vitest 93 files passed / 4 skipped (1,788 passed / 115 skipped: local Supabase was not running, so the database-backed files skipped; the changes are UI only); `/code-review` high: 5 of 6 findings fixed, 1 style nit left. The Vercel Hobby plan keeps request logs about an hour, so the `readAll failed` line has to be read soon after a 500.
+
+**Open:** (1) **Intermittent 500s**: read the Vercel logs within the hour after the next "could not be loaded in full", then fix (likely one retry on network/5xx for idempotent reads). (2) The owner links the 6 repayment rows on `/orders?view=shopee`. (3) D-277's refund-destination rule is not verified against the one real bank refund's printed shape.
+
 **Shopee matching corrected, D-271's leftovers closed, UX round 1 done — 2026-10-11** (D-273 … D-277, all pushed and live). A `Direct Debit … SHOPEEPAY` row is a bank debit (D-273); Excluded rows are never proposed (D-274); "Payment to Shopee" rows are PromptPay QR orders and `other`-kind orders match like bank debits (D-275); a SPayLater repayment is a leftover ShopeePay outflow on day 7–13 of the month, candidates reach back 366 days (D-276). Hosted, shipped function: auto 149, none 4 (no ledger row of their amount), 6 repayment rows listed for the owner to link. D-277: matches read only the Shopee match state; an unknown refund destination is refused; three findings left on purpose. Verified on production: the tab loads and shows the 6 repayment cards. Last full Vitest run: 97 files, 1,896 passed / 7 skipped.
 
 **Open:** (1) **task 65** — fix all 25 UX findings in `docs/UX_REVIEW_2026-10-11.md`, then round 2. (2) **Intermittent 500s** on production ("could not be loaded in full": the Shopee API 2 of ~8 loads; more seen on `/statistics` or `/categories`). Not a database timeout: every Shopee read finishes in Postgres far under the 8 s limit (pg_stat_statements, owner-role timings), so the error is between the app and PostgREST. `readAll` now logs a value-free line (label, reason, error code, status, `eede966`); read the Vercel logs after the next 500, then fix (likely one retry on network/5xx for idempotent reads). (3) The owner links the 6 repayment rows on `/orders?view=shopee`. (4) D-277's refund-destination rule is not verified against the one real bank refund's printed shape; a mismatch refuses that order by name on re-import.
@@ -810,7 +814,7 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
 60. **The Inbox/mailbox "already in the ledger" count uses the exact fingerprint only** (`lib/server/inbox-statement.ts`, `lib/server/fingerprint-lookup.ts`). A re-printed overlapping statement is reported as new rows and records an all-linked batch instead of `duplicate`; the ledger itself is right (D-265). Fix by counting on the same identity facts as `confirm_import`, or by reading `identity_links` back from the batch's audit detail.
 
-65. **Fix the 25 findings of the 2026-10-11 UX review** (owner approved all 25). The list, priority order, delegation groups and status column live in `docs/UX_REVIEW_2026-10-11.md`; work from that file, mark each row, then run round 2 after the deploy and delete the file once every row is closed.
+65. ~~**Fix the 25 findings of the 2026-10-11 UX review**~~ — **done 2026-10-17** (D-279): 23 fixed, 2 declined, round 2 passed; the findings file is deleted.
 
 64. ~~**Shopee: Excluded ledger rows reach the matcher.**~~ **Done 2026-10-11 (D-274):** `loadShopeeView` passes the Excluded ids and the matcher proposes none of them; app code only. Hosted: auto 146 → 147.
 

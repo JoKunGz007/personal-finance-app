@@ -87,6 +87,7 @@ const RETIRED_PATHS = {
   "lib/notification-card-vision.ts": "renamed to lib/vision-ocr.ts (D-129)",
   "tests/notification-card-vision.test.ts": "renamed to tests/vision-ocr.test.ts (D-129)",
   "app/deliveries/page.tsx": "moved to app/orders/page.tsx; /deliveries redirects there (D-230)",
+  "docs/UX_REVIEW_2026-10-11.md": "deleted once every finding was closed; the outcome is D-279",
 };
 
 const failures = [];

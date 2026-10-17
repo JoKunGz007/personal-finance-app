@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-277** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-279** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-279** — UX review 2026-10-11 closed: 23 of 25 fixed (two reduced), 2 declined (desktop calendar cells stay 38px wide; "Use synthetic statement" stays per D-204)
 - **D-278** — Haiku trial for settled UI-only changes via a new `finance-ui-implementer`; money, data and server code stay on Sonnet `finance-implementer`
 - **D-277** — Two of D-271's leftover findings fixed: matches read only the Shopee match state, and an unknown refund destination is refused instead of stored as a bank; three left on purpose
 - **D-276** — A SPayLater repayment is a leftover ShopeePay outflow on day 7–13 of the month; candidate orders reach back 366 days (supersedes D-270/D-275's repayment wording and 10–60 day window)
@@ -478,6 +479,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-279 — UX review 2026-10-11 closed: 23 of 25 fixed (two reduced), 2 declined (desktop calendar cells stay 38px wide; "Use synthetic statement" stays per D-204)
+
+- Date: 2026-10-17
+- Status: **Shipped** (`4780f96`, `b0357a2`); task 65 done; `docs/UX_REVIEW_2026-10-11.md` deleted.
+- Fixed: Shopee repayment picks as 44px rows with a 20px checkbox in a labelled group; distinct accessible names on Link / Link selected; 46px-tall order links; a trailing empty `NOTE : -` stripped from displayed bank text (display only, `withoutEmptyNote`); a "Tick the order(s)" hint; the summary line cut to 60 characters. `.file-control` gains a focus ring and replaces the native pickers on `/receipts` and `/recovery`; disabled Export / Restore show a reason; receipt summaries get a chevron, the match-state chip first, and fixed date, branch and count columns on desktop; "1 change"; no duplicate placeholder; the h1 note toggle is 26px with a 46px hit area on phone. `/statistics` gets a Skip calendar link and 12px axis labels. `/categories`: name at body size, Archive as a tertiary button (Bring it back undoes it; a parent change still saves on select, reversible the same way), and on phone an Edit toggle per row (list 5,149px → 2,027px at 375px). `/slips` heading "Captured slips".
+- Reduced: #3, the restore fields stay enabled: the page has no empty-ledger state and the restore route already refuses a non-empty ledger (409). #12, no instalment facts are stored, so a candidate shows "also on N other repayments" (a count from the view) instead of "n of N" or a share.
+- Declined: #20, 44px-wide calendar cells overflow the 3-column (981–1120px) and 2-column month grids; 38×44 passes WCAG 2.5.8 (24px), recorded as a desktop exception to D-136. #25, D-204 keeps "Use synthetic statement" as the safe trial path.
+- Round 2 (production, 375px and 1280px): every fixed item re-measured; no horizontal scroll on any page. The file-picker focus ring was confirmed in Chrome with a real Tab key. Not verified: the skip link's visual reveal (the hidden pane gives the document no focus; it reuses the skip-to-content class).
 
 ## D-278 — Haiku trial for settled UI-only changes via a new `finance-ui-implementer`; money, data and server code stay on Sonnet `finance-implementer`
 
