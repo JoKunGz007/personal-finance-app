@@ -458,6 +458,7 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-278** — Haiku trial for settled UI-only changes via a new `finance-ui-implementer`; money, data and server code stay on Sonnet `finance-implementer`
 - **D-277** — Two of D-271's leftover findings fixed: matches read only the Shopee match state, and an unknown refund destination is refused instead of stored as a bank; three left on purpose
 - **D-276** — A SPayLater repayment is a leftover ShopeePay outflow on day 7–13 of the month; candidate orders reach back 366 days (supersedes D-270/D-275's repayment wording and 10–60 day window)
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
@@ -477,6 +478,15 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-278 — Haiku trial for settled UI-only changes via a new `finance-ui-implementer`; money, data and server code stay on Sonnet `finance-implementer`
+
+- Date: 2026-10-17
+- Status: **Trial started; not committed.** Agent and routing only, no app code.
+- Context: claude-usage's 2026-10-17 check found the Sonnet implementer holding (19 runs since 10-08, 0 re-runs, none on Opus), which answers claude-usage D-010's reason to keep Haiku out. Its replay benchmarks (rounds 1–3) passed Haiku 5.5 on editor and web changes, and ge150-fw's Haiku trial had 0 re-runs in 12 runs.
+- Chosen: `.claude/agents/finance-ui-implementer.md` (Haiku) for decision-complete layout, styling, markup and copy in `app/**/*.tsx` / `app/globals.css`. It stops and returns anything touching `lib/`, `supabase/`, `workers/`, `app/api/`, server actions, money parsing or formatting, form submit, data loading or validation. A mixed task goes whole to `finance-implementer`. A failed Haiku run is re-run there with `[re-run]`. `CLAUDE.md` § Subagents routes it.
+- Rejected: Haiku as the default implementer (money invariants; the benchmarks never covered this kind of code).
+- Check (claude-usage): after ~5 sessions with UI work, `finance-ui-implementer` runs, `[re-run]` count on `finance-implementer`, runs past 40 calls. Revert if re-runs rise or a Haiku run edits out of scope.
 
 ## D-277 — Two of D-271's leftover findings fixed: matches read only the Shopee match state, and an unknown refund destination is refused instead of stored as a bank; three left on purpose
 
