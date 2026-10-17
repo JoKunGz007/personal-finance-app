@@ -41,7 +41,7 @@ import { z } from "zod";
  * (PLAN task 42), and the way back to something plainly legible must not itself depend on the trial
  * going well. The other three are the OFL pixel faces the owner compared on the design canvas.
  */
-export const FONT_CHOICES = ["system", "libron", "press-start-2p", "pixelify-sans", "silkscreen"] as const;
+export const FONT_CHOICES = ["system", "libron", "libron-figures", "press-start-2p", "pixelify-sans", "silkscreen"] as const;
 
 export type FontChoice = (typeof FONT_CHOICES)[number];
 
@@ -80,6 +80,7 @@ export const FONT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 export const FONT_LABELS: Record<FontChoice, string> = {
   system: "System (IBM Plex)",
   libron: "Libron",
+  "libron-figures": "Libron (book figures)",
   "press-start-2p": "Press Start 2P",
   "pixelify-sans": "Pixelify Sans",
   silkscreen: "Silkscreen"
@@ -95,6 +96,7 @@ export const FONT_LABELS: Record<FontChoice, string> = {
 export const FONT_NOTES: Record<FontChoice, string> = {
   system: "The stack this app has always used. Latin and Thai in one family.",
   libron: "A calm book serif. Latin only — Thai falls back; figures stay in Plex Mono.",
+  "libron-figures": "Libron with its own figures in place of Plex Mono. Latin only — Thai falls back.",
   "press-start-2p": "Widest of the three. Latin only — Thai falls back to IBM Plex Sans Thai.",
   "pixelify-sans": "Closest to ordinary proportions. Latin only — Thai falls back.",
   silkscreen: "Tightest of the three. Latin only — Thai falls back."

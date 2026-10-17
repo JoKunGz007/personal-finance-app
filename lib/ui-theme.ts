@@ -141,7 +141,9 @@ export const THEME_TOKENS = [
   "money-in", "money-out",
   "on-action", "warn-ink", "resync-ink",
   "verified-ink", "verified-rail", "celadon-dot", "backup-edge", "scrim",
-  "chart-in", "chart-out"
+  "chart-in", "chart-out",
+  // Delivery-app brand chips on /orders: the same fill and ink in every scheme.
+  "grab", "lineman", "brand-ink"
 ] as const;
 
 export function isThemeChoice(value: unknown): value is ThemeChoice {

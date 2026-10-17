@@ -60,6 +60,9 @@
   --celadon-ink: #3d4a1e;
   --saffron: #dda15e;
   --saffron-wash: #f8edd7;
+  --grab: #00b14f;
+  --lineman: #06c755;
+  --brand-ink: #04210f;
   --red: #9b2c2c;
   --radius: 6px;
   /* **The panel frame** (PLAN task 42). A darkened Copper outer line with a Light Caramel inner
@@ -156,6 +159,9 @@
     --celadon-ink: #cfe0a8;
     --saffron: #e8b070;
     --saffron-wash: #3a3320;
+    --grab: #00b14f;
+    --lineman: #06c755;
+    --brand-ink: #04210f;
     --red: #f28a86;
     --frame-outer: #c98a45;
     --frame-inner: #3d446a;
@@ -188,6 +194,9 @@
   --celadon-ink: #cfe0a8;
   --saffron: #e8b070;
   --saffron-wash: #3a3320;
+  --grab: #00b14f;
+  --lineman: #06c755;
+  --brand-ink: #04210f;
   --red: #f28a86;
   --frame-outer: #c98a45;
   --frame-inner: #3d446a;
@@ -222,6 +231,9 @@
   --celadon-ink: #d3e0a8;
   --saffron: #dda15e;
   --saffron-wash: #3d2e1c;
+  --grab: #00b14f;
+  --lineman: #06c755;
+  --brand-ink: #04210f;
   --red: #f08a7f;
   --frame-outer: #c07a33;
   --frame-inner: #4a3a2c;
@@ -257,6 +269,9 @@
   --celadon-ink: #d5e4a6;
   --saffron: #dda15e;
   --saffron-wash: #382c18;
+  --grab: #00b14f;
+  --lineman: #06c755;
+  --brand-ink: #04210f;
   --red: #f0897d;
   --frame-outer: #bd7a30;
   --frame-inner: #3f4a28;
@@ -407,6 +422,12 @@
   --font-body: "Figures", "Libron", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
   --font-data: "Figures", "Libron", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
+/* On trial (owner, 2026-10-17): Libron's own figures instead of "Figures". Its digits measured equal-width,
+   0.605em against Plex Mono's 0.600em, so columns keep their alignment. */
+:root[data-font="libron-figures"] {
+  --font-body: "Libron", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
+  --font-data: "Libron", "IBM Plex Mono", "Cascadia Mono", monospace;
+}
 :root[data-font="press-start-2p"] {
   --font-body: "Figures", "Press Start 2P Fitted", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
   --font-data: "Figures", "Press Start 2P Fitted", "IBM Plex Mono", "Cascadia Mono", monospace;
@@ -537,6 +558,8 @@ button:disabled { cursor: wait; opacity: .65; }
    adds no box. The phone block below turns both on. */
 .cash-fold .cash-disclosure { display: none; }
 .cash-fold-body { display: contents; }
+/* /ledger only (owner, 2026-10-17): no divider between Cash payments and Transactions. */
+.cash-bench.cash-fold { border-bottom: 0; }
 /* **`flex-wrap` is load-bearing since the typeface became switchable** (D-153). Without it this row
    could only grow, and a pixel face grows it a lot: measured at a 390px layout viewport, choosing
    Press Start 2P took `scrollWidth` from 455px to 734px — the page shrink-to-fits and every glyph
@@ -1283,6 +1306,11 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
 .receipt-chip.ok { color: var(--verified-ink); }
 .receipt-chip.warn { color: var(--warn-ink); background: var(--saffron-wash); }
 .receipt-chip.quiet { color: var(--muted); }
+/* /orders: which app an order came from, filled in its brand green (Grab #00B14F, darker; LINE #06C755,
+   lighter) with dark ink, so the chip reads the same on every colour scheme (owner, 2026-10-17). */
+.receipt-chip.platform-chip { color: var(--brand-ink); border-color: transparent; }
+.receipt-chip.platform-chip.grabfood { background: var(--grab); }
+.receipt-chip.platform-chip.lineman { background: var(--lineman); }
 .receipt-amount { margin-left: auto; font-weight: 700; font-family: var(--font-money); }
 .receipt-promotion td { color: var(--muted); font-style: italic; }
 .receipt-discount td, .ledger-receipt .receipt-discount { color: var(--money-in); font-weight: 600; }
