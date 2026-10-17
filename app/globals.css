@@ -410,8 +410,9 @@
   is **70** per 100px, IBM Plex's exactly, so it needs no `size-adjust` and keeps its own name.
   The release ships 400 and 700 in both styles; the ranges below send 500 to the regular file and
   600 to the bold one instead of letting the browser synthesise. Latin only, like the pixel faces —
-  Thai falls back to IBM Plex Sans Thai — and its digits are proportional, so "Figures" still goes
-  first and every figure stays in Plex Mono (D-162, D-202).
+  Thai falls back to IBM Plex Sans Thai. "Figures" still goes
+  first and every figure stays in Plex Mono (D-162, D-202). (Its digits are in fact equal-width:
+  measured 2026-10-17, D-281, which is what the `libron-figures` choice below trials.)
 */
 @font-face { font-family: "Libron"; font-style: normal; font-weight: 100 500; font-display: swap; src: url("./fonts/libron/Libron-Regular.woff2") format("woff2"); }
 @font-face { font-family: "Libron"; font-style: italic; font-weight: 100 500; font-display: swap; src: url("./fonts/libron/Libron-Italic.woff2") format("woff2"); }

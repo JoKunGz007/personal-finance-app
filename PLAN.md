@@ -4,6 +4,10 @@ Last verified: 2026-09-25
 
 ## Current checkpoint
 
+**Task 60 fixed; three visual asks shipped — 2026-10-17** (D-280, D-281; `75e976a`, `76b7af0`, pushed). Inbox/mailbox statement counts now read back what `confirm_import` linked. On `/ledger` the divider under Cash payments is gone; on `/orders` every order has a Grab or LINE MAN chip in brand green; the typeface picker has "Libron (book figures)" for the owner to trial Libron digits on the real site.
+
+**Open:** (1) **Intermittent 500s**: waiting for the next one; read the Vercel logs within the hour (Hobby retention). (2) **D-277 refund check**: the export is posted from the browser and never stored on the server, and no Shopee JSON was found on this machine. It needs the owner's export file, or a re-drop of it on the Inbox: refusals are listed by name, so a mismatch would show as "The refund destination is not ShopeePay or a bank account". (3) The owner links the 6 repayment rows on `/orders?view=shopee`. (4) Decide whether "Libron (book figures)" replaces `libron`'s Plex figures, after the trial.
+
 **UX review 2026-10-11 closed — 2026-10-17** (D-279, task 65; `4780f96`, `b0357a2`, pushed and live). 23 of 25 findings fixed (two reduced), 2 declined; round 2 re-measured every fixed item on production at 375px and 1280px. Gate: tsc, eslint 0, Vitest 93 files passed / 4 skipped (1,788 passed / 115 skipped: local Supabase was not running, so the database-backed files skipped; the changes are UI only); `/code-review` high: 5 of 6 findings fixed, 1 style nit left. The Vercel Hobby plan keeps request logs about an hour, so the `readAll failed` line has to be read soon after a 500.
 
 **Open:** (1) **Intermittent 500s**: read the Vercel logs within the hour after the next "could not be loaded in full", then fix (likely one retry on network/5xx for idempotent reads). (2) The owner links the 6 repayment rows on `/orders?view=shopee`. (3) D-277's refund-destination rule is not verified against the one real bank refund's printed shape.
@@ -812,7 +816,7 @@ Task 13 (receipts as originally scoped) is superseded by 20 and 21 for bank slip
 
 59. **A "duplicate" (or hidden) state for ledger rows.** Owner, 2026-10-11: maybe later. Today a duplicate is marked Excluded like any row the owner hides (D-265), and overlay notes have no edit control. Would separate "same bank row stored twice" from the owner's own exclusions, possibly hiding such rows from the default ledger view. Not needed for correctness: migration 054 stops new duplicates.
 
-60. **The Inbox/mailbox "already in the ledger" count uses the exact fingerprint only** (`lib/server/inbox-statement.ts`, `lib/server/fingerprint-lookup.ts`). A re-printed overlapping statement is reported as new rows and records an all-linked batch instead of `duplicate`; the ledger itself is right (D-265). Fix by counting on the same identity facts as `confirm_import`, or by reading `identity_links` back from the batch's audit detail.
+60. ~~**The Inbox/mailbox "already in the ledger" count uses the exact fingerprint only**~~ — **done 2026-10-17** (D-280). (`lib/server/inbox-statement.ts`, `lib/server/fingerprint-lookup.ts`). A re-printed overlapping statement is reported as new rows and records an all-linked batch instead of `duplicate`; the ledger itself is right (D-265). Fix by counting on the same identity facts as `confirm_import`, or by reading `identity_links` back from the batch's audit detail.
 
 65. ~~**Fix the 25 findings of the 2026-10-11 UX review**~~ — **done 2026-10-17** (D-279): 23 fixed, 2 declined, round 2 passed; the findings file is deleted.
 

@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-279** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-281** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,8 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-281** — Owner's 2026-10-17 visual asks: no divider under Cash payments on `/ledger`; Grab and LINE MAN chips in brand green on `/orders`; a "Libron (book figures)" typeface choice to trial Libron digits
+- **D-280** — Inbox/mailbox statement counts read back what `confirm_import` linked (task 60): a re-printed overlapping statement reports its linked rows, an all-linked batch reports duplicate; no migration
 - **D-279** — UX review 2026-10-11 closed: 23 of 25 fixed (two reduced), 2 declined (desktop calendar cells stay 38px wide; "Use synthetic statement" stays per D-204)
 - **D-278** — Haiku trial for settled UI-only changes via a new `finance-ui-implementer`; money, data and server code stay on Sonnet `finance-implementer`
 - **D-277** — Two of D-271's leftover findings fixed: matches read only the Shopee match state, and an unknown refund destination is refused instead of stored as a bank; three left on purpose
@@ -479,6 +481,24 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-281 — Owner's 2026-10-17 visual asks: no divider under Cash payments on `/ledger`; Grab and LINE MAN chips in brand green on `/orders`; a "Libron (book figures)" typeface choice to trial Libron digits
+
+- Date: 2026-10-17
+- Status: **Shipped** (`76b7af0`).
+- Divider: `.cash-bench.cash-fold { border-bottom: 0 }`. Only the `/ledger` cash section carries `.cash-fold`; the seven other `.cash-bench` sections keep their divider.
+- Chips: every order on `/orders` gets a filled platform chip, "Grab" in `--grab` (#00B14F, Grab's commonly cited screen green for PMS 355C) and "LINE MAN" in `--lineman` (#06C755, the LINE palette green; no LINE MAN-specific value was found), with `--brand-ink` (#04210F) text. The three are tokens with the same value in every scheme block (`THEME_TOKENS`), because the colour-literal guard allows no literal outside a token block. Grab rides keep no chip: their section is already Grab-only.
+- Figures: a new `FONT_CHOICES` entry `libron-figures` drops "Figures" (Plex Mono digits) from both stacks. Measured before choosing it: Libron's digits are equal-width (four 1s, 8s and 0s each 72.6px at 30px), 0.605em against Plex Mono's 0.600em, so columns keep their alignment. This contradicts the 2026-10-07 CSS comment that called them proportional. `libron` stays the default, and Plex figures remain one tap away.
+- Rejected: changing `libron` itself (the owner asked to try it first, and losing options stay switchable).
+
+## D-280 — Inbox/mailbox statement counts read back what `confirm_import` linked (task 60): a re-printed overlapping statement reports its linked rows, an all-linked batch reports duplicate; no migration
+
+- Date: 2026-10-17
+- Status: **Shipped** (`75e976a`); PLAN task 60 closed.
+- Chosen: after a successful confirm, `processInboxStatement` counts `import_batch_rows` of the new batch with `linked_existing = true` (`linkedBatchRowCount`). `confirm_import` sets that flag for both exact and identity links (migration 054), so the identity rule lives only in SQL. All linked → `duplicate` (the mailbox flags it fetched); otherwise `captured` with `existingRows` = linked. A failed read-back keeps the fingerprint pre-count. Read access is the `strong_owner_select` policy every ledger table got in migration 002.
+- Rejected: mirroring migration 054's identity rule in TypeScript (a second copy that can drift); a read-only pre-count SQL function (needs a migration and a `db push`).
+- Left: a re-printed all-linked statement still records an import batch and artifact, because the count is known only after `confirm_import` runs. Nothing is inserted or linked differently.
+- Evidence: four new tests in `tests/inbox-statement.test.ts`, two red-proved against the old code; full Vitest 93 files passed / 4 skipped (database files skipped, local Supabase down). The real read is mocked; no database-backed run.
 
 ## D-279 — UX review 2026-10-11 closed: 23 of 25 fixed (two reduced), 2 declined (desktop calendar cells stay 38px wide; "Use synthetic statement" stays per D-204)
 
