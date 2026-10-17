@@ -23,6 +23,7 @@ function deps(over: Partial<MailboxStatementDeps> = {}) {
     sourceName: "statement_1234567890.pdf",
     artifactExists: async () => false,
     existingFingerprintCount: async () => 0,
+    linkedRowCount: async () => null,
     confirmImport: async (): Promise<ConfirmImportResult> => ({ kind: "ok", batchId: "b", payloadDigest: "d", fingerprints: [], warnings: [] }),
     markFetched,
     ...over

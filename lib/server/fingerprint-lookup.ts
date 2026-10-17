@@ -40,3 +40,16 @@ export async function existingFingerprintCount(
   }
   return found;
 }
+
+/**
+ * How many rows of `batchId` `confirm_import` linked to an already stored row; null when the read
+ * fails. Read through the owner's own client (`strong_owner_select` policy).
+ */
+export async function linkedBatchRowCount(client: SupabaseClient, batchId: string): Promise<number | null> {
+  const { count, error } = await client
+    .from("import_batch_rows")
+    .select("id", { count: "exact", head: true })
+    .eq("batch_id", batchId)
+    .eq("linked_existing", true);
+  return error || count === null ? null : count;
+}

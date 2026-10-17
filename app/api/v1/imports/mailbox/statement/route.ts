@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { accountListSchema } from "@/lib/accounts";
 import { confirmImport } from "@/lib/server/confirm-import";
-import { existingFingerprintCount } from "@/lib/server/fingerprint-lookup";
+import { existingFingerprintCount, linkedBatchRowCount } from "@/lib/server/fingerprint-lookup";
 import { processMailboxStatement } from "@/lib/server/mailbox-statement";
 import { mailboxConfig, markFetched, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
 import { readStatementPdf, readStatementPdfPages } from "@/lib/server/statement-pdf-node";
@@ -98,6 +98,7 @@ export async function POST(request: Request) {
         return error ? null : (data?.length ?? 0) > 0;
       },
       existingFingerprintCount: (accountId, fingerprints) => existingFingerprintCount(supabase, accountId, fingerprints),
+      linkedRowCount: (batchId) => linkedBatchRowCount(supabase, batchId),
       confirmImport: (body) => confirmImport(supabase, body),
       // The first session was released after the download; the flag gets a fresh, short one.
       markFetched: async () => {

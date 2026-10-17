@@ -2,7 +2,7 @@ import { z } from "zod";
 import { accountListSchema } from "@/lib/accounts";
 import { INBOX_STATEMENT_NAME } from "@/lib/inbox-queue";
 import { confirmImport } from "@/lib/server/confirm-import";
-import { existingFingerprintCount } from "@/lib/server/fingerprint-lookup";
+import { existingFingerprintCount, linkedBatchRowCount } from "@/lib/server/fingerprint-lookup";
 import { downloadInboxObject } from "@/lib/server/inbox-object";
 import { processInboxStatement } from "@/lib/server/inbox-statement";
 import { readStatementPdf, readStatementPdfPages } from "@/lib/server/statement-pdf-node";
@@ -55,6 +55,7 @@ export async function POST(request: Request) {
       return error ? null : (data?.length ?? 0) > 0;
     },
     existingFingerprintCount: (accountId, fingerprints) => existingFingerprintCount(supabase, accountId, fingerprints),
+    linkedRowCount: (batchId) => linkedBatchRowCount(supabase, batchId),
     confirmImport: (body) => confirmImport(supabase, body)
   });
 

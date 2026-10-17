@@ -26,6 +26,12 @@ export type InboxStatementDeps = {
   artifactExists: (artifactDigest: string) => Promise<boolean | null>;
   /** How many of these row fingerprints the owner already has stored for the account; null when unknown. */
   existingFingerprintCount: (accountId: string, fingerprints: string[]) => Promise<number | null>;
+  /**
+   * How many rows of a confirmed batch `confirm_import` linked to a stored row (`import_batch_rows.linked_existing`),
+   * by exact fingerprint or by identity facts (migration 054); null when unknown. The database applies the rule,
+   * so this is the one place the count and the ledger cannot disagree.
+   */
+  linkedRowCount: (batchId: string) => Promise<number | null>;
   confirmImport: (body: ConfirmImportBody) => Promise<ConfirmImportResult>;
 };
 
@@ -117,8 +123,8 @@ export async function processInboxStatement(
   // `confirm_import` skips a row whose fingerprint is already stored. The fingerprint covers date,
   // time, label, description, reference, amounts, post-balance and branch, so a stored one is the
   // same bank row and skipping it is correct: an overlapping statement is confirmed and reports how
-  // many rows were already there (D-260). `confirm_import` returns only the batch id, so the counts
-  // come from this pre-count. A statement whose rows are all stored adds nothing and is not confirmed.
+  // many rows were already there (D-260). A statement whose rows are all stored by fingerprint adds
+  // nothing and is not confirmed; after a confirm, the batch read-back below replaces this count.
   const { payload } = assembled;
   const fingerprints = await Promise.all(payload.rows.map((row) => rowFingerprint(payload.accountId, payload.bankCode, row)));
   const existing = await deps.existingFingerprintCount(payload.accountId, fingerprints);
@@ -131,6 +137,12 @@ export async function processInboxStatement(
     payload: assembled.payload
   });
   if (confirmed.kind !== "ok") return { kind: "held", reason: "confirm-failed", artifactDigest };
+  // The fingerprint pre-count misses a re-printed row that `confirm_import` links by identity facts
+  // (migration 054). The batch itself records what was linked, so read it back; when that read fails
+  // keep the pre-count (the ledger is unaffected either way). A batch that linked every row added nothing.
+  const linked = await deps.linkedRowCount(String(confirmed.batchId));
+  const existingRows = linked === null ? existing : Math.min(linked, payload.rows.length);
+  if (existingRows >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length };
   return {
     kind: "captured",
     artifactDigest,
@@ -138,6 +150,6 @@ export async function processInboxStatement(
     periodStart: assembled.payload.periodStart,
     periodEnd: assembled.payload.periodEnd,
     rowCount: assembled.payload.rows.length,
-    existingRows: existing
+    existingRows
   };
 }

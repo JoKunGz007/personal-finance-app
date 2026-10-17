@@ -32,6 +32,7 @@ function deps(over: Partial<InboxStatementDeps> = {}): InboxStatementDeps & { co
     sourceName: "statement_1234567890.pdf",
     artifactExists: async () => false,
     existingFingerprintCount: vi.fn<InboxStatementDeps["existingFingerprintCount"]>(async () => 0),
+    linkedRowCount: vi.fn<InboxStatementDeps["linkedRowCount"]>(async () => null),
     confirmImport: vi.fn(async (): Promise<ConfirmImportResult> => ({
       kind: "ok", batchId: "b", payloadDigest: "d", fingerprints: [], warnings: []
     })),
@@ -122,6 +123,29 @@ describe("processInboxStatement", () => {
     const out = await processInboxStatement("import", d);
     expect(out).toMatchObject({ kind: "duplicate", rowCount: 4 });
     expect(d.confirmImport).not.toHaveBeenCalled();
+  });
+
+  it("counts rows `confirm_import` linked by identity facts, not only by fingerprint (task 60)", async () => {
+    // A re-printed row has another fingerprint, so the pre-count sees 0; the batch says 3 were linked.
+    const d = deps({ existingFingerprintCount: async () => 0, linkedRowCount: vi.fn(async () => 3) });
+    const out = await processInboxStatement("import", d);
+    expect(out).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 3 });
+    expect(d.linkedRowCount).toHaveBeenCalledWith("b");
+  });
+
+  it("reports duplicate when every row of the confirmed batch was linked (task 60)", async () => {
+    const d = deps({ existingFingerprintCount: async () => 0, linkedRowCount: async () => 4 });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "duplicate", rowCount: 4 });
+  });
+
+  it("still counts a genuinely new row as new (task 60)", async () => {
+    const d = deps({ existingFingerprintCount: async () => 0, linkedRowCount: async () => 0 });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 0 });
+  });
+
+  it("falls back to the fingerprint pre-count when the batch cannot be read back (task 60)", async () => {
+    const d = deps({ existingFingerprintCount: async () => 1, linkedRowCount: async () => null });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 1 });
   });
 
   it("holds an overlapping statement whose confirm fails, as before", async () => {
