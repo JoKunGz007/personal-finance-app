@@ -33,6 +33,13 @@ export function RecoveryBench() {
   const [custody, setCustody] = useState<{ lastExportedAt: string | null; changesSince: string | null } | null>(null);
   const [custodyVersion, setCustodyVersion] = useState(0);
 
+  const exportBlocked = busy || ledgerBackupPassword.length < 12 || ledgerBackupConfirm !== ledgerBackupPassword;
+  const exportHint = busy ? "Working…"
+    : ledgerBackupPassword.length < 12 ? "Enter a password of at least 12 characters"
+    : null; // a mismatch is already said by the confirm field's own help line
+  const restoreBlocked = busy || !restoreFile || restorePassword === "";
+  const restoreHint = busy ? "Working…" : !restoreFile ? "Choose a backup file and enter its password" : "Enter the backup's password";
+
   useEffect(() => {
     let live = true;
     fetch("/api/v1/backups/status", { cache: "no-store" })
@@ -175,7 +182,7 @@ export function RecoveryBench() {
               {custody.lastExportedAt
                 ? `Last export: ${formatDate(new Date(custody.lastExportedAt).toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }))}`
                 : "Last export: never"}
-              {custody.changesSince ? ` · ${custody.changesSince} changes since` : ""}
+              {custody.changesSince ? ` · ${custody.changesSince} ${custody.changesSince === "1" ? "change" : "changes"} since` : ""}
             </p>
           ) : null}
           <label className="account-control">
@@ -186,7 +193,6 @@ export function RecoveryBench() {
               minLength={12}
               autoComplete="new-password"
               value={ledgerBackupPassword}
-              placeholder="At least 12 characters…"
               aria-describedby="backup-password-help"
               onChange={(event) => setLedgerBackupPassword(event.target.value)}
             />
@@ -205,9 +211,10 @@ export function RecoveryBench() {
             />
             <small id="backup-confirm-help">{confirmMismatch ? "Doesn't match yet." : "Type it again."}</small>
           </label>
-          <button type="button" className="secondary-button" disabled={busy || ledgerBackupPassword.length < 12 || ledgerBackupConfirm !== ledgerBackupPassword} onClick={downloadLedgerBackup}>
+          <button type="button" className="secondary-button" disabled={exportBlocked} aria-describedby={exportBlocked ? (exportHint ? "export-hint" : "backup-confirm-help") : undefined} onClick={downloadLedgerBackup}>
             Export encrypted backup
           </button>
+          {exportBlocked && exportHint ? <small id="export-hint" className="field-help">{exportHint}</small> : null}
         </div>
 
         <div className="recovery-half">
@@ -218,7 +225,7 @@ export function RecoveryBench() {
               Restoring rebinds every row to the signed-in owner — this is a recovery into a fresh install, not an overwrite of a live one.
             </LedgerNote>
           </p>
-          <label className="account-control">
+          <label className="file-control">
             <span>Backup file</span>
             <input
               type="file"
@@ -226,6 +233,7 @@ export function RecoveryBench() {
               accept=".plbak,application/json"
               onChange={(event) => { setRestoreFile(event.target.files?.[0] ?? null); setError(null); }}
             />
+            <b>{restoreFile?.name ?? "Choose a backup file…"}</b>
           </label>
           <label className="account-control">
             <span>Backup password</span>
@@ -237,9 +245,10 @@ export function RecoveryBench() {
               onChange={(event) => setRestorePassword(event.target.value)}
             />
           </label>
-          <button type="button" className="secondary-button" disabled={busy || !restoreFile || restorePassword === ""} onClick={restoreLedgerBackup}>
+          <button type="button" className="secondary-button" disabled={restoreBlocked} aria-describedby={restoreBlocked ? "restore-hint" : undefined} onClick={restoreLedgerBackup}>
             Restore this ledger
           </button>
+          {restoreBlocked ? <small id="restore-hint" className="field-help">{restoreHint}</small> : null}
         </div>
       </div>
 

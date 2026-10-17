@@ -33,7 +33,7 @@ export function CapturedSlips({ slips, decided, busy, error, onLoad }: {
       <div className="bench-heading">
         <p className="section-index">Captured</p>
         <div>
-          <h2 id="captured-title">On this ledger</h2>
+          <h2 id="captured-title">Captured slips</h2>
           <div className="heading-note">
             <LedgerNote label="About captured slips">
               Newest first. A slip counts as money that moved until its statement confirms it.

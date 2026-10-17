@@ -21,7 +21,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
               <LedgerNote label="About Shopee orders">
                 Orders come from the export dropped on the Inbox. They itemize money already on the
                 ledger, so they never change a balance. The recipient&apos;s name, address and phone
-                are never stored.
+                are never stored. A SPayLater purchase is counted in the month it was ordered, and on
+                the ledger as its repayments.
               </LedgerNote>
             ) : (
               <LedgerNote label="About orders">

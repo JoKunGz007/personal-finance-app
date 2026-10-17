@@ -243,9 +243,10 @@ export function ReceiptsBench() {
               </span>
             </p>
           </div>
-          <label className="account-control">
+          <label className="file-control">
             <span>7-Eleven e-tax PDFs or app screenshots</span>
             <input type="file" accept="application/pdf,.pdf,image/*" multiple onChange={(event) => { void choose(event.target.files); event.target.value = ""; }} />
+            <b>Choose files…</b>
           </label>
           {ready.length > 1 ? (
             <div className="slip-actions">
@@ -350,7 +351,8 @@ function StoredReceipts({ receipts, busy, error, signInNote, onLoad }: {
                   </span>
                   <span className="receipt-branch">{displayBranch(receipt.branch_name)}</span>
                   <span className="receipt-count">{itemCount(receipt.items.filter((item) => !item.is_promotion).length)}</span>
-                  <span className={`receipt-chip ${MATCH_CHIP[receipt.match.status].tone}`}>{receipt.match.status === "none" && receipt.purchased_at_time === null ? "no time on invoice" : MATCH_CHIP[receipt.match.status].label}</span>
+                  <span className={`receipt-chip ${MATCH_CHIP[receipt.match.status].tone}`}>{MATCH_CHIP[receipt.match.status].label}</span>
+                  {receipt.match.status === "none" && receipt.purchased_at_time === null ? <span className="receipt-chip quiet">no time on invoice</span> : null}
                   {/* `items_complete`, not `completeness`: capture overwrites the latter with the latest
                       source's verdict even when it keeps the stored items, and "partial" here means
                       the items shown are not trusted — the rule the statistics count by. */}

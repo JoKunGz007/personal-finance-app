@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useId, useState } from "react";
 import { formatDate } from "@/app/ledger-shared";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { getShopeeView, postShopeeLinks, postShopeeMatch } from "@/lib/browser/shopee-client";
@@ -115,8 +115,7 @@ export function ShopeeBench() {
               <div><dt>Cancelled</dt><dd className="numeric">{current.cancelled}</dd></div>
             </dl>
             <p className="ledger-status">
-              Shopee&apos;s own totals. They are never added to a ledger total: a SPayLater purchase is
-              counted here in its order month and on the ledger as its repayments.
+              Shopee&apos;s own totals. They are never added to a ledger total.
             </p>
             <MonthStrip months={months} />
           </>
@@ -202,7 +201,7 @@ function OrderItem({ order, view, busy, act }: { order: ShopeeViewOrder; view: S
         <p className="ledger-status">
           Placed {formatDate(bangkokDate(order.placedAt))}
           {order.paidAt ? ` · paid ${formatDate(bangkokDate(order.paidAt))}` : ""} · {order.paymentMethod} ·{" "}
-          <a href={order.orderUrl} target="_blank" rel="noopener noreferrer">Order {order.orderCode}</a>
+          <a className="shopee-order-link" href={order.orderUrl} target="_blank" rel="noopener noreferrer">Order {order.orderCode}</a>
         </p>
         {row ? (
           <p className="ledger-status">Ledger row: {formatDate(row.date)}{row.description ? ` · ${row.description}` : ""}</p>
@@ -243,7 +242,8 @@ const LINK_LABEL = { wallet_topup: "wallet top-up", spaylater_repayment: "SPayLa
 
 function rowText(row: ShopeeViewRow | undefined): string {
   if (!row) return "ledger row not in view";
-  const text = row.description ?? row.label ?? "";
+  // Display only: the bank's text often ends in an empty "NOTE : -".
+  const text = (row.description ?? row.label ?? "").replace(/\s+NOTE\s*:\s*-\s*$/i, "");
   return `${formatDate(row.date)}${text ? ` · ${text}` : ""} · ${formatThb(row.movement)}`;
 }
 
@@ -289,8 +289,8 @@ function WaitingForYou({ view, busy, act }: { view: ShopeeView; busy: boolean; a
               <p>Wallet-paid order · <OrderLine order={order} /></p>
               {w.transactionIds.map((tid) => (
                 <p key={tid} className="ledger-status">
-                  Top-up candidate: {rowText(view.rows[tid])}{" "}
-                  <button type="button" className="secondary-button" disabled={busy}
+                  <span id={`topup-${w.orderId}-${tid}`}>Top-up candidate: {rowText(view.rows[tid])}</span>{" "}
+                  <button type="button" className="secondary-button" disabled={busy} aria-describedby={`topup-${w.orderId}-${tid}`}
                     onClick={() => act(() => postShopeeLinks(linkBody("wallet_topup", tid, [order.id])))}>
                     Link
                   </button>
@@ -331,9 +331,13 @@ function SpaylaterCard({ repayment, view, orders, linkedOrders, busy, act }: {
   const linked = new Set(repayment.linkedOrderIds);
   const open = orders.filter((o) => !linked.has(o.id));
   const picked = open.filter((o) => chosen.has(o.id));
+  const lineId = useId();
+  // Count only: the other cards still waiting (as WaitingForYou shows them) that list this order.
+  const alsoOn = (orderId: string) => view.spaylaterRepayments.filter((r) =>
+    r.transactionId !== repayment.transactionId && r.linkedOrderIds.length === 0 && r.orderIds.includes(orderId)).length;
   return (
     <li>
-      <p>SPayLater repayment · {rowText(view.rows[repayment.transactionId])}</p>
+      <p id={`${lineId}-line`}>SPayLater repayment · {rowText(view.rows[repayment.transactionId])}</p>
       {linkedOrders.map((o) => (
         <p key={o.id} className="ledger-status">
           Linked: <OrderLine order={o} />{" "}
@@ -343,21 +347,27 @@ function SpaylaterCard({ repayment, view, orders, linkedOrders, busy, act }: {
           </button>
         </p>
       ))}
-      {open.map((o) => (
-        <label key={o.id} className="ledger-status">
-          <input type="checkbox" checked={chosen.has(o.id)} disabled={busy}
-            onChange={(e) => setChosen((prev) => {
-              const next = new Set(prev);
-              if (e.target.checked) next.add(o.id); else next.delete(o.id);
-              return next;
-            })} />{" "}
-          <OrderLine order={o} />
-        </label>
-      ))}
+      {open.length > 0 ? <div role="group" aria-labelledby={`${lineId}-line`} className="shopee-pick-group">
+        {open.map((o) => {
+          const others = alsoOn(o.id);
+          return (
+          <label key={o.id} className="ledger-status shopee-pick">
+            <input type="checkbox" checked={chosen.has(o.id)} disabled={busy}
+              onChange={(e) => setChosen((prev) => {
+                const next = new Set(prev);
+                if (e.target.checked) next.add(o.id); else next.delete(o.id);
+                return next;
+              })} />
+            <span><OrderLine order={o} />{others > 0 ? <span className="ledger-status"> · also on {others} other {others === 1 ? "repayment" : "repayments"}</span> : null}</span>
+          </label>
+          );
+        })}
+      </div> : null}
       {open.length > 0 ? (
         <>
           <p className="ledger-status">Selected {formatThb(sumMinor(picked.map((o) => o.totalMinor)))}</p>
-          <button type="button" className="secondary-button" disabled={busy || picked.length === 0}
+          {picked.length === 0 ? <p className="ledger-status">Tick the order(s) this repayment paid</p> : null}
+          <button type="button" className="secondary-button" disabled={busy || picked.length === 0} aria-describedby={`${lineId}-line`}
             onClick={() => act(() => postShopeeLinks(linkBody("spaylater_repayment", repayment.transactionId, picked.map((o) => o.id))))}>
             Link selected
           </button>

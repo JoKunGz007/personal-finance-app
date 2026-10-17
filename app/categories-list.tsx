@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { nestedCategories, type Category } from "@/lib/categories";
 
 /**
@@ -49,6 +49,9 @@ export function CategoriesList({
   // was disabled mid-save); back to that row's Rename button when it closes by Save, Cancel or Escape.
   const list = useRef<HTMLUListElement>(null);
   const lastRenaming = useRef<string | null>(null);
+  // Phone only (UX 2026-10-11 #18): a row shows its name and an Edit toggle; the parent picker,
+  // Rename and Archive open beneath it. On wider screens the toggle is hidden and they always show.
+  const [openId, setOpenId] = useState<string | null>(null);
   useEffect(() => {
     if (renamingId !== null) {
       if (saving !== null) return;
@@ -78,7 +81,10 @@ export function CategoriesList({
         const isSaving = saving === category.id;
         const unchanged = renameName.trim() === "" || renameName.trim() === category.name;
         return (
-          <li key={category.id} className={category.parent_id ? "category-child" : undefined}>
+          <li
+            key={category.id}
+            className={[category.parent_id ? "category-child" : "", openId === category.id ? "is-open" : ""].join(" ").trim() || undefined}
+          >
             {isRenaming ? (
               <>
                 {/* `.account-control` for its border/height/radius, same as every other text input
@@ -122,10 +128,21 @@ export function CategoriesList({
               </>
             ) : (
               <>
-                <span>
+                <span className="category-name">
                   {category.name}
                   {category.archived ? <em> · archived</em> : null}
                 </span>
+                <button
+                  type="button"
+                  className="tertiary-button category-more"
+                  aria-expanded={openId === category.id}
+                  aria-controls={`category-controls-${category.id}`}
+                  aria-label={`${openId === category.id ? "Done editing" : "Edit"} ${category.name}`}
+                  onClick={() => setOpenId((current) => (current === category.id ? null : category.id))}
+                >
+                  {openId === category.id ? "Done" : "Edit"}
+                </button>
+                <span className="category-controls" id={`category-controls-${category.id}`}>
                 <label className="account-control category-parent">
                   <span>Parent</span>
                   <select
@@ -153,15 +170,18 @@ export function CategoriesList({
                 >
                   Rename
                 </button>
+                {/* Archive is quieter than Rename (UX 2026-10-11 #16): it hides the category from
+                    pickers, and "Bring it back" on the same row undoes it. */}
                 <button
                   type="button"
-                  className="secondary-button"
+                  className="tertiary-button"
                   aria-label={`${category.archived ? "Bring back" : "Archive"} ${category.name}`}
                   disabled={saving !== null}
                   onClick={() => onArchiveToggle(category)}
                 >
                   {isSaving ? "Saving…" : category.archived ? "Bring it back" : "Archive"}
                 </button>
+                </span>
               </>
             )}
           </li>

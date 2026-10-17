@@ -181,7 +181,7 @@ export function BalanceChart({ points }: { points: readonly DailyBalance[] }) {
             <g key={tick.toString()}>
               <line x1={pad.left} x2={width - pad.right} y1={y(value)} y2={y(value)}
                     stroke={GRID} strokeWidth={1} />
-              <text x={pad.left - 8} y={y(value) + 4} textAnchor="end" fontSize={11} fill={MUTED}>
+              <text x={pad.left - 8} y={y(value) + 4} textAnchor="end" fontSize={12} fill={MUTED}>
                 {compactThb(value)}
               </text>
             </g>
@@ -190,8 +190,8 @@ export function BalanceChart({ points }: { points: readonly DailyBalance[] }) {
         <path d={path} fill="none" stroke={INK} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {/* The first and last dates only. Labelling every point is the anti-pattern; these two are
             what tell the reader which window they are looking at. */}
-        <text x={pad.left} y={height - 10} fontSize={11} fill={MUTED}>{first.date}</text>
-        <text x={width - pad.right} y={height - 10} fontSize={11} fill={MUTED} textAnchor="end">
+        <text x={pad.left} y={height - 10} fontSize={12} fill={MUTED}>{first.date}</text>
+        <text x={width - pad.right} y={height - 10} fontSize={12} fill={MUTED} textAnchor="end">
           {last.date}
         </text>
         {active && (
@@ -290,7 +290,7 @@ export function MonthlyChart({ months }: { months: readonly MonthlyStatistic[] }
                   y1={pad.top + plotHeight - scale(tick)} y2={pad.top + plotHeight - scale(tick)}
                   stroke={GRID} strokeWidth={1} />
             <text x={pad.left - 8} y={pad.top + plotHeight - scale(tick) + 4}
-                  textAnchor="end" fontSize={11} fill={MUTED}>{compactThb(tick)}</text>
+                  textAnchor="end" fontSize={12} fill={MUTED}>{compactThb(tick)}</text>
           </g>
         ))}
         {months.map((month, index) => {
@@ -312,14 +312,14 @@ export function MonthlyChart({ months }: { months: readonly MonthlyStatistic[] }
                   of text, and every label drawn is an unreadable smear rather than an axis. */}
               {index % labelEvery === 0 && (
                 <text x={pad.left + index * slot + slot / 2} y={height - 26}
-                      textAnchor="middle" fontSize={11} fill={MUTED}>
+                      textAnchor="middle" fontSize={12} fill={MUTED}>
                   {(SHORT_MONTHS[Number(month.month.slice(5)) - 1] ?? month.month.slice(5))
                     + (spansYears ? ` ${month.month.slice(2, 4)}` : "")}
                 </text>
               )}
               {month.isPartial && index % labelEvery === 0 && (
                 <text x={pad.left + index * slot + slot / 2} y={height - 12}
-                      textAnchor="middle" fontSize={9} fill={MUTED}>part</text>
+                      textAnchor="middle" fontSize={12} fill={MUTED}>part</text>
               )}
             </g>
           );

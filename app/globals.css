@@ -1900,3 +1900,37 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
 .shopee-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px 18px; margin: 12px 0 0; }
 .shopee-figures dt { color: var(--muted); font-size: 12px; }
 .shopee-figures dd { margin: 2px 0 0; font-family: var(--font-money); }
+
+/* Shopee (UX 2026-10-11) */
+.shopee-pick { display: flex; align-items: center; gap: .5rem; min-height: 44px; margin: 0; }
+.shopee-pick input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
+.shopee-order-link { display: inline-block; padding-block: 14px; }
+
+/* Statistics, categories, slips (UX 2026-10-11) */
+/* /categories: the name is body size in the main text colour; the row's controls no longer outweigh it. */
+.retired-list .category-name { font-size: 16px; color: var(--navy); }
+/* /categories: wide screens show every control on the row; the phone Edit toggle stays hidden. */
+.retired-list .category-controls { display: contents; }
+.retired-list .category-more { display: none; }
+/* Phone: a row is its name and Edit; the parent picker, Rename and Archive open beneath on Edit. */
+@media (max-width: 700px) {
+  .retired-list .category-more { display: inline-block; }
+  .retired-list li:not(.is-open) .category-controls { display: none; }
+  .retired-list li.is-open .category-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; flex-basis: 100%; }
+}
+
+/* Import, recovery, receipts (UX 2026-10-11) */
+/* The file input is opacity:0, so the ring goes on the label, matching the global :focus-visible ring. */
+.file-control:has(input:focus-visible) { outline: 3px solid var(--saffron); outline-offset: 3px; }
+/* Stored receipts: a disclosure chevron (the flex summary has no native marker); the global reduced-motion rule shortens the transition. */
+.receipt-list-stored summary::after { content: ""; flex: none; width: 8px; height: 8px; margin-left: 4px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); transition: transform .15s; }
+.receipt-list-stored details[open] > summary::after { transform: rotate(-135deg); }
+/* Desktop: a fixed branch column so the count and chips start at the same x on every row. */
+@media (min-width: 701px) {
+  .receipt-list-stored .receipt-branch { flex: 0 0 16em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+/* Phone: the /import heading note is the same 26px circle as the inline ones, with a 44px tap area. */
+@media (max-width: 700px) {
+  .intro .heading-note .note-toggle { width: 26px; height: 26px; font-size: 13px; position: relative; }
+  .intro .heading-note .note-toggle::after { content: ""; position: absolute; inset: -10px; }
+}

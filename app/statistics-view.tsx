@@ -457,6 +457,7 @@ export function StatisticsView() {
       <section className="stats-section" aria-labelledby="calendar-title">
         <h2 id="calendar-title">Spending calendar</h2>
         <p className="field-help">Pick a day to open the ledger filtered to it.</p>
+        <a className="skip-link" href="#monthly-chart-title">Skip calendar</a>
         <SpendingCalendar
           movements={dailyMovements}
           periodFrom={period.from}
@@ -466,7 +467,7 @@ export function StatisticsView() {
       </section>
 
       <section className="stats-section" aria-labelledby="monthly-chart-title">
-        <h2 id="monthly-chart-title">Money in against money out</h2>
+        <h2 id="monthly-chart-title" tabIndex={-1}>Money in against money out</h2>
         <MonthlyChart months={months} />
       </section>
 
