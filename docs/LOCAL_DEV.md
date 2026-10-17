@@ -109,10 +109,13 @@ Moved from the retired `HANDOFF.md` (D-268). Each line is a reading; re-take it 
 - The real ledger is the hosted Supabase project; the app on Vercel serves it. The repo stays linked to it (`supabase ... --linked`; the CLI is `node_modules/.bin/supabase`, not on `PATH`). `--linked` can answer from local: check `inet_server_addr()` is non-local before trusting a hosted read.
 - Every push to `main` deploys to production. The remedy for a bad deploy is Instant Rollback in the Vercel dashboard, never a revert push. Trust the commit hash, not the dashboard's relative time (UTC against UTC+7).
 - A Ready badge is not a working page: check the deployed page itself.
+- The browser pane has no file upload; Claude in Chrome's `file_upload` reaches the `/receipts` file input (21 screenshots, 3 MB, one call, 2026-10-17). Uploading opens a read-and-review list with a "Save all" button; nothing is stored until it is pressed.
+- Mailbox Sync skips a 7-Eleven invoice mail carrying the IMAP keyword `PLReceipt`. To re-capture stored invoices (e.g. after a reader change), the owner runs `scripts/clear-receipt-flag.ts` (count only; `--clear` removes the keyword; build line in its header), then Sync.
 
 **Local stack hazards** (traps with full write-ups are in `GOTCHAS.md`).
 
 - `pnpm supabase:reset` cannot be guarded and destroys the project the working directory names. Never set `ALLOW_DESTRUCTIVE_TESTS=1` to get a green run.
+- The auto-mode classifier refused `pnpm supabase:reset` on 2026-10-17. To add only a new migration to the running local stack, `node_modules/.bin/supabase migration up --local` applies the pending files without a reset (used for 060); a full rebuild still needs the owner to run the reset.
 - `NEXT_PUBLIC_*` and the CSP are inlined at build time from `.env.local`, so a browser config that builds without pinning its target builds against whatever that file names.
 - Docker Desktop stops often and has to be started by hand. With Docker down the database-backed suites **skip** and the totals look the same: run `docker ps` first and read the words, not the colour. An up-but-unreachable stack fails with `ECONNREFUSED` instead (the WinNAT port trap; the exclusion `54320–54349` is persistent machine state).
 - After `supabase db reset` or restarting a `supabase_db_…` container, restart that project's `auth`, `rest`, `realtime`, `storage`, `pg_meta` and `kong` containers; they stay `(healthy)` on dead connections.
