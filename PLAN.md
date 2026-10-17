@@ -4,6 +4,10 @@ Last verified: 2026-10-17
 
 ## Current checkpoint
 
+**D-280's leftover fixed; statistics sections collapse — 2026-10-17** (D-283, D-284). Migration 059 is on hosted (backup verified at sequence 1292, dry run 059 only): an all-linked re-printed statement is reported duplicate before any import batch is recorded. `/statistics` sections collapse, the spending calendar shows newest month first with a toggle, the header line no longer touches `/statistics` and `/orders` content, and "Libron (book figures)" now changes amounts. Gate: tsc, eslint, Vitest 97 files (1,891 / 19 skipped), pgTAP 37 files (936); `/code-review` high: 3 fixed, 1 handled by deploy order, 4 left (D-283, D-284).
+
+**Open:** (1) **Intermittent 500s**: read the Vercel logs within the hour after the next one. (2) The owner links the 6 repayment rows on `/orders?view=shopee`. (3) The owner decides on "Libron (book figures)" now that it reaches amounts. (4) Browser-check D-284 on production after the push (desktop and phone). (5) Task 56's two follow-ups: owner to choose fix or accept.
+
 **Task 60 fixed; three visual asks shipped — 2026-10-17** (D-280, D-281; `75e976a`, `76b7af0`, pushed). Inbox/mailbox statement counts now read back what `confirm_import` linked. On `/ledger` the divider under Cash payments is gone; on `/orders` every order has a Grab or LINE MAN chip in brand green; the typeface picker has "Libron (book figures)" for the owner to trial Libron digits on the real site.
 
 **Open:** (1) **Intermittent 500s**: waiting for the next one; read the Vercel logs within the hour (Hobby retention). (2) ~~D-277 refund check~~ — done (D-282): the real bank refund printed one mask character, the rule now accepts it. (3) The owner links the 6 repayment rows on `/orders?view=shopee`. (4) Decide whether "Libron (book figures)" replaces `libron`'s Plex figures, after the trial.

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { displayBranch, formatDate, formatMonthParts } from "@/app/ledger-shared";
+import { CollapsibleSection } from "@/app/collapsible-section";
 import { LedgerNote } from "@/app/ledger-note";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { formatThb } from "@/lib/money";
@@ -17,8 +18,7 @@ type ItemRow = ReceiptStatistics["mostBought"][number];
 
 function ItemTable({ id, title, items }: { id: string; title: string; items: readonly ItemRow[] }) {
   return (
-    <section className="stats-section" aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>{title}</h2>
+    <CollapsibleSection id={id} title={title}>
       {items.length === 0 ? <p className="field-help">No complete item list yet.</p> : (
         <div className="table-scroll">
           <table>
@@ -44,7 +44,7 @@ function ItemTable({ id, title, items }: { id: string; title: string; items: rea
           </table>
         </div>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -53,8 +53,7 @@ function GroupTable({ id, title, label, rows }: {
   rows: readonly { key: string; name: ReactNode; receipts: number; net: string }[];
 }) {
   return (
-    <section className="stats-section" aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>{title}</h2>
+    <CollapsibleSection id={id} title={title}>
       <div className="table-scroll">
         <table>
           <caption className="sr-only">{title}, over every stored receipt.</caption>
@@ -76,7 +75,7 @@ function GroupTable({ id, title, label, rows }: {
           </tbody>
         </table>
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }
 

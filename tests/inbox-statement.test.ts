@@ -31,7 +31,7 @@ function deps(over: Partial<InboxStatementDeps> = {}): InboxStatementDeps & { co
     readStatementPdfPages: async (): Promise<StatementPdfPages> => ({ kind: "pages", pages: validStatement }),
     sourceName: "statement_1234567890.pdf",
     artifactExists: async () => false,
-    existingFingerprintCount: vi.fn<InboxStatementDeps["existingFingerprintCount"]>(async () => 0),
+    existingRowCount: vi.fn<InboxStatementDeps["existingRowCount"]>(async () => 0),
     linkedRowCount: vi.fn<InboxStatementDeps["linkedRowCount"]>(async () => null),
     confirmImport: vi.fn(async (): Promise<ConfirmImportResult> => ({
       kind: "ok", batchId: "b", payloadDigest: "d", fingerprints: [], warnings: []
@@ -105,65 +105,87 @@ describe("processInboxStatement", () => {
   });
 
   it("confirms a statement some of whose rows are already stored, and says how many (D-260)", async () => {
-    const d = deps({ existingFingerprintCount: vi.fn(async () => 1) });
+    const d = deps({ existingRowCount: vi.fn(async () => 1) });
     const out = await processInboxStatement("import", d);
     expect(out).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 1 });
     expect(d.confirmImport).toHaveBeenCalledTimes(1);
     const body = d.confirmImport.mock.calls[0]![0] as ConfirmImportBody;
     expect(body.payload.rows).toHaveLength(4);
     expect(body.idempotencyKey).toBe(await inboxIdempotencyKey(body.artifactDigest));
-    const [accountId, fingerprints] = (d.existingFingerprintCount as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string[]];
+    const [accountId, rows] = (d.existingRowCount as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Array<{ fingerprint: string; sourceIndex: number }>];
     expect(accountId).toBe(ACCOUNT_ID);
-    expect(fingerprints).toHaveLength(4);
-    for (const fingerprint of fingerprints) expect(fingerprint).toMatch(/^[a-f0-9]{64}$/u);
+    expect(rows).toHaveLength(4);
+    // The very rows `confirm_import` receives: same builder.
+    expect(rows).toEqual(body.payload.rows.map((row, index) => expect.objectContaining({ ...row, sourceIndex: index + 1 })));
+    for (const row of rows) expect(row.fingerprint).toMatch(/^[a-f0-9]{64}$/u);
   });
 
   it("does not confirm a statement whose rows are all stored, and reports it as already in the ledger (D-260)", async () => {
-    const d = deps({ existingFingerprintCount: async () => 4 });
+    const d = deps({ existingRowCount: async () => 4 });
     const out = await processInboxStatement("import", d);
     expect(out).toMatchObject({ kind: "duplicate", rowCount: 4 });
     expect(d.confirmImport).not.toHaveBeenCalled();
   });
 
+  it("does not confirm a statement whose rows are all linked by identity facts, not fingerprint (D-280 leftover)", async () => {
+    // The database pre-count applies confirm_import's full rule, so a re-printed statement is a duplicate before any confirm.
+    const d = deps({ existingRowCount: async () => 4 });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "duplicate", rowCount: 4 });
+    expect(d.confirmImport).not.toHaveBeenCalled();
+  });
+
   it("counts rows `confirm_import` linked by identity facts, not only by fingerprint (task 60)", async () => {
     // A re-printed row has another fingerprint, so the pre-count sees 0; the batch says 3 were linked.
-    const d = deps({ existingFingerprintCount: async () => 0, linkedRowCount: vi.fn(async () => 3) });
+    const d = deps({ existingRowCount: async () => 0, linkedRowCount: vi.fn(async () => 3) });
     const out = await processInboxStatement("import", d);
     expect(out).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 3 });
     expect(d.linkedRowCount).toHaveBeenCalledWith("b");
   });
 
   it("reports duplicate when every row of the confirmed batch was linked (task 60)", async () => {
-    const d = deps({ existingFingerprintCount: async () => 0, linkedRowCount: async () => 4 });
+    const d = deps({ existingRowCount: async () => 0, linkedRowCount: async () => 4 });
     expect(await processInboxStatement("import", d)).toMatchObject({ kind: "duplicate", rowCount: 4 });
   });
 
   it("still counts a genuinely new row as new (task 60)", async () => {
-    const d = deps({ existingFingerprintCount: async () => 0, linkedRowCount: async () => 0 });
+    const d = deps({ existingRowCount: async () => 0, linkedRowCount: async () => 0 });
     expect(await processInboxStatement("import", d)).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 0 });
   });
 
   it("falls back to the fingerprint pre-count when the batch cannot be read back (task 60)", async () => {
-    const d = deps({ existingFingerprintCount: async () => 1, linkedRowCount: async () => null });
+    const d = deps({ existingRowCount: async () => 1, linkedRowCount: async () => null });
     expect(await processInboxStatement("import", d)).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 1 });
   });
 
   it("holds an overlapping statement whose confirm fails, as before", async () => {
     const d = deps({
-      existingFingerprintCount: async () => 2,
+      existingRowCount: async () => 2,
       confirmImport: vi.fn(async (): Promise<ConfirmImportResult> => ({ kind: "error", message: "no" }))
     });
     expect(await processInboxStatement("import", d)).toMatchObject({ kind: "held", reason: "confirm-failed" });
   });
 
-  it("fails closed when the fingerprint lookup is unknown", async () => {
-    const d = deps({ existingFingerprintCount: async () => null });
-    expect(await processInboxStatement("import", d)).toEqual({ kind: "failed", code: "LOOKUP_FAILED" });
-    expect(d.confirmImport).not.toHaveBeenCalled();
+  it("confirms and reads the batch back when the pre-count fails", async () => {
+    const d = deps({ existingRowCount: async () => null, linkedRowCount: async () => 4 });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "duplicate", rowCount: 4 });
+    expect(d.confirmImport).toHaveBeenCalled();
+  });
+
+  it("holds, not fails, a statement the pre-count and the confirm both refuse", async () => {
+    const d = deps({
+      existingRowCount: async () => null,
+      confirmImport: vi.fn(async (): Promise<ConfirmImportResult> => ({ kind: "error", message: "fingerprint mismatch" }))
+    });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "held", reason: "confirm-failed" });
+  });
+
+  it("reports no stored rows when neither count can be read", async () => {
+    const d = deps({ existingRowCount: async () => null, linkedRowCount: async () => null });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 0 });
   });
 
   it("captures when no row is stored yet", async () => {
-    const d = deps({ existingFingerprintCount: async () => 0 });
+    const d = deps({ existingRowCount: async () => 0 });
     expect(await processInboxStatement("import", d)).toMatchObject({ kind: "captured", rowCount: 4, existingRows: 0 });
     expect(d.confirmImport).toHaveBeenCalledTimes(1);
   });

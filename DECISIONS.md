@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file carries **D-141, D-158 and D-259 … D-282** — the two open questions this file has
+This file carries **D-141, D-158 and D-259 … D-284** — the two open questions this file has
 named since the twelfth boundary, the newest entries, and the twentieth boundary's own record of
 itself (D-267). **D-141**:
 whether the mailbox source is deleted after import, deferred by the owner. **D-158**:
@@ -458,6 +458,8 @@ a reason to keep it rather than a reason it cannot ever move.
 —
  this file
 
+- **D-284** — `/statistics` sections collapse, the spending calendar shows newest month first with a toggle, the header line no longer touches `/statistics` and `/orders` content, and "Libron (book figures)" now reaches amounts
+- **D-283** — D-280's leftover fixed: a read-only `count_existing_import_rows` (migration 059) shares `confirm_import`'s linking rule, so an all-linked re-printed statement records no import batch
 - **D-282** — D-277's bank-refund rule checked against the real export and widened: one mask character then four or more digits is also a masked account number
 - **D-281** — Owner's 2026-10-17 visual asks: no divider under Cash payments on `/ledger`; Grab and LINE MAN chips in brand green on `/orders`; a "Libron (book figures)" typeface choice to trial Libron digits
 - **D-280** — Inbox/mailbox statement counts read back what `confirm_import` linked (task 60): a re-printed overlapping statement reports its linked rows, an all-linked batch reports duplicate; no migration
@@ -482,6 +484,25 @@ a reason to keep it rather than a reason it cannot ever move.
 - **D-261** — A queued slip that needs checking has "Add on Slips": `/slips?inbox=<name>` loads it into the single-slip form and removes it from the queue once the ledger stores it
 - **D-260** — A statement that overlaps the ledger is imported (its new rows) with a count of new and already-stored rows, instead of being held; Review on Import is a button
 - **D-259** — A refused slip amount is read again from an enlarged crop (2×, then 3×) under the same grammar; a verdict a retry could change is not remembered, and a capture the server refused is
+
+## D-284 — `/statistics` sections collapse, the spending calendar shows newest month first with a toggle, the header line no longer touches `/statistics` and `/orders` content, and "Libron (book figures)" now reaches amounts
+
+- Date: 2026-10-17
+- Status: **Built; committed with D-283.** Owner's asks, same day.
+- Figures: amounts read `--font-money`, which no typeface block redefined, so D-281's `libron-figures` changed only digits inside prose. Its block now sets `--font-money` to Libron too; `libron` and the pixel faces keep Plex Mono amounts (D-162).
+- Header line: `.intro`'s bottom border sat at 0px above the next content on `/statistics` (window legend) and `/orders` (view tabs); measured on all eight pages, the rest have 20–47px. Both get `margin-top: 20px`.
+- Collapse: `app/collapsible-section.tsx`, an `h2` wrapping an `aria-expanded` button, open on every load, state not persisted (no client storage in `app/`). Used for every `stats-section` on `/statistics` and the statistics tables on `/receipts` and `/orders`. Rejected: `<details>` with the `h2` inside `summary` (a summary's button role can strip heading semantics; `/code-review` finding).
+- Calendar: newest month first by default, a "Show oldest first" / "Show newest first" button (no `aria-pressed`, whose state contradicted the flipping label). The phone cap shows the first three months in either order; the arrow keys sort days by date, so they move in date order whatever the DOM order.
+- Evidence: tsc, eslint, Vitest 97 files (1,891 passed / 19 skipped). **Not browser-checked before the commit**; checked on production after the owner's push.
+
+## D-283 — D-280's leftover fixed: a read-only `count_existing_import_rows` (migration 059) shares `confirm_import`'s linking rule, so an all-linked re-printed statement records no import batch
+
+- Date: 2026-10-17
+- Status: **Shipped to hosted** (migration 059 pushed after a backup verified at sequence 1292 = last export = newest record, and a dry run listing only 059); code committed.
+- Chosen: `private.existing_source_row(owner, account, row, claimed[])` holds migration 054's rule (exact fingerprint, then identity facts with a source time, oldest first, each stored row claimed once per statement). `confirm_import` calls it, otherwise unchanged from 054 (the claimed array replaces the `import_batch_rows` exclusion: same set). `public.count_existing_import_rows(account, rows)` loops the same function read-only, after the strong-owner, ownership and fingerprint-binding checks. The Inbox/mailbox pre-count calls it with the rows `confirm_import` receives (`buildRpcRows`, one builder); every row linked → `duplicate`, no confirm. The post-confirm read-back (D-280) stays.
+- A failed pre-count no longer fails the statement: it skips the shortcut and lets `confirm_import` decide, so a statement both refuse is held (`confirm-failed`) rather than returned as a 502 every Sync (`/code-review` finding).
+- Left: the manual Import review screen still counts exact fingerprints only (`existingFingerprints`); the pre-count does not check currency (every account is THB).
+- Evidence: pgTAP 37 files (936), new `supabase/tests/037` (18 assertions; claim-once red-proved); Vitest new tests for the identity-duplicate and failed-count paths (the duplicate one red-proved).
 
 ## D-282 — D-277's bank-refund rule checked against the real export and widened: one mask character then four or more digits is also a masked account number
 

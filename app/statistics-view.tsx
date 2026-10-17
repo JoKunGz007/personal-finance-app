@@ -28,6 +28,7 @@ import {
 import { ALL_ACCOUNTS } from "@/app/ledger-shared";
 import { BalanceChart, MonthlyChart } from "@/app/statistics-charts";
 import { SpendingCalendar } from "@/app/statistics-calendar";
+import { CollapsibleSection } from "@/app/collapsible-section";
 
 /**
  * Direction as colour, **reinforcing a sign that is already printed** rather than replacing it.
@@ -68,8 +69,7 @@ function MovementTable(
   // Phone only (CSS): the first five rows show until asked.
   const [all, setAll] = useState(false);
   return (
-    <section className="stats-section" aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>{title}</h2>
+    <CollapsibleSection id={id} title={title}>
       {movements.length === 0
         ? <p className="field-help">Nothing in this window.</p>
         : (
@@ -104,7 +104,7 @@ function MovementTable(
             ) : null}
           </div>
         )}
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -441,21 +441,19 @@ export function StatisticsView() {
           chosen it is that account's own printed closing balance, because per account the bank has
           already done the arithmetic and its figure is the authoritative one. Two different sources
           under one heading would be the page's most quietly misleading line without this. */}
-      <section className="stats-section" aria-labelledby="balance-chart-title">
-        <h2 id="balance-chart-title">Balance over time</h2>
+      <CollapsibleSection id="balance-chart" title="Balance over time">
         <p className="field-help">
           {accountId === null
             ? "All your accounts combined."
             : "This account's closing balance each day, as its statements printed it."}
         </p>
         <BalanceChart points={dailyBalances} />
-      </section>
+      </CollapsibleSection>
 
       {/* **New, PLAN task 47's heatmap half.** Every field it needs was already exact money and a
           date — see `lib/statistics.ts`'s `dailyMovementSchema` for why the array is sparse rather
           than one entry per calendar day. */}
-      <section className="stats-section" aria-labelledby="calendar-title">
-        <h2 id="calendar-title">Spending calendar</h2>
+      <CollapsibleSection id="calendar" title="Spending calendar">
         <p className="field-help">Pick a day to open the ledger filtered to it.</p>
         <a className="skip-link" href="#monthly-chart-title">Skip calendar</a>
         <SpendingCalendar
@@ -464,17 +462,15 @@ export function StatisticsView() {
           periodTo={period.to}
           accountId={accountId}
         />
-      </section>
+      </CollapsibleSection>
 
-      <section className="stats-section" aria-labelledby="monthly-chart-title">
-        <h2 id="monthly-chart-title" tabIndex={-1}>Money in against money out</h2>
+      <CollapsibleSection id="monthly-chart" title="Money in against money out" headingProps={{ tabIndex: -1 }}>
         <MonthlyChart months={months} />
-      </section>
+      </CollapsibleSection>
 
       {/* **The table is the chart's accessible twin**, not an extra. Every figure the bars encode is
           here as exact money, which is also what discharges the dataviz contrast relief. */}
-      <section className="stats-section" aria-labelledby="monthly-table-title">
-        <h2 id="monthly-table-title">By month</h2>
+      <CollapsibleSection id="monthly-table" title="By month">
         <div className={`table-scroll phone-capped-tail${allMonths ? " show-all" : ""}`}>
           <table>
             <caption className="sr-only">Money in, money out, net and transaction count for each month.</caption>
@@ -533,7 +529,7 @@ export function StatisticsView() {
             </button>
           ) : null}
         </div>
-      </section>
+      </CollapsibleSection>
 
       {/* **Two lists, not one ranking.** A combined top ten is dominated by whichever direction
           moves in bigger lumps — on a ledger where salary arrives monthly and spending is daily,
@@ -542,8 +538,7 @@ export function StatisticsView() {
       <MovementTable id="largest-out" title="Largest spending" movements={largestOut} />
       <MovementTable id="largest-in" title="Largest incoming" movements={largestIn} />
 
-      <section className="stats-section" aria-labelledby="dow-title">
-        <h2 id="dow-title">By day of the week</h2>
+      <CollapsibleSection id="dow" title="By day of the week">
         <div className="table-scroll">
           <table>
             <caption className="sr-only">Money in, money out and transaction count by day of the week.</caption>
@@ -567,7 +562,7 @@ export function StatisticsView() {
             </tbody>
           </table>
         </div>
-      </section>
+      </CollapsibleSection>
     </>
   );
 }

@@ -424,8 +424,10 @@
   --font-data: "Figures", "Libron", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
 /* On trial (owner, 2026-10-17): Libron's own figures instead of "Figures". Its digits measured equal-width,
-   0.605em against Plex Mono's 0.600em, so columns keep their alignment. */
+   0.605em against Plex Mono's 0.600em, so columns keep their alignment. Amounts read `--font-money`, not
+   `--font-data`, so this block redefines it too: without that the trial changed only digits inside prose. */
 :root[data-font="libron-figures"] {
+  --font-money: "Libron", "IBM Plex Mono", "Cascadia Mono", monospace;
   --font-body: "Libron", "IBM Plex Sans Thai", "Noto Sans Thai", Tahoma, sans-serif;
   --font-data: "Libron", "IBM Plex Mono", "Cascadia Mono", monospace;
 }
@@ -1691,6 +1693,8 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .chart-legend i { width: 10px; height: 10px; border-radius: 3px; }
+/* The spending calendar's order toggle sits at the right end of its own legend row. */
+.chart-legend .cal-order { margin-left: auto; min-height: 44px; }
 /* The ledger has had a row hover since routing landed; these tables never did, and they are
    wide enough that the eye loses the line between a month and its figures. */
 .stats-section tbody tr:hover { background: color-mix(in srgb, var(--mist) 72%, transparent); }
@@ -1735,7 +1739,7 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
 /* The window fieldset and the account select side by side on a wide screen, stacked on a narrow
    one — same breakpoint as the stacked ledger tables below, so the picker and the tables it
    controls change shape together rather than at two different widths. */
-.statistics-picker { display: flex; align-items: flex-start; gap: 24px; margin-bottom: 8px; }
+.statistics-picker { display: flex; align-items: flex-start; gap: 24px; margin-top: 20px; margin-bottom: 8px; }
 .statistics-picker .window-picker { flex: 1 1 auto; margin-bottom: 0; min-width: 0; }
 .statistics-account { flex: 0 0 auto; width: 220px; max-width: 100%; }
 @media (max-width: 700px) {
@@ -1743,6 +1747,11 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
   .statistics-account { width: 100%; }
 }
 .stats-section h2 { margin: 0 0 4px; font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+/* Collapsible statistics sections (app/collapsible-section.tsx): a button inside the h2 shows and
+   hides the section; it inherits the heading's type and is 44px tall (D-136). */
+.collapsible-toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; }
+.collapsible-toggle::after { content: ""; flex: none; width: 8px; height: 8px; margin-left: 4px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-135deg); transition: transform .15s; }
+.collapsible-toggle[aria-expanded="false"]::after { transform: rotate(45deg); }
 .stats-section table { min-width: 560px; table-layout: auto; }
 .stats-section th:nth-child(n) { width: auto; }
 .stats-section .field-help { display: inline; margin-left: 6px; }
@@ -1846,7 +1855,8 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
 
   /* Statistics: the latest three months and the top five rows until asked. */
   .phone-more { display: block; margin-top: 12px; }
-  .cal-months:not(.show-all) > .cal-month:not(:nth-last-child(-n+3)) { display: none; }
+  .cal-months:not(.show-all):not(.newest-first) > .cal-month:not(:nth-last-child(-n+3)) { display: none; }
+  .cal-months.newest-first:not(.show-all) > .cal-month:not(:nth-child(-n+3)) { display: none; }
   .phone-capped:not(.show-all) tbody tr:nth-child(n+6) { display: none; }
 }
 
@@ -1916,7 +1926,7 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
 }
 
 /* The /orders view switch (Food & rides | Shopee): two links, the current one filled. */
-.view-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.view-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 16px; }
 .view-tabs a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--blue); border-radius: 999px; color: var(--blue); font-weight: 600; text-decoration: none; }
 .view-tabs a[aria-current="page"] { background: var(--blue); color: var(--paper, #fff); }
 /* The Shopee strip's bars are SVG shapes; the month text is theirs, not a colour's. */

@@ -19,15 +19,24 @@ export type ConfirmImportResult =
   | { kind: "conflict"; message: string }
   | { kind: "error"; message: string };
 
+/**
+ * The rows exactly as `confirm_import` and `count_existing_import_rows` receive them: each row with
+ * its fingerprint and 1-based source index. One builder, so the pre-count and the confirm see one payload.
+ */
+export async function buildRpcRows(payload: ConfirmImportBody["payload"]) {
+  const fingerprints = await Promise.all(payload.rows.map((row) => rowFingerprint(payload.accountId, payload.bankCode, row)));
+  const rows = payload.rows.map((row, index) => ({ ...row, fingerprint: fingerprints[index]!, sourceIndex: index + 1 }));
+  return { fingerprints, rows };
+}
+
 /** Everything after auth and body parse: refusals, digest, the `confirm_import` RPC, transfer exclusion. */
 export async function confirmImport(client: SupabaseClient, body: ConfirmImportBody): Promise<ConfirmImportResult> {
   const { payload, idempotencyKey, artifactDigest } = body;
-  const fingerprints = await Promise.all(payload.rows.map((row) => rowFingerprint(payload.accountId, payload.bankCode, row)));
+  const { fingerprints, rows: rpcRows } = await buildRpcRows(payload);
   const duplicates = fingerprints.filter((fingerprint, index) => fingerprints.indexOf(fingerprint) !== index);
   if (duplicates.length > 0) return { kind: "refused", message: "Indistinguishable rows block confirmation.", details: { code: "AMBIGUOUS_DUPLICATES" } };
   const reconciliation = reconcileRows(payload.openingBalance.minor, payload.rows);
   if (reconciliation.blockers.length > 0) return { kind: "refused", message: "Unexplained balance gaps block confirmation.", details: { code: "BALANCE_RECONCILIATION_FAILED", blockers: reconciliation.blockers } };
-  const rpcRows = payload.rows.map((row, index) => ({ ...row, fingerprint: fingerprints[index], sourceIndex: index + 1 }));
   const digest = await confirmationDigest({
     accountId: payload.accountId,
     contractVersion: payload.contractVersion,

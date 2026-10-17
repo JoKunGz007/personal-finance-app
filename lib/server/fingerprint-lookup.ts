@@ -24,21 +24,16 @@ export async function existingFingerprints(
   return [...found];
 }
 
-/** How many of `fingerprints` are already stored; null when any lookup fails. */
-export async function existingFingerprintCount(
-  client: SupabaseClient, accountId: string, fingerprints: readonly string[]
+/**
+ * How many of `rows` (the rows `confirm_import` would receive, see `buildRpcRows`) it would link to a
+ * stored row, by exact fingerprint or identity facts; null when the call fails. The database applies
+ * the one linking rule (`count_existing_import_rows`), read-only.
+ */
+export async function existingImportRowCount(
+  client: SupabaseClient, accountId: string, rows: readonly unknown[]
 ): Promise<number | null> {
-  let found = 0;
-  for (let start = 0; start < fingerprints.length; start += CHUNK) {
-    const { data, error } = await client
-      .from("source_transactions")
-      .select("fingerprint")
-      .eq("account_id", accountId)
-      .in("fingerprint", fingerprints.slice(start, start + CHUNK));
-    if (error) return null;
-    found += data?.length ?? 0;
-  }
-  return found;
+  const { data, error } = await client.rpc("count_existing_import_rows", { p_account_id: accountId, p_rows: rows });
+  return error || typeof data !== "number" || !Number.isInteger(data) ? null : data;
 }
 
 /**

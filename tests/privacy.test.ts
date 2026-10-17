@@ -1349,7 +1349,7 @@ describe("the server's masked dump (D-237)", () => {
       sourceName: "acct_9876543210_holder-name.pdf",
       listAccounts: never,
       artifactExists: never,
-      existingFingerprintCount: never,
+      existingRowCount: never,
       confirmImport: never,
       markFetched
     } as unknown as InboxStatementDeps & { markFetched: () => Promise<boolean> };

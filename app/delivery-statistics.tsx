@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { formatDate, formatMonthParts } from "@/app/ledger-shared";
+import { CollapsibleSection } from "@/app/collapsible-section";
 import { LedgerNote } from "@/app/ledger-note";
 import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import { deliveryStatisticsSchema, type DeliveryStatistics } from "@/lib/delivery-statistics";
@@ -23,8 +24,7 @@ function Table({ id, title, columns, rows }: {
   rows: readonly { key: string; cells: readonly (ReactNode)[] }[];
 }) {
   return (
-    <section className="stats-section" aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`}>{title}</h2>
+    <CollapsibleSection id={id} title={title}>
       <div className="table-scroll">
         <table>
           <caption className="sr-only">{title}, over every stored order and ride.</caption>
@@ -46,7 +46,7 @@ function Table({ id, title, columns, rows }: {
           </tbody>
         </table>
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }
 
@@ -145,15 +145,14 @@ export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
             rows={[...stats.months].reverse().map((m) => ({ key: m.month, cells: [monthLabel(m.month), m.orders, formatThb(m.spent), m.rides, formatThb(m.rideSpent)] }))} />
 
           {/* Its own heading: without one the ride totals read as part of "By month" above them. */}
-          <section className="stats-section" aria-labelledby="delivery-rides-title">
-            <h2 id="delivery-rides-title">Ride totals</h2>
+          <CollapsibleSection id="delivery-rides" title="Ride totals">
             <dl className="statement-strip">
               <div><dt>Rides</dt><dd>{stats.rides.rides}</dd></div>
               <div><dt>Ride cost</dt><dd>{formatThb(stats.rides.spent)}</dd></div>
               <div><dt>Average ride</dt><dd>{stats.rides.averageSpent ? formatThb(stats.rides.averageSpent.quotient) : "—"}</dd></div>
               <div><dt>Platform fees</dt><dd>{formatThb(stats.rides.platformFees)}</dd></div>
             </dl>
-          </section>
+          </CollapsibleSection>
           <Table id="delivery-ride-types" title="By ride type" columns={["Ride type", "Rides", "Cost"]}
             rows={stats.rideTypes.map((t) => ({ key: t.rideType, cells: [t.rideType, t.rides, formatThb(t.spent)] }))} />
         </>

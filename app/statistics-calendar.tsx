@@ -86,11 +86,18 @@ export function SpendingCalendar(
   // Phone only (CSS): the latest three months show until asked, so the page is not 4,000px of
   // calendar before the next section.
   const [allMonths, setAllMonths] = useState(false);
-  const monthCount = monthsBetween(periodFrom, periodTo).length;
+  // Newest month first by default. The phone cap (CSS) follows the order: the latest three show.
+  const [newestFirst, setNewestFirst] = useState(true);
+  const months = monthsBetween(periodFrom, periodTo);
+  const ordered = newestFirst ? [...months].reverse() : months;
+  const monthCount = months.length;
   const lastLive = periodTo;
 
   function moveBetweenDays(event: KeyboardEvent<HTMLDivElement>) {
-    const days = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>("a.cal-day-live")].filter((day) => day.offsetParent !== null);
+    // Date order, whatever the DOM order is: the months may be rendered newest first.
+    const days = [...event.currentTarget.querySelectorAll<HTMLAnchorElement>("a.cal-day-live")]
+      .filter((day) => day.offsetParent !== null)
+      .sort((a, b) => a.dataset.date!.localeCompare(b.dataset.date!));
     const from = days.indexOf(document.activeElement as HTMLAnchorElement);
     if (from === -1) return;
     const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
@@ -150,11 +157,12 @@ export function SpendingCalendar(
       <div className="chart-legend">
         <span><i style={{ background: DEPOSIT }} aria-hidden="true" />Money in</span>
         <span><i style={{ background: WITHDRAWAL }} aria-hidden="true" />Money out</span>
+        <button type="button" className="secondary-button cal-order" onClick={() => setNewestFirst((v) => !v)}>{newestFirst ? "Show oldest first" : "Show newest first"}</button>
       </div>
       {/* One tab stop for the whole calendar (D-204): the latest day is reachable by Tab, and the
           arrow keys move a day or a week. Without this every day was its own tab stop. */}
-      <div className={`cal-months${allMonths ? " show-all" : ""}`} onMouseLeave={() => setActive(null)} onKeyDown={moveBetweenDays}>
-        {monthsBetween(periodFrom, periodTo).map((month) => {
+      <div className={`cal-months${allMonths ? " show-all" : ""}${newestFirst ? " newest-first" : ""}`} onMouseLeave={() => setActive(null)} onKeyDown={moveBetweenDays}>
+        {ordered.map((month) => {
           const year = Number(month.slice(0, 4));
           const monthNum = Number(month.slice(5, 7));
           const total = daysInMonth(year, monthNum);

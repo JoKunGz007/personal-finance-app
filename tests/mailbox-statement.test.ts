@@ -22,7 +22,7 @@ function deps(over: Partial<MailboxStatementDeps> = {}) {
     readStatementPdfPages: async () => ({ kind: "pages", pages: validStatement }),
     sourceName: "statement_1234567890.pdf",
     artifactExists: async () => false,
-    existingFingerprintCount: async () => 0,
+    existingRowCount: async () => 0,
     linkedRowCount: async () => null,
     confirmImport: async (): Promise<ConfirmImportResult> => ({ kind: "ok", batchId: "b", payloadDigest: "d", fingerprints: [], warnings: [] }),
     markFetched,
@@ -79,13 +79,13 @@ describe("processMailboxStatement", () => {
   });
 
   it("imports an overlapping statement and flags it (D-260)", async () => {
-    const { base, markFetched } = deps({ existingFingerprintCount: async () => 2 });
+    const { base, markFetched } = deps({ existingRowCount: async () => 2 });
     expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "captured", existingRows: 2 });
     expect(markFetched).toHaveBeenCalledTimes(1);
   });
 
   it("flags a statement whose rows are all stored, without importing it (D-260)", async () => {
-    const { base, markFetched } = deps({ existingFingerprintCount: async (_account, fingerprints) => fingerprints.length });
+    const { base, markFetched } = deps({ existingRowCount: async (_account, rows) => rows.length });
     expect(await processMailboxStatement("import", base)).toMatchObject({ kind: "duplicate" });
     expect(markFetched).toHaveBeenCalledTimes(1);
   });

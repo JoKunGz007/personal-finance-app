@@ -1,11 +1,11 @@
 import type { LedgerAccount } from "@/lib/accounts";
-import { rowFingerprint, sha256Hex, sha256HexBytes } from "@/lib/canonical";
+import { sha256Hex, sha256HexBytes } from "@/lib/canonical";
 import { maskName, renderMaskedDump } from "@/lib/masked-diagnostics";
 import { assembleImportPayload, type AssemblyErrorCode } from "@/lib/import-assembly";
 import type { SourceRowCandidate } from "@/lib/statement";
 import type { StatementFrame } from "@/lib/statement-frame";
 import { soleMatchingAccount } from "@/lib/statement-binding";
-import type { ConfirmImportBody, ConfirmImportResult } from "@/lib/server/confirm-import";
+import { buildRpcRows, type ConfirmImportBody, type ConfirmImportResult } from "@/lib/server/confirm-import";
 import type { InboxDownload } from "@/lib/server/inbox-object";
 import type { StatementPdfPages, StatementPdfRead } from "@/lib/server/statement-pdf-node";
 
@@ -24,8 +24,11 @@ export type InboxStatementDeps = {
   listAccounts: () => Promise<readonly LedgerAccount[] | null>;
   /** True when an import artifact with this digest already exists for the owner; null when unknown. */
   artifactExists: (artifactDigest: string) => Promise<boolean | null>;
-  /** How many of these row fingerprints the owner already has stored for the account; null when unknown. */
-  existingFingerprintCount: (accountId: string, fingerprints: string[]) => Promise<number | null>;
+  /**
+   * How many of these rows (as `confirm_import` receives them) it would link to a stored row, by exact
+   * fingerprint or identity facts (migration 059); null when unknown.
+   */
+  existingRowCount: (accountId: string, rows: unknown[]) => Promise<number | null>;
   /**
    * How many rows of a confirmed batch `confirm_import` linked to a stored row (`import_batch_rows.linked_existing`),
    * by exact fingerprint or by identity facts (migration 054); null when unknown. The database applies the rule,
@@ -120,16 +123,15 @@ export async function processInboxStatement(
   if (!assembled.ok) return { kind: "held", reason: assembled.code, artifactDigest };
   if (assembled.warnings.length > 0) return { kind: "held", reason: "warnings", artifactDigest };
 
-  // `confirm_import` skips a row whose fingerprint is already stored. The fingerprint covers date,
-  // time, label, description, reference, amounts, post-balance and branch, so a stored one is the
-  // same bank row and skipping it is correct: an overlapping statement is confirmed and reports how
-  // many rows were already there (D-260). A statement whose rows are all stored by fingerprint adds
-  // nothing and is not confirmed; after a confirm, the batch read-back below replaces this count.
+  // The database counts the rows `confirm_import` would link to stored rows (exact fingerprint or
+  // identity facts, one rule; D-280 leftover). Overlap is confirmed and reports how many rows were
+  // already there (D-260); a statement whose every row is stored adds nothing and is not confirmed.
+  // A failed count only skips the shortcut: the count refuses what `confirm_import` refuses, so a
+  // bad statement is held by the confirm below rather than reported as a transient lookup failure.
   const { payload } = assembled;
-  const fingerprints = await Promise.all(payload.rows.map((row) => rowFingerprint(payload.accountId, payload.bankCode, row)));
-  const existing = await deps.existingFingerprintCount(payload.accountId, fingerprints);
-  if (existing === null) return { kind: "failed", code: "LOOKUP_FAILED" };
-  if (existing >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length };
+  const { rows: rpcRows } = await buildRpcRows(payload);
+  const existing = await deps.existingRowCount(payload.accountId, rpcRows);
+  if (existing !== null && existing >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length };
 
   const confirmed = await deps.confirmImport({
     idempotencyKey: await inboxIdempotencyKey(artifactDigest),
@@ -137,11 +139,10 @@ export async function processInboxStatement(
     payload: assembled.payload
   });
   if (confirmed.kind !== "ok") return { kind: "held", reason: "confirm-failed", artifactDigest };
-  // The fingerprint pre-count misses a re-printed row that `confirm_import` links by identity facts
-  // (migration 054). The batch itself records what was linked, so read it back; when that read fails
-  // keep the pre-count (the ledger is unaffected either way). A batch that linked every row added nothing.
+  // The batch itself records what was linked, so read it back as the after-the-fact truth; when that
+  // read fails keep the pre-count. A batch that linked every row added nothing.
   const linked = await deps.linkedRowCount(String(confirmed.batchId));
-  const existingRows = linked === null ? existing : Math.min(linked, payload.rows.length);
+  const existingRows = linked === null ? existing ?? 0 : Math.min(linked, payload.rows.length);
   if (existingRows >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length };
   return {
     kind: "captured",
