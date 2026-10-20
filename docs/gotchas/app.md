@@ -369,3 +369,10 @@ the top of `GOTCHAS.md`.
 - Cause: `app/inbox-files.tsx` runs the whole drain on page load.
 - Avoid: measure on local copies with `scripts/measure-slip-words.ts`; the queue's images are only reachable with the owner's Supabase session, which the auto-mode classifier refuses the agent reading.
 - Verify: 2026-10-07 (D-256), by reading `app/inbox-files.tsx`.
+
+## Ledger row labels write September as "Sept"
+
+- Symptom: a browser-pane lookup of ledger rows by `aria-label` date (`dated 12 Sep 2026`) finds nothing for September, while every other month matches, so the rows look missing.
+- Cause: `formatDate` uses `en-GB` short months, and current ICU spells September `Sept`; every other month keeps three letters.
+- Avoid: match `Sept` (or `Sept?`) when locating September rows; confirm a "missing" month by counting labels per month before suspecting paging.
+- Verify: 2026-10-21 on production, 536 labels contained `Sept 2026` and none `Sep 2026`.
