@@ -161,6 +161,26 @@ export type LedgerPage = z.infer<typeof ledgerPageSchema>;
 /** Rows whose current exclusion from reporting was written automatically (migration 026, D-207). */
 export const autoExcludedListSchema = z.object({ ids: z.array(z.string().uuid()) }).strict();
 
+/** Rows the owner marked as duplicates (migration 062): excluded, with a marker that only re-including clears. */
+export const duplicateListSchema = z.object({ ids: z.array(z.string().uuid()) }).strict();
+
+/** `POST /api/v1/transactions/[id]/duplicate`: the overlay revision the owner saw (0 when none). */
+export const markDuplicateBodySchema = z.object({ expectedRevision: z.number().int().nonnegative() }).strict();
+
+/**
+ * Drops marked duplicates from a list **for display only**. Callers compute totals and every
+ * balance check from the full list and pass the result of this to the renderer, so hiding a
+ * duplicate can never move a figure. Only confirmed rows can be marked.
+ */
+export function withoutDuplicates<T extends { kind: string; transaction?: { id: string } }>(
+  rows: readonly T[],
+  duplicates: ReadonlySet<string>,
+  show: boolean
+): readonly T[] {
+  if (show || duplicates.size === 0) return rows;
+  return rows.filter((row) => !(row.kind === "confirmed" && row.transaction !== undefined && duplicates.has(row.transaction.id)));
+}
+
 /** What `POST /api/v1/transactions/auto-categorised` answers with; only `applied` is read. */
 export const autoCategorisedResultSchema = z.object({ applied: z.number().int().nonnegative() });
 

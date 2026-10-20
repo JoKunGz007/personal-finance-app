@@ -1,9 +1,9 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ImapFlow } from "imapflow";
-import { findAttachments } from "@/lib/server/statement-mailbox-session";
+import { findAttachments, markFetched } from "@/lib/server/statement-mailbox-session";
 import { MAX_SYNC_ATTACHMENTS, MAX_SYNC_MESSAGES_SCANNED, stepTimer } from "@/lib/statement-sync";
-import { fetchedFlag } from "@/lib/server/statement-mailbox";
+import { IMPORTED_GMAIL_LABEL, fetchedFlag } from "@/lib/server/statement-mailbox";
 
 /**
  * How the listing turns one search and one FETCH into a capped, newest-first manifest.
@@ -113,5 +113,49 @@ describe("timing a mailbox route's steps", () => {
 
   it("is an empty header before any step", () => {
     expect(stepTimer(() => 0).header()).toBe("");
+  });
+});
+
+describe("markFetched visible Gmail label (D-141)", () => {
+  function fakeFlagClient(impl: (flags: string[], options: { useLabels?: boolean }) => Promise<boolean>) {
+    const calls: { flags: string[]; options: { uid?: boolean; useLabels?: boolean } }[] = [];
+    const client = {
+      messageFlagsAdd: async (_uid: number, flags: string[], options: { uid?: boolean; useLabels?: boolean }) => {
+        calls.push({ flags, options });
+        return impl(flags, options);
+      }
+    } as unknown as ImapFlow;
+    return { client, calls };
+  }
+
+  it("adds the label after the keyword succeeds", async () => {
+    const { client, calls } = fakeFlagClient(async () => true);
+    expect(await markFetched(client, 7, "1")).toBe(true);
+    expect(calls).toEqual([
+      { flags: [fetchedFlag("1")], options: { uid: true } },
+      { flags: [IMPORTED_GMAIL_LABEL], options: { uid: true, useLabels: true } }
+    ]);
+  });
+
+  it("does not attempt the label when the keyword fails", async () => {
+    const { client, calls } = fakeFlagClient(async () => false);
+    expect(await markFetched(client, 7, "1")).toBe(false);
+    expect(calls).toHaveLength(1);
+    const { client: thrower, calls: thrown } = fakeFlagClient(async () => {
+      throw new Error("boom");
+    });
+    expect(await markFetched(thrower, 7, "1")).toBe(false);
+    expect(thrown).toHaveLength(1);
+  });
+
+  it("still returns true when the label call fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { client, calls } = fakeFlagClient(async (_flags, options) => {
+      if (options.useLabels) throw new Error("no X-GM-EXT-1");
+      return true;
+    });
+    expect(await markFetched(client, 7, "1")).toBe(true);
+    expect(calls).toHaveLength(2);
+    warn.mockRestore();
   });
 });

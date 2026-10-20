@@ -41,7 +41,10 @@ export function LedgerControls({
   onQueryChange,
   onDateFromChange,
   onDateToChange,
-  onGroupByDayChange
+  onGroupByDayChange,
+  duplicateCount,
+  showDuplicates,
+  onShowDuplicatesChange
 }: {
   busy: boolean;
   /** Whether rows have arrived. The filters are meaningless until they have, so they wait. */
@@ -67,6 +70,10 @@ export function LedgerControls({
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
   onGroupByDayChange: (grouped: boolean) => void;
+  /** Rows marked as duplicates in the current scope; the toggle renders only when this is above 0. */
+  duplicateCount: number;
+  showDuplicates: boolean;
+  onShowDuplicatesChange: (show: boolean) => void;
 }) {
   const suspended = modes.picking || modes.pickingCard;
 
@@ -205,6 +212,19 @@ export function LedgerControls({
               />
               <span>Group rows by day, with that day&rsquo;s totals</span>
             </label>
+            {/* Only when there is something to show. A display switch like the one above: marked
+                duplicates are hidden by default, and the totals and balances never change with it. */}
+            {duplicateCount > 0 ? (
+              <label className="ledger-grouping">
+                <input
+                  type="checkbox"
+                  checked={showDuplicates}
+                  disabled={suspended}
+                  onChange={(event) => onShowDuplicatesChange(event.target.checked)}
+                />
+                <span>Show duplicates ({duplicateCount})</span>
+              </label>
+            ) : null}
             {!rangeUsable && (
               <p className="field-help ledger-range-warning" role="alert">
                 That date range ends before it starts, so Reload has nothing to send.

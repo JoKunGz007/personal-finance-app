@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(33);
+select plan(45);
 
 -- Paging the ledger, and the candidate set that lets reconciliation stay in TypeScript
 -- (migration 021, PLAN task 45, D-063, D-120).
@@ -148,6 +148,11 @@ select ok(
   not has_function_privilege('anon', 'public.list_account_transactions_page(uuid, integer, date, time, uuid, date, date)', 'execute')
     and not has_function_privilege('anon', 'public.list_match_candidates()', 'execute'),
   'anon may execute neither'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.list_chooser_candidates()', 'execute')
+    and not has_function_privilege('anon', 'public.list_chooser_candidates()', 'execute'),
+  'the chooser set is granted to authenticated and not to anon'
 );
 -- The row builder is an implementation detail of the two above and is reachable only through
 -- them. Granting it would hand `authenticated` a way to assemble a row for any owner id it named.
@@ -359,6 +364,122 @@ select ok(
   'a candidate is trimmed exactly as a page row is'
 );
 
+-- ------------------------------------------------------------------- the date bound (migration 061)
+
+-- A third account, so the page and candidate assertions above keep their fixtures. Every row here
+-- is on KTB and every amount is unique to its group, so each assertion has one cause.
+--   s4  KTB -4000 on 08-10:  tx7 on 08-11 (one day, in) and tx8 on 08-12 (two days, out)
+--   s5  KTB -6000 on 09-01, corrected to 09-20: tx9 on 09-20 (in) and tx10 on 09-01 (out)
+--   s6  KTB -8000 on 10-01, decided against tx11 on 10-15 (fourteen days, in by decision)
+--   c2  KTB -3000 on 11-05:  tx12 on 11-06 (in) and tx13 on 11-07 (out)
+set local session_replication_role = replica;
+insert into public.accounts(id, owner_id, bank_code, label, account_type, last_four, currency, timezone)
+values ('cccccccc-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111',
+        'KTB', 'Invented KTB', 'savings', '2468', 'THB', 'Asia/Bangkok');
+insert into public.source_transactions(id, owner_id, account_id, fingerprint_version, fingerprint,
+  source_date, source_time, effective_date, transaction_label, description, post_balance_minor, currency)
+values
+  ('dddddddd-0000-4000-8000-000000000007', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000003',
+   'fingerprint-v1', repeat('1', 64), '2026-08-11', '10:00', '2026-08-11', 'Invented seven', 'Invented description seven', 96000, 'THB'),
+  ('dddddddd-0000-4000-8000-000000000008', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000003',
+   'fingerprint-v1', repeat('2', 64), '2026-08-12', '10:00', '2026-08-12', 'Invented eight', 'Invented description eight', 92000, 'THB'),
+  ('dddddddd-0000-4000-8000-000000000009', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000003',
+   'fingerprint-v1', repeat('3', 64), '2026-09-20', '10:00', '2026-09-20', 'Invented nine', 'Invented description nine', 86000, 'THB'),
+  ('dddddddd-0000-4000-8000-000000000010', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000003',
+   'fingerprint-v1', repeat('4', 64), '2026-09-01', '10:00', '2026-09-01', 'Invented ten', 'Invented description ten', 80000, 'THB'),
+  ('dddddddd-0000-4000-8000-000000000011', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000003',
+   'fingerprint-v1', repeat('5', 64), '2026-10-15', '10:00', '2026-10-15', 'Invented eleven', 'Invented description eleven', 72000, 'THB'),
+  ('dddddddd-0000-4000-8000-000000000012', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000003',
+   'fingerprint-v1', repeat('6', 64), '2026-11-06', '10:00', '2026-11-06', 'Invented twelve', 'Invented description twelve', 69000, 'THB'),
+  ('dddddddd-0000-4000-8000-000000000013', '11111111-1111-4111-8111-111111111111', 'cccccccc-0000-4000-8000-000000000003',
+   'fingerprint-v1', repeat('7', 64), '2026-11-07', '10:00', '2026-11-07', 'Invented thirteen', 'Invented description thirteen', 66000, 'THB');
+insert into public.source_components(id, owner_id, transaction_id, position, kind, amount_minor, currency)
+values
+  ('eeeeeeee-0000-4000-8000-000000000007', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000007', 1, 'withdrawal', -4000, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000008', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000008', 1, 'withdrawal', -4000, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000009', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000009', 1, 'withdrawal', -6000, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000010', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000010', 1, 'withdrawal', -6000, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000011', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000011', 1, 'withdrawal', -8000, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000012', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000012', 1, 'withdrawal', -3000, 'THB'),
+  ('eeeeeeee-0000-4000-8000-000000000013', '11111111-1111-4111-8111-111111111111', 'dddddddd-0000-4000-8000-000000000013', 1, 'withdrawal', -3000, 'THB');
+insert into public.slips(id, owner_id, bank_code, bank_qr_code, slip_reference, qr_payload, kind,
+  amount_minor, currency, occurred_on)
+values
+  ('ffffffff-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111', 'KTB', '006',
+   '202608100000000000000004x', 'invented payload four', 'withdrawal', -4000, 'THB', '2026-08-10'),
+  ('ffffffff-0000-4000-8000-000000000005', '11111111-1111-4111-8111-111111111111', 'KTB', '006',
+   '202609010000000000000005x', 'invented payload five', 'withdrawal', -6000, 'THB', '2026-09-01'),
+  ('ffffffff-0000-4000-8000-000000000006', '11111111-1111-4111-8111-111111111111', 'KTB', '006',
+   '202610010000000000000006x', 'invented payload six', 'withdrawal', -8000, 'THB', '2026-10-01');
+-- A date-only correction: kind and amount stay null together, as the overlay's CHECK requires.
+insert into public.slip_correction_overlays(slip_id, owner_id, occurred_on, revision)
+values ('ffffffff-0000-4000-8000-000000000005', '11111111-1111-4111-8111-111111111111', '2026-09-20', 1);
+insert into public.slip_match_overlays(slip_id, owner_id, decision, transaction_id, revision)
+values ('ffffffff-0000-4000-8000-000000000006', '11111111-1111-4111-8111-111111111111',
+        'matched', 'dddddddd-0000-4000-8000-000000000011', 1);
+insert into public.notification_cards(id, owner_id, account_id, channel, printed_account_digits,
+  kind, amount_minor, currency, occurred_on, occurred_at_time, balance_minor,
+  fingerprint_version, fingerprint)
+values ('99999999-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111',
+        'cccccccc-0000-4000-8000-000000000003', 'Krungthai Connext', '2468',
+        'withdrawal', -3000, 'THB', '2026-11-05', '10:00', 69000,
+        'card-fingerprint-v1', repeat('8', 64));
+set local session_replication_role = origin;
+
+select ok(
+  (select count(*) = 1 from jsonb_array_elements(public.list_match_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000007'),
+  'a row one day from a slip, of its amount, is a candidate'
+);
+-- The red-proved assertion: 021's function returned tx8, because it had no date bound.
+select ok(
+  (select count(*) = 0 from jsonb_array_elements(public.list_match_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000008'),
+  'a row two days from a slip, of its amount, is not an automatic candidate'
+);
+select ok(
+  (select count(*) = 1 from jsonb_array_elements(public.list_chooser_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000008'),
+  'the chooser still offers the row two days away (D-067)'
+);
+select ok(
+  (select count(*) = 1 from jsonb_array_elements(public.list_match_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000009'),
+  'the corrected date in force sets the window'
+);
+select ok(
+  (select count(*) = 0 from jsonb_array_elements(public.list_match_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000010'),
+  'the date first typed no longer sets the window once corrected'
+);
+select ok(
+  (select count(*) = 1 from jsonb_array_elements(public.list_match_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000011'),
+  'a row named by a stored decision is a candidate whatever its date'
+);
+select ok(
+  (select count(*) = 1 from jsonb_array_elements(public.list_match_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000012'),
+  'a row one day from a card, on its account and of its amount, is a candidate'
+);
+select ok(
+  (select count(*) = 0 from jsonb_array_elements(public.list_match_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000013')
+  and (select count(*) = 1 from jsonb_array_elements(public.list_chooser_candidates()) r
+    where r->>'id' = 'dddddddd-0000-4000-8000-000000000013'),
+  'a row two days from a card is out of the automatic set and in the chooser set'
+);
+select ok(
+  (select bool_and(r->>'id' in (select c->>'id' from jsonb_array_elements(public.list_chooser_candidates()) c))
+     from jsonb_array_elements(public.list_match_candidates()) r),
+  'every automatic candidate is also a chooser candidate'
+);
+select is(
+  (select jsonb_agg(r->>'id' order by r->>'id') from jsonb_array_elements(public.list_chooser_candidates()) r),
+  '["dddddddd-0000-4000-8000-000000000002","dddddddd-0000-4000-8000-000000000004","dddddddd-0000-4000-8000-000000000005","dddddddd-0000-4000-8000-000000000006","dddddddd-0000-4000-8000-000000000007","dddddddd-0000-4000-8000-000000000008","dddddddd-0000-4000-8000-000000000009","dddddddd-0000-4000-8000-000000000010","dddddddd-0000-4000-8000-000000000011","dddddddd-0000-4000-8000-000000000012","dddddddd-0000-4000-8000-000000000013"]'::jsonb,
+  'the chooser set is bank or account and amount in force, with no date bound'
+);
+
 -- ------------------------------------------------------------------- weak session
 
 select set_config(
@@ -383,6 +504,11 @@ select is(
   public.list_match_candidates(),
   '[]'::jsonb,
   'and reaches no candidate either'
+);
+select is(
+  public.list_chooser_candidates(),
+  '[]'::jsonb,
+  'nor any chooser candidate'
 );
 
 select * from finish();

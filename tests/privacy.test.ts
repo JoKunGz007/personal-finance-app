@@ -137,6 +137,9 @@ describe("privacy guardrails", () => {
     // the old name as a prefix, so an assertion without it would go on passing against either.
     expect(readFileSync("app/api/v1/accounts/[id]/transactions/route.ts", "utf8")).toContain('rpc("list_account_transactions_page"');
     expect(readFileSync("app/api/v1/transactions/match-candidates/route.ts", "utf8")).toContain('rpc("list_match_candidates")');
+    expect(readFileSync("app/api/v1/transactions/chooser-candidates/route.ts", "utf8")).toContain('rpc("list_chooser_candidates")');
+    expect(readFileSync("app/api/v1/transactions/duplicates/route.ts", "utf8")).toContain('rpc("list_duplicate_transactions")');
+    expect(readFileSync("app/api/v1/transactions/[id]/duplicate/route.ts", "utf8")).toContain('rpc("mark_duplicate"');
   });
 
   it("does not regress backup export to capped table selects", () => {

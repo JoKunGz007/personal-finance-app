@@ -199,6 +199,8 @@ export type LedgerActions = {
    * find — the erasure `overlayWriteBody` exists to make unrepresentable.
    */
   readonly setReporting: (transaction: AccountTransaction, includeInReporting: boolean) => void;
+  /** Marks a row as a duplicate: excluded from reporting, labelled, and hidden unless duplicates are shown. */
+  readonly markDuplicate: (transaction: AccountTransaction) => void;
   /** Opens or closes a statement row's slip detail, by transaction id. */
   readonly togglePair: (transactionId: string) => void;
   /** Opens or closes a statement row's card detail, by transaction id. */

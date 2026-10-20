@@ -36,7 +36,7 @@
 // anything on the server.
 
 import { ImapFlow, type FetchMessageObject, type SearchObject } from "imapflow";
-import { collectPdfParts, fetchedFlag, safeFileName, senderSearch, unfetchedParts } from "@/lib/server/statement-mailbox";
+import { IMPORTED_GMAIL_LABEL, collectPdfParts, fetchedFlag, safeFileName, senderSearch, unfetchedParts } from "@/lib/server/statement-mailbox";
 import {
   attachmentId, parseSenders, MAX_SYNC_ATTACHMENTS, MAX_SYNC_MESSAGES_SCANNED, type SyncAttachment
 } from "@/lib/statement-sync";
@@ -294,5 +294,12 @@ export async function verifyAttachment(
  * flag would tell him a file is hidden that Sync goes on offering.
  */
 export async function markFetched(client: ImapFlow, uid: number, part: string): Promise<boolean> {
-  return client.messageFlagsAdd(uid, [fetchedFlag(part)], { uid: true }).then((added) => added !== false, () => false);
+  const recorded = await client.messageFlagsAdd(uid, [fetchedFlag(part)], { uid: true }).then((added) => added !== false, () => false);
+  if (!recorded) return false;
+  // Visible Gmail label (D-141): best-effort, display only; the keyword above is the dedup authority.
+  // imapflow mostly reports a refused store by resolving false, so both outcomes are logged.
+  const labelled = await client.messageFlagsAdd(uid, [IMPORTED_GMAIL_LABEL], { uid: true, useLabels: true })
+    .then((added) => added !== false, () => false);
+  if (!labelled) console.warn("statement mailbox: Gmail label add failed");
+  return true;
 }

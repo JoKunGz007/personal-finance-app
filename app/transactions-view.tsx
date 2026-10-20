@@ -16,7 +16,10 @@ import {
   matchesQuery,
   matchesSlipQuery,
   autoExcludedListSchema,
+  duplicateListSchema,
+  withoutDuplicates,
   autoCategorisedResultSchema,
+  overlayInForce,
   overlayWriteBody,
   overlayWriteResponseSchema,
   type AccountTransaction,
@@ -31,6 +34,7 @@ import {
   deeperPages,
   emptyWindow,
   hasDeeperPage,
+  chooserRows,
   reconciliationRows,
   scopeTotals,
   statusIsComplete,
@@ -155,6 +159,16 @@ export function TransactionsView() {
    * statement it already has.
    */
   const [candidates, setCandidates] = useState<AccountTransaction[]>([]);
+  /**
+   * The manual chooser's rows, from `list_chooser_candidates`: bank or account and exact amount, no
+   * date window (D-067). Fetched when the owner starts choosing a row, not with the ledger
+   * (D-158), and dropped whenever a decision is written or the ledger reloads, so the next
+   * choosing fetches a set that includes the new decision's rows.
+   */
+  const [chooserSet, setChooserSet] = useState<
+    { state: "idle" } | { state: "loading" } | { state: "error"; message: string } | { state: "ready"; rows: AccountTransaction[] }
+  >({ state: "idle" });
+  const chooserSequence = useRef(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [slips, setSlips] = useState<CapturedSlip[]>([]);
   const [matches, setMatches] = useState<SlipMatchDecision[]>([]);
@@ -200,6 +214,10 @@ export function TransactionsView() {
   const [categories, setCategories] = useState<Category[]>([]);
   // Rows excluded from reporting automatically as internal transfers (D-207), for their chip.
   const [autoExcluded, setAutoExcluded] = useState<ReadonlySet<string>>(new Set());
+  // Rows the owner marked as duplicates (migration 062): hidden from the table unless shown. Display
+  // only; not kept in browser storage (D-284), so the toggle resets on reload.
+  const [duplicates, setDuplicates] = useState<ReadonlySet<string>>(new Set());
+  const [showDuplicates, setShowDuplicates] = useState(false);
   // Each ledger row's receipt, by transaction id (D-212's match, computed by the receipts route at
   // read time; no link is stored). Only matched or owner-linked receipts are here.
   const [receiptByRow, setReceiptByRow] = useState<Map<string, StoredReceipt>>(new Map());
@@ -379,6 +397,14 @@ export function TransactionsView() {
   );
   const pickingCard = matchingCard !== null && matchingCardRecord !== null;
 
+  // A ledger reload while choosing drops the chooser's rows; fetch them again rather than leave the
+  // banner loading for good.
+  useEffect(() => {
+    if ((matching !== null || matchingCard !== null) && chooserSet.state === "idle") loadChooser();
+    // `loadChooser` is a closure over the state read above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matching, matchingCard, chooserSet.state]);
+
   // Entering either mode moves focus to Cancel: it is the one control that is certainly present,
   // it is the way out, and it sits beside the announcement rather than at the top of the page.
   useEffect(() => {
@@ -550,48 +576,76 @@ export function TransactionsView() {
     [currentCards, reconciled]
   );
 
-  // The rows a card may be paired with by hand, for the card rows only — a matched card's control
-  // is an undo and needs no list.
-  const candidatesByCard = useMemo(() => {
-    const byCard = new Map<string, AccountTransaction[]>();
-    for (const row of reconciled.rows) {
-      if (row.kind !== "card") continue;
-      // The union, not the window. A chooser that offered only loaded rows would hide the very
-      // row the owner is looking for and read as "it is not there" — and an override exists
-      // precisely to reach past what the automatic rule would propose (D-067).
-      byCard.set(row.card.id, cardMatchCandidates(row.card, reconcileInput, cardDecisions));
-    }
-    return byCard;
-  }, [reconciled, reconcileInput, cardDecisions]);
-
-  const offeredToCard = useMemo(
-    () => new Set((matchingCard === null ? [] : candidatesByCard.get(matchingCard) ?? []).map((candidate) => candidate.id)),
-    [matchingCard, candidatesByCard]
+  // What the manual chooser offers, derived only while the owner is choosing and only once the
+  // chooser's rows have arrived (D-158). Reconciled over the bounded input **plus** the chooser's
+  // rows, so a candidate outside the automatic date window is a row the table can show and carries
+  // the slip or card that claims it. It feeds only the choosing views: the statuses everywhere
+  // else keep using `reconciled`, which runs over the bounded set.
+  const chooserReady = chooserSet.state === "ready" ? chooserSet.rows : null;
+  const chooserState = useMemo<
+    { state: "loading" } | { state: "error"; message: string } | { state: "ready" }
+  >(
+    () => chooserSet.state === "error"
+      ? { state: "error", message: chooserSet.message }
+      : chooserSet.state === "ready" ? { state: "ready" } : { state: "loading" },
+    [chooserSet]
   );
+  const chooserInput = useMemo(
+    () => (ledgerWindow === null || chooserReady === null || (matching === null && matchingCard === null)
+      ? null
+      : chooserRows(ledgerWindow, candidates, chooserReady)),
+    [ledgerWindow, candidates, chooserReady, matching, matchingCard]
+  );
+  const chooserReconciled = useMemo(
+    () => chooserInput === null
+      ? null
+      : reconcileLedger(chooserInput, currentSlips, accounts ?? [], matches, currentCash, currentCards, cardDecisions),
+    [chooserInput, currentSlips, accounts, matches, currentCash, currentCards, cardDecisions]
+  );
+
+  // The choosing views' rows: the slip or card being chosen for, from the automatic reconciliation,
+  // and the confirmed rows from the chooser's, so each carries the record that claims it.
+  const choosingRows = useMemo(
+    () => [
+      ...reconciled.rows.filter((row) => row.kind !== "confirmed"),
+      ...(chooserReconciled?.rows.filter((row) => row.kind === "confirmed") ?? [])
+    ],
+    [reconciled, chooserReconciled]
+  );
+
+  // The rows a card may be paired with by hand. The union, not the window: a chooser that offered
+  // only loaded rows would hide the very row the owner is looking for and read as "it is not
+  // there" — and an override exists precisely to reach past what the automatic rule would propose
+  // (D-067).
+  const offeredToCard = useMemo(() => {
+    const card = matchingCard === null ? undefined : currentCards.find((entry) => entry.id === matchingCard);
+    return new Set(
+      card === undefined || chooserInput === null
+        ? []
+        : cardMatchCandidates(card, chooserInput, cardDecisions)
+            .filter((candidate) => !duplicates.has(candidate.id))
+            .map((candidate) => candidate.id)
+    );
+  }, [matchingCard, currentCards, chooserInput, cardDecisions, duplicates]);
 
   const decisionBySlip = useMemo(
     () => new Map(matches.map((match) => [match.slip_id, match])),
     [matches]
   );
 
-  // The rows a slip may be paired with by hand, computed for the provisional rows only — a
-  // matched slip's control is an undo and needs no list. Not date-bounded: an override exists
-  // precisely to reach past the automatic window (D-067).
-  const candidatesBySlip = useMemo(() => {
-    const byslip = new Map<string, AccountTransaction[]>();
-    for (const row of reconciled.rows) {
-      if (row.kind !== "provisional") continue;
-      byslip.set(row.slip.id, matchCandidates(row.slip, reconcileInput, accounts ?? [], matches));
-    }
-    return byslip;
-  }, [reconciled, reconcileInput, accounts, matches]);
-
-  // The rows on offer while matching, as a set, so a confirmed row can ask whether it is one
-  // of them without re-deriving the list per row.
-  const offered = useMemo(
-    () => new Set((matching === null ? [] : candidatesBySlip.get(matching) ?? []).map((candidate) => candidate.id)),
-    [matching, candidatesBySlip]
-  );
+  // The rows a slip may be paired with by hand. Not date-bounded: an override exists precisely to
+  // reach past the automatic window (D-067). A row marked as a duplicate is never offered, here or
+  // for a card: pairing a record with the copy the owner set aside would hide the match.
+  const offered = useMemo(() => {
+    const slip = matchingSlip;
+    return new Set(
+      slip === null || chooserInput === null
+        ? []
+        : matchCandidates(slip, chooserInput, accounts ?? [], matches)
+            .filter((candidate) => !duplicates.has(candidate.id))
+            .map((candidate) => candidate.id)
+    );
+  }, [matchingSlip, chooserInput, accounts, matches, duplicates]);
 
   // A slip is shown against an account when the owner holds exactly one at that bank, so the
   // attribution is forced rather than guessed; with two, it belongs to the all-accounts view
@@ -619,7 +673,7 @@ export function TransactionsView() {
     // The card's own picking mode, on the same terms as the slip's: the card being matched and
     // every row it could be, with the other controls suspended rather than obeyed.
     if (pickingCard) {
-      const candidates = reconciled.rows.filter((row) => {
+      const candidates = choosingRows.filter((row) => {
         if (row.kind === "card") return row.card.id === matchingCard;
         if (row.kind === "cash" || row.kind === "provisional") return false;
         return offeredToCard.has(row.transaction.id);
@@ -630,7 +684,7 @@ export function TransactionsView() {
     }
 
     if (picking) {
-      const candidates = reconciled.rows.filter((row) => {
+      const candidates = choosingRows.filter((row) => {
         if (row.kind === "provisional") return row.slip.id === matching;
         // Neither cash nor an unmatched card is a statement row, and neither can become one, so
         // neither is ever on offer. A card is the closer call of the two and still no: it is a
@@ -673,7 +727,24 @@ export function TransactionsView() {
     if (order === "oldest") filtered.reverse();
     return filtered;
   }, [reconciled, inAccount, query, order, status, matching, picking, offered, pickingCard,
-      matchingCard, offeredToCard, heldIds]);
+      matchingCard, offeredToCard, heldIds, choosingRows]);
+
+  /**
+   * What the table renders: `visibleRows` minus marked duplicates unless they are shown, and
+   * **nothing else reads it except the table and its day headings**. Totals, the balance, the
+   * balance checks and paging all run on the full set above, so hiding a duplicate is display only.
+   * Not applied while a match is being chosen by hand, which is its own view of the ledger.
+   */
+  const shownRows = useMemo(
+    () => (picking || pickingCard ? visibleRows : withoutDuplicates(visibleRows, duplicates, showDuplicates)),
+    [visibleRows, duplicates, showDuplicates, picking, pickingCard]
+  );
+
+  /** Duplicates that are on the loaded rows of the current scope, for the toggle's count. */
+  const duplicateCount = useMemo(
+    () => visibleRows.filter((row) => row.kind === "confirmed" && duplicates.has(row.transaction.id)).length,
+    [visibleRows, duplicates]
+  );
 
   /**
    * The strip above the table, and the one place paging could have quietly changed what a number
@@ -747,8 +818,8 @@ export function TransactionsView() {
    * which is the same reason the totals strip disappears entirely in that mode.
    */
   const dayHeads = useMemo(
-    () => (groupByDay && !picking && !pickingCard ? dayGroups(visibleRows) : null),
-    [groupByDay, picking, pickingCard, visibleRows]
+    () => (groupByDay && !picking && !pickingCard ? dayGroups(shownRows) : null),
+    [groupByDay, picking, pickingCard, shownRows]
   );
 
   const unattributedSlips = useMemo(
@@ -885,6 +956,10 @@ export function TransactionsView() {
         fallback: "Automatically excluded rows could not be loaded.",
         offContract: "The automatically excluded rows did not match their contract."
       });
+      const duplicatesRequest = ledgerRequest("/api/v1/transactions/duplicates", duplicateListSchema, {
+        fallback: "Duplicate rows could not be loaded.",
+        offContract: "The duplicate rows did not match their contract."
+      });
       const receiptsRequest = ledgerRequest("/api/v1/receipts", receiptListSchema, {
         fallback: "Receipts could not be loaded.",
         offContract: "The receipts response did not match its contract."
@@ -1001,6 +1076,11 @@ export function TransactionsView() {
       const autoExcludedResult = await autoExcludedRequest;
       if (superseded()) return;
       setAutoExcluded(new Set(autoExcludedResult.ok ? autoExcludedResult.data.ids : []));
+      // Same rule: a failure leaves the rows shown as plainly "Excluded", which is still true, and
+      // nothing is hidden on an answer that did not arrive.
+      const duplicatesResult = await duplicatesRequest;
+      if (superseded()) return;
+      setDuplicates(new Set(duplicatesResult.ok ? duplicatesResult.data.ids : []));
       // Machine categories (D-245), started only now because an own transfer is categorised from
       // the exclusion above. Quiet like that label: a failure changes nothing on screen, and the
       // rows are reloaded only when it wrote something (a re-run writes nothing, so this settles).
@@ -1022,6 +1102,7 @@ export function TransactionsView() {
       if (superseded()) return;
       setAccounts(accountsResult.data.accounts);
       setCandidates(candidateResult.data.candidates);
+      staleChooser();
       // Set together, because they describe one fetch. `appliedRange` is what `loadMore` must walk
       // inside of — recording it only here, never from the live inputs, is what keeps an edited but
       // unapplied date field from reaching a deeper page before Reload does.
@@ -1136,6 +1217,7 @@ export function TransactionsView() {
         return;
       }
       setMatches((current) => [...current.filter((match) => match.slip_id !== slipId), parsed.data.match]);
+      staleChooser();
       setMatching(null);
     } catch {
       setDecisionError("The ledger could not be reached, so the decision was not saved.");
@@ -1183,6 +1265,7 @@ export function TransactionsView() {
         return;
       }
       setCardDecisions((current) => [...current.filter((entry) => entry.card_id !== cardId), parsed.data.decision]);
+      staleChooser();
       setMatchingCard(null);
     } catch {
       setDecisionError("The ledger could not be reached, so the decision was not saved.");
@@ -1234,6 +1317,54 @@ export function TransactionsView() {
       next.delete(transaction.id);
       return next;
     });
+    // Re-including clears the duplicate mark in the database; excluding a marked row keeps it.
+    if (includeInReporting) {
+      setDuplicates((current) => {
+        if (!current.has(transaction.id)) return current;
+        const next = new Set(current);
+        next.delete(transaction.id);
+        return next;
+      });
+    }
+  }
+
+  /**
+   * Marks one confirmed row as a duplicate (migration 062). Like `setReporting`, the request is
+   * derived from the row (its current revision), the stored overlay is folded back rather than
+   * reloaded, and `withOverlay` corrects the totals because the row becomes excluded. The
+   * duplicate id set gains the row so it wears the chip and, unless duplicates are shown, leaves
+   * the table; nothing about balances changes.
+   */
+  async function markDuplicate(transaction: AccountTransaction) {
+    setSettingReporting(transaction.id);
+    setReportingError(null);
+    const result = await ledgerRequest(
+      `/api/v1/transactions/${transaction.id}/duplicate`,
+      overlayWriteResponseSchema,
+      {
+        fallback: "The row could not be marked as a duplicate.",
+        unreachable: "The ledger could not be reached, so the row was not marked as a duplicate.",
+        offContract: "The row was marked but did not come back in its published shape. Reload before trusting the totals."
+      },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: overlayInForce(transaction).revision })
+      }
+    );
+    setSettingReporting(null);
+    if (!result.ok) {
+      setReportingError(result.why);
+      return;
+    }
+    setLedgerWindow((current) => current === null ? current : withOverlay(current, transaction.id, result.data.overlay));
+    setAutoExcluded((current) => {
+      if (!current.has(transaction.id)) return current;
+      const next = new Set(current);
+      next.delete(transaction.id);
+      return next;
+    });
+    setDuplicates((current) => new Set(current).add(transaction.id));
   }
 
   /**
@@ -1317,13 +1448,39 @@ export function TransactionsView() {
     setCorrecting(null);
   }
 
+  /**
+   * Fetches the chooser's rows once per set of decisions. `ledgerRequest` never rejects. The
+   * sequence guard drops an answer that a decision or a reload has since made stale.
+   */
+  function loadChooser() {
+    if (chooserSet.state === "ready" || chooserSet.state === "loading") return;
+    const mine = ++chooserSequence.current;
+    setChooserSet({ state: "loading" });
+    void ledgerRequest("/api/v1/transactions/chooser-candidates", matchCandidateListSchema, {
+      fallback: "The rows to choose from could not be loaded. Cancel and try again.",
+      unreachable: "The ledger could not be reached. Cancel and try again.",
+      offContract: "The rows to choose from did not match their contract. Cancel and try again."
+    }).then((result) => {
+      if (chooserSequence.current !== mine) return;
+      setChooserSet(result.ok ? { state: "ready", rows: result.data.candidates } : { state: "error", message: result.why });
+    });
+  }
+
+  /** Drops the chooser's rows after a decision is written or the ledger reloads. */
+  function staleChooser() {
+    chooserSequence.current += 1;
+    setChooserSet({ state: "idle" });
+  }
+
   function chooseRowForSlip(slipId: string) {
     setDecisionError(null);
+    loadChooser();
     setMatching(slipId);
   }
 
   function chooseRowForCard(cardId: string) {
     setDecisionError(null);
+    loadChooser();
     setMatchingCard(cardId);
   }
 
@@ -1345,6 +1502,7 @@ export function TransactionsView() {
     decideSlip: decide,
     decideCard,
     setReporting,
+    markDuplicate,
     togglePair,
     toggleCard,
     toggleCorrecting,
@@ -1403,6 +1561,9 @@ export function TransactionsView() {
         onDateFromChange={setDateFrom}
         onDateToChange={setDateTo}
         onGroupByDayChange={setGroupByDay}
+        duplicateCount={duplicateCount}
+        showDuplicates={showDuplicates}
+        onShowDuplicatesChange={setShowDuplicates}
       />
 
       {error ? (
@@ -1436,6 +1597,7 @@ export function TransactionsView() {
             matchingCardRecord={matchingCardRecord}
             offeredCount={offered.size}
             offeredToCardCount={offeredToCard.size}
+            chooser={chooserState}
             totals={totals}
             partial={partialFilter}
             balance={balance}
@@ -1524,7 +1686,7 @@ export function TransactionsView() {
             </p>
           ) : null}
 
-          {visibleRows.length === 0 ? (
+          {shownRows.length === 0 ? (
             <p className="ledger-empty" role="status">
               {ledgerIsEmpty && slips.length === 0
                 ? "No confirmed transactions yet — import a statement or capture a slip."
@@ -1547,7 +1709,7 @@ export function TransactionsView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleRows.map((row) => {
+                  {shownRows.map((row) => {
                     /**
                      * The day heading that belongs above this row, when one does.
                      *
@@ -1621,7 +1783,6 @@ export function TransactionsView() {
                           modes={modes}
                           original={originalCards.get(row.card.id)}
                           correction={cardCorrectionByCard.get(row.card.id) ?? null}
-                          candidates={candidatesByCard.get(row.card.id) ?? []}
                           fittingRows={reconciled.cardMatches.balanceConflict.get(row.card.id) ?? 0}
                           reviewReason={reconciled.cardMatches.needsReview.get(row.card.id)}
                           categories={categories}
@@ -1639,7 +1800,6 @@ export function TransactionsView() {
                           modes={modes}
                           original={originalSlips.get(row.slip.id)}
                           correction={slipCorrectionBySlip.get(row.slip.id) ?? null}
-                          candidates={candidatesBySlip.get(row.slip.id) ?? []}
                           categories={categories}
                           actions={actions}
                         />
@@ -1661,6 +1821,7 @@ export function TransactionsView() {
                         openCard={openCard}
                         categorySaving={modes.correcting === row.transaction.id && categorySaving}
                         autoExcluded={autoExcluded.has(row.transaction.id)}
+                        duplicate={duplicates.has(row.transaction.id)}
                         receipt={receiptByRow.get(row.transaction.id) ?? null}
                         delivery={deliveryByRow.get(row.transaction.id) ?? null}
                         ride={rideByRow.get(row.transaction.id) ?? null}

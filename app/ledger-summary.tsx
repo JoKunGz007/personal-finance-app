@@ -25,6 +25,7 @@ export function LedgerSummary({
   matchingCardRecord,
   offeredCount,
   offeredToCardCount,
+  chooser,
   totals,
   partial = false,
   balance,
@@ -45,6 +46,8 @@ export function LedgerSummary({
   offeredCount: number;
   /** How many rows are on offer for the card. */
   offeredToCardCount: number;
+  /** The manual chooser's fetch: its rows are loaded when picking starts, not with the ledger (D-158). */
+  chooser: { state: "loading" } | { state: "error"; message: string } | { state: "ready" };
   totals: LedgerTotals;
   /** The figures cover loaded rows only, because the filter narrows what the client holds. */
   partial?: boolean;
@@ -71,7 +74,10 @@ export function LedgerSummary({
           <strong>Choosing a statement row for a card</strong>
           <span>
             {`${matchingCardRecord.channel} · ${formatDate(matchingCardRecord.occurred_on)} ${matchingCardRecord.occurred_at_time} · ${formatThb(matchingCardRecord.amount_minor)}`}
-            {` — ${offeredToCardCount} row${offeredToCardCount === 1 ? "" : "s"} carry that exact amount. Rows whose balance matches the card are listed first — that's what the rule would pick. Other filters are suspended while choosing.`}
+            {chooser.state === "loading" ? " — Loading the rows this card could be paired with…"
+              : chooser.state === "error" ? ` — ${chooser.message}`
+              : offeredToCardCount === 0 ? " — No row on this account carries this exact amount, so there is nothing to match it to. Other filters are suspended while choosing."
+              : ` — ${offeredToCardCount} row${offeredToCardCount === 1 ? "" : "s"} carry that exact amount. Rows whose balance matches the card are listed first — that's what the rule would pick. Other filters are suspended while choosing.`}
           </span>
         </div>
         <button
@@ -97,7 +103,10 @@ export function LedgerSummary({
           <strong>Choosing a statement row</strong>
           <span>
             {`${matchingSlip.bank_code} slip · ${formatDate(matchingSlip.occurred_on)}${matchingSlip.occurred_at_time ? ` ${matchingSlip.occurred_at_time}` : ""} · ${formatThb(matchingSlip.amount_minor)}`}
-            {` — ${offeredCount} row${offeredCount === 1 ? "" : "s"} could be it, same bank and amount to the satang. Time and balance tell them apart, shown as rows rather than a list of names. Other filters are suspended while choosing.`}
+            {chooser.state === "loading" ? " — Loading the rows this slip could be paired with…"
+              : chooser.state === "error" ? ` — ${chooser.message}`
+              : offeredCount === 0 ? ` — No ${matchingSlip.bank_code} row carries this exact amount, so there is nothing to match it to. Other filters are suspended while choosing.`
+              : ` — ${offeredCount} row${offeredCount === 1 ? "" : "s"} could be it, same bank and amount to the satang. Time and balance tell them apart, shown as rows rather than a list of names. Other filters are suspended while choosing.`}
           </span>
         </div>
         <button

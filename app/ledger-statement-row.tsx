@@ -39,6 +39,7 @@ export function LedgerStatementRow({
   openCard,
   categorySaving,
   autoExcluded,
+  duplicate,
   receipt,
   delivery,
   ride,
@@ -74,6 +75,8 @@ export function LedgerStatementRow({
   categorySaving: boolean;
   /** Excluded from reporting automatically as an internal transfer (D-207), not by hand. */
   autoExcluded: boolean;
+  /** Marked by the owner as a duplicate (migration 062): excluded, and cleared only by Include. */
+  duplicate: boolean;
   /** The 7-Eleven receipt this row paid for, when one is matched or linked (D-212). Itemization only. */
   receipt: StoredReceipt | null;
   /** The GrabFood order this row paid for, when one is matched or linked (D-220). Itemization only. */
@@ -356,7 +359,7 @@ export function LedgerStatementRow({
                   no information. A chip when the row is *out* of reporting is the opposite — the
                   totals above the table are computed without it, and a figure that quietly excludes
                   a visible row is the silent difference this ledger keeps having to name. */}
-              {includeInReporting ? null : <em className="status-chip excluded">{autoExcluded ? "Auto-excluded · transfer" : "Excluded"}</em>}
+              {includeInReporting ? null : <em className="status-chip excluded">{duplicate ? "Duplicate" : autoExcluded ? "Auto-excluded · transfer" : "Excluded"}</em>}
               <button
                 type="button"
                 className="secondary-button row-more"
@@ -383,6 +386,19 @@ export function LedgerStatementRow({
               >
                 {modes.settingReporting === transaction.id ? "Saving…" : includeInReporting ? "Exclude" : "Include"}
               </button>
+              {/* Offered on counted rows and on Excluded rows not yet marked (so an existing
+                  exclusion can be relabelled); a marked row has Include, which clears the mark. */}
+              {duplicate ? null : (
+                <button
+                  type="button"
+                  className="secondary-button row-action"
+                  aria-label={`Mark as duplicate — stop counting the row dated ${formatDate(row.date)} for ${formatThb(movement)} and hide it from the ledger`}
+                  disabled={modes.settingReporting !== null}
+                  onClick={() => actions.markDuplicate(transaction)}
+                >
+                  Mark as duplicate
+                </button>
+              )}
               {/* **No sentence here, and its absence is the point.** The first version explained
                   what "Excluded" means on *every* excluded row, which is standing copy repeated
                   per row — the thing D-156's own rule says to fold, written by someone who had

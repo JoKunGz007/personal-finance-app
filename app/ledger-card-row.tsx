@@ -2,7 +2,6 @@
 
 import { Fragment } from "react";
 import { formatThb } from "@/lib/money";
-import { type AccountTransaction } from "@/lib/transactions";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CardReviewReason } from "@/lib/notification-card-reconcile";
 import { type NotificationCard, type NotificationCardCorrection } from "@/lib/notification-cards";
@@ -26,7 +25,6 @@ export function LedgerCardRow({
   modes,
   original,
   correction,
-  candidates,
   fittingRows,
   reviewReason,
   categories,
@@ -41,8 +39,6 @@ export function LedgerCardRow({
   original: NotificationCard | undefined;
   /** The correction in force, or null. Its presence is what "Corrected by you" reports. */
   correction: NotificationCardCorrection | null;
-  /** The statement rows this card may be paired with by hand. */
-  candidates: readonly AccountTransaction[];
   /**
    * How many statement rows fitted on account, amount and date while every one printed a
    * different balance. Only meaningful when the status is `balance-conflict`.
@@ -117,23 +113,17 @@ export function LedgerCardRow({
               and an amount, and only the printed time and the running balance
               tell them apart. The chooser puts them in the table where both
               live, with the balance-agreeing one first. */}
-          {candidates.length > 0 ? (
-            <div className="match-control">
-              <button
-                type="button"
-                className="secondary-button"
-                aria-label={`Choose a statement row for the card dated ${formatDate(card.occurred_on)}`}
-                disabled={modes.decidingCard !== null || modes.matchingCard !== null || modes.matching !== null}
-                onClick={() => actions.chooseRowForCard(card.id)}
-              >
-                Choose a statement row
-              </button>
-              <small>
-                {candidates.length} row
-                {candidates.length === 1 ? "" : "s"} could be this payment
-              </small>
-            </div>
-          ) : null}
+          <div className="match-control">
+            <button
+              type="button"
+              className="secondary-button"
+              aria-label={`Choose a statement row for the card dated ${formatDate(card.occurred_on)}`}
+              disabled={modes.decidingCard !== null || modes.matchingCard !== null || modes.matching !== null}
+              onClick={() => actions.chooseRowForCard(card.id)}
+            >
+              Choose a statement row
+            </button>
+          </div>
           {/* The remedy for a card that should never have been captured — a
               wrong account binding or a second capture. The binding cannot be
               re-made and the row cannot be deleted, so retiring is what a wrong

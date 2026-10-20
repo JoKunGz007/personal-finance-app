@@ -2,7 +2,6 @@
 
 import { Fragment } from "react";
 import { formatThb } from "@/lib/money";
-import { type AccountTransaction } from "@/lib/transactions";
 import { type ReconciledRow } from "@/lib/slip-reconcile";
 import { type CapturedSlip, type SlipCorrection } from "@/lib/slips";
 import { type Category } from "@/lib/categories";
@@ -24,7 +23,6 @@ export function LedgerSlipRow({
   modes,
   original,
   correction,
-  candidates,
   categories,
   actions
 }: {
@@ -37,8 +35,6 @@ export function LedgerSlipRow({
   original: CapturedSlip | undefined;
   /** The correction in force, or null. Its presence is what "Corrected by you" reports. */
   correction: SlipCorrection | null;
-  /** The statement rows this slip may be paired with by hand. Empty means there is nothing to offer. */
-  candidates: readonly AccountTransaction[];
   actions: LedgerActions;
 }) {
   const slip = row.slip;
@@ -84,27 +80,23 @@ export function LedgerSlipRow({
               and the running balance can, and both live in the table. The
               button asks the table to show only this slip and its candidates
               instead of describing them here. */}
-          {candidates.length > 0 ? (
-            <div className="match-control">
-              <button
-                type="button"
-                className="secondary-button"
-                aria-label={`Choose a statement row for the slip dated ${formatDate(slip.occurred_on)}`}
-                disabled={modes.deciding !== null || modes.matching !== null}
-                onClick={() => actions.chooseRowForSlip(slip.id)}
-              >
-                Choose a statement row
-              </button>
-              <small>{candidates.length} row{candidates.length === 1 ? "" : "s"} could be this payment</small>
-            </div>
-          ) : (
-            <small className="decision-mark">
-              No {slip.bank_code} row carries this exact amount, so there is nothing to match it to.
-            </small>
-          )}
-          {/* Offered beside "nothing matches this amount" on purpose: a
-              mistyped amount is the likeliest reason a slip has no candidate,
-              and correcting it is the fix. What the QR carried — the bank and
+          {/* No count and no "nothing to match" here: the chooser's rows are fetched
+              when the button is pressed (D-158), and the banner reports how many
+              there are, or that there are none, once they arrive. */}
+          <div className="match-control">
+            <button
+              type="button"
+              className="secondary-button"
+              aria-label={`Choose a statement row for the slip dated ${formatDate(slip.occurred_on)}`}
+              disabled={modes.deciding !== null || modes.matching !== null}
+              onClick={() => actions.chooseRowForSlip(slip.id)}
+            >
+              Choose a statement row
+            </button>
+          </div>
+          {/* Offered beside the chooser on purpose: a mistyped amount is the
+              likeliest reason a slip has no candidate, and correcting it is
+              the fix. What the QR carried — the bank and
               the reference — is not correctable and is not in the form. */}
           {original ? (
             <div className="match-control">

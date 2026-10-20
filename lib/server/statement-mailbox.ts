@@ -111,6 +111,12 @@ export function fetchedFlag(part: string): string {
 }
 
 /**
+ * The visible Gmail label added to an imported statement mail, in addition to the hidden
+ * `fetchedFlag` keyword (D-141). Display only: the keyword stays the sole dedup authority.
+ */
+export const IMPORTED_GMAIL_LABEL = "PL Imported";
+
+/**
  * The PDF parts of one message the hosted route has not already downloaded, by its own flags.
  *
  * **This is what makes a repeat sync stop re-offering the same file.** The local script dedupes by

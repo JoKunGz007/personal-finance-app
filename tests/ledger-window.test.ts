@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chooserRows,
   deeperPages,
   emptyWindow,
   hasDeeperPage,
@@ -218,6 +219,11 @@ describe("reconciliation sees more than the page", () => {
    * awaiting a slip — and a row appearing twice would be counted twice by every total that walks
    * this list.
    */
+  it("adds the chooser set to the bounded candidates, once per row", () => {
+    const rows = chooserRows(windowOfA(A_PAGE_1), [candidate(TX1)], [candidate(TX1), candidate(TX2), candidate(TX4)]);
+    expect(rows.map((r) => r.id)).toEqual([TX5.id, TX4.id, TX2.id, TX1.id]);
+  });
+
   it("deduplicates a candidate that is already on the page", () => {
     const rows = reconciliationRows(windowOfA(A_PAGE_1), [candidate(TX4), candidate(TX5)]);
     expect(rows).toHaveLength(2);

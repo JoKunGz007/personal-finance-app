@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-273 … D-287**. D-141 (whether the mailbox source is deleted after import, deferred by the owner) and D-158 (`list_match_candidates`' unbounded scan, unfixed) are the two open questions. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-273 … D-290**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -410,6 +410,9 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
+- **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
+- **D-288** — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
 - **D-287** — `PLAN.md` holds the current state only; finished work moves unchanged to `docs/archive/`, and dead traps retire to their generalisations
 - **D-286** — The twenty-first boundary moves D-259 … D-272 on the owner's word
 - **D-285** — Receipt discounts keep their printed names; a receipt's completeness and checks change only when its items are replaced (migration 060); stored receipts get names by an equal-rank re-capture
@@ -425,6 +428,33 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
+
+## D-290 — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
+
+- Date: 2026-10-21
+- Status: **Built; migration 062 local only** (hosted needs a verified backup and its own push). Owner: "go ahead" on task 59, which overrides D-265's preference for plain Excluded; duplicates hidden by default with a toggle.
+- **Chosen (lightest of four designs):** no column, enum or table. `mark_duplicate(tx, expected_revision)` writes Excluded through `update_transaction_overlay` (every other overlay field carried over), then appends `overlay.marked_duplicate` with `{revision}`. `list_duplicate_transactions()` lists a row while it is excluded, has a marker, and no `overlay_revisions` snapshot after the marker's revision has `include_in_reporting = true` — so a later note or category edit keeps the mark, and only Include clears it. An already-marked row returns its overlay unchanged whatever revision the request carried (a retried request is a no-op, not a 409). Index `audit_events (owner_id, entity_id, event_type, id)` serves the marker lookup. Backup contract unchanged: `event_type` is free text, no version bump.
+- **Rejected:** a new state or reason column, or a separate table — each needs a backup bump (16 → 17) and another `restore_backup` rewrite.
+- **UI:** "Mark as duplicate" beside Exclude/Include on every unmarked confirmed row, Excluded ones too (so the four D-265 rows can be relabelled); a marked row shows a "Duplicate" chip; "Show duplicates (N)" in the ledger controls, only when N > 0, not persisted. Hiding is display only: totals, balance, reconciliation and paging read the full set; the strip's row count still includes hidden rows. The manual chooser never offers a marked row.
+- Evidence: pgTAP `038_duplicate_marker.sql` (24; the note-edit and idempotency assertions red-proved); `tests/duplicate-hiding.test.ts` (4: money and balances identical hidden vs shown). `/code-review` high: 7 findings, 5 fixed (index, retry no-op, chooser offers, Gmail label logging, a stale comment), 2 simplifications skipped.
+
+## D-289 — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
+
+- Date: 2026-10-21
+- Status: **Built; migration 061 local only** (hosted needs a verified backup and its own push). Owner approved the lazy chooser. Design from D-264.
+- **`list_match_candidates()`** now filters `source_transactions` by account and `source_date` within one day of each slip's or card's date in force (`coalesce(correction.occurred_on, record.occurred_on)`) before summing components, then keeps rows whose movement equals that record's amount in force; decided rows stay in whatever their date; no cap (D-063). This mirrors `proposeSlipMatches` / `proposeCardMatches` (`MATCH_WINDOW_DAYS` = `CARD_MATCH_WINDOW_DAYS` = 1, calendar days, no time zone); if either constant changes, the SQL must change too.
+- **`list_chooser_candidates()`** is 021's unbounded body unchanged, behind the new route `/api/v1/transactions/chooser-candidates`, fetched when the owner presses "Choose a statement row" and dropped after a decision or a reload.
+- **Visible change:** slip and card rows always show "Choose a statement row" with no count; the count, or "No … row carries this exact amount", appears in the banner once the chooser's rows load (loading and error lines while they don't).
+- Evidence: pgTAP `009_ledger_paging.sql` plan 33 → 45 (2 days out of the window but in the chooser, a corrected date moves the window, a decided row 14 days away stays in), three red-proved against 021's body. Index use not measured (local data too small for EXPLAIN to show it).
+
+## D-288 — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
+
+- Date: 2026-10-21
+- Status: **Built** (app code only). Owner: "stay but labelled".
+- Already true before this: nothing is moved or deleted; each imported part carries the IMAP keyword `PLFetched-<part>`, the dedup authority Sync reads. Gmail's UI does not show keywords.
+- **Added:** `markFetched` (`lib/server/statement-mailbox-session.ts`), after the keyword succeeds, stores the Gmail label `PL Imported` (imapflow `useLabels`, X-GM-LABELS). Best-effort: a refused label logs one value-free line and leaves the result true. Receipts (`PLReceipt`) and deliveries keep hidden keywords only.
+- **Not verified against the real mailbox**: whether Gmail creates the label on first store. Check after the next imported statement.
+- Evidence: 3 new tests in `tests/statement-mailbox-session.test.ts`.
 
 ## D-287 — `PLAN.md` holds the current state only; finished work moves unchanged to `docs/archive/`, and dead traps retire to their generalisations
 

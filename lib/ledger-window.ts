@@ -344,3 +344,16 @@ export const STATUS_POPULATION: Record<RowStatus, "confirmed" | "record"> = {
 export function statusIsComplete(status: RowStatus): boolean {
   return STATUS_POPULATION[status] === "record";
 }
+
+/**
+ * What the manual chooser reasons over: `reconciliationRows` plus the chooser's unbounded set
+ * (D-158). Used only while the owner is picking, and only for the rows he may pick from; the
+ * automatic statuses keep running over the bounded `reconciliationRows` input.
+ */
+export function chooserRows(
+  window: LedgerWindow,
+  candidates: readonly AccountTransaction[],
+  chooser: readonly AccountTransaction[]
+): AccountTransaction[] {
+  return reconciliationRows(window, [...candidates, ...chooser]);
+}

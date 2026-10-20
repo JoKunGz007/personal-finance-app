@@ -173,7 +173,7 @@ export function ReceiptsBench() {
     const outcome = result.data.captured
       ? "Saved."
       : result.data.itemsReplaced
-        ? "Merged into the receipt already stored for this purchase; its item list was upgraded."
+        ? "Merged into the receipt already stored for this purchase; its item list was replaced by this one's."
         : "Merged into the receipt already stored for this purchase; its existing item list was kept.";
     update(entry.key, { key: entry.key, file: entry.file, state: "saved", form: entry.form, receipt: entry.receipt, outcome });
     if (listShown.current) void load();

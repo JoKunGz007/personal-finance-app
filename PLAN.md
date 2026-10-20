@@ -1,27 +1,26 @@
 # Private Ledger execution plan
 
-Last verified: 2026-10-17
+Last verified: 2026-10-21
 
 ## Current checkpoint
 
-**Receipt discount names shipped; nothing in flight — 2026-10-17** (D-285, D-286). Discounts keep their printed names on `/receipts` and the ledger row; migration 060 is on hosted (a receipt's completeness and checks change only when its items are replaced). Backfill done: 44 of 44 discount rows named, still 25 receipts, sequence 1318. `DECISIONS.md` is at 78% after the twenty-first boundary. Last gate: pgTAP 37 files (940), tsc, eslint 0 errors, Vitest 97 files (1,894 / 19 skipped). **Continuity docs slimmed the same day** (D-287, `b9591c0`, `702f1a0`): this file now holds the current state only. `main` is 4 docs-only commits ahead of `origin/main` (with this sync) (pushing deploys, though no app code changed). **Next:** take an item from Open below; none is started.
+**Duplicate marker, bounded candidates and the mail label built; migrations 061–062 local only — 2026-10-21** (D-288, D-289, D-290). Statement mail gets a visible `PL Imported` label; `list_match_candidates` is bounded to ±1 day and the chooser's set loads on demand; the owner can mark a row as a duplicate, hidden by default. Also: the `/receipts` re-capture message no longer says "upgraded" (Open item 4 of the previous list), and discount names on ledger rows were checked on production (63 of 63 named). Last gate: pgTAP 38 files (976), tsc, eslint 0 errors, Vitest 98 files (1,902 / 19 skipped), owner Playwright 32 of 32. **Next:** the owner exports a backup; then verify `mutation_sequences`, dry-run and push 061–062; commit; the owner pushes; mark the four D-265 duplicates.
 
 Older checkpoint paragraphs, finished tasks, the resolved review blockers, completed hardening and the discharged authorization gates are in [`docs/archive/PLAN-2026-10-17.md`](docs/archive/PLAN-2026-10-17.md), unchanged. Finished tasks keep their numbers there, so "`PLAN.md` task N" for a finished task resolves in that file.
 
 ## Open
 
-1. **Intermittent 500s** on production ("could not be loaded in full"): read the Vercel logs within the hour after the next one (Hobby retention); `readAll` logs a value-free line since `eede966`. Likely fix: one retry on network/5xx for idempotent reads.
+1. **Intermittent 500s** on production ("could not be loaded in full"): on hold by the owner (2026-10-21). Read the Vercel logs within the hour after the next one (Hobby retention); `readAll` logs a value-free line since `eede966`. Likely fix: one retry on network/5xx for idempotent reads.
 2. The owner links the 6 SPayLater repayment rows on `/orders?view=shopee` (D-276).
 3. The owner decides on "Libron (book figures)" now that it reaches amounts (D-284).
-4. `/receipts` copy: an equal-rank re-capture reports "its item list was upgraded" though the rank is unchanged (D-285).
-5. Discount names on the ledger row are not yet checked in the browser; only `/receipts` was (D-285).
-6. Open decision questions: whether the mailbox source is deleted after import (D-141), and `list_match_candidates`' unbounded scan (D-158).
-7. Tasks 25 and 59 below.
+4. **Hosted rollout of D-289/D-290:** backup verified → `db push` 061 and 062 → commit → owner pushes → relabel the four D-265 duplicates with "Mark as duplicate".
+5. Check the `PL Imported` Gmail label appears after the next imported statement (D-288).
+6. **Auto-categorisation leftovers** — the owner will go through these with the agent later. Measured on hosted 2026-10-21 (read-only): 769 of 1,716 included rows have no category; only 2 rows are owner-settled, so the history step has almost nothing to learn from. Candidates: owner labels one row each for an SCB merchant-QR shop (54 rows), `CP(THAILAND)` (15) and a person-named juice shop (15); decisions on `SIPS TRUE MONEY` at non-round amounts (70, D-249), KTB `tr to ewalletid` (56, Wallet top-up?), `LINE PAY` + LINE MAN QR (14, Delivery?); code options: strip KTB's `~ future amount … tran:` suffix from the history key (17 rows), let history learn from matched rows. Should stay manual: person transfers (~186), KTB `tr fr -`, `-billerid`, `รายการผ่าน INTERNET`.
+7. Task 25 below.
 
 ## Next local tasks
 
 25. **Automatic categorisation by local LLM — research first.** Automatic categorising already runs without an LLM: own transfers, the app's matches, the owner's history, then keyword rules (D-245, D-249), marked "auto" until reviewed. An LLM step is not planned; if one is added, it needs its own research in the local-llm repo first (the handoff there is on hold). The original scope is in the archive.
-59. **A "duplicate" (or hidden) state for ledger rows.** Owner, 2026-10-11: maybe later. Today a duplicate is marked Excluded like any row the owner hides (D-265), and overlay notes have no edit control. Would separate "same bank row stored twice" from the owner's own exclusions, possibly hiding such rows from the default ledger view. Not needed for correctness: migration 054 stops new duplicates.
 
 ## Later authorization gates
 
