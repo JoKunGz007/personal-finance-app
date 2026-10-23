@@ -238,6 +238,23 @@ describe("everything a discarded statement leaves behind", () => {
     }
   });
 
+  it("starts every way of loading a statement from the helper, so no entry point keeps its own subset", () => {
+    // Each of these once cleared its own hand-picked list; the synthetic one skipped row categories,
+    // which then rode into the synthetic preview's exported overlays.
+    for (const entry of ["async function loadSynthetic()", "async function parsePdf()", "function workBatchEntry("]) {
+      const start = source.indexOf(entry);
+      expect(start, `${entry} is no longer in the component`).toBeGreaterThan(-1);
+      const body = /[\s\S]*?\n  \}/u.exec(source.slice(start))?.[0] ?? "";
+      const discard = body.search(/\bdiscardLoadedStatement\(\);/u);
+      expect(discard, `${entry} must call discardLoadedStatement()`).toBeGreaterThan(-1);
+      // Before, not after: the helper would wipe what the entry point had just set.
+      for (const own of ["setStatement(", "setExtracted(", "setArtifactDigest(", "setMailboxRef("]) {
+        const at = body.indexOf(own);
+        if (at > -1) expect(at, `${entry} sets ${own} before discarding`).toBeGreaterThan(discard);
+      }
+    }
+  });
+
   it("clears the chooser, because only the batch path used to", () => {
     // The concrete omission this guard found on the day it was written. `workBatchEntry` reset the
     // dropdown and the file picker did not, so choosing a PDF by hand kept the previous statement's

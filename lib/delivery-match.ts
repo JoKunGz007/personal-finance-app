@@ -339,6 +339,41 @@ export function proposeRideSplits(
   return result;
 }
 
+/**
+ * Every order's and ride's final match state (D-222, D-229): the single-row matches decided together,
+ * then the two-part rides over the rows nothing holds. The page and the auto-categoriser both call
+ * this, so they cannot disagree about which row a document holds.
+ */
+export function decideGrabMatches(input: {
+  orders: readonly { id: string; paidOutside: boolean; platform?: "grabfood" | "lineman"; service?: "food" | "mart" | "express" | "dine_out" }[];
+  orderCandidates: readonly DeliveryLedgerCandidate[];
+  orderDecisions: readonly DeliveryMatchDecision[];
+  rides: readonly { id: string; total_minor: string }[];
+  rideCandidates: readonly RideLedgerCandidate[];
+  rideDecisions: readonly RideMatchDecision[];
+  splitCandidates: readonly RideSplitCandidate[];
+}): { orders: Map<string, DeliveryMatchState>; rides: Map<string, DeliveryMatchState> } {
+  const matches = proposeGrabMatches(
+    input.orders,
+    input.orderCandidates,
+    input.orderDecisions,
+    // A ฿0 ride was paid in full by discounts: no card row, so it is never matched.
+    input.rides.map((ride) => ({ id: ride.id, paidOutside: ride.total_minor === "0" })),
+    input.rideCandidates,
+    input.rideDecisions
+  );
+  // A row any document holds, or any undecided one could be, is off the table for a two-part pair.
+  // A row the owner linked holds even when it lies outside that document's candidate window, where
+  // the state carries no row, so the stored decisions are read directly.
+  const held = new Set<string>([
+    ...[...input.orderDecisions, ...input.rideDecisions].flatMap((d) => d.decision === "matched" && d.transaction_id ? [d.transaction_id] : []),
+    ...[...matches.orders.values(), ...matches.rides.values()].flatMap((state) =>
+      state.status === "ambiguous" ? state.options.map((row) => row.transaction_id)
+        : (state.status === "matched" || state.status === "linked") && state.row ? [state.row.transaction_id] : [])
+  ]);
+  return { orders: matches.orders, rides: proposeRideSplits(input.rides, matches.rides, held, input.splitCandidates) };
+}
+
 /** Orders alone: `proposeGrabMatches` with no rides. */
 export function proposeDeliveryMatches(
   orders: readonly { id: string; paidOutside: boolean }[],

@@ -276,6 +276,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - The LINE bot refuses images past a 24-hour count that includes moved ones
 - Opening `/inbox` drains and captures, so it is no place to inspect the queue
 - Ledger row labels write September as "Sept"
+- An owner link outside the candidate window has no row in its match state
 
 ## Traps
 
@@ -294,6 +295,6 @@ these section headings rather than a third raise. The owner chose the split.
 | Statement and slip parsing | 28 | [`docs/gotchas/parsing.md`](docs/gotchas/parsing.md) |
 | Real data, masking and privacy | 8 | [`docs/gotchas/privacy.md`](docs/gotchas/privacy.md) |
 | Tests, Playwright and the gate | 36 | [`docs/gotchas/tests.md`](docs/gotchas/tests.md) |
-| App, auth, routing and accessibility | 44 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
+| App, auth, routing and accessibility | 45 | [`docs/gotchas/app.md`](docs/gotchas/app.md) |
 | Layout, typography and accessibility | 28 | [`docs/gotchas/appearance.md`](docs/gotchas/appearance.md) |
 

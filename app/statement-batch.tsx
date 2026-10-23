@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useResultBanner } from "@/app/result-banner";
 import { StatementSync } from "@/app/statement-sync";
 import { sha256HexBytes } from "@/lib/canonical";
+import { readStatementPdf } from "@/lib/browser/statement-reader";
 import {
   describeStatement, planStatementBatch,
   type BlockedReason, type StatementBatchEntry
@@ -78,10 +79,6 @@ const BLOCKED_LABELS: Record<BlockedReason, string> = {
   "not-cross-checked": "totals never confirmed",
   "duplicate-file": "already in this batch"
 };
-
-type WorkerReply =
-  | { type: "parsed"; frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number; valueLabels?: string[] }
-  | { type: "error"; code: string; reason?: string; detail?: string; message: string };
 
 /**
  * Bulk statement import: many PDFs unlocked and parsed in one pass, then worked one at a time.
@@ -282,82 +279,71 @@ export function StatementBatch({ onWork, onDismissMailbox, confirmedDigests, con
    * would mean a parse inheriting whatever the previous one left in the pdf.js document cache, for
    * no gain a person could measure on a handful of statements.
    */
-  function parseOne(item: BatchFile, seenDigests: Set<string>): Promise<void> {
-    return new Promise<void>((resolve) => {
-      void (async () => {
-        // **Everything up to the worker handshake is inside this `try`, and that is load-bearing.**
-        // An `async` IIFE that rejects never reaches `resolve()`, so `parseMany`'s `await` would
-        // wait forever, `setBusy(false)` would never run, and every control in this section —
-        // including "Clear this batch" — is `disabled={busy}`. One throw would make the whole form
-        // unrecoverable without a page reload. `crypto.subtle` is the concrete way in: it is
-        // `undefined` outside a secure context, so `sha256HexBytes` throws on the first file when
-        // the app is opened over plain HTTP.
-        try {
-          const bytes = await item.file.arrayBuffer();
+  async function parseOne(item: BatchFile, seenDigests: Set<string>): Promise<void> {
+    // **Everything is inside this `try`, and that is load-bearing.** A throw would reject
+    // `parseMany`'s `await`, so `setBusy(false)` would never run and every control in this section —
+    // including "Clear this batch" — is `disabled={busy}`. `crypto.subtle` is the concrete way in:
+    // it is `undefined` outside a secure context, so `sha256HexBytes` throws over plain HTTP.
+    try {
+      const bytes = await item.file.arrayBuffer();
 
-          // Digested before the buffer is transferred to the worker, exactly as the single import
-          // does: this identifies the artifact so re-importing the same statement is a detectable
-          // conflict, and the bytes themselves never leave the device.
-          const digest = await sha256HexBytes(bytes);
+      // Digested before the buffer is transferred to the worker, exactly as the single import
+      // does: this identifies the artifact so re-importing the same statement is a detectable
+      // conflict, and the bytes themselves never leave the device.
+      const digest = await sha256HexBytes(bytes);
 
-          // A repeat of a file already seen in this pass needs no parse. The digest is what
-          // `planStatementBatch` blocks it on and the digest is already in hand, so spawning a
-          // worker pair to read a PDF whose verdict is settled is pure waste. It still reaches the
-          // plan carrying its digest, which is what makes it a `duplicate-file` there rather than
-          // an unreadable one — that check runs before the parse verdict for exactly this reason.
-          if (seenDigests.has(digest)) {
-            patch(item.id, { state: "failed", digest, parsed: null, reason: "Already chosen in this batch." });
-            resolve();
-            return;
-          }
-          seenDigests.add(digest);
+      // A repeat of a file already seen in this pass needs no parse. The digest is what
+      // `planStatementBatch` blocks it on and the digest is already in hand, so spawning a
+      // worker pair to read a PDF whose verdict is settled is pure waste. It still reaches the
+      // plan carrying its digest, which is what makes it a `duplicate-file` there rather than
+      // an unreadable one — that check runs before the parse verdict for exactly this reason.
+      if (seenDigests.has(digest)) {
+        patch(item.id, { state: "failed", digest, parsed: null, reason: "Already chosen in this batch." });
+        return;
+      }
+      seenDigests.add(digest);
 
-          const worker = new Worker(new URL("../workers/krungthai.worker.ts", import.meta.url), { type: "module" });
-          const finish = () => {
-            worker.terminate();
-            resolve();
-          };
-          worker.onmessage = (event: MessageEvent<WorkerReply>) => {
-            const reply = event.data;
-            if (reply.type === "parsed") {
-              patch(item.id, {
-                state: "read",
-                digest,
-                parsed: { frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount },
-                reason: null,
-                failureCode: null
-              });
-            } else {
-              // The typed code travels with the message. It is a fixed enum carrying no statement
-              // content, and without it every failure except an unsupported layout reads
-              // identically — which is what makes a worklist of refusals worth reading at all.
-              patch(item.id, {
-                state: "failed",
-                digest,
-                parsed: null,
-                // An empty statement is said plainly, without a code: nothing went wrong.
-                reason: reply.code === "EMPTY_STATEMENT"
-                  ? reply.message
-                  : `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})`
-                    + (reply.detail ? ` — ${reply.detail}` : ""),
-                failureCode: reply.code
-              });
-            }
-            finish();
-          };
-          worker.onerror = () => {
-            patch(item.id, { state: "failed", digest, parsed: null, reason: "The local parser stopped safely on this file. Nothing was uploaded." });
-            finish();
-          };
-          worker.postMessage({ type: "parse", bytes, password }, [bytes]);
-        } catch {
-          // No digest to record: whatever failed happened at or before computing it, so this entry
-          // reaches the plan as unreadable rather than as anything about its content.
-          patch(item.id, { state: "failed", parsed: null, reason: "This file could not be prepared for the parser on this device." });
-          resolve();
-        }
-      })();
-    });
+      const read = await readStatementPdf(bytes, password);
+      if (read.ok) {
+        patch(item.id, {
+          state: "read",
+          digest,
+          parsed: { frame: read.reply.frame, rows: read.reply.rows, pageCount: read.reply.pageCount },
+          reason: null,
+          failureCode: null
+        });
+      } else if (read.failure === "refusal") {
+        const reply = read.reply;
+        // The typed code travels with the message. It is a fixed enum carrying no statement
+        // content, and without it every failure except an unsupported layout reads
+        // identically — which is what makes a worklist of refusals worth reading at all.
+        patch(item.id, {
+          state: "failed",
+          digest,
+          parsed: null,
+          // An empty statement is said plainly, without a code: nothing went wrong.
+          reason: reply.code === "EMPTY_STATEMENT"
+            ? reply.message
+            : `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})`
+              + (reply.detail ? ` — ${reply.detail}` : ""),
+          failureCode: reply.code
+        });
+      } else {
+        // A worker that stopped keeps this screen's own wording; a timeout says so.
+        patch(item.id, {
+          state: "failed",
+          digest,
+          parsed: null,
+          reason: read.failure === "worker"
+            ? "The local parser stopped safely on this file. Nothing was uploaded."
+            : read.message
+        });
+      }
+    } catch {
+      // No digest to record: whatever failed happened at or before computing it, so this entry
+      // reaches the plan as unreadable rather than as anything about its content.
+      patch(item.id, { state: "failed", parsed: null, reason: "This file could not be prepared for the parser on this device." });
+    }
   }
 
   /**

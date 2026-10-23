@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-273 … D-291**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-273 … D-292**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -410,6 +410,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-292** — Architecture review (Open item 7): Grab matches decided in one pure module (owner links hold against two-part rides), one device statement reader, every import entry point discards first
 - **D-291** — Server reads retry once on a network error or 5xx (GET/HEAD only); `/statistics` gains Spending by category over the page's own window (migration 063)
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 - **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
@@ -430,6 +431,17 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
 
+## D-292 — Architecture review (Open item 7): Grab matches decided in one pure module (owner links hold against two-part rides), one device statement reader, every import entry point discards first
+
+- Date: 2026-10-23
+- Status: **Built and pushed** (owner granted commit and push this session and asked the agent to choose). Code only: no migration, backup format unchanged.
+- **Review:** `/improve-codebase-architecture` over the hot spots since 2026-09 (ledger view, import benches, matching, parsers/OCR), four read-only walks, 15 candidates; the queue that remains is PLAN Open item 7. Already deep and left alone: `proposeLedgerMatches`, `drainInbox`, `syncLoop`, statistics in SQL.
+- **1. `decideGrabMatches` (lib/delivery-match.ts):** one pure call returns every order's and ride's final state; `loadOrderMatches` no longer builds the split pass's held set inline. **Defect fixed:** an owner link to a row outside that document's candidate window yields `linked` with no row (`proposeLedgerMatches`), so the inline set missed it and a two-part ride pair could claim a row the owner had linked elsewhere. Held now also takes every `matched` decision's transaction. Red-proved (2 of 35 failing on the old rule). Hosted read the same day: 0 owner links exist, so no real ride was affected. A ฿0 ride stays `outside`.
+- **2. `readStatementPdf` (lib/browser/statement-reader.ts):** the worker handshake both `/import` and the statement batch wrote is one module: digest before transfer, always resolves (hash failure, worker error, messageerror, unknown reply, 60 s timeout), worker terminated and timer cleared once. `parsePdf` had no `try` around the hash (stuck status over plain HTTP) and neither copy had a timeout. The batch's `parseOne` lost its Promise/IIFE/`resolve()` scaffolding. The batch still hashes once more itself for its duplicate-file skip (accepted: milliseconds per file). `parsePdf` now ignores a read that finishes after a newer file choice or parse.
+- **3. Discard first:** `loadSynthetic`, `parsePdf` and `workBatchEntry` call `discardLoadedStatement()` before setting their own state. `loadSynthetic` used to skip it, so row categories from a real statement were exported as the synthetic `.pldemo` overlays. `tests/import-flow.test.ts` asserts each entry point discards before its own setters (red-proved against the old component).
+- **Not done, on purpose:** the held-row rule still exists twice (`heldRows` for the page and auto-categoriser, the split-pass set in `decideGrabMatches`); they differ by design (an undecided ambiguous row holds against a split, not for categorising). D-132's refusal of a ledger view model is not superseded yet; candidates 4–5 need that entry first.
+- **Thermo-nuclear pass** over 1–3, same session: one change, `StatementRead`'s failure side became a union per failure (only a refusal carries a reply, only a failed hash lacks a digest) instead of optional fields. No file crossed 1,000 lines; `app/import-bench.tsx` shrank to 1,040.
+- Evidence: `/code-review` (high) 7 findings, 4 fixed, 3 skipped as above; Vitest new `tests/statement-reader.test.ts` (10, one mutation red-proved), `tests/delivery-match.test.ts` (35); `pnpm verify` green.
 ## D-291 — Server reads retry once on a network error or 5xx (GET/HEAD only); `/statistics` gains Spending by category over the page's own window (migration 063)
 
 - Date: 2026-10-23

@@ -376,3 +376,10 @@ the top of `GOTCHAS.md`.
 - Cause: `formatDate` uses `en-GB` short months, and current ICU spells September `Sept`; every other month keeps three letters.
 - Avoid: match `Sept` (or `Sept?`) when locating September rows; confirm a "missing" month by counting labels per month before suspecting paging.
 - Verify: 2026-10-21 on production, 536 labels contained `Sept 2026` and none `Sep 2026`.
+
+## An owner link outside the candidate window has no row in its match state
+
+- Symptom: code that collects the rows matches hold, built from `state.row`, misses a row the owner linked; a second rule (e.g. the two-part ride pass) can then claim it.
+- Cause: `proposeLedgerMatches` builds `linked` from the document's own candidates, so a link to a row outside that window comes back `linked` with `row: null`.
+- Avoid: take held rows from the stored `matched` decisions' `transaction_id`, as `heldRows` and `decideGrabMatches` do, never from `state.row` alone.
+- Verify: 2026-10-23 (D-292), red-proved in `tests/delivery-match.test.ts` (2 of 35 failing on the state-only rule).

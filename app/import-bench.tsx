@@ -6,7 +6,7 @@ import { useResultBanner } from "@/app/result-banner";
 import { accountListSchema, createAccountSchema, ledgerAccountSchema, type LedgerAccount } from "@/lib/accounts";
 import { encryptBackup } from "@/lib/backup";
 import { downloadFile } from "@/lib/download";
-import { rowFingerprint, sha256HexBytes } from "@/lib/canonical";
+import { rowFingerprint } from "@/lib/canonical";
 import { flagExisting, ledgerCheckNotice, type LedgerCheck } from "@/lib/existing-rows";
 import { assembleImportPayload } from "@/lib/import-assembly";
 import type { StatementFrame } from "@/lib/statement-frame";
@@ -24,6 +24,7 @@ import { attachmentPath, parseMailboxParam, type MailboxRef } from "@/lib/statem
 import { INBOX_STATEMENT_NAME, readInboxStatement, readMailboxStatement } from "@/lib/browser/inbox-statement-client";
 import { ownerUid, removeFromInbox } from "@/lib/browser/inbox-storage";
 import { browserSupabase } from "@/lib/browser/supabase";
+import { readStatementPdf } from "@/lib/browser/statement-reader";
 import { statementHeldReason } from "@/lib/inbox-drain";
 import { LedgerNote } from "@/app/ledger-note";
 
@@ -37,14 +38,6 @@ const stages: Array<{ id: Stage; label: string }> = [
 ];
 
 type Extracted = { frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number };
-
-type WorkerReply =
-  | { type: "parsed"; frame: StatementFrame; rows: SourceRowCandidate[]; pageCount: number; valueLabels?: string[] }
-  | {
-      type: "error"; code: string; reason?: string; detail?: string;
-      labelCandidates?: string[][]; valueLabels?: string[]; structure?: string[];
-      message: string;
-    };
 
 const categories = ["Uncategorized", "Income", "Food", "Cash", "Fees", "Interest"];
 
@@ -115,6 +108,9 @@ export function ImportBench() {
   // and confirming is still an explicit act — which is what D-055's reordering warning needs.
   const [autoBind, setAutoBind] = useState(true);
   const dialog = useRef<HTMLDialogElement>(null);
+  // Bumped by each parse and each file choice, so a read that finishes after the owner moved on
+  // cannot install its statement over the newer choice.
+  const parseRun = useRef(0);
   // Derived, not stored. It was a third `useState` that had to be set on confirming and cleared on
   // everything else, which is the exact shape that produced D-147.
   const batchConfirmation = confirmationFor(worklist);
@@ -279,14 +275,10 @@ export function ImportBench() {
       setStatus(result.why);
       return;
     }
-    setExtracted(null);
-    setMailboxRef(null);
-    setInboxName(null);
-    setBoundAccount(null);
-    setBindingError(null);
-    setWorklist(null);
+    // Cleared in full: row categories left from a real statement would otherwise be exported as the
+    // synthetic preview's overlays.
+    discardLoadedStatement();
     setStatement(result.data);
-    setAssemblyWarnings([]);
     setStage("review");
     setStatus("Synthetic statement ready. Nothing in this review came from a real account.");
   }
@@ -296,70 +288,64 @@ export function ImportBench() {
       setStatus("Choose a statement PDF and enter its document password.");
       return;
     }
+    const run = ++parseRun.current;
     setStatus("Unlocking and checking the layout on this device…");
-    const bytes = await file.arrayBuffer();
-    // Digest the artifact before the buffer is transferred to the worker. This
-    // identifies the PDF for import_artifacts so re-importing the same statement is
-    // a detectable conflict; the bytes themselves never leave the device.
-    const digest = await sha256HexBytes(bytes);
-    const worker = new Worker(new URL("../workers/krungthai.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (event: MessageEvent<WorkerReply>) => {
-      const reply = event.data;
-      if (reply.type === "parsed") {
-        // The frame and rows are both read on this device. Which ledger account they
-        // belong to is not something the parser may infer (DECISIONS D-017), so the
-        // next step is an explicit, checked choice by the owner.
-        setArtifactDigest(digest);
-        setLabelCandidates([]);
-        // Empty unless the statement's totals never confirmed its rows, in which case these
-        // are the candidate summary wordings that would fix it (D-043).
-        setValueLabels(reply.valueLabels ?? []);
-        setStructure([]);
-        setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
-        setMailboxRef(null);
-        setInboxName(null);
-        setStatement(null);
-        setAssemblyWarnings([]);
-        setBoundAccount(null);
-        setBindingError(null);
-        setWorklist(null);
-        setStage("bind");
-        // Three layouts read now, so the status line says which one ran — and whether the
-        // rows were checked against the statement's own totals, which is the difference
-        // between a verified parse and an unverified one (D-042).
-        setStatus(
-          `Read ${reply.rows.length} rows across ${reply.pageCount} page(s) as a ${reply.frame.bankCode} statement, ` +
-          `for account ending ${reply.frame.accountLastFour}, ${reply.frame.periodStart} to ${reply.frame.periodEnd}. ` +
-          `${reply.frame.crossChecked
-            ? "Cross-checked against the statement's printed totals."
-            : "NOT cross-checked: this statement printed no readable summary block, so it cannot be imported."} ` +
-          "Nothing has left this device. Choose the ledger account it belongs to."
-        );
-      } else {
-        // Show the typed code alongside the message. The code is a fixed enum from
-        // lib/krungthai-layout.ts and carries no statement content, and without it
-        // every failure except an unsupported layout reads identically — which makes
-        // a single diagnostic run far less informative than it needs to be.
-        // An empty statement is not a refusal: it is said plainly, without a code.
-        setStatus(
-          reply.code === "EMPTY_STATEMENT"
-            ? reply.message
-            : `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})` +
-              (reply.detail ? ` — ${reply.detail}` : "")
-        );
-        setLabelCandidates(reply.labelCandidates ?? []);
-        setValueLabels(reply.valueLabels ?? []);
-        setStructure(reply.structure ?? []);
-      }
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await file.arrayBuffer();
+    } catch {
+      setStatus("This PDF could not be read from this device. Choose it again.");
       setPassword("");
-      worker.terminate();
-    };
-    worker.onerror = () => {
-      setStatus("The local parser stopped safely. No statement data was uploaded.");
-      setPassword("");
-      worker.terminate();
-    };
-    worker.postMessage({ type: "parse", bytes, password }, [bytes]);
+      return;
+    }
+    // Digested before the buffer is transferred, with the worker, timeout and cleanup, in
+    // `lib/browser/statement-reader.ts`. It always resolves, so the status line cannot stick.
+    const read = await readStatementPdf(bytes, password);
+    if (run !== parseRun.current) return;
+    if (read.ok) {
+      const { digest, reply } = read;
+      // The frame and rows are both read on this device. Which ledger account they
+      // belong to is not something the parser may infer (DECISIONS D-017), so the
+      // next step is an explicit, checked choice by the owner.
+      discardLoadedStatement();
+      setArtifactDigest(digest);
+      // Empty unless the statement's totals never confirmed its rows, in which case these
+      // are the candidate summary wordings that would fix it (D-043).
+      setValueLabels(reply.valueLabels ?? []);
+      setExtracted({ frame: reply.frame, rows: reply.rows, pageCount: reply.pageCount });
+      setStage("bind");
+      // Three layouts read now, so the status line says which one ran — and whether the
+      // rows were checked against the statement's own totals, which is the difference
+      // between a verified parse and an unverified one (D-042).
+      setStatus(
+        `Read ${reply.rows.length} rows across ${reply.pageCount} page(s) as a ${reply.frame.bankCode} statement, ` +
+        `for account ending ${reply.frame.accountLastFour}, ${reply.frame.periodStart} to ${reply.frame.periodEnd}. ` +
+        `${reply.frame.crossChecked
+          ? "Cross-checked against the statement's printed totals."
+          : "NOT cross-checked: this statement printed no readable summary block, so it cannot be imported."} ` +
+        "Nothing has left this device. Choose the ledger account it belongs to."
+      );
+    } else if (read.failure === "refusal") {
+      const reply = read.reply;
+      // Show the typed code alongside the message. The code is a fixed enum from
+      // lib/krungthai-layout.ts and carries no statement content, and without it
+      // every failure except an unsupported layout reads identically — which makes
+      // a single diagnostic run far less informative than it needs to be.
+      // An empty statement is not a refusal: it is said plainly, without a code.
+      setStatus(
+        reply.code === "EMPTY_STATEMENT"
+          ? reply.message
+          : `${reply.message} (${reply.code}${reply.reason ? ` / ${reply.reason}` : ""})` +
+            (reply.detail ? ` — ${reply.detail}` : "")
+      );
+      setLabelCandidates(reply.labelCandidates ?? []);
+      setValueLabels(reply.valueLabels ?? []);
+      setStructure(reply.structure ?? []);
+    } else {
+      // The worker stopping keeps its wording; a hash that could not run and a timeout say why.
+      setStatus(read.message);
+    }
+    setPassword("");
   }
 
   /**
@@ -371,29 +357,13 @@ export function ImportBench() {
    * exists, which is what keeps bulk import from becoming a second way to reach the ledger.
    */
   function workBatchEntry(handoff: BatchHandoff, from?: { accounts: LedgerAccount[] | null; inbox: boolean; mailbox?: boolean }) {
-    setInboxName(null);
-    // The worklist value is replaced outright further down, once binding has resolved — which is
-    // also what clears any banner about the *previous* entry. One sitting above the chooser for
-    // this one reads as though this one had already been confirmed.
+    // Everything of the previous entry goes first, row categories included: they are keyed by row
+    // index, so one kept would show as a wrong label over the next statement's rows. The worklist
+    // value is replaced outright further down, once binding has resolved.
+    discardLoadedStatement();
     setArtifactDigest(handoff.artifactDigest);
     setExtracted({ frame: handoff.frame, rows: handoff.rows, pageCount: handoff.pageCount });
     setMailboxRef(handoff.mailboxRef);
-    setStatement(null);
-    setAssemblyWarnings([]);
-    setBoundAccount(null);
-    setBindingError(null);
-    setSelectedRow(null);
-    // **Keyed by row index, so it survives a change of statement as a wrong label over real rows.**
-    // Categorise row 2 of one statement, confirm it, then open the next off the worklist and row 2
-    // arrives pre-labelled with a category the owner never chose for it. It never reaches the
-    // ledger — only `payload: statement` is posted — but it is shown over rows it does not
-    // describe. Latent before bulk import; working a worklist is what makes it ordinary.
-    setRowCategories({});
-    // Diagnostics belong to the parse that produced them; carrying one statement's over to the
-    // next would attach a refusal's candidate wordings to a document that never refused.
-    setLabelCandidates([]);
-    setValueLabels([]);
-    setStructure([]);
     const match = soleMatchingAccount(handoff.frame, from ? from.accounts : accounts);
     const source: Extracted = { frame: handoff.frame, rows: handoff.rows, pageCount: handoff.pageCount };
 
@@ -773,6 +743,7 @@ export function ImportBench() {
               // is shown over the new one. Nothing was cleared here at all until 2026-08-25, so
               // picking an unrelated PDF, or failing to unlock one, left the previous statement's
               // banner, review table and **enabled Confirm button** in place (D-148, D-150).
+              parseRun.current += 1;
               discardLoadedStatement();
               setStage(nextFile ? "unlock" : "select");
               setStatus(nextFile ? `${nextFile.name} selected. Its bytes have not been read yet.` : "No PDF selected.");

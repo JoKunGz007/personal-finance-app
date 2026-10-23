@@ -3,7 +3,7 @@ import type { strongOwnerClient } from "@/lib/server/supabase";
 import { isComplete } from "@/lib/server/row-cap";
 import { deliveryTime, paidOutsidePlatform, type DeliveryService } from "@/lib/deliveries";
 import {
-  deliveryLedgerCandidateSchema, deliveryMatchDecisionSchema, proposeGrabMatches, proposeRideSplits,
+  deliveryLedgerCandidateSchema, deliveryMatchDecisionSchema, decideGrabMatches,
   rideLedgerCandidateSchema, rideMatchDecisionSchema, rideSplitCandidateSchema,
   type DeliveryMatchState
 } from "@/lib/delivery-match";
@@ -81,24 +81,19 @@ export async function loadOrderMatches(supabase: OwnerClient) {
     total_minor: String(ride.total_minor),
     adjustments: [...ride.adjustments].sort((a, b) => a.position - b.position).map((row) => ({ ...row, amount_minor: String(row.amount_minor) }))
   }));
-  const matches = proposeGrabMatches(
-    deliveries.map((delivery) => ({ id: delivery.id, paidOutside: paidOutsidePlatform(delivery), platform: delivery.platform, service: delivery.service })),
-    parsedOrderCandidates.data,
-    parsedOrderDecisions.data,
-    // A ฿0 ride was paid in full by discounts: no card row, so it is never matched.
-    storedRides.map((ride) => ({ id: ride.id, paidOutside: ride.total_minor === "0" })),
-    parsedRideCandidates.data,
-    parsedRideDecisions.data
-  );
-  // A row any document holds, or any undecided one could be, is off the table for a two-part pair.
-  const held = new Set([...matches.orders.values(), ...matches.rides.values()].flatMap((state) =>
-    state.status === "ambiguous" ? state.options.map((row) => row.transaction_id)
-      : (state.status === "matched" || state.status === "linked") && state.row ? [state.row.transaction_id] : []));
-  const rideMatches = proposeRideSplits(storedRides, matches.rides, held, parsedSplitCandidates.data);
+  const matches = decideGrabMatches({
+    orders: deliveries.map((delivery) => ({ id: delivery.id, paidOutside: paidOutsidePlatform(delivery), platform: delivery.platform, service: delivery.service })),
+    orderCandidates: parsedOrderCandidates.data,
+    orderDecisions: parsedOrderDecisions.data,
+    rides: storedRides,
+    rideCandidates: parsedRideCandidates.data,
+    rideDecisions: parsedRideDecisions.data,
+    splitCandidates: parsedSplitCandidates.data
+  });
   return {
     ok: true as const,
     deliveries: deliveries.map((delivery) => ({ ...delivery, match: matches.orders.get(delivery.id)! })),
-    rides: storedRides.map((ride) => ({ ...ride, match: rideMatches.get(ride.id)! })),
+    rides: storedRides.map((ride) => ({ ...ride, match: matches.rides.get(ride.id)! })),
     orderDecisions: parsedOrderDecisions.data,
     rideDecisions: parsedRideDecisions.data
   };

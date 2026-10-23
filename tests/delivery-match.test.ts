@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { proposeGrabMatches as proposeGrabMatchesForTest, DINE_OUT_MATCH_AFTER_MINUTES, EXPRESS_MATCH_BEFORE_MINUTES } from "@/lib/delivery-match";
 import {
   DELIVERY_MATCH_WINDOW_MINUTES,
+  decideGrabMatches,
   deliveryMatchRequestSchema,
   proposeDeliveryMatches,
   proposeGrabMatches,
@@ -285,6 +286,52 @@ describe("proposeRideSplits (D-229)", () => {
   it("never touches a ride the owner decided or one already matched", () => {
     const declined: DeliveryMatchState = { status: "declined", row: null, options: [], revision: 2 };
     expect(propose([row(R, "1", -5, -3000), row(R, "2", 8, -1000)], [], new Map([[R, declined]])).get(R)).toEqual(declined);
+  });
+});
+
+describe("decideGrabMatches (D-229)", () => {
+  const R = "cccccccc-0000-4000-8000-000000000101";
+  const row = (ride: string, transaction: string, lag: number | null, amount: number): RideSplitCandidate => ({
+    ride_id: ride, transaction_id: `eeeeeeee-0000-4000-8000-${transaction.padStart(12, "0")}`, account_id: ACCOUNT,
+    source_date: "2026-09-01", source_time: "19:00:00", transaction_label: "Card payment", description: "INVENTED GRAB MERCHANT",
+    lag_minutes: lag, amount_minor: amount
+  });
+  const X = row(R, "1", 0, 0).transaction_id;
+  const pair = [row(R, "1", -5, -3000), row(R, "2", 8, -1000)];
+  const decide = (over: Partial<Parameters<typeof decideGrabMatches>[0]> = {}) => decideGrabMatches({
+    orders: [paid(D1)], orderCandidates: [], orderDecisions: [],
+    rides: [{ id: R, total_minor: "4000" }], rideCandidates: [], rideDecisions: [],
+    splitCandidates: pair, ...over
+  });
+
+  it("an order the owner linked to a row outside its own candidates still holds that row against a two-part ride", () => {
+    const { orders, rides } = decide({ orderDecisions: [decision(D1, X)] });
+    expect(orders.get(D1)!.status).toBe("linked");
+    expect(rides.get(R)!.status).toBe("none");
+  });
+
+  it("control: the same pair with no decision matches the ride to both rows", () => {
+    const state = decide().rides.get(R)!;
+    expect(state.status).toBe("matched");
+    expect(state.also).toHaveLength(1);
+  });
+
+  it("a ride the owner linked to a row outside its own candidates holds that row against another ride's pair", () => {
+    const R2 = "cccccccc-0000-4000-8000-000000000102";
+    const { rides } = decide({
+      rides: [{ id: R, total_minor: "4000" }, { id: R2, total_minor: "4000" }],
+      rideDecisions: [{ ride_id: R2, decision: "matched", transaction_id: X, revision: 1 }]
+    });
+    expect(rides.get(R2)!.status).toBe("linked");
+    expect(rides.get(R)!.status).toBe("none");
+  });
+
+  it("a ฿0 ride is never matched, even when a ride candidate qualifies", () => {
+    const { rides } = decide({
+      rides: [{ id: R, total_minor: "0" }],
+      rideCandidates: [{ ...row(R, "1", -5, -3000), names_grab: true }]
+    });
+    expect(rides.get(R)!.status).toBe("outside");
   });
 });
 

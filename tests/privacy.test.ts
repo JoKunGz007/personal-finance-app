@@ -345,7 +345,14 @@ describe("privacy guardrails", () => {
     }
     // The password reaches the worker and nothing else. It is never serialized, never digested
     // into anything kept, and never put in a message that outlives the parse.
-    expect(ui).toMatch(/worker\.postMessage\(\{ type: "parse", bytes, password \}, \[bytes\]\)/u);
+    // The handshake lives in `lib/browser/statement-reader.ts` (shared with the single import), so the
+    // post is asserted there and the batch is asserted to hand the password to that reader and to
+    // no one else.
+    const reader = readFileSync("lib/browser/statement-reader.ts", "utf8");
+    expect(reader).toMatch(/worker\.postMessage\(\{ type: "parse", bytes, password \}, \[bytes\]\)/u);
+    expect(reader).not.toMatch(/JSON\.stringify\([^)]*password|fetch\s*\(|console\./u);
+    expect(ui).toMatch(/readStatementPdf\(bytes, password\)/u);
+    expect(ui).not.toMatch(/new Worker|postMessage/u);
     expect(ui).not.toMatch(/JSON\.stringify\([^)]*password/u);
 
     // **The sibling is reached as a component and given files, never a password.** If the batch
