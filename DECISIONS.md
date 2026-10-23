@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-288 … D-301**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-288 … D-302**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -430,6 +430,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
 - **D-301** — Five benches share one list load, `useBenchList`, and only the newest load commits (Open item 7 #14)
 - **D-300** — The twenty-second boundary moves D-273 … D-287, because the file passed its byte budget
 - **D-299** — The ride candidate RPCs' SQL bounds are held to `lib/delivery-match.ts`'s ride minutes and days by a drift test (Open item 7 #15)
@@ -444,6 +445,17 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 - **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
 - **D-288** — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
+
+## D-302 — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
+
+- Date: 2026-10-23
+- Status: **Built, pushed and live** (`1caefda`). On production 2026-10-23, read-only: Shopee, the `/orders` statistics and the `/receipts` statistics loaded with no alert. A double Reload on the order statistics sent one request (the second press met a disabled button), and the tables stayed intact. No write was attempted. Front end only: no route, RPC, migration or stored-value change.
+- **Defect (low).** `act` in `app/shopee-bench.tsx` set the write's refusal into the hook's `error` after the reload, so a refused match or link (a 409 clash included) appeared under "Not loaded" although the list had loaded.
+- **Fix.** Shopee keeps the refusal in its own `saveError`, shown under **"Not saved"**, the heading categories and the ledger already use for a refused write. That made it a wording precedent, not a visual choice, so no variants were rendered. `act` clears it before each write and sets it before the reload, and Reload clears it too. `useBenchList`'s `error` is now the load's alone: `setError` left its return, since Shopee was its only caller. `setBusy` stays for `act`.
+- **Statistics panels.** `app/delivery-statistics.tsx` and `app/receipt-statistics.tsx` load through `useBenchList`, which gives them the stale-answer guard. They need it: each reloads when a Sync, a LINE MAN save or a receipt save bumps its counter, and that reload can overlap the arrival load. Every message, sign-in text, reload trigger and disabled rule is unchanged.
+- **Small cleanups.** `removeQueuedFile` (`lib/browser/inbox-slip.ts`) is now the one Inbox removal that both `releaseInboxSlip` and the import bench's statement removal word. `readCardDirection` stays exported: about a dozen assertions in `tests/notification-card-ocr.test.ts` exercise it, so dropping it would mean deleting coverage.
+- **Observed, not caused by this change.** The first `GET /api/v1/shopee` after the deploy answered 500 ("could not be loaded in full"), and every retry answered 200. That is Open item 1's intermittent 500; the agent could not read the Vercel logs (the dashboard was signed out in the browser pane).
+- Evidence: `tests/shopee-bench.test.tsx` (2 tests; red-proved: against the HEAD hook and bench, the refused-link test fails and shows "Not loaded"). `/code-review` (high) found nothing blocking: three minor findings (the alert sits at the top of the page, the panels have no render test, and a one-line wrapper could be inlined). `pnpm verify` green (lint 0 errors, tsc, docs, build). Vitest: 1,904 passed and 115 skipped of 2,019, because Docker was not running, so the DB-backed tests skipped; this diff touches no server or SQL.
 
 ## D-301 — Five benches share one list load, `useBenchList`, and only the newest load commits (Open item 7 #14)
 
