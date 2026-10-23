@@ -323,3 +323,10 @@ the top of `GOTCHAS.md`.
 - Cause: while the pane is hidden the page runs as a background page, and the document has no system focus, so `:focus` and `:focus-visible` never match, whatever has been focused.
 - Avoid: check focus styling in Claude in Chrome with a real key press (`shift+Tab` from a neighbouring field), or with the pane shown. In a hidden pane, only report `activeElement` and where activation moved focus.
 - Verify: 2026-10-17 (D-279). The `/statistics` Skip calendar link in the hidden pane: active, `:focus` false, translated off-screen. In Chrome, a real `shift+Tab` onto the `/recovery` file picker drew its focus ring (solid outline).
+
+## Under Vitest's jsdom environment, a `Request` refuses jsdom's `AbortSignal`
+
+- Symptom: a unit test that builds `new Request(url, { signal: controller.signal })` fails with `TypeError: RequestInit: Expected signal ("AbortSignal {}") to be an instance of AbortSignal`, and a test that aborts during a delay sees the request go through anyway. The code under test looks broken.
+- Cause: the suite's default environment is jsdom, whose global `AbortController` makes jsdom signals, while `Request` and `fetch` are still Node's (undici), which accepts only its own `AbortSignal`.
+- Avoid: start a test file that exercises server-side `fetch`, `Request` or abort handling with `// @vitest-environment node`, as `tests/retry-fetch.test.ts`, `tests/receipt-mailbox.test.ts` and `tests/statement-mailbox-session.test.ts` do.
+- Verify: 2026-10-23 (D-291). `tests/retry-fetch.test.ts`'s two abort tests failed in the full `pnpm test` run under jsdom, and passed once the file was pinned to node (10 of 10).
