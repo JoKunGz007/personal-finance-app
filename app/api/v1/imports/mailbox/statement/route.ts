@@ -5,6 +5,7 @@ import { existingImportRowCount, linkedBatchRowCount } from "@/lib/server/finger
 import { processMailboxStatement } from "@/lib/server/mailbox-statement";
 import { mailboxConfig, markFetched, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
 import { readStatementPdf, readStatementPdfPages } from "@/lib/server/statement-pdf-node";
+import { logMailSyncFailure } from "@/lib/server/mail-sync-log";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { isSafePartPath, MAX_ATTACHMENT_BYTES, parseUid } from "@/lib/statement-sync";
 
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
   if (!auth.ok) return routeError(auth.message, auth.status);
 
   const settings = mailboxConfig();
-  if (!settings.ok) return routeError(settings.message, settings.status);
+  if (!settings.ok) {
+    if (settings.status >= 500) logMailSyncFailure("imports/mailbox/statement", "config", settings.status);
+    return routeError(settings.message, settings.status);
+  }
 
   let unknownBody: unknown;
   try {
@@ -53,7 +57,8 @@ export async function POST(request: Request) {
   let session;
   try {
     session = await openMailbox(settings.config);
-  } catch {
+  } catch (error) {
+    logMailSyncFailure("imports/mailbox/statement", "open", 502, error);
     return routeError(
       "The statement mailbox could not be opened. Check that the app password is current and that IMAP is enabled for that account.",
       502
@@ -119,10 +124,13 @@ export async function POST(request: Request) {
     });
 
     if (outcome.kind === "failed") {
+      // 404 and 413 are answers about one statement, not faults; the 502 codes are lookups that failed.
+      if (FAILURE_STATUS[outcome.code] >= 500) logMailSyncFailure("imports/mailbox/statement", "store", FAILURE_STATUS[outcome.code]);
       return routeError("The statement could not be fetched.", FAILURE_STATUS[outcome.code], { code: outcome.code });
     }
     return Response.json(outcome, { status: 200, headers: noStoreHeaders });
-  } catch {
+  } catch (error) {
+    logMailSyncFailure("imports/mailbox/statement", "read", 502, error);
     return routeError("That attachment could not be downloaded from the mailbox.", 502, { code: "MAILBOX_FAILED" });
   } finally {
     await session.release();

@@ -1,7 +1,7 @@
 import type { StatementAnswer } from "@/lib/inbox-drain";
 import type { SourceRowCandidate } from "@/lib/statement";
 import { EMPTY_STATEMENT_MESSAGE, type StatementFrame } from "@/lib/statement-frame";
-import { readError } from "@/lib/wire";
+import { describeSyncFailure, NO_ROUTE_TEXT, readError } from "@/lib/wire";
 
 /**
  * Asks the server about a statement PDF waiting in the Inbox (`POST /api/v1/inbox/statement`, D-235).
@@ -41,12 +41,14 @@ async function post(route: string, payload: Record<string, unknown>): Promise<
     if (!response.ok) {
       const code = typeof body === "object" && body !== null && typeof (body as { code?: unknown }).code === "string"
         ? ` (${(body as { code: string }).code})` : "";
-      return { ok: false, why: `${readError(body, "The statement could not be fetched.")}${code}`, status: response.status };
+      // The route's own words win; with none (a platform page), say which status answered.
+      const why = readError(body, NO_ROUTE_TEXT);
+      return { ok: false, why: `${describeSyncFailure({ kind: "refused", why, status: response.status }, "the statement was not fetched")}${code}`, status: response.status };
     }
     if (typeof body !== "object" || body === null) return { ok: false, why: "The statement answer could not be read." };
     return { ok: true, body: body as Record<string, unknown> };
   } catch {
-    return { ok: false, why: "The statement could not be reached. It will be tried again next time." };
+    return { ok: false, why: describeSyncFailure({ kind: "unreachable", why: NO_ROUTE_TEXT, status: null }, "the statement was not fetched") };
   }
 }
 

@@ -20,7 +20,9 @@ import {
 import { postMailboxStatementImport, type StatementImportPosted } from "@/lib/browser/inbox-statement-client";
 import { describeStatementRows, planStatement } from "@/lib/inbox-drain";
 import { DEFAULT_SYNC_DAYS, mailboxReviewHref, type SyncManifest } from "@/lib/statement-sync";
-import { ledgerRequest } from "@/lib/wire";
+import { describeSyncFailure, ledgerRequest, NO_ROUTE_TEXT } from "@/lib/wire";
+
+export { describeSyncFailure, NO_ROUTE_TEXT };
 
 export const MAX_SYNC_ROUNDS = 20;
 
@@ -71,10 +73,11 @@ async function syncLoop<T extends { readonly truncated: boolean }>(
   let total: T | null = null;
   for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
     const result = await ledgerRequest(path, schema, {
-      fallback: "The mailbox could not be read.",
+      fallback: NO_ROUTE_TEXT,
+      unreachable: NO_ROUTE_TEXT,
       offContract: "The sync response did not match its contract."
     }, { method: "POST" });
-    if (!result.ok) return { total, error: result.why };
+    if (!result.ok) return { total, error: describeSyncFailure(result, "the mailbox was not read") };
     total = total ? add(total, result.data) : result.data;
     onProgress?.(total);
     if (!total.truncated) break;
@@ -218,11 +221,11 @@ export async function syncMailboxStatements(
   onProgress?: (total: MailboxStatementTotal, done: number, of: number) => void
 ): Promise<{ ok: true; total: MailboxStatementTotal } | { ok: false; why: string }> {
   const listing = await ledgerRequest(`/api/v1/imports/mailbox?days=${DEFAULT_SYNC_DAYS}`, listingSchema, {
-    fallback: "The mailbox could not be listed.",
-    unreachable: "The mailbox could not be reached from this device.",
+    fallback: NO_ROUTE_TEXT,
+    unreachable: NO_ROUTE_TEXT,
     offContract: "The mailbox answer did not match its contract."
   });
-  if (!listing.ok) return { ok: false, why: listing.why };
+  if (!listing.ok) return { ok: false, why: describeSyncFailure(listing, "the mailbox was not listed") };
   const items = listing.data.attachments.map((entry) => ({
     uid: entry.uid, part: entry.part, name: typeof entry.name === "string" ? entry.name : "Statement"
   }));
@@ -265,11 +268,11 @@ export type StatementsWaiting = { readonly count: number; readonly more: boolean
 
 export async function checkStatementMail(): Promise<{ ok: true; waiting: StatementsWaiting } | { ok: false; why: string }> {
   const result = await ledgerRequest(`/api/v1/imports/mailbox?days=${DEFAULT_SYNC_DAYS}`, manifestSchema, {
-    fallback: "The mailbox could not be listed.",
-    unreachable: "The mailbox could not be reached from this device.",
+    fallback: NO_ROUTE_TEXT,
+    unreachable: NO_ROUTE_TEXT,
     offContract: "The mailbox answer did not match its contract."
   });
-  if (!result.ok) return { ok: false, why: result.why };
+  if (!result.ok) return { ok: false, why: describeSyncFailure(result, "the mailbox was not listed") };
   const manifest: Pick<SyncManifest, "truncated"> & { attachments: readonly unknown[] } = result.data;
   return { ok: true, waiting: { count: manifest.attachments.length, more: manifest.truncated } };
 }

@@ -34,6 +34,29 @@ export function readError(body: unknown, fallback: string): string {
  */
 export type WireFailureKind = "unreachable" | "refused" | "off-contract";
 
+/**
+ * Passed to `ledgerRequest` as its `fallback` and `unreachable` wording, so `describeSyncFailure` can
+ * tell "the route gave no reason of its own" from a route that refused in words. It is never shown:
+ * `describeSyncFailure` replaces it.
+ */
+export const NO_ROUTE_TEXT = "No reason was given.";
+
+/**
+ * The sentence for a failed mailbox request, so a platform timeout is not worded like a mailbox fault
+ * (PLAN Open item 9). `what` finishes "…, so {what}." (for example "the mailbox was not read").
+ * - nothing answered, or a 2xx was not JSON: "The server could not be reached, so …"
+ * - a failing status with no `{ error }` of the route's own (`why` is `NO_ROUTE_TEXT`): "The server answered 504, so …"
+ * - otherwise `why` as is: the route's own words, or the off-contract sentence.
+ */
+export function describeSyncFailure(
+  result: { readonly kind: WireFailureKind; readonly why: string; readonly status: number | null },
+  what: string
+): string {
+  if (result.kind === "unreachable") return `The server could not be reached, so ${what}.`;
+  if (result.kind === "refused" && result.why === NO_ROUTE_TEXT) return `The server answered ${result.status ?? "with an error"}, so ${what}.`;
+  return result.why;
+}
+
 export type WireResult<T> =
   | { readonly ok: true; readonly data: T }
   | {

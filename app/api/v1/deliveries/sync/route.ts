@@ -1,6 +1,7 @@
 import type { DeliverySyncReport } from "@/lib/deliveries";
 import { syncDeliveryMail } from "@/lib/server/delivery-mailbox";
 import { orderStore, rideStore } from "@/lib/server/delivery-store";
+import { logMailSyncFailure } from "@/lib/server/mail-sync-log";
 import { mailboxConfig, openMailbox } from "@/lib/server/statement-mailbox-session";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 
@@ -30,12 +31,16 @@ export async function POST() {
 
   // Senders are statement sync's filter; this reads Grab mail by content, so it does not need them.
   const settings = mailboxConfig({ requireSenders: false });
-  if (!settings.ok) return routeError(settings.message, settings.status);
+  if (!settings.ok) {
+    if (settings.status >= 500) logMailSyncFailure("deliveries/sync", "config", settings.status);
+    return routeError(settings.message, settings.status);
+  }
 
   let session;
   try {
     session = await openMailbox(settings.config);
-  } catch {
+  } catch (error) {
+    logMailSyncFailure("deliveries/sync", "open", 502, error);
     // As statement Sync: imapflow's message can carry the mailbox address, so it is not passed on.
     return routeError(
       "The statement mailbox could not be opened. Check that the app password is current and that IMAP is enabled for that account.",
@@ -46,7 +51,8 @@ export async function POST() {
   try {
     const report: DeliverySyncReport = await syncDeliveryMail(session.client, { orders: orderStore(auth.supabase), rides: rideStore(auth.supabase) }, started + READ_BUDGET_MS);
     return Response.json(report, { headers: noStoreHeaders });
-  } catch {
+  } catch (error) {
+    logMailSyncFailure("deliveries/sync", "read", 502, error);
     return routeError("The mailbox was opened but its e-receipts could not be read.", 502);
   } finally {
     await session.release();

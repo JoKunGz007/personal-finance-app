@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-288 … D-305**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-288 … D-306**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -430,6 +430,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-306** — A failed mailbox Sync request logs one value-free line, and the browser names "could not reach the server" apart from "the server answered N" (Open item 9)
 - **D-305** — A PGRST303 refusal is resent once for any method, and PostgREST's message is logged for PGRST3xx codes (Open item 1: the 500 recurred under D-303 with a fresh token)
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
@@ -448,6 +449,21 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 - **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
 - **D-288** — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
+
+## D-306 — A failed mailbox Sync request logs one value-free line, and the browser names "could not reach the server" apart from "the server answered N" (Open item 9)
+
+- Date: 2026-10-24
+- Status: **Built and pushed** (the owner asked for both halves). Logging and wording only: what Sync reads, stores and flags is unchanged.
+- **Why.** A production Sync run showed Grab "The mailbox could not be read." and the 7-Eleven "could not be opened" message, and nothing was left to diagnose it with. The Sync routes logged nothing on failure. The Grab sentence was the browser's fallback, so it read the same whether nothing answered at all or Vercel answered with a timeout or crash page.
+- **Server.** `logMailSyncFailure` (`lib/server/mail-sync-log.ts`) writes `mail sync failed { route, stage, status, code }`. It runs on every answer of 500 or more, and every caught exception, in `deliveries/sync`, `receipts/sync`, `imports/mailbox` and `imports/mailbox/statement`. The stages are `config`, `open`, `read` and `store`. `code` is the error's `code` or `name` only when it is a plain token of up to 40 characters, else null. The message is never logged, because an IMAP reply can quote the account address. Owner-auth refusals, 4xx input answers and a statement's own 404/413 are answers, not faults, and are not logged.
+- **Browser.** `describeSyncFailure` (`lib/wire.ts`) words a failed mailbox request. It is used by the Grab and 7-Eleven loops, the statement listing and the per-statement POST.
+  - Nothing answered, or a 2xx was not JSON: "The server could not be reached, so the mailbox was not read."
+  - A failing status with no reason from the route: "The server answered 504, so …"
+  - A route that refused in its own words: shown as is.
+  - The callers pass the sentinel `NO_ROUTE_TEXT` as their fallback, so no `ledgerRequest` result shape changed. The per-statement transport sentence no longer says "It will be tried again next time".
+- **Agent fix in review.** The helper first lived in `lib/browser/mail-sync.ts`, which `inbox-statement-client.ts` imports and which imports it back. The agent moved it to `lib/wire.ts`, which removed that circular import.
+- **Watch.** On the next Sync failure, read the request log status and the `mail sync failed` line: a 504 with no line means a platform timeout, and `open` with a code names the IMAP fault.
+- Evidence: `tests/mail-sync-log.test.ts` (7: code sanitiser; route tests for Grab open and read failures and the listing, and that a fake address in a message never reaches the log; a 403 logs nothing) and `tests/describe-sync-failure.test.ts` (6). Red-proved: against the HEAD files, 3 of 7 and 5 of 6 fail. The `receipts/sync` and per-statement routes use the same helper but have no route test of their own. The `pnpm verify` result is recorded in `PLAN.md`.
 
 ## D-305 — A PGRST303 refusal is resent once for any method, and PostgREST's message is logged for PGRST3xx codes (Open item 1: the 500 recurred under D-303 with a fresh token)
 

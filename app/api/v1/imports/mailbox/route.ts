@@ -2,6 +2,7 @@ import {
   buildManifest, stepTimer, syncSince, type SyncManifest
 } from "@/lib/statement-sync";
 import { findAttachments, mailboxConfig, openMailbox } from "@/lib/server/statement-mailbox-session";
+import { logMailSyncFailure } from "@/lib/server/mail-sync-log";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
@@ -45,14 +46,18 @@ export async function GET(request: Request) {
   timer.lap("auth");
 
   const settings = mailboxConfig();
-  if (!settings.ok) return routeError(settings.message, settings.status);
+  if (!settings.ok) {
+    if (settings.status >= 500) logMailSyncFailure("imports/mailbox", "config", settings.status);
+    return routeError(settings.message, settings.status);
+  }
 
   const since = syncSince(new URL(request.url).searchParams);
 
   let session;
   try {
     session = await openMailbox(settings.config);
-  } catch {
+  } catch (error) {
+    logMailSyncFailure("imports/mailbox", "open", 502, error);
     // **The underlying message is deliberately not passed through.** `imapflow` puts the mailbox
     // address into its authentication errors, and this response reaches a browser, a devtools
     // network panel and anything that captures one. The remedy the owner needs is the same for
@@ -69,7 +74,8 @@ export async function GET(request: Request) {
     const { messages, found, truncated } = await findAttachments(session.client, settings.config.senders, since, timer.lap);
     const manifest: SyncManifest = buildManifest(found, messages, since, truncated);
     return Response.json(manifest, { headers: { ...noStoreHeaders, "Server-Timing": timer.header() } });
-  } catch {
+  } catch (error) {
+    logMailSyncFailure("imports/mailbox", "read", 502, error);
     return routeError("The mailbox was opened but could not be listed.", 502);
   } finally {
     await session.release();
