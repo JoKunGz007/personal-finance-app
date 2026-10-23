@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-288 … D-300**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-288 … D-301**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -430,6 +430,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-301** — Five benches share one list load, `useBenchList`, and only the newest load commits (Open item 7 #14)
 - **D-300** — The twenty-second boundary moves D-273 … D-287, because the file passed its byte budget
 - **D-299** — The ride candidate RPCs' SQL bounds are held to `lib/delivery-match.ts`'s ride minutes and days by a drift test (Open item 7 #15)
 - **D-298** — Shopee refund deposits go through `proposeLedgerMatches`, so one inflow is never proposed for two refunds; the other Shopee passes stay their own (Open item 7 #12)
@@ -443,6 +444,15 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 - **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
 - **D-288** — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
+
+## D-301 — Five benches share one list load, `useBenchList`, and only the newest load commits (Open item 7 #14)
+
+- Date: 2026-10-23
+- Status: **Built** (owner granted commit and push this session). Front end only: no route, RPC, migration or stored-value change.
+- **Defect (low).** The deliveries, receipts, Shopee, categories and slips benches each copied the same list load, and none guarded against stale answers. Receipts, deliveries and slips can start overlapping loads (several saves, a sync, a match change). An older answer arriving last overwrote the newer list, and the first load to finish re-enabled Reload while another was still running. Each answer is a full snapshot, so the next reload fixed it. Found by reading the code; not reproduced in the browser.
+- **`useBenchList(fetchList, { signInText, onArrival })`** (`app/use-bench-list.ts`) owns busy, error, the sign-in note, data, and the arrival and sign-in retry (through `useLoadOnArrival`). A sequence number drops every answer but the newest. It also returns `setData`, used by categories to fold a written row into its list, and `setBusy`/`setError`, used by Shopee's `act`, whose write is still outside the guard as before. Every message, reload trigger and disabled rule is unchanged. Categories lost its inline copy of the arrival logic, and slips keeps loading on demand (`onArrival: false`).
+- **Sync not shared:** `lib/browser/mail-sync.ts` already holds the sync loops (D-235), and the two benches that sync reload under different conditions.
+- Evidence: `tests/use-bench-list.test.tsx` (6, written by `finance-implementer`; red-proved: removing the sequence check fails exactly the two overlap tests); parent review of every bench diff. `pnpm verify` green (lint 0 errors, tsc, docs, build); Vitest 108 files (1,998 passed / 19 skipped).
 
 ## D-300 — The twenty-second boundary moves D-273 … D-287, because the file passed its byte budget
 

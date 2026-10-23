@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { DeliveryStatisticsPanel } from "@/app/delivery-statistics";
 import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { LedgerNote } from "@/app/ledger-note";
 import { LinemanCapture } from "@/app/lineman-capture";
-import { useLoadOnArrival } from "@/app/use-load-on-arrival";
+import { useBenchList } from "@/app/use-bench-list";
 import { schemeCosts, type SchemeCost } from "@/lib/delivery-cost";
 import { filterDeliveries, NO_DELIVERY_FILTER, type DeliveryFilter, type DeliveryLedgerFilter, type DeliveryShow } from "@/lib/delivery-filter";
 import { formatDate, formatTime } from "@/app/ledger-shared";
@@ -32,11 +32,13 @@ function bangkokTime(iso: string): string {
 }
 
 export function DeliveriesBench() {
-  const [deliveries, setDeliveries] = useState<StoredDelivery[] | null>(null);
-  const [rides, setRides] = useState<StoredRide[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [signInNote, setSignInNote] = useState<string | null>(null);
+  const { data, busy, error, signInNote, load } = useBenchList(() => ledgerRequest("/api/v1/deliveries", deliveryListSchema, {
+    fallback: "Delivery orders could not be loaded.",
+    unreachable: "The ledger could not be reached, so orders are not shown.",
+    offContract: "The orders response did not match its contract, so none are shown."
+  }), { signInText: "Sign in to see stored orders." });
+  const deliveries = data?.deliveries ?? null;
+  const rides = data?.rides ?? null;
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -52,29 +54,6 @@ export function DeliveriesBench() {
   const [allOrders, setAllOrders] = useState(false);
   const [allRides, setAllRides] = useState(false);
   const filtered = filter.show !== "all" || filter.ledger !== "all" || filter.query.trim() !== "";
-
-  const load = useCallback(async (automatic = false) => {
-    setBusy(true);
-    setError(null);
-    setSignInNote(null);
-    const result = await ledgerRequest("/api/v1/deliveries", deliveryListSchema, {
-      fallback: "Delivery orders could not be loaded.",
-      unreachable: "The ledger could not be reached, so orders are not shown.",
-      offContract: "The orders response did not match its contract, so none are shown."
-    });
-    setBusy(false);
-    if (!result.ok) {
-      if (automatic && (result.status === 401 || result.status === 403)) {
-        setSignInNote(result.status === 401 ? "Sign in to see stored orders." : result.why);
-        return;
-      }
-      setError(result.why);
-      return;
-    }
-    setDeliveries(result.data.deliveries);
-    setRides(result.data.rides);
-  }, []);
-  useLoadOnArrival(load, signInNote !== null);
 
   async function sync() {
     setSyncing(true);

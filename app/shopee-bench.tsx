@@ -2,7 +2,7 @@
 
 import { useCallback, useId, useState } from "react";
 import { formatDate } from "@/app/ledger-shared";
-import { useLoadOnArrival } from "@/app/use-load-on-arrival";
+import { useBenchList } from "@/app/use-bench-list";
 import { getShopeeView, postShopeeLinks, postShopeeMatch } from "@/lib/browser/shopee-client";
 import { formatThb } from "@/lib/money";
 import {
@@ -48,29 +48,8 @@ function matchChip(order: ShopeeViewOrder, view: ShopeeView): Chip {
 const LIST_LIMIT = 20;
 
 export function ShopeeBench() {
-  const [view, setView] = useState<ShopeeView | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [signInNote, setSignInNote] = useState<string | null>(null);
+  const { data: view, busy, setBusy, error, setError, signInNote, load } = useBenchList(getShopeeView, { signInText: "Sign in to see Shopee orders." });
   const [all, setAll] = useState(false);
-
-  const load = useCallback(async (automatic = false) => {
-    setBusy(true);
-    setError(null);
-    setSignInNote(null);
-    const result = await getShopeeView();
-    setBusy(false);
-    if (!result.ok) {
-      if (automatic && (result.status === 401 || result.status === 403)) {
-        setSignInNote(result.status === 401 ? "Sign in to see Shopee orders." : result.why);
-        return;
-      }
-      setError(result.why);
-      return;
-    }
-    setView(result.data);
-  }, []);
-  useLoadOnArrival(load, signInNote !== null);
 
   // A write that fails (a 409 clash included) shows its message after the reload, which clears errors.
   const act = useCallback<Act>((write) => {
@@ -80,7 +59,7 @@ export function ShopeeBench() {
       await load();
       if (!result.ok) setError(result.why);
     })();
-  }, [load]);
+  }, [load, setBusy, setError]);
 
   const months = view?.summary.months ?? [];
   const current = months.at(-1);

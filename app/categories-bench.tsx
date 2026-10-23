@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { CategoriesList } from "@/app/categories-list";
+import { useBenchList } from "@/app/use-bench-list";
 import { categoryListSchema, categoryParentResponseSchema, categoryWriteResponseSchema, type Category } from "@/lib/categories";
-import { onOwnerReady, ownerReadyGeneration } from "@/lib/owner-ready";
 import { ledgerRequest } from "@/lib/wire";
 
 /**
@@ -12,9 +12,9 @@ import { ledgerRequest } from "@/lib/wire";
  *
  * **Loads on arrival**, the same reversal `app/transactions-view.tsx` made for the ledger (PLAN
  * task 43): a list is what this route is *for*, so a press the owner would make on every single
- * visit is a toll rather than a decision. The sign-in retry below is the same second half that
- * reversal needed — signing in does not navigate, so a visit that lands signed out must still
- * populate once the owner proves who he is, without a manual reload.
+ * visit is a toll rather than a decision. The sign-in retry (`app/use-bench-list.ts`) is the
+ * same second half that reversal needed — signing in does not navigate, so a visit that lands
+ * signed out must still populate once the owner proves who he is, without a manual reload.
  *
  * **Every write folds its response back into state rather than reloading the list.** `POST` and
  * `PATCH /api/v1/categories` both answer with the one category just mutated
@@ -25,10 +25,14 @@ import { ledgerRequest } from "@/lib/wire";
  * way `GET`'s own `order by name` does.
  */
 export function CategoriesBench() {
-  const [categories, setCategories] = useState<Category[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [signInNote, setSignInNote] = useState<string | null>(null);
+  const { data: categories, setData: setCategories, busy, error, signInNote } = useBenchList(async () => {
+    const result = await ledgerRequest("/api/v1/categories", categoryListSchema, {
+      fallback: "Categories could not be loaded.",
+      unreachable: "The ledger could not be reached, so categories are not shown.",
+      offContract: "The categories response did not match its contract, so none are shown."
+    });
+    return result.ok ? { ok: true as const, data: result.data.categories } : result;
+  }, { signInText: "Sign in to manage categories." });
 
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -41,54 +45,6 @@ export function CategoriesBench() {
   const [rowError, setRowError] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameName, setRenameName] = useState("");
-
-  const load = useCallback(async (automatic = false) => {
-    setBusy(true);
-    setError(null);
-    setSignInNote(null);
-    const result = await ledgerRequest("/api/v1/categories", categoryListSchema, {
-      fallback: "Categories could not be loaded.",
-      unreachable: "The ledger could not be reached, so categories are not shown.",
-      offContract: "The categories response did not match its contract, so none are shown."
-    });
-    setBusy(false);
-    if (!result.ok) {
-      // Signed out is not a failure — see `app/transactions-view.tsx`'s own note on the same
-      // branch. The automatic load on arrival hits this route before the owner has touched
-      // anything, and `strongOwnerClient` correctly answers 401 for that.
-      if (automatic && result.status === 401) {
-        setSignInNote("Sign in to manage categories.");
-        return;
-      }
-      if (automatic && result.status === 403) {
-        setSignInNote(result.why);
-        return;
-      }
-      setError(result.why);
-      return;
-    }
-    setCategories(result.data.categories);
-  }, []);
-
-  const loadRequested = useRef(false);
-  useEffect(() => {
-    if (loadRequested.current) return;
-    loadRequested.current = true;
-    void load(true);
-  }, [load]);
-
-  const retriedAtGeneration = useRef(0);
-  useEffect(() => {
-    if (signInNote === null) return;
-    const retry = () => {
-      const current = ownerReadyGeneration();
-      if (current === 0 || retriedAtGeneration.current >= current) return;
-      retriedAtGeneration.current = current;
-      void load(true);
-    };
-    retry();
-    return onOwnerReady(retry);
-  }, [signInNote, load]);
 
   function foldCategory(category: Category) {
     setCategories((current) => {

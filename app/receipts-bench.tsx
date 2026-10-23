@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LedgerMatchPanel } from "@/app/ledger-match-panel";
 import { displayBranch, formatDate, formatDateParts } from "@/app/ledger-shared";
 import { LedgerNote } from "@/app/ledger-note";
 import { ReceiptStatisticsPanel } from "@/app/receipt-statistics";
-import { useLoadOnArrival } from "@/app/use-load-on-arrival";
+import { useBenchList } from "@/app/use-bench-list";
 import { describeSevenElevenOutcome, describeSevenElevenProgress, syncSevenElevenMail } from "@/lib/browser/mail-sync";
 import { postReceiptCapture } from "@/lib/browser/capture-client";
 import { readImageFileWords } from "@/lib/browser/ocr-reader";
@@ -58,10 +58,13 @@ function summary(form: CaptureForm, receipt: ParsedReceipt): string {
 
 export function ReceiptsBench() {
   const [picked, setPicked] = useState<Picked[]>([]);
-  const [receipts, setReceipts] = useState<StoredReceipt[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [signInNote, setSignInNote] = useState<string | null>(null);
+  // Loads on arrival, like the ledger (PLAN task 43): the list is what this page is for.
+  const { data, busy, error, signInNote, load } = useBenchList(() => ledgerRequest("/api/v1/receipts", receiptListSchema, {
+    fallback: "Receipts could not be loaded.",
+    unreachable: "The ledger could not be reached, so receipts are not shown.",
+    offContract: "The receipts response did not match its contract, so none are shown."
+  }), { signInText: "Sign in to see stored receipts." });
+  const receipts = data?.receipts ?? null;
   // Keys with a save in flight. A ref, not state: a second press can land before React has
   // re-rendered the first press's "saving", and state read then is still "ready". A duplicate POST
   // merges harmlessly but writes an audit row and bumps the backup sequence for nothing.
@@ -77,30 +80,6 @@ export function ReceiptsBench() {
   useEffect(() => { listShown.current = receipts !== null; }, [receipts]);
 
   const update = (key: string, next: Picked) => setPicked((current) => current.map((entry) => (entry.key === key ? next : entry)));
-
-  // Loads on arrival, like the ledger (PLAN task 43): the list is what this page is for.
-  const load = useCallback(async (automatic = false) => {
-    setBusy(true);
-    setError(null);
-    setSignInNote(null);
-    const result = await ledgerRequest("/api/v1/receipts", receiptListSchema, {
-      fallback: "Receipts could not be loaded.",
-      unreachable: "The ledger could not be reached, so receipts are not shown.",
-      offContract: "The receipts response did not match its contract, so none are shown."
-    });
-    setBusy(false);
-    if (!result.ok) {
-      // Signed out is not a failure on arrival; see `app/categories-bench.tsx`.
-      if (automatic && (result.status === 401 || result.status === 403)) {
-        setSignInNote(result.status === 401 ? "Sign in to see stored receipts." : result.why);
-        return;
-      }
-      setError(result.why);
-      return;
-    }
-    setReceipts(result.data.receipts);
-  }, []);
-  useLoadOnArrival(load, signInNote !== null);
 
   async function choose(files: FileList | null) {
     if (!files || files.length === 0) return;

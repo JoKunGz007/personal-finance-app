@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useState } from "react";
 import { CapturedSlips } from "@/app/captured-slips";
 import { NotificationCardCapture } from "@/app/notification-card-capture";
 import { SlipCapture } from "@/app/slip-capture";
-import { slipListSchema, slipsInForce, type CapturedSlip } from "@/lib/slips";
+import { useBenchList } from "@/app/use-bench-list";
+import { slipListSchema, slipsInForce } from "@/lib/slips";
 import { ledgerRequest } from "@/lib/wire";
+
+const NO_SLIPS_DECIDED: ReadonlySet<string> = new Set();
 
 /**
  * The slips route's two halves and the state they share (D-075).
@@ -20,35 +22,31 @@ import { ledgerRequest } from "@/lib/wire";
  * a capture keeps it current; before that, a capture leaves it alone.
  */
 export function SlipsBench() {
-  const [slips, setSlips] = useState<CapturedSlip[] | null>(null);
-  const [decided, setDecided] = useState<ReadonlySet<string>>(new Set());
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setBusy(true);
-    setError(null);
+  // On demand: no load on arrival and so no sign-in note; a refusal shows as the error.
+  const { data, busy, error, load } = useBenchList(async () => {
     try {
       const result = await ledgerRequest("/api/v1/slips", slipListSchema, {
         fallback: "Captured slips could not be loaded.",
         unreachable: "The ledger could not be reached, so captured slips are not shown.",
         offContract: "The slips response did not match its contract, so none are shown."
       });
-      if (!result.ok) {
-        setError(result.why);
-        return;
-      }
+      if (!result.ok) return result;
       // Shown as they stand, corrections applied. A list that displayed the captured figure
       // beside a ledger showing the corrected one would make the two surfaces disagree about
       // the same slip, and the one to trust would not be the one that looks authoritative.
-      setSlips(slipsInForce(result.data.slips, result.data.corrections));
-      setDecided(new Set(result.data.matches.map((match) => match.slip_id)));
+      return {
+        ok: true as const,
+        data: {
+          slips: slipsInForce(result.data.slips, result.data.corrections),
+          decided: new Set(result.data.matches.map((match) => match.slip_id)) as ReadonlySet<string>
+        }
+      };
     } catch {
-      setError("The ledger could not be reached, so captured slips are not shown.");
-    } finally {
-      setBusy(false);
+      return { ok: false as const, kind: "unreachable" as const, why: "The ledger could not be reached, so captured slips are not shown.", status: null };
     }
-  }, []);
+  }, { onArrival: false });
+  const slips = data?.slips ?? null;
+  const decided = data?.decided ?? NO_SLIPS_DECIDED;
 
   return (
     <>
