@@ -409,6 +409,17 @@ describe("refund deposits", () => {
   it("proposes nothing for two matching rows", () => {
     expect(run1([deposit(1, "2026-10-12"), deposit(2, "2026-10-13")])).toEqual([]);
   });
+  it("proposes nothing when one row could be either of two refunds (D-298)", () => {
+    const second = { ...refund, orderId: oid(2) };
+    const both = run({ orders: [order(1), order(2)], refunds: [refund, second], rows: [deposit(1, "2026-10-12")] }).refundDeposits;
+    expect(both).toEqual([]);
+    // Each with its own row, both are proposed.
+    const apart = run({
+      orders: [order(1), order(2)], refunds: [refund, { ...second, refundMinor: "16000" }],
+      rows: [deposit(1, "2026-10-12"), deposit(2, "2026-10-12", "16000")]
+    }).refundDeposits;
+    expect(apart).toEqual([{ orderId: oid(1), transactionId: tid(1) }, { orderId: oid(2), transactionId: tid(2) }]);
+  });
   it("proposes nothing for a wallet refund, a different amount, or a linked row/order", () => {
     expect(run({ orders: [order(1)], refunds: [{ ...refund, refundTo: "wallet" }], rows: [deposit(1, "2026-10-12")] }).refundDeposits).toEqual([]);
     expect(run1([deposit(1, "2026-10-12", "15001")])).toEqual([]);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { proposeLedgerMatches } from "@/lib/ledger-match";
 
 /**
  * Matching Shopee orders to the ledger (PLAN task 62 step 4a, D-270; migration 056).
@@ -340,23 +341,31 @@ export function proposeShopeeMatches(rawInput: ShopeeMatchInput): ShopeeMatchRes
     });
   }
 
-  // Refund deposits to a bank account.
-  const refundDeposits: ShopeeMatchResult["refundDeposits"] = [];
-  for (const refund of refunds) {
-    if (refund.refundTo !== "bank") continue;
-    if (links.some((l) => l.orderId === refund.orderId && l.kind === "refund_deposit")) continue;
+  // Refund deposits to a bank account. Mutually unique through the shared matcher (D-298): a row
+  // two refunds could each be is proposed for neither. A row an owner link holds is not free, so
+  // there are no decisions to pass.
+  const pending = refunds.filter((refund) => refund.refundTo === "bank"
+    && !links.some((l) => l.orderId === refund.orderId && l.kind === "refund_deposit"));
+  const refundCandidates = pending.flatMap((refund, index) => {
     const day = instantDay(refund.requestedAt);
     const amount = BigInt(refund.refundMinor);
-    const found = candidateRows.filter((r) => {
-      const age = rowDay(r) - day;
-      return free(r) && !autoRows.has(r.transaction_id) && !combinedRows.has(r.transaction_id)
-        && movement.get(r.transaction_id) === amount && age >= 0 && age <= SHOPEE_REFUND_DEPOSIT_DAYS;
-    });
-    const only = found[0];
-    if (only && found.length === 1) {
-      refundDeposits.push({ orderId: refund.orderId, transactionId: only.transaction_id });
-    }
-  }
+    return candidateRows
+      .filter((r) => {
+        const age = rowDay(r) - day;
+        return free(r) && !autoRows.has(r.transaction_id) && !combinedRows.has(r.transaction_id)
+          && movement.get(r.transaction_id) === amount && age >= 0 && age <= SHOPEE_REFUND_DEPOSIT_DAYS;
+      })
+      .map((r) => ({ refund: String(index), transaction_id: r.transaction_id }));
+  });
+  const refundStates = proposeLedgerMatches(pending.map((_, index) => String(index)), refundCandidates, [], {
+    documentOf: (candidate) => candidate.refund,
+    qualifies: () => true,
+    toRow: (candidate) => candidate.transaction_id
+  });
+  const refundDeposits: ShopeeMatchResult["refundDeposits"] = pending.flatMap((refund, index) => {
+    const state = refundStates.get(String(index));
+    return state?.status === "matched" && state.row ? [{ orderId: refund.orderId, transactionId: state.row }] : [];
+  });
 
   const states: ShopeeOrderMatchState[] = orders.map((order): ShopeeOrderMatchState => {
     const overlay = overlayByOrder.get(order.id);
