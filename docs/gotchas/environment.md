@@ -96,7 +96,7 @@ the top of `GOTCHAS.md`.
 - Symptom: a continuity doc rewritten through PowerShell comes back with `â€"` wherever an em dash, ellipsis or arrow was. `HANDOFF.md` was corrupted this way once and had to be restored from git.
 - Cause: in PowerShell 5.1 `Get-Content` defaults to the system ANSI codepage, so a UTF-8 multi-byte character is decoded as separate bytes; `Set-Content` then writes those wrong characters out as valid UTF-8. The damage is permanent and invisible to a re-read, because the file is now genuinely the mojibake.
 - Avoid: never round-trip a Markdown file through PowerShell. Use the editing tools, and give `git commit -F` a message file written by the `Write` tool.
-- Verify: `git diff` after such a rewrite marks every line containing punctuation as changed, not only the lines that were edited. Dated 2026-07-28 from D-052, the continuity pass that found this entry cross-referenced but never written and wrote it.
+- Verify: `git diff` after such a rewrite marks every line containing punctuation as changed, not only the lines that were edited. Dated 2026-07-28 from D-052, the continuity pass that found this entry cross-referenced but never written and wrote it. Seen again 2026-10-23 on a `.ts` test file. A one-token `(Get-Content -Raw).Replace(…) | Set-Content -Encoding utf8` turned `×` and `—` into mojibake and added a BOM. The test caught it, and the file was rewritten whole with `Write`. The rule covers every UTF-8 source file, not only Markdown.
 
 ## A `.ps1` written as UTF-8 without a BOM is read as ANSI, so the script's own punctuation corrupts
 
