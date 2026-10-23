@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LedgerAccount } from "@/lib/accounts";
-import { dayGroups, reconcileLedger, summarizeRows } from "@/lib/slip-reconcile";
+import { reconcileLedger } from "@/lib/slip-reconcile";
 import { duplicateListSchema, markDuplicateBodySchema, withoutDuplicates, type AccountTransaction } from "@/lib/transactions";
 
 // Marked duplicates are hidden from the table only (migration 062, PLAN task 59). Invented values.
+// What hiding does to totals, balance and counts is tested through `deriveLedgerView` in
+// `tests/ledger-view.test.ts`; this file keeps the filter's own unit test and the wire shapes.
 
 const ACCOUNT: LedgerAccount = {
   id: "aaaaaaaa-0000-4000-8000-000000000001",
@@ -46,25 +48,6 @@ describe("hiding marked duplicates", () => {
     expect(withoutDuplicates(rows, DUPLICATES, false).some((r) => r.kind === "confirmed" && r.transaction.id === ROWS[1]!.id)).toBe(false);
     expect(withoutDuplicates(rows, DUPLICATES, true)).toBe(rows);
     expect(withoutDuplicates(rows, new Set(), false)).toBe(rows);
-  });
-
-  it("leaves the money identical whether duplicates are hidden or shown, because they are excluded", () => {
-    const full = summarizeRows(rows);
-    const hidden = summarizeRows(withoutDuplicates(rows, DUPLICATES, false));
-    expect({ ...hidden, rows: 0 }).toEqual({ ...full, rows: 0 });
-    // The strip is computed from the full set, so its row count does not move with the toggle.
-    expect(summarizeRows(withoutDuplicates(rows, DUPLICATES, true))).toEqual(full);
-    expect(full.net).toBe("-10500");
-  });
-
-  it("leaves day totals' money and every printed balance untouched", () => {
-    const money = (list: readonly (typeof rows)[number][]) => [...dayGroups(list).values()].map((g) => [g.date, g.totals.deposits, g.totals.withdrawals, g.totals.net]);
-    expect(money(withoutDuplicates(rows, DUPLICATES, false))).toEqual(money(rows));
-    const balances = (list: readonly (typeof rows)[number][]) => list.flatMap((r) => (r.kind === "confirmed" ? [[r.transaction.id, r.transaction.post_balance_minor]] : []));
-    const kept = balances(withoutDuplicates(rows, DUPLICATES, false));
-    expect(kept).toEqual(balances(rows).filter(([id]) => id !== ROWS[1]!.id));
-    // Hiding does not mutate the rows it was given.
-    expect(rows).toHaveLength(3);
   });
 
   it("validates the wire shapes", () => {

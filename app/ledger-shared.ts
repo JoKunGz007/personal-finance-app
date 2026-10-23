@@ -11,16 +11,11 @@
  * wordings and the accessible names are the ones that were there; what moved is where they live.
  */
 
-import { type RowStatus } from "@/lib/slip-reconcile";
 import { type AccountTransaction, type TransactionOverlay } from "@/lib/transactions";
 
-/** The Account control's "no account chosen" value, which is not an account id. */
-export const ALL_ACCOUNTS = "all";
-/** The Status control's "ask nothing" value, which is not a `RowStatus`. */
-export const ALL_STATUSES = "all";
-
-export type Order = "newest" | "oldest";
-export type StatusFilter = typeof ALL_STATUSES | RowStatus;
+// The view-model vocabulary lives in `lib/ledger-view.ts` (D-293) so that module does not import
+// from `app/`; re-exported here for the row components.
+export { ALL_ACCOUNTS, ALL_STATUSES, type LedgerBalance, type LedgerLayout, type Order, type StatusFilter } from "@/lib/ledger-view";
 
 /**
  * One date format for the whole ledger, because four copies would be four chances to disagree.
@@ -98,34 +93,6 @@ export function formatDayHeadingParts(date: string): { value: string; numeric: b
     .formatToParts(new Date(`${date}T00:00:00+07:00`))
     .map((part) => ({ value: part.value, numeric: part.type === "day" || part.type === "year" }));
 }
-
-/**
- * The balance a window closes on, and what it is a balance of.
- *
- * `date` travels with the figure rather than being inferred at the point of display, because the
- * whole hazard of this number is that it looks current and is only as current as the window: a
- * ledger narrowed to March closes on March's balance, and a strip that printed it without saying
- * so would be quietly wrong on every date filter. `combined` distinguishes the all-accounts figure
- * (`combined_balance_minor`, migration 022) from one account's own `post_balance_minor`; the two
- * are different facts and only the row knows which it is carrying.
- */
-export type LedgerBalance = {
-  readonly minor: string;
-  readonly date: string;
-  readonly combined: boolean;
-};
-
-/**
- * Whether the table is showing the all-accounts layout, and how many columns that makes.
- *
- * The two travel together because they cannot be allowed to disagree: `columns` is what a
- * full-width detail or correction row spans, and it was written as `showCombined ? 7 : 6` at
- * five separate places in the file this came out of.
- */
-export type LedgerLayout = {
-  readonly showCombined: boolean;
-  readonly columns: number;
-};
 
 /**
  * What the owner is in the middle of — the one thing every row has to consult before it decides

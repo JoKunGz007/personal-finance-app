@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ACCOUNT_ID_PATTERN, accountListSchema, type LedgerAccount } from "@/lib/accounts";
+import { ACCOUNT_ID_PATTERN, type LedgerAccount } from "@/lib/accounts";
 import { isUsableRange, rangeFromSearch, type DateRange } from "@/lib/date-range";
 import { isoDateSchema } from "@/lib/dates";
 import { formatThb } from "@/lib/money";
@@ -11,13 +11,6 @@ import {
   ledgerPageSchema,
   ledgerPageSearch,
   matchCandidateListSchema,
-  matchesCardQuery,
-  matchesCashQuery,
-  matchesQuery,
-  matchesSlipQuery,
-  autoExcludedListSchema,
-  duplicateListSchema,
-  withoutDuplicates,
   autoCategorisedResultSchema,
   overlayInForce,
   overlayWriteBody,
@@ -25,22 +18,14 @@ import {
   type AccountTransaction,
   type TransactionOverlay
 } from "@/lib/transactions";
-import { categoryListSchema, type Category } from "@/lib/categories";
-import { receiptListSchema, receiptsOnRows, type StoredReceipt } from "@/lib/receipts";
-import { getShopeeView } from "@/lib/browser/shopee-client";
-import { shopeeOrdersOnRows, type ShopeeViewOrder } from "@/lib/shopee-view";
-import { deliveriesOnRows, deliveryListSchema, ridesOnRows, type StoredDelivery, type StoredRide } from "@/lib/deliveries";
+import type { Category } from "@/lib/categories";
+import type { StoredReceipt } from "@/lib/receipts";
+import { loadLedgerSnapshot } from "@/lib/browser/ledger-snapshot";
+import type { ShopeeViewOrder } from "@/lib/shopee-view";
+import type { StoredDelivery, StoredRide } from "@/lib/deliveries";
 import {
   deeperPages,
-  emptyWindow,
-  hasDeeperPage,
-  chooserRows,
-  reconciliationRows,
-  scopeTotals,
   statusIsComplete,
-  windowIds,
-  windowReach,
-  windowRows,
   withOverlay,
   withCategoryReviewed,
   withPage,
@@ -50,23 +35,13 @@ import {
   cardsInForce,
   notificationCardCorrectionResponseSchema,
   notificationCardDecisionResponseSchema,
-  notificationCardListSchema,
   type NotificationCard,
   type NotificationCardCorrection,
   type NotificationCardDecision
 } from "@/lib/notification-cards";
-import { cardMatchCandidates } from "@/lib/notification-card-reconcile";
-import {
-  compareRows,
-  dayGroups,
-  matchCandidates,
-  reconcileLedger,
-  summarizeRows,
-  type ReconciledRow
-} from "@/lib/slip-reconcile";
+import { createLedgerViewDeriver, type ChooserSet } from "@/lib/ledger-view";
 import {
   slipCorrectionResponseSchema,
-  slipListSchema,
   slipMatchResponseSchema,
   slipsInForce,
   type CapturedSlip,
@@ -76,7 +51,6 @@ import {
 import {
   cashCorrectionResponseSchema,
   cashInForce,
-  cashListSchema,
   type CashCorrection,
   type CashEntry
 } from "@/lib/cash";
@@ -91,8 +65,6 @@ import {
   ALL_STATUSES,
   formatDayHeadingParts,
   type LedgerActions,
-  type LedgerBalance,
-  type LedgerLayout,
   type LedgerModes,
   type Order,
   type StatusFilter
@@ -165,9 +137,7 @@ export function TransactionsView() {
    * (D-158), and dropped whenever a decision is written or the ledger reloads, so the next
    * choosing fetches a set that includes the new decision's rows.
    */
-  const [chooserSet, setChooserSet] = useState<
-    { state: "idle" } | { state: "loading" } | { state: "error"; message: string } | { state: "ready"; rows: AccountTransaction[] }
-  >({ state: "idle" });
+  const [chooserSet, setChooserSet] = useState<ChooserSet>({ state: "idle" });
   const chooserSequence = useRef(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [slips, setSlips] = useState<CapturedSlip[]>([]);
@@ -372,30 +342,26 @@ export function TransactionsView() {
   const originalSlips = useMemo(() => new Map(slips.map((slip) => [slip.id, slip])), [slips]);
   const originalCash = useMemo(() => new Map(cash.map((entry) => [entry.id, entry])), [cash]);
 
-  const matchingSlip = useMemo(
-    () => (matching === null ? null : currentSlips.find((slip) => slip.id === matching) ?? null),
-    [matching, currentSlips]
-  );
-
   /**
-   * One derived value decides whether the mode is on, and everything reads it.
-   *
-   * Gating the banner on the slip while the row filter and the disabled controls gated on the
-   * id alone left a reachable dead end: a slip that vanished mid-choice took the banner — and
-   * with it the only Cancel — off the screen while the controls stayed disabled and the totals
-   * strip reappeared over a picking subset. Recovery needed a page reload. A mode that cannot
-   * be half-on cannot do that.
+   * Everything the table, the strip and the choosers derive from the loaded records
+   * (`lib/ledger-view.ts`, D-293). Computed here, before the effects below that read the picking
+   * flags. The deriver caches each stage on its inputs, so typing in the search box does not
+   * re-run reconciliation.
    */
-  const picking = matching !== null && matchingSlip !== null;
-
-  // The card half of the same pair, declared here rather than beside the card's other derived
-  // values because `showCombined` below reads it during render — a `const` read before its own
-  // declaration is a ReferenceError at runtime, and one that only fires once a card exists.
-  const matchingCardRecord = useMemo(
-    () => (matchingCard === null ? null : currentCards.find((card) => card.id === matchingCard) ?? null),
-    [matchingCard, currentCards]
+  const deriver = useRef<ReturnType<typeof createLedgerViewDeriver> | null>(null);
+  deriver.current ??= createLedgerViewDeriver();
+  const {
+    picking, pickingCard, matchingSlip, matchingCardRecord, scopedAccount, reach, ledgerIsEmpty, moreToLoad,
+    partialFilter, showCombined, layout, reconciled, retiredCards, chooserState, offered, offeredToCard,
+    visibleRows, shownRows, duplicateCount, totals, balance, dayHeads, unattributedSlips, importedAccounts
+  } = deriver.current(
+    {
+      ledgerWindow, candidates, accounts, slips: currentSlips, matches, cash: currentCash, cards: currentCards,
+      cardDecisions, duplicates, chooserSet
+    },
+    { selected, query, status, order, groupByDay, showDuplicates },
+    { matching, matchingCard }
   );
-  const pickingCard = matchingCard !== null && matchingCardRecord !== null;
 
   // A ledger reload while choosing drops the chooser's rows; fetch them again rather than leave the
   // banner loading for good.
@@ -462,100 +428,12 @@ export function TransactionsView() {
     return onOwnerReady(retry);
   }, [signInNote]);
 
-  /** Null for the all-accounts view, which is what every window helper reads as "every account". */
-  const scopedAccount = selected === ALL_ACCOUNTS ? null : selected;
-
-  // The account scope, before any text filter. Balances are derived from this rather
-  // than from `visible`, because a running total of whatever a search matched would
-  // not be a balance.
-  const scope = useMemo(
-    () => (ledgerWindow === null ? [] : windowRows(ledgerWindow, scopedAccount)),
-    [ledgerWindow, scopedAccount]
-  );
-
-  /**
-   * What the matching rule runs over: the window **plus** every candidate, deduplicated.
-   *
-   * Never the window alone. A slip that is genuinely ambiguous ledger-wide but has only one of
-   * its candidates on the page would pair with that one and read `verified`, when the truth is
-   * that nobody has ever been asked which row it is. See `reconciliationRows`.
-   */
-  const reconcileInput = useMemo(
-    () => (ledgerWindow === null ? [] : reconciliationRows(ledgerWindow, candidates)),
-    [ledgerWindow, candidates]
-  );
-
-  /** The ids actually loaded, so a candidate pulled in as evidence is not shown as a row. */
-  const heldIds = useMemo(
-    () => (ledgerWindow === null ? new Set<string>() : windowIds(ledgerWindow, scopedAccount)),
-    [ledgerWindow, scopedAccount]
-  );
-
-  /**
-   * Unchanged by paging, which was the surprise of this task rather than its plan.
-   *
-   * Task 45 expected this walk to break on a page — seeded, it says, from the wrong row. It does
-   * not: `post_balance − movement` is the balance immediately before whatever row it is applied
-   * to, so handed a window it yields the balance carried into that window. The server's own figure
-   * is used to *check* that (`openingDisagreements`) rather than to replace it.
-   */
-  /*
-   * The combined balance is no longer derived here at all — every page row arrives carrying it
-   * (migration 022). The client walked it until 2026-08-27 and could not: the figure is a fact
-   * about *every* account at a row, and a per-account window cannot see another account's history
-   * further back than its own rows reach.
-   */
-
-  /** How much of the confirmed ledger is on screen, and whether more can be fetched. */
-  const reach = useMemo(
-    () => (ledgerWindow === null ? { loaded: 0, total: 0 } : windowReach(ledgerWindow, scopedAccount)),
-    [ledgerWindow, scopedAccount]
-  );
-
-  /**
-   * Whether the ledger holds no confirmed rows **at all** — deliberately unscoped.
-   *
-   * This decides between "nothing has been imported yet" and "this filter matched nothing", and
-   * choosing an account is a filter. Reading the scoped count here would tell an owner who
-   * selected an account he has not imported into that his whole ledger was empty, which is both
-   * wrong and discouraging; the owner suite fails by name on exactly that.
-   */
-  const ledgerIsEmpty = ledgerWindow !== null && windowReach(ledgerWindow, null).total === 0;
-  const moreToLoad = ledgerWindow !== null && hasDeeperPage(ledgerWindow, scopedAccount);
-  // A text query, or a confirmed-row status, narrows only what is loaded (D-204): say so wherever
-  // the answer is shown, or an empty result reads as "none exist".
-  const partialFilter = moreToLoad
-    && (query.trim() !== "" || (status !== ALL_STATUSES && !statusIsComplete(status)));
-
-  // The account column, not the reference one, whenever a slip is being matched: candidates are
-  // filtered by **bank**, so with two accounts at one bank the offered rows can belong to
-  // different accounts — and in the per-account layout nothing on screen would say which. That
-  // is the very ambiguity `slipAccount` refuses to guess at (D-056), so the chooser must show it.
-  const showCombined = picking || pickingCard || selected === ALL_ACCOUNTS;
-
-  // Handed to every row component so the all-accounts column and the width of a full-width
-  // detail or correction row cannot disagree. `columns` was written out as `showCombined ? 7 : 6`
-  // at five separate places before the row kinds became components.
-  const layout = useMemo<LedgerLayout>(
-    () => ({ showCombined, columns: showCombined ? 7 : 6 }),
-    [showCombined]
-  );
-
   // What the owner is in the middle of, as one value. Every row consults it before deciding
   // whether its own controls are usable, and the conditions that read it live beside the buttons
   // they disable (`app/ledger-shared.ts`).
   const modes = useMemo<LedgerModes>(
     () => ({ picking, pickingCard, matching, matchingCard, deciding, decidingCard, correcting, settingReporting }),
     [picking, pickingCard, matching, matchingCard, deciding, decidingCard, correcting, settingReporting]
-  );
-
-  // Reconciliation runs over the **whole** ledger, before any account or text filter. A
-  // match is a fact about two records, not about what is on screen — reconciling the
-  // filtered subset would let choosing an account or typing in the search box silently
-  // unmatch a pair and change the totals (D-063).
-  const reconciled = useMemo(
-    () => reconcileLedger(reconcileInput, currentSlips, accounts ?? [], matches, currentCash, currentCards, cardDecisions),
-    [reconcileInput, currentSlips, accounts, matches, currentCash, currentCards, cardDecisions]
   );
 
   const cardDecisionByCard = useMemo(
@@ -569,278 +447,10 @@ export function TransactionsView() {
   // The cards as first typed, which is what a correction is measured against.
   const originalCards = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
 
-  // Retired cards, kept out of the rows and the totals but reachable, so that retiring stays as
-  // reversible on screen as it is in the database.
-  const retiredCards = useMemo(
-    () => currentCards.filter((card) => reconciled.cardMatches.retired.has(card.id)),
-    [currentCards, reconciled]
-  );
-
-  // What the manual chooser offers, derived only while the owner is choosing and only once the
-  // chooser's rows have arrived (D-158). Reconciled over the bounded input **plus** the chooser's
-  // rows, so a candidate outside the automatic date window is a row the table can show and carries
-  // the slip or card that claims it. It feeds only the choosing views: the statuses everywhere
-  // else keep using `reconciled`, which runs over the bounded set.
-  const chooserReady = chooserSet.state === "ready" ? chooserSet.rows : null;
-  const chooserState = useMemo<
-    { state: "loading" } | { state: "error"; message: string } | { state: "ready" }
-  >(
-    () => chooserSet.state === "error"
-      ? { state: "error", message: chooserSet.message }
-      : chooserSet.state === "ready" ? { state: "ready" } : { state: "loading" },
-    [chooserSet]
-  );
-  const chooserInput = useMemo(
-    () => (ledgerWindow === null || chooserReady === null || (matching === null && matchingCard === null)
-      ? null
-      : chooserRows(ledgerWindow, candidates, chooserReady)),
-    [ledgerWindow, candidates, chooserReady, matching, matchingCard]
-  );
-  const chooserReconciled = useMemo(
-    () => chooserInput === null
-      ? null
-      : reconcileLedger(chooserInput, currentSlips, accounts ?? [], matches, currentCash, currentCards, cardDecisions),
-    [chooserInput, currentSlips, accounts, matches, currentCash, currentCards, cardDecisions]
-  );
-
-  // The choosing views' rows: the slip or card being chosen for, from the automatic reconciliation,
-  // and the confirmed rows from the chooser's, so each carries the record that claims it.
-  const choosingRows = useMemo(
-    () => [
-      ...reconciled.rows.filter((row) => row.kind !== "confirmed"),
-      ...(chooserReconciled?.rows.filter((row) => row.kind === "confirmed") ?? [])
-    ],
-    [reconciled, chooserReconciled]
-  );
-
-  // The rows a card may be paired with by hand. The union, not the window: a chooser that offered
-  // only loaded rows would hide the very row the owner is looking for and read as "it is not
-  // there" — and an override exists precisely to reach past what the automatic rule would propose
-  // (D-067).
-  const offeredToCard = useMemo(() => {
-    const card = matchingCard === null ? undefined : currentCards.find((entry) => entry.id === matchingCard);
-    return new Set(
-      card === undefined || chooserInput === null
-        ? []
-        : cardMatchCandidates(card, chooserInput, cardDecisions)
-            .filter((candidate) => !duplicates.has(candidate.id))
-            .map((candidate) => candidate.id)
-    );
-  }, [matchingCard, currentCards, chooserInput, cardDecisions, duplicates]);
-
   const decisionBySlip = useMemo(
     () => new Map(matches.map((match) => [match.slip_id, match])),
     [matches]
   );
-
-  // The rows a slip may be paired with by hand. Not date-bounded: an override exists precisely to
-  // reach past the automatic window (D-067). A row marked as a duplicate is never offered, here or
-  // for a card: pairing a record with the copy the owner set aside would hide the match.
-  const offered = useMemo(() => {
-    const slip = matchingSlip;
-    return new Set(
-      slip === null || chooserInput === null
-        ? []
-        : matchCandidates(slip, chooserInput, accounts ?? [], matches)
-            .filter((candidate) => !duplicates.has(candidate.id))
-            .map((candidate) => candidate.id)
-    );
-  }, [matchingSlip, chooserInput, accounts, matches, duplicates]);
-
-  // A slip is shown against an account when the owner holds exactly one at that bank, so the
-  // attribution is forced rather than guessed; with two, it belongs to the all-accounts view
-  // only, and the status line says why (D-056 still holds — the QR names a bank).
-  const inAccount = useMemo(() => (row: ReconciledRow) => {
-    if (selected === ALL_ACCOUNTS) return true;
-    if (row.kind === "confirmed") return row.transaction.account_id === selected;
-    // A cash payment never belongs to an account — it has no bank and no statement, so there
-    // is no attribution to derive and none to guess at. It belongs to the all-accounts view,
-    // the same place a slip goes when its bank holds two of them.
-    if (row.kind === "cash") return false;
-    // A card names its account as a stored, checked fact — the capture route refused it unless
-    // the printed digits resolved to that account under the layout's mask (D-101). So unlike a
-    // slip it is never hidden by choosing an account, and there is no unattributed case to warn
-    // about.
-    if (row.kind === "card") return row.card.account_id === selected;
-    return row.account?.id === selected;
-  }, [selected]);
-
-  const visibleRows = useMemo(() => {
-    // Matching is its own view of the ledger, not a filter of the current one: the slip being
-    // matched and every row it could be, whatever the Account, Status and search controls were
-    // left on. Those are suspended rather than obeyed, because a filter set earlier could
-    // otherwise hide the very row the owner is looking for and read as "it is not there".
-    // The card's own picking mode, on the same terms as the slip's: the card being matched and
-    // every row it could be, with the other controls suspended rather than obeyed.
-    if (pickingCard) {
-      const candidates = choosingRows.filter((row) => {
-        if (row.kind === "card") return row.card.id === matchingCard;
-        if (row.kind === "cash" || row.kind === "provisional") return false;
-        return offeredToCard.has(row.transaction.id);
-      });
-      candidates.sort(compareRows);
-      if (order === "oldest") candidates.reverse();
-      return candidates;
-    }
-
-    if (picking) {
-      const candidates = choosingRows.filter((row) => {
-        if (row.kind === "provisional") return row.slip.id === matching;
-        // Neither cash nor an unmatched card is a statement row, and neither can become one, so
-        // neither is ever on offer. A card is the closer call of the two and still no: it is a
-        // captured record like the slip being matched, not the confirmed row the slip is looking
-        // for.
-        if (row.kind === "cash" || row.kind === "card") return false;
-        return offered.has(row.transaction.id);
-      });
-      candidates.sort(compareRows);
-      if (order === "oldest") candidates.reverse();
-      return candidates;
-    }
-
-    const filtered = reconciled.rows.filter((row) => {
-      // **A candidate is evidence, not a row of the table.** Reconciliation runs over the window
-      // plus every row some record could be paired with, which is what makes a paged status
-      // correct; those extra rows must then be filtered back out, because the owner asked to see
-      // a page of his ledger and not the scattered rows the matching rule happened to consult.
-      //
-      // Filtering them out *here* rather than earlier is the whole point: removing them before
-      // `reconcileLedger` is precisely the mistake this task exists to avoid.
-      if (row.kind === "confirmed" && !heldIds.has(row.transaction.id)) return false;
-      if (!inAccount(row)) return false;
-      // Status filters the reconciled result; it never feeds back into reconciliation, which
-      // has already run over the whole ledger above. That ordering is the point — a filter
-      // that could change what matched would let a dropdown move the totals (D-063).
-      if (status !== ALL_STATUSES && row.status !== status) return false;
-      // A matched pair is one row and must be findable by any of its records' text — the
-      // statement's, the slip's, and now the card's.
-      if (row.kind === "confirmed") {
-        return matchesQuery(row.transaction, query)
-          || (row.slip !== null && matchesSlipQuery(row.slip, query))
-          || (row.card !== null && matchesCardQuery(row.card, query));
-      }
-      if (row.kind === "cash") return matchesCashQuery(row.entry, query);
-      if (row.kind === "card") return matchesCardQuery(row.card, query);
-      return matchesSlipQuery(row.slip, query);
-    });
-    filtered.sort(compareRows);
-    if (order === "oldest") filtered.reverse();
-    return filtered;
-  }, [reconciled, inAccount, query, order, status, matching, picking, offered, pickingCard,
-      matchingCard, offeredToCard, heldIds, choosingRows]);
-
-  /**
-   * What the table renders: `visibleRows` minus marked duplicates unless they are shown, and
-   * **nothing else reads it except the table and its day headings**. Totals, the balance, the
-   * balance checks and paging all run on the full set above, so hiding a duplicate is display only.
-   * Not applied while a match is being chosen by hand, which is its own view of the ledger.
-   */
-  const shownRows = useMemo(
-    () => (picking || pickingCard ? visibleRows : withoutDuplicates(visibleRows, duplicates, showDuplicates)),
-    [visibleRows, duplicates, showDuplicates, picking, pickingCard]
-  );
-
-  /** Duplicates that are on the loaded rows of the current scope, for the toggle's count. */
-  const duplicateCount = useMemo(
-    () => visibleRows.filter((row) => row.kind === "confirmed" && duplicates.has(row.transaction.id)).length,
-    [visibleRows, duplicates]
-  );
-
-  /**
-   * The strip above the table, and the one place paging could have quietly changed what a number
-   * means.
-   *
-   * **Slips, cards and cash entries are complete on the client at any window depth** — they are
-   * few and are fetched whole — so their contribution is exact whatever page the ledger is on.
-   * Confirmed rows are not, so theirs comes from `list_account_transactions_page`, which computes
-   * it over the whole account in SQL as sums of `bigint` minor units with no division anywhere.
-   *
-   * That substitution is only valid while nothing narrows the confirmed population beyond the
-   * account, because the account is all the server was asked about. A text query and either of
-   * the two confirmed statuses each select a subset SQL knows nothing of, so in those cases the
-   * figure falls back to meaning what it has always meant — *over the rows on screen* — and the
-   * reach line beneath the controls is what stops that from being a silent difference.
-   */
-  const totals = useMemo(() => {
-    const onScreen = summarizeRows(visibleRows);
-    const exact = ledgerWindow !== null && status === ALL_STATUSES && query.trim() === "";
-    if (!exact) return onScreen;
-
-    const records = summarizeRows(visibleRows.filter((row) => row.kind !== "confirmed"));
-    const whole = scopeTotals(ledgerWindow, scopedAccount);
-    const deposits = BigInt(records.deposits) + BigInt(whole.deposits);
-    const withdrawals = BigInt(records.withdrawals) + BigInt(whole.withdrawals);
-    return {
-      ...onScreen,
-      rows: records.rows + whole.rows,
-      deposits: deposits.toString(),
-      withdrawals: withdrawals.toString(),
-      net: (deposits + withdrawals).toString()
-    };
-  }, [visibleRows, ledgerWindow, scopedAccount, status, query]);
-
-  /**
-   * The balance the strip prints, taken from the newest row **in scope** rather than on screen.
-   *
-   * `scope` is the window narrowed by account and nothing else, already ordered newest-first by
-   * `compareTransactions` - so `[0]` is the last row of the window, and its printed balance is what
-   * the window closes on. That is the figure the owner asked for: it follows the account and the
-   * date range, so narrowing to March reads March's closing balance rather than today's.
-   *
-   * **Deliberately blind to Status and the search box**, which is the same line `scope` itself is
-   * drawn on a few lines above: those narrow which rows are displayed, and the balance printed on
-   * whichever row a search last matched is not a balance of anything. `date` travels with the
-   * figure so the strip can say which day it belongs to rather than implying today.
-   *
-   * Null where the scope holds no confirmed row at all - a window of slips and cash has movements
-   * and no printed balance, and the strip shows an em dash rather than inventing one.
-   */
-  const balance = useMemo<LedgerBalance | null>(() => {
-    const newest = scope[0];
-    if (newest === undefined) return null;
-    if (scopedAccount !== null) {
-      return { minor: newest.post_balance_minor, date: newest.source_date, combined: false };
-    }
-    // Every page row carries this (migration 022), but the type covers rows from other populations
-    // too, so an absent figure is a real case rather than an impossible one - and the honest answer
-    // to "what did every account total that day" when the row cannot say is nothing, not this one
-    // account's own balance dressed up as the combined figure.
-    const combined = newest.combined_balance_minor;
-    return combined === undefined ? null : { minor: combined, date: newest.source_date, combined: true };
-  }, [scope, scopedAccount]);
-
-  /**
-   * Where a day's heading row belongs, keyed by the row that opens it.
-   *
-   * **Off while a record is being matched by hand, whatever the control says.** That mode lists one
-   * captured record and the rows it could be - candidates drawn from across the ledger by amount and
-   * bank, not a stretch of it - so a day heading over them would print a total of unrelated rows,
-   * which is the same reason the totals strip disappears entirely in that mode.
-   */
-  const dayHeads = useMemo(
-    () => (groupByDay && !picking && !pickingCard ? dayGroups(shownRows) : null),
-    [groupByDay, picking, pickingCard, shownRows]
-  );
-
-  const unattributedSlips = useMemo(
-    () => reconciled.rows.filter((row) => row.kind === "provisional" && row.account === null).length,
-    [reconciled]
-  );
-
-  // An account with no imported rows has no derivable balance, so the combined figure
-  // cannot speak for it. Stated as a plain status of what *is* imported rather than a
-  // warning about what is not: on this ledger most accounts are empty most of the
-  // time, so a banner would fire on nearly every load and be read as noise.
-  const importedAccounts = useMemo(() => {
-    // The window rather than `scope`: `scope` stops at the merged view's floor, and an account
-    // whose loaded rows all sit below it is still imported.
-    const withRows = new Set(
-      [...(ledgerWindow?.byAccount ?? [])]
-        .filter(([id, held]) => held.rows.length > 0 && (scopedAccount === null || id === scopedAccount))
-        .map(([id]) => id)
-    );
-    return (accounts ?? []).filter((account) => withRows.has(account.id));
-  }, [ledgerWindow, scopedAccount, accounts]);
 
   /**
    * Loads everything the view shows.
@@ -865,7 +475,7 @@ export function TransactionsView() {
     // cash payment starts a second one. Whichever *starts* last is the one holding the newer
     // truth, so an older load that resolves late must drop its results rather than overwrite them
     // — otherwise a row the owner has just written disappears from a money view for no visible
-    // reason. Checked before every state commit below, not only at the end.
+    // reason. Checked once, before the single commit below (D-293).
     const mine = loadSequence.current + 1;
     loadSequence.current = mine;
     const superseded = () => loadSequence.current !== mine;
@@ -874,249 +484,94 @@ export function TransactionsView() {
     setError(null);
     setSignInNote(null);
     try {
-      // **The two blocking loads used to be the two least defended.** Both parsed their body with
-      // a bare `.json()` while the three optional loads below guarded theirs, so a platform error
-      // page — HTML, not JSON — threw here and was caught at the bottom as "the ledger could not be
-      // reached", sending the owner to check Docker when the route had in fact answered him.
-      // `ledgerRequest` tells the three cases apart; `unreachable` keeps the wording that was right
-      // for the case it really was.
-      const accountsResult = await ledgerRequest("/api/v1/accounts", accountListSchema, {
-        fallback: "Accounts could not be loaded.",
-        unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
-        offContract: "The accounts response did not match its contract. Run the unit tests before trusting this view."
-      });
+      // The fetching and reading half lives in `lib/browser/ledger-snapshot.ts` (D-293): it issues
+      // every request, reads them in order and returns one value. It writes no state, so nothing
+      // below has to be undone if this load is superseded while it runs.
+      const result = await loadLedgerSnapshot(range);
       if (superseded()) return;
-      if (!accountsResult.ok) {
-        // **Signed out is not a failure, and this page is where that distinction became visible.**
-        // The ledger loads on arrival, so a visitor who is not signed in now issues a request
-        // before touching anything, and `strongOwnerClient` correctly answers 401 — 403 for a
-        // signed-in identity that is not the owner, or is the owner without aal2. Reporting any of
-        // those as "Not loaded" would put a red alert on the first surface anyone sees, describing
-        // a route working exactly as designed. A press still reports it in full, as an alert: the
-        // owner asked, so the owner is answered.
-        //
+      if (result.kind === "refused") {
         // **Only 401 gets wording of this view's own.** A 403 keeps the route's sentence, because
         // its two cases need telling apart and only the route knows which one it is — "This
-        // identity is not the ledger owner" is not answered by signing in again.
-        if (automatic && accountsResult.status === 401) {
-          setSignInNote("Sign in to read the ledger.");
+        // identity is not the ledger owner" is not answered by signing in again. A press still
+        // reports either in full, as an alert: the owner asked, so the owner is answered. A load
+        // the page performs by itself reports it as a note instead (see the loader for why).
+        if (automatic) {
+          setSignInNote(result.status === 401 ? "Sign in to read the ledger." : result.why);
           return;
         }
-        if (automatic && accountsResult.status === 403) {
-          setSignInNote(accountsResult.why);
-          return;
-        }
-        setError(accountsResult.why);
+        setError(result.why);
+        return;
+      }
+      if (result.kind === "failed") {
+        // The previous state is left as it was: a failed reload does not blank a working table.
+        setError(result.why);
         return;
       }
 
-      // **Every request below is issued now, in one wave, and only the reading stays in order.**
-      // Accounts is the one real dependency — the page requests need its list — and it goes first
-      // for a second reason too: a signed-out arrival stops above with one 401 rather than six.
-      // Past it, nothing any request sends depends on another's answer, so they used to wait on
-      // each other for no reason: nine round trips in series with three accounts.
-      //
-      // **What did not change is the order results are read and committed in**, and that order is
-      // load-bearing: a failed page or candidate set still returns before slips, cash or cards are
-      // touched, the `superseded()` guards still sit before each commit, and each fail-hard or
-      // fail-soft branch still reads exactly as it did. Awaiting an already-started request in the
-      // old sequence reproduces every state transition the serial version made, only sooner.
-      // `ledgerRequest` resolves rather than rejects on every failure, so a request left unawaited by
-      // an early return cannot surface as an unhandled rejection.
-      const pageRequests = accountsResult.data.accounts.map((account) => ({
-        account,
-        // The window's own bounds, cursor null for a first page — `ledgerPageSearch` is what
-        // `loadMore` below reuses so a deeper page cannot forget them.
-        result: ledgerRequest(
-          `/api/v1/accounts/${account.id}/transactions${ledgerPageSearch(range, null)}`, ledgerPageSchema, {
-            fallback: `Transactions could not be loaded for ${account.label}.`,
-            unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
-            offContract: `The transactions response for ${account.label} did not match its contract.`
-          })
-      }));
-      const candidateRequest = ledgerRequest(
-        "/api/v1/transactions/match-candidates", matchCandidateListSchema, {
-          fallback: "The reconciliation set could not be loaded, so the ledger is not shown.",
-          unreachable: "The ledger could not be reached. Check that the local Supabase stack is running.",
-          offContract: "The reconciliation set did not match its contract, so the ledger is not shown."
-        });
-      const slipsRequest = ledgerRequest("/api/v1/slips", slipListSchema, {
-        fallback: "Captured slips could not be loaded, so none are shown.",
-        offContract: "The slips response did not match its contract, so none are shown."
-      });
-      const cashRequest = ledgerRequest("/api/v1/cash", cashListSchema, {
-        fallback: "Cash entries could not be loaded, so none are shown.",
-        offContract: "The cash response did not match its contract, so none are shown."
-      });
-      const cardsRequest = ledgerRequest("/api/v1/notification-cards", notificationCardListSchema, {
-        fallback: "Captured notification cards could not be loaded, so none are shown.",
-        offContract: "The notification cards response did not match its contract, so none are shown."
-      });
-      const autoExcludedRequest = ledgerRequest("/api/v1/transactions/auto-excluded", autoExcludedListSchema, {
-        fallback: "Automatically excluded rows could not be loaded.",
-        offContract: "The automatically excluded rows did not match their contract."
-      });
-      const duplicatesRequest = ledgerRequest("/api/v1/transactions/duplicates", duplicateListSchema, {
-        fallback: "Duplicate rows could not be loaded.",
-        offContract: "The duplicate rows did not match their contract."
-      });
-      const receiptsRequest = ledgerRequest("/api/v1/receipts", receiptListSchema, {
-        fallback: "Receipts could not be loaded.",
-        offContract: "The receipts response did not match its contract."
-      });
-      const deliveriesRequest = ledgerRequest("/api/v1/deliveries", deliveryListSchema, {
-        fallback: "Delivery orders could not be loaded.",
-        offContract: "The orders response did not match its contract."
-      });
-      const shopeeRequest = getShopeeView();
-      const categoriesRequest = ledgerRequest("/api/v1/categories", categoryListSchema, {
-        fallback: "Categories could not be loaded.",
-        offContract: "The categories response did not match its contract, so none are shown."
-      });
-
-      // One call per account, and now **one page** per call. The RPC is per-account and there is
-      // no all-accounts one; taking each account's newest page and merging is still exactly right
-      // for the merged view, because any row among the newest N of the union is necessarily among
-      // the newest N of its own account. Read in account order, so the first failing account is
-      // still the one reported.
-      let next = emptyWindow();
-      for (const { account, result: pending } of pageRequests) {
-        const result = await pending;
-        if (!result.ok) {
-          setError(result.why);
-          return;
-        }
-        next = withPage(next, account.id, result.data, cursorAfter(result.data.rows));
-      }
-
-      // **The candidate set, and it is not optional the way slips and cash are.** Those three
-      // fail soft because the confirmed ledger is the authority and an outage in a captured
-      // record must not hide it. This is different: without it the matching rule runs over a page
-      // and can pair a slip that is genuinely ambiguous, which shows `verified` on a row nobody
-      // ever confirmed. A missing answer is recoverable; a confidently wrong one about money is
-      // not, so a failure here stops the load with the rest of the ledger.
-      const candidateResult = await candidateRequest;
-      if (superseded()) return;
-      if (!candidateResult.ok) {
-        setError(candidateResult.why);
-        return;
-      }
-
-      // Provisional entries, read after the confirmed ones and deliberately unable to
-      // fail the view. The ledger is the authority; a slips outage must not hide it, so a
-      // failure here is reported beside the rows instead of replacing them.
-      setSlipsError(null);
-      setSlips([]);
-      setSlipCorrections([]);
-      // Decisions travel with the slips and are cleared with them. Keeping stale ones while
-      // the slips they belong to failed to load would reconcile against records no longer on
-      // screen; keeping none while the slips loaded would present an overruled pairing as the
-      // rule's own. They are one response for exactly that reason (D-067).
-      setMatches([]);
+      // **One commit, with no await in it** (D-293), so slips never render against the previous
+      // window for a frame.
+      const { snapshot } = result;
+      // Provisional entries are replaced by what loaded, or emptied with an error beside the rows.
+      // Decisions travel with the slips and are cleared with them. Keeping stale ones while the
+      // slips they belong to failed to load would reconcile against records no longer on screen;
+      // keeping none while the slips loaded would present an overruled pairing as the rule's own.
+      // They are one response for exactly that reason (D-067).
+      setSlips(snapshot.slips.ok ? snapshot.slips.slips : []);
+      setMatches(snapshot.slips.ok ? snapshot.slips.matches : []);
+      setSlipCorrections(snapshot.slips.ok ? snapshot.slips.corrections : []);
+      setSlipsError(snapshot.slips.ok ? null : snapshot.slips.why);
       setDecisionError(null);
-      const slipsResult = await slipsRequest;
-      if (superseded()) return;
-      if (slipsResult.ok) {
-        setSlips(slipsResult.data.slips);
-        setMatches(slipsResult.data.matches);
-        setSlipCorrections(slipsResult.data.corrections);
-      } else setSlipsError(slipsResult.why);
-
-      // Cash entries, on the same terms: the confirmed ledger is the authority, so a failure
-      // here is reported beside the rows rather than replacing them. Corrections arrive on the
-      // same response as the entries they correct, and are cleared with them — showing an
-      // entry whose correction went missing would put a figure the owner has already replaced
-      // into the ledger and into its totals.
-      setCashError(null);
-      setCash([]);
-      setCashCorrections([]);
-      const cashResult = await cashRequest;
-      if (superseded()) return;
-      if (cashResult.ok) {
-        setCash(cashResult.data.entries);
-        setCashCorrections(cashResult.data.corrections);
-      } else setCashError(cashResult.why);
-
-      // Notification cards, last and on the same terms. A card that fails to load is a payment
-      // missing from the view, which is why it is said out loud below rather than left to a
-      // shorter row count nobody would notice.
-      setCardsError(null);
-      setCards([]);
+      // Cash corrections are cleared with their entries — showing an entry whose correction went
+      // missing would put a figure the owner has already replaced into the ledger and its totals.
+      setCash(snapshot.cash.ok ? snapshot.cash.entries : []);
+      setCashCorrections(snapshot.cash.ok ? snapshot.cash.corrections : []);
+      setCashError(snapshot.cash.ok ? null : snapshot.cash.why);
       // Corrections and decisions are cleared with the cards they belong to, for the reason slips
       // and cash do it: keeping stale ones would reconcile against records no longer on screen,
       // and keeping none while the cards loaded would present an overruled pairing as the rule's
       // own and silently un-retire a card the owner had retired.
-      setCardCorrections([]);
-      setCardDecisions([]);
-      const cardsResult = await cardsRequest;
-      if (superseded()) return;
-      if (cardsResult.ok) {
-        setCards(cardsResult.data.cards);
-        setCardCorrections(cardsResult.data.corrections);
-        setCardDecisions(cardsResult.data.decisions);
-      } else setCardsError(cardsResult.why);
-
-      // Categories, on the same fail-soft terms: a row's chip and the editor's picker both read
-      // this, but neither is the confirmed ledger itself, so an outage here must not hide it.
-      // Left at whatever it already held on a failure — usually empty, on the first load — rather
-      // than surfacing a banner for a list nothing above the table depends on.
-      //
-      // **Not cleared before its result is read, unlike the three loads above, and the difference matters
-      // now that the correction forms read this list instead of fetching their own.** Clearing it
-      // made every reload pass through a moment where `categories` was empty; a correction panel
-      // left open across that moment lost every option from its picker while the row's stored
-      // `category_id` was untouched, which is the blank-picker state `pickableCategories` exists
-      // to prevent. Slips, cash and cards are cleared because a stale row is a wrong row; a stale
-      // category *name* for one paint is not, so this keeps the last good list until the next one
-      // lands. That is also what the paragraph above always claimed it did.
-      const categoriesResult = await categoriesRequest;
-      if (superseded()) return;
-      if (categoriesResult.ok) setCategories(categoriesResult.data.categories);
-      // Only a label: a failure leaves the rows plainly "Excluded", which is still true.
-      const autoExcludedResult = await autoExcludedRequest;
-      if (superseded()) return;
-      setAutoExcluded(new Set(autoExcludedResult.ok ? autoExcludedResult.data.ids : []));
-      // Same rule: a failure leaves the rows shown as plainly "Excluded", which is still true, and
-      // nothing is hidden on an answer that did not arrive.
-      const duplicatesResult = await duplicatesRequest;
-      if (superseded()) return;
-      setDuplicates(new Set(duplicatesResult.ok ? duplicatesResult.data.ids : []));
-      // Machine categories (D-245), started only now because an own transfer is categorised from
-      // the exclusion above. Quiet like that label: a failure changes nothing on screen, and the
-      // rows are reloaded only when it wrote something (a re-run writes nothing, so this settles).
-      const categorisedRequest = ledgerRequest("/api/v1/transactions/auto-categorised", autoCategorisedResultSchema, {
-        fallback: "Categories could not be applied."
-      }, { method: "POST" });
-      // Only an addition to a row: a failure shows no receipt, which claims nothing about the row.
-      const receiptsResult = await receiptsRequest;
-      if (superseded()) return;
-      setReceiptByRow(new Map(receiptsResult.ok ? receiptsOnRows(receiptsResult.data.receipts) : []));
-      const deliveriesResult = await deliveriesRequest;
-      if (superseded()) return;
-      setDeliveryByRow(new Map(deliveriesResult.ok ? deliveriesOnRows(deliveriesResult.data.deliveries) : []));
-      setRideByRow(new Map(deliveriesResult.ok ? ridesOnRows(deliveriesResult.data.rides) : []));
-      const shopeeResult = await shopeeRequest;
-      if (superseded()) return;
-      setShopeeByRow(shopeeResult.ok ? shopeeOrdersOnRows(shopeeResult.data.orders) : new Map());
-
-      if (superseded()) return;
-      setAccounts(accountsResult.data.accounts);
-      setCandidates(candidateResult.data.candidates);
+      setCards(snapshot.cards.ok ? snapshot.cards.cards : []);
+      setCardCorrections(snapshot.cards.ok ? snapshot.cards.corrections : []);
+      setCardDecisions(snapshot.cards.ok ? snapshot.cards.decisions : []);
+      setCardsError(snapshot.cards.ok ? null : snapshot.cards.why);
+      // **Categories are not cleared on a failure, unlike the three loads above, and the difference
+      // matters now that the correction forms read this list instead of fetching their own.**
+      // Clearing it made every reload pass through a moment where `categories` was empty; a
+      // correction panel left open across that moment lost every option from its picker while the
+      // row's stored `category_id` was untouched, which is the blank-picker state
+      // `pickableCategories` exists to prevent. Slips, cash and cards are cleared because a stale
+      // row is a wrong row; a stale category *name* for one paint is not, so a failed load keeps
+      // the last good list (the snapshot carries `null`) until the next one lands.
+      if (snapshot.categories !== null) setCategories(snapshot.categories);
+      setAutoExcluded(snapshot.autoExcluded);
+      setDuplicates(snapshot.duplicates);
+      setReceiptByRow(snapshot.receiptByRow);
+      setDeliveryByRow(snapshot.deliveryByRow);
+      setRideByRow(snapshot.rideByRow);
+      setShopeeByRow(snapshot.shopeeByRow);
+      setAccounts(snapshot.accounts);
+      setCandidates(snapshot.candidates);
       staleChooser();
       // Set together, because they describe one fetch. `appliedRange` is what `loadMore` must walk
       // inside of — recording it only here, never from the live inputs, is what keeps an edited but
       // unapplied date field from reaching a deeper page before Reload does.
-      setAppliedRange(range);
+      setAppliedRange(snapshot.range);
       // Last, and it is what `loaded` is read from. A reload replaces the window rather than
       // extending it: the pages it just fetched are the newest ones again, and appending them to
       // a window that already held them would show every row twice.
-      setLedgerWindow(next);
+      setLedgerWindow(snapshot.window);
+
+      // Machine categories (D-245), started after the commit (D-293; it used to start after the
+      // auto-excluded and duplicates reads, and the server write is idempotent) because an own
+      // transfer is categorised from the exclusion the snapshot already read. Quiet like that
+      // label: a failure changes nothing on screen, and the rows are reloaded only when it wrote
+      // something (a re-run writes nothing, so this settles).
+      const categorisedRequest = ledgerRequest("/api/v1/transactions/auto-categorised", autoCategorisedResultSchema, {
+        fallback: "Categories could not be applied."
+      }, { method: "POST" });
       void categorisedRequest.then((categorised) => {
         if (!superseded() && categorised.ok && categorised.data.applied > 0) void load(automatic);
       });
-    } catch {
-      if (superseded()) return;
-      setError("The ledger could not be reached. Check that the local Supabase stack is running.");
     } finally {
       // **Only the newest load owns `busy`.** A superseded one clearing it would put the control
       // back to "Reload" while a load is still in flight — and the owner suite waits on exactly

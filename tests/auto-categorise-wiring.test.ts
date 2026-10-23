@@ -7,14 +7,16 @@ import { describe, expect, it } from "vitest";
 const source = (file: string) => readFileSync(file, "utf8");
 
 describe("auto-categoriser wiring", () => {
-  it("the ledger starts it only after the auto-excluded answer is in, and reloads only when it wrote", () => {
+  it("the ledger starts it only after the snapshot is committed (it holds the auto-excluded answer), and reloads only when it wrote", () => {
     const view = source("app/transactions-view.tsx");
-    const excluded = view.indexOf("const autoExcludedResult = await autoExcludedRequest;");
+    const committed = view.indexOf("setLedgerWindow(snapshot.window);");
     const categorised = view.indexOf('ledgerRequest("/api/v1/transactions/auto-categorised"');
-    expect(excluded).toBeGreaterThan(-1);
-    expect(categorised).toBeGreaterThan(excluded);
+    expect(committed).toBeGreaterThan(-1);
+    expect(categorised).toBeGreaterThan(committed);
     expect(view.indexOf('"/api/v1/transactions/auto-categorised"')).toBe(view.lastIndexOf('"/api/v1/transactions/auto-categorised"'));
     expect(view).toMatch(/categorised\.ok && categorised\.data\.applied > 0\) void load\(automatic\)/u);
+    // D-293: the loader is read-only, so the write cannot start before the exclusion it depends on is read.
+    expect(source("lib/browser/ledger-snapshot.ts")).not.toContain("auto-categorised");
   });
 
   it("an import runs it after auto_exclude_internal_transfers and swallows its failure", () => {

@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-273 … D-292**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-273 … D-293**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -410,6 +410,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-293** — The ledger view's derivation becomes `deriveLedgerView` and its load `loadLedgerSnapshot` (Open item 7 #4–5); supersedes D-132's refusal
 - **D-292** — Architecture review (Open item 7): Grab matches decided in one pure module (owner links hold against two-part rides), one device statement reader, every import entry point discards first
 - **D-291** — Server reads retry once on a network error or 5xx (GET/HEAD only); `/statistics` gains Spending by category over the page's own window (migration 063)
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
@@ -430,6 +431,19 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
+
+## D-293 — The ledger view's derivation becomes `deriveLedgerView` and its load `loadLedgerSnapshot` (Open item 7 #4–5); supersedes D-132's refusal
+
+- Date: 2026-10-23
+- Status: **Built** (owner granted commit and push this session). Front-end structure only: no route, RPC, migration or backup change. Supersedes D-132's "What deliberately did not move" (`docs/decisions/ARCHIVE-D-130-D-133.md`); D-132's seven-file split stands.
+- **Why D-132's arithmetic no longer decides it.** D-132 refused a view model because it needed ~16 values in and ~24 out, which only moved the reading cost. Two things changed. (1) `app/transactions-view.tsx` grew back from 880 to 1,882 lines. (2) The rules the pipeline enforces — reconciliation over window ∪ candidates (D-063, D-158), the chooser's lazy set (D-289), the combined balance from SQL (D-159), duplicates hidden for display only (D-290), the BigInt totals splice (D-155) — can only be tested through the component, so `tests/duplicate-hiding.test.ts` re-composes `reconcileLedger` + `summarizeRows` + `withoutDuplicates` by hand: a copy that cannot catch, say, totals read from `shownRows`. The win is a tested interface, not shorter reading.
+- **`deriveLedgerView(data, filters, choosing)`** (`lib/ledger-view.ts`), pure: `data` = what the load and chooser fetched (window, candidates, accounts, slips/cash/cards in force, matches, card decisions, duplicates, chooser set); `filters` = account, query, status, order, group-by-day, show-duplicates; `choosing` = the slip id and card id being matched. Returns one view (picking flags, layout, reconciled, rows visible and shown, offered sets, totals, balance, day heads, counts). Grouping the inputs into three objects is what answers "16 in, 24 out".
+- **Recomputation stays as fine-grained as the `useMemo` chain was.** `createLedgerViewDeriver()` caches each stage (reconcile, chooser, filter, summary) on its inputs' identity; `deriveLedgerView` is the uncached composition the tests call, and the component calls a deriver held in a ref. One composition, so the tests measure the shipped function. Typing in the search box must not re-run `reconcileLedger`.
+- **`loadLedgerSnapshot(range)`** (`lib/browser/ledger-snapshot.ts`) issues the same requests in the same wave and returns one result: refused (401/403 on accounts), failed (accounts, any page, or the candidate set — D-158: a missing candidate set blocks), or loaded (window, candidates, accounts, and each fail-soft part with its own error: slips with matches and corrections, cash, cards with corrections and decisions, categories, auto-excluded, duplicates, receipts, deliveries/rides, Shopee). It is read-only: the auto-categorise POST stays in the component and starts after the commit (previously after the auto-excluded and duplicates reads; the server write is idempotent, D-245), and a reload follows only when it applied something.
+- **One commit instead of interleaved ones.** The component commits a loaded snapshot in one synchronous block after its supersede check, so slips no longer render against the previous window for a frame. A failed load leaves the previous state as before; categories keep their last good list on failure (unchanged). The 29 `useState` stay: the snapshot is spread into them, because the decide/correct paths write them individually.
+- **Not done:** `loadMore` and the chooser load stay in the component; the decide/correct handlers are untouched. `ALL_ACCOUNTS`, `ALL_STATUSES`, `Order`, `StatusFilter`, `LedgerBalance` and `LedgerLayout` moved into `lib/ledger-view.ts` so `lib` imports nothing from `app`; `app/ledger-shared.ts` re-exports them.
+- **Result:** `app/transactions-view.tsx` 1,882 → 1,337 lines; `lib/ledger-view.ts` (each stage a single-entry `Object.is` cache, finer than the four stages planned so each matches one old `useMemo`), `lib/browser/ledger-snapshot.ts`. `tests/duplicate-hiding.test.ts` lost its hand-composed pipeline tests to `tests/ledger-view.test.ts`; `tests/auto-categorise-wiring.test.ts` now finds the POST after the commit.
+- Evidence: `tests/ledger-view.test.ts` (17; red-proved: totals from `shownRows`, and the reconcile stage uncached), `tests/ledger-snapshot.test.ts` (14; red-proved: candidate failure made soft). `pnpm verify` green (lint 0 errors, tsc, docs, build); with the local stack up, Vitest 103 files (1,975 passed / 19 skipped) and owner Playwright 32 of 32. `/code-review` high: 6 findings, 3 fixed (the `lib` → `app` import, two comments), 1 intended (POST timing), 2 skipped (populated snapshot maps untested; a commit-block throw is no longer caught, unreachable today).
 
 ## D-292 — Architecture review (Open item 7): Grab matches decided in one pure module (owner links hold against two-part rides), one device statement reader, every import entry point discards first
 
