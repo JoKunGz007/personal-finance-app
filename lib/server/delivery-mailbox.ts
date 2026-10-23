@@ -41,8 +41,7 @@
 import type { ImapFlow, FetchMessageObject, SearchObject } from "imapflow";
 import type { MessagePart } from "@/lib/server/statement-mailbox";
 import {
-  classifyGrabReceipt, htmlToLines, parseGrabDineOut, parseGrabExpress, parseGrabFood, parseGrabLateDelivery, parseGrabMart, parseGrabRide,
-  readForwardedDate, type DeliveryRead, type ParsedDelivery, type ParsedRide
+  htmlToLines, parseGrabMail, type ParsedDelivery, type ParsedRide
 } from "@/lib/delivery-grab";
 import type { DeliverySyncReport } from "@/lib/deliveries";
 
@@ -198,34 +197,21 @@ export async function readMessage(
       resolved = false;
       continue;
     }
-    const lines = htmlToLines(html);
-    const kind = classifyGrabReceipt(lines);
-    if (kind === "ride") {
-      const parsed = parseGrabRide(lines);
-      if (parsed.ok) rides.push(parsed.value);
-      else {
-        countRefusal(report, `RIDE_${parsed.code}`);
-        resolved = false;
-      }
-    } else if (kind === "other") {
+    const mail = parseGrabMail(htmlToLines(html), document.mailSentAt);
+    if (mail.kind === "other") {
       report.notReceipts += 1;
-    } else {
-      // A Gmail inline forward carries Grab's own send time in its body; the envelope's is the forward's.
-      const mailSentAt = lines.some((line) => line.includes("Forwarded message")) ? readForwardedDate(lines) : document.mailSentAt;
-      const parsed: DeliveryRead<ParsedDelivery> =
-        kind === "mart" ? parseGrabMart(lines)
-          : kind === "dine_out" ? parseGrabDineOut(lines)
-            : kind === "express" ? parseGrabExpress(lines, mailSentAt)
-              : kind === "late" ? parseGrabLateDelivery(lines, mailSentAt)
-                : parseGrabFood(lines);
-      if (parsed.ok) {
-        if (kind === "late") late.add(orders.length);
-        orders.push(parsed.value);
-      }
+    } else if (mail.kind === "ride") {
+      if (mail.read.ok) rides.push(mail.read.value);
       else {
-        countRefusal(report, parsed.code);
+        countRefusal(report, `RIDE_${mail.read.code}`);
         resolved = false;
       }
+    } else if (mail.read.ok) {
+      if (mail.kind === "late") late.add(orders.length);
+      orders.push(mail.read.value);
+    } else {
+      countRefusal(report, mail.read.code);
+      resolved = false;
     }
   }
   if (orders.length > 0) {

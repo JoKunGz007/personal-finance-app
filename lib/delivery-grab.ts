@@ -906,3 +906,31 @@ export function parseGrabLateDelivery(lines: readonly string[], mailSentAt: stri
     }
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// The one dispatch (D-294): the mail sync and `scripts/measure-grab-mail.ts` both call it.
+// ---------------------------------------------------------------------------------------------
+
+/** One receipt body, read by the reader its template calls for. `other` is not a receipt this app reads. */
+export type GrabMailRead =
+  | { readonly kind: "other" }
+  | { readonly kind: "ride"; readonly read: DeliveryRead<ParsedRide> }
+  | { readonly kind: Exclude<GrabKind, "ride" | "other">; readonly read: DeliveryRead<ParsedDelivery> };
+
+/**
+ * Classifies one receipt body's lines and runs its reader. `envelopeSentAt` is the message's own
+ * send time; a Gmail inline forward carries Grab's send time in its body, and that one wins.
+ */
+export function parseGrabMail(lines: readonly string[], envelopeSentAt: string | null): GrabMailRead {
+  const kind = classifyGrabReceipt(lines);
+  if (kind === "other") return { kind };
+  if (kind === "ride") return { kind, read: parseGrabRide(lines) };
+  const mailSentAt = lines.some((line) => line.includes("Forwarded message")) ? readForwardedDate(lines) : envelopeSentAt;
+  const read =
+    kind === "mart" ? parseGrabMart(lines)
+      : kind === "dine_out" ? parseGrabDineOut(lines)
+        : kind === "express" ? parseGrabExpress(lines, mailSentAt)
+          : kind === "late" ? parseGrabLateDelivery(lines, mailSentAt)
+            : parseGrabFood(lines);
+  return { kind, read };
+}

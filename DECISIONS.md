@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-273 … D-293**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-273 … D-294**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -410,6 +410,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-294** — One Grab mail dispatch, `parseGrabMail`, called by Sync and by `scripts/measure-grab-mail.ts` (Open item 7 #7)
 - **D-293** — The ledger view's derivation becomes `deriveLedgerView` and its load `loadLedgerSnapshot` (Open item 7 #4–5); supersedes D-132's refusal
 - **D-292** — Architecture review (Open item 7): Grab matches decided in one pure module (owner links hold against two-part rides), one device statement reader, every import entry point discards first
 - **D-291** — Server reads retry once on a network error or 5xx (GET/HEAD only); `/statistics` gains Spending by category over the page's own window (migration 063)
@@ -431,6 +432,15 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
+
+## D-294 — One Grab mail dispatch, `parseGrabMail`, called by Sync and by `scripts/measure-grab-mail.ts` (Open item 7 #7)
+
+- Date: 2026-10-23
+- Status: **Built** (owner granted commit and push this session). Pure refactor of the read path: no route, RPC, migration or stored-value change.
+- **Why.** `readMessage` (`lib/server/delivery-mailbox.ts`) classified each receipt body and picked its reader inline; the measuring script re-implemented that choice. The copy had drifted: it gave the express and late readers a fixed stand-in send time and skipped the forwarded-mail rule (a Gmail inline forward's body date replaces the envelope's), so its express and late refusal counts could differ from what Sync refuses. CLAUDE.md: measure the shipped function, not a copy.
+- **`parseGrabMail(lines, envelopeSentAt)`** (`lib/delivery-grab.ts`) classifies the lines, applies the forwarded-date rule, runs the one reader the kind calls for, and returns `{ kind: "other" }`, `{ kind: "ride", read }` or `{ kind, read }` for the five order kinds. `readMessage` keeps what is Sync's own: refusal counting (`RIDE_` prefix for rides), the late-delivery defer rule, and the stores. The script calls the same function with the same `document.mailSentAt`, and `--rides-parse` now tallies those reads instead of calling `parseGrabRide` itself. The script also prints a new value-free line, `Reads by kind` (read or refusal code per kind).
+- **Not shared, on purpose:** the script still has no store, so it cannot measure `DISAGREES` or the late defer rule; its body decoding (`decodeBody` with the fetch's `binaryParts`) was already the shipped function.
+- Evidence: `tests/delivery-grab-services.test.ts` `parseGrabMail` (2 tests; red-proved: the forward rule disabled fails the forwarded express case); `tests/delivery-mailbox.test.ts` `readMessage` unchanged and green; the script bundles with esbuild. `pnpm verify` green (lint 0 errors, tsc, docs, build); with the local stack up, Vitest 103 files (1,977 passed / 19 skipped). `/code-review` high: 4 findings, 3 fixed (a PLAN-number comment, a header wrap, the late forward case untested), 1 skipped (the `kind` alias the counters use).
 
 ## D-293 — The ledger view's derivation becomes `deriveLedgerView` and its load `loadLedgerSnapshot` (Open item 7 #4–5); supersedes D-132's refusal
 

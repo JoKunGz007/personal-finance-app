@@ -1,10 +1,10 @@
 // Measures the GrabFood reader against the real statement mailbox (PLAN task 58 part 1). Owner-run.
 //
 // **Read-only and value-free.** It opens the mailbox with the same session code the hosted Sync uses,
-// runs every Grab e-receipt through the app's own reader (`lib/delivery-grab.ts`,
-// `lib/server/delivery-mailbox.ts`), and prints counts, refusal codes and masked line shapes
-// (`lineShape`: labels kept, every value masked). It sets no flag, writes no file and touches no
-// database. The app password is typed at a hidden prompt and never stored — same rule as
+// runs every Grab e-receipt through the shipped dispatch (`parseGrabMail` in `lib/delivery-grab.ts`,
+// which Sync's `readMessage` calls with the same send time, D-294), and prints counts, refusal
+// codes and masked line shapes (`lineShape`: labels kept, every value masked). It sets no flag,
+// writes no file and touches no database. The app password is typed at a hidden prompt and never stored — same rule as
 // `scripts/fetch-statements.mjs` (D-035); the mailbox address comes from the gitignored
 // `statement-mailbox.json` that script already reads.
 //
@@ -15,8 +15,7 @@
 import { readFile } from "node:fs/promises";
 import { ImapFlow, type FetchMessageObject, type SearchObject } from "imapflow";
 import {
-  classifyGrabReceipt, htmlToLines, lineShape, pairAmounts, parseGrabDineOut, parseGrabExpress, parseGrabFood, parseGrabLateDelivery, parseGrabMart, parseGrabRide,
-  FOOD_LABEL, TOTAL_LABEL
+  htmlToLines, lineShape, pairAmounts, parseGrabMail, FOOD_LABEL, TOTAL_LABEL, type DeliveryRead, type ParsedRide
 } from "@/lib/delivery-grab";
 import { DELIVERY_FLAG, DELIVERY_SEARCH, decodeBody, receiptDocuments } from "@/lib/server/delivery-mailbox";
 import { openMailbox } from "@/lib/server/statement-mailbox-session";
@@ -176,6 +175,8 @@ async function main() {
     let okShape: string[] | null = null;
     let rideShape: string[] | null = null;
     const rides: string[][] = [];
+    const rideReads: DeliveryRead<ParsedRide>[] = [];
+    const outcomes = new Map<string, number>();
     const marts: string[][] = [];
     const bigBundleTypes = new Map<string, number>();
     const optionCounts = new Map<number, number>();
@@ -195,18 +196,23 @@ async function main() {
         const html = raw ? decodeBody(raw, document, fetched && fetched.binaryParts ? fetched.binaryParts.has(document.part) : false) : null;
         if (html === null) { undecodable += 1; continue; }
         const lines = htmlToLines(html);
-        const kind = classifyGrabReceipt(lines);
+        // The shipped dispatch: `readMessage` calls the same function with the same send time.
+        const mail = parseGrabMail(lines, document.mailSentAt);
+        const { kind } = mail;
         kinds[kind] += 1;
+        if (mail.kind !== "other") {
+          const outcome = `${mail.kind} ${mail.read.ok ? "read" : `refused ${mail.read.code}`}`;
+          outcomes.set(outcome, (outcomes.get(outcome) ?? 0) + 1);
+        }
         if (kind === "ride" && !rideShape) rideShape = lines.slice(0, 40);
-        if (kind === "ride") rides.push(lines);
+        if (mail.kind === "ride") { rides.push(lines); rideReads.push(mail.read); }
         // Also from the other kinds: GrabExpress prints the ride heading, so it is read as a ride.
         if ((kind !== "food" && kind !== "ride") || OTHER_SERVICES.some(([, pattern]) => lines.some((line) => pattern.test(line)))) marts.push([`(read as ${kind})`, ...lines]);
         // `--late` (owner-granted real-data read, 2026-10-06): each refused mart, dine-out, express or
         // late document's refusal and its lines, amounts unmasked and everything else through
-        // `lineShape`, to the terminal only. The send time is a stand-in: only the arithmetic is read.
-        if (process.argv.includes("--late") && (kind === "late" || kind === "express" || kind === "mart" || kind === "dine_out")) {
-          const stand = "2000-01-01T12:00:00+07:00";
-          const read = kind === "late" ? parseGrabLateDelivery(lines, stand) : kind === "express" ? parseGrabExpress(lines, stand) : kind === "mart" ? parseGrabMart(lines) : parseGrabDineOut(lines);
+        // `lineShape`, to the terminal only. The read is the shipped one; its send time is never printed.
+        if (process.argv.includes("--late") && (mail.kind === "late" || mail.kind === "express" || mail.kind === "mart" || mail.kind === "dine_out")) {
+          const read = mail.read;
           if (read.ok) console.log(`Read ${kind}`);
           else {
             const money = /^(?:-|−)?\s*฿\s*(?:-|−)?\s*[\d,.]+$|^[\d,]+\.\d{2}$/u;
@@ -214,8 +220,8 @@ async function main() {
             console.log(lines.map((line, at) => `    ${String(at).padStart(3)} ${money.test(line.trim()) ? line : lineShape(line)}`).join("\n"));
           }
         }
-        if (kind !== "food") continue;
-        const parsed = parseGrabFood(lines);
+        if (mail.kind !== "food") continue;
+        const parsed = mail.read;
         if (parsed.ok) {
           ok += 1;
           bookings.set(parsed.value.bookingId, (bookings.get(parsed.value.bookingId) ?? 0) + 1);
@@ -243,6 +249,7 @@ async function main() {
     }
 
     console.log(`Documents: food ${kinds.food}, ride ${kinds.ride}, other ${kinds.other}, mart ${kinds.mart}, express ${kinds.express}, dine-out ${kinds.dine_out}, late ${kinds.late}, undecodable ${undecodable}`);
+    console.log(`Reads by kind: ${[...outcomes].sort(([a], [b]) => a.localeCompare(b)).map(([key, n]) => `${key} ${n}`).join(", ") || "none"}`);
     console.log(`Food read: ${ok}; refused: ${[...refused].map(([code, n]) => `${code} ${n}`).join(", ") || "none"}`);
     console.log(`Distinct booking IDs: ${bookings.size}; read more than once: ${[...bookings.values()].filter((n) => n > 1).length}`);
     console.log(`Zero-total ${zeroTotal}; no delivery line ${noFee}; no payment line ${noPayment}; with options ${withOptions}; with discounts ${discounted}; with charges ${charged}`);
@@ -258,7 +265,7 @@ async function main() {
     if (rideShape && !process.argv.includes("--rides")) console.log(`\nOne ride receipt, first 40 lines (masked):\n${shapeOf(rideShape)}`);
     if (process.argv.includes("--rides")) printRideTemplate(rides);
     if (process.argv.includes("--rides-detail")) printRideDetail(rides);
-    if (process.argv.includes("--rides-parse")) printRideParse(rides);
+    if (process.argv.includes("--rides-parse")) printRideParse(rideReads);
     if (process.argv.includes("--mart")) printMart(marts);
   } finally {
     await session.release();
@@ -372,18 +379,17 @@ function printRideDetail(rides: readonly string[][]) {
 }
 
 /**
- * `--rides-parse` (D-222): the app's own ride reader, `parseGrabRide`, over every ride receipt, as
+ * `--rides-parse` (D-222): the shipped dispatch's ride reads (`parseGrabMail`) over every ride receipt, as
  * counts only — how many read, each refusal code with its fixed message, and yes/no tallies of the
  * shapes the reader accepted. No place, name, time, booking ID or amount is printed.
  */
-function printRideParse(rides: readonly string[][]) {
+function printRideParse(rides: readonly DeliveryRead<ParsedRide>[]) {
   const outcomes = new Map<string, number>();
   const bump = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
   const types = new Map<string, number>(), adjustments = new Map<string, number>(), payments = new Map<string, number>();
   const bookings = new Set<string>();
   let overnight = 0, duplicates = 0;
-  for (const lines of rides) {
-    const parsed = parseGrabRide(lines);
+  for (const parsed of rides) {
     if (!parsed.ok) { bump(outcomes, `refused ${parsed.code}: ${parsed.message}`); continue; }
     const ride = parsed.value;
     bump(outcomes, "read");
@@ -398,7 +404,7 @@ function printRideParse(rides: readonly string[][]) {
     console.log(`\n${label}:`);
     for (const [key, n] of [...map].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(4)}  ${key}`);
   };
-  console.log(`\nparseGrabRide over ${rides.length} ride receipts:`);
+  console.log(`\nRide reads over ${rides.length} ride receipts:`);
   print("Outcome", outcomes);
   print("Ride type", types);
   print("Adjustments (names as printed)", adjustments);

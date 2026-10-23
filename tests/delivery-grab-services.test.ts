@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { classifyGrabReceipt, parseGrabDineOut, parseGrabExpress, parseGrabLateDelivery, parseGrabMart, readForwardedDate } from "@/lib/delivery-grab";
+import { classifyGrabReceipt, parseGrabDineOut, parseGrabExpress, parseGrabLateDelivery, parseGrabMail, parseGrabMart, readForwardedDate } from "@/lib/delivery-grab";
 
 // Every value is invented (`docs/FIXTURE_POLICY.md`). Layouts follow the shapes described in D-247.
 
@@ -203,6 +203,24 @@ describe("parseGrabExpress", () => {
   });
   test("no printed date is refused", () => {
     expect(parseGrabExpress(expressLines({ date: "yesterday" }), null)).toMatchObject({ ok: false, code: "MISSING_FIELD" });
+  });
+});
+
+describe("parseGrabMail", () => {
+  const forward = ["---------- Forwarded message ---------", "From: Invented <x@example.invalid>", "Date: Thu, Apr 9, 2026 at 9:41 PM"];
+  test("a forward's body date replaces the envelope's; otherwise the envelope's is used", () => {
+    const forwarded = parseGrabMail([...forward, ...expressLines()], "2026-04-12T08:00:00+07:00");
+    expect(forwarded).toMatchObject({ kind: "express", read: { ok: true, value: { receiptSentAt: "2026-04-09T21:41:00+07:00" } } });
+    const direct = parseGrabMail(expressLines(), "2026-04-12T08:00:00+07:00");
+    expect(direct).toMatchObject({ kind: "express", read: { ok: true, value: { receiptSentAt: "2026-04-09T12:00:00+07:00" } } });
+    const late = parseGrabMail([...forward, ...lateLines()], "2026-04-12T08:00:00+07:00");
+    expect(late).toMatchObject({ kind: "late", read: { ok: true, value: { receiptSentAt: "2026-04-09T21:41:00+07:00" } } });
+    expect(parseGrabMail(lateLines(), null)).toMatchObject({ kind: "late", read: { ok: false, code: "MISSING_FIELD" } });
+  });
+  test("each kind reaches its own reader; other is not read", () => {
+    expect(parseGrabMail(martLines(), null)).toMatchObject({ kind: "mart", read: { ok: true, value: { service: "mart" } } });
+    expect(parseGrabMail(dineOutLines(), null)).toMatchObject({ kind: "dine_out", read: { ok: true, value: { service: "dine_out" } } });
+    expect(parseGrabMail(["Invented cover note"], null)).toEqual({ kind: "other" });
   });
 });
 
