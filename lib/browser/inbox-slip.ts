@@ -35,15 +35,23 @@ export async function openInboxSlip(name: string): Promise<Outcome<File>> {
   }
 }
 
-/** Removes a captured slip's queued file and says in words whether that worked. */
-export async function releaseInboxSlip(name: string): Promise<{ readonly ok: boolean; readonly text: string }> {
+/**
+ * Removes one queued file from the owner's Inbox once what it held is stored (a captured slip, an
+ * imported statement): true only when exactly that file went. Never throws, because a removal that
+ * fails never undoes the save; each caller words the outcome.
+ */
+export async function removeQueuedFile(name: string): Promise<boolean> {
   try {
     const supabase = browserSupabase();
     const uid = supabase ? await ownerUid(supabase) : null;
     const removed = supabase && uid?.ok ? await removeFromInbox(supabase, uid.value, [name]) : null;
-    if (removed?.ok && removed.value === 1) return { ok: true, text: INBOX_SLIP_REMOVED };
+    return removed?.ok === true && removed.value === 1;
   } catch {
-    // Falls through to the same sentence: the capture itself already succeeded.
+    return false;
   }
-  return { ok: false, text: INBOX_SLIP_NOT_REMOVED };
+}
+
+/** Removes a captured slip's queued file and says in words whether that worked. */
+export async function releaseInboxSlip(name: string): Promise<{ readonly ok: boolean; readonly text: string }> {
+  return (await removeQueuedFile(name)) ? { ok: true, text: INBOX_SLIP_REMOVED } : { ok: false, text: INBOX_SLIP_NOT_REMOVED };
 }

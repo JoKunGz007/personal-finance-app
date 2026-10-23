@@ -22,8 +22,7 @@ import { ledgerRequest } from "@/lib/wire";
 import { StatementBatch, type BatchHandoff } from "@/app/statement-batch";
 import { attachmentPath, parseMailboxParam, type MailboxRef } from "@/lib/statement-sync";
 import { INBOX_STATEMENT_NAME, readInboxStatement, readMailboxStatement } from "@/lib/browser/inbox-statement-client";
-import { ownerUid, removeFromInbox } from "@/lib/browser/inbox-storage";
-import { browserSupabase } from "@/lib/browser/supabase";
+import { removeQueuedFile } from "@/lib/browser/inbox-slip";
 import { readStatementPdf } from "@/lib/browser/statement-reader";
 import { statementHeldReason } from "@/lib/inbox-drain";
 import { LedgerNote } from "@/app/ledger-note";
@@ -448,15 +447,9 @@ export function ImportBench() {
 
   /** Removes a confirmed statement from the Inbox; says in words whether that worked. A failure never undoes the import. */
   async function removeInboxObject(name: string): Promise<string> {
-    try {
-      const supabase = browserSupabase();
-      const uid = supabase ? await ownerUid(supabase) : null;
-      const removed = supabase && uid?.ok ? await removeFromInbox(supabase, uid.value, [name]) : null;
-      if (removed?.ok && removed.value === 1) return " The PDF was removed from the Inbox.";
-    } catch {
-      // Falls through to the same sentence: the import itself already succeeded.
-    }
-    return " The PDF could not be removed from the Inbox; remove it there.";
+    return (await removeQueuedFile(name))
+      ? " The PDF was removed from the Inbox."
+      : " The PDF could not be removed from the Inbox; remove it there.";
   }
 
   async function loadAccounts(): Promise<LedgerAccount[] | null> {

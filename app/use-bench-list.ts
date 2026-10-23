@@ -5,8 +5,9 @@ import { useLoadOnArrival } from "@/app/use-load-on-arrival";
 import type { WireResult } from "@/lib/wire";
 
 /**
- * The list load five benches (deliveries, receipts, Shopee, categories, slips) each copied: busy on,
- * errors cleared, one request, then data, a sign-in note or an error (D-301).
+ * The list load five benches (deliveries, receipts, Shopee, categories, slips) and the two statistics
+ * panels (deliveries, receipts) each copied: busy on, errors cleared, one request, then data, a
+ * sign-in note or an error (D-301, D-302).
  *
  * **Only the latest load commits.** A sequence number counts the calls; an answer that is no longer
  * the newest is dropped, data, error, note and `busy` alike. Without it two overlapping loads let
@@ -15,8 +16,10 @@ import type { WireResult } from "@/lib/wire";
  *
  * Signed out is not a failure on an automatic load (arrival or the sign-in retry): a 401 becomes
  * `signInNote` (`signInText`), a 403 shows the route's own words there. A manual load shows both as
- * `error`. `setData` is for a bench that folds a written row into its list; `setBusy` and `setError`
- * are for a write that holds the controls (Shopee's `act`).
+ * `error`. `error` is the load's alone: a bench keeps a write's refusal in its own state, or the
+ * reload that follows the write would clear it, or show it as a failed load (D-302). `setData` is for
+ * a bench that folds a written row into its list; `setBusy` is for a write that holds the controls
+ * (Shopee's `act`).
  */
 
 const NOTHING = async () => {};
@@ -30,7 +33,6 @@ export function useBenchList<T>(
   busy: boolean;
   setBusy: Dispatch<SetStateAction<boolean>>;
   error: string | null;
-  setError: Dispatch<SetStateAction<string | null>>;
   signInNote: string | null;
   load: (automatic?: boolean) => Promise<void>;
 } {
@@ -70,5 +72,5 @@ export function useBenchList<T>(
   // Always called, so the hook count never changes; a bench that loads on demand passes a no-op.
   useLoadOnArrival(options.onArrival === false ? NOTHING : load, signInNote !== null);
 
-  return { data, setData, busy, setBusy, error, setError, signInNote, load };
+  return { data, setData, busy, setBusy, error, signInNote, load };
 }

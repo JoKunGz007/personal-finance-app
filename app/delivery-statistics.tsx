@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { formatDate, formatMonthParts } from "@/app/ledger-shared";
 import { CollapsibleSection } from "@/app/collapsible-section";
 import { LedgerNote } from "@/app/ledger-note";
-import { useLoadOnArrival } from "@/app/use-load-on-arrival";
-import { deliveryStatisticsSchema, type DeliveryStatistics } from "@/lib/delivery-statistics";
+import { useBenchList } from "@/app/use-bench-list";
+import { deliveryStatisticsSchema } from "@/lib/delivery-statistics";
 import { formatThb } from "@/lib/money";
 import { ledgerRequest } from "@/lib/wire";
 
@@ -56,32 +56,11 @@ function Table({ id, title, columns, rows }: {
  * Loaded on arrival, and reloaded when a Sync or a LINE MAN save changes what is stored.
  */
 export function DeliveryStatisticsPanel({ changes }: { changes: number }) {
-  const [stats, setStats] = useState<DeliveryStatistics | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [signInNote, setSignInNote] = useState<string | null>(null);
-
-  const load = useCallback(async (automatic = false) => {
-    setBusy(true);
-    setError(null);
-    setSignInNote(null);
-    const result = await ledgerRequest("/api/v1/deliveries/statistics", deliveryStatisticsSchema, {
-      fallback: "Delivery statistics could not be loaded.",
-      unreachable: "The ledger could not be reached, so order statistics are not shown.",
-      offContract: "The order statistics did not match their contract, so none are shown."
-    });
-    setBusy(false);
-    if (!result.ok) {
-      if (automatic && (result.status === 401 || result.status === 403)) {
-        setSignInNote(result.status === 401 ? "Sign in to see order statistics." : result.why);
-        return;
-      }
-      setError(result.why);
-      return;
-    }
-    setStats(result.data);
-  }, []);
-  useLoadOnArrival(load, signInNote !== null);
+  const { data: stats, busy, error, signInNote, load } = useBenchList(() => ledgerRequest("/api/v1/deliveries/statistics", deliveryStatisticsSchema, {
+    fallback: "Delivery statistics could not be loaded.",
+    unreachable: "The ledger could not be reached, so order statistics are not shown.",
+    offContract: "The order statistics did not match their contract, so none are shown."
+  }), { signInText: "Sign in to see order statistics." });
 
   const shown = useRef(false);
   useEffect(() => { shown.current = stats !== null; }, [stats]);

@@ -48,18 +48,21 @@ function matchChip(order: ShopeeViewOrder, view: ShopeeView): Chip {
 const LIST_LIMIT = 20;
 
 export function ShopeeBench() {
-  const { data: view, busy, setBusy, error, setError, signInNote, load } = useBenchList(getShopeeView, { signInText: "Sign in to see Shopee orders." });
+  const { data: view, busy, setBusy, error, signInNote, load } = useBenchList(getShopeeView, { signInText: "Sign in to see Shopee orders." });
   const [all, setAll] = useState(false);
+  // Apart from the hook's `error`, which is the load's: a refused write is not a list that failed to load.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  // A write that fails (a 409 clash included) shows its message after the reload, which clears errors.
+  // A write reloads the list either way; one that fails (a 409 clash included) keeps its own message.
   const act = useCallback<Act>((write) => {
     void (async () => {
       setBusy(true);
+      setSaveError(null);
       const result = await write();
+      if (!result.ok) setSaveError(result.why);
       await load();
-      if (!result.ok) setError(result.why);
     })();
-  }, [load, setBusy, setError]);
+  }, [load, setBusy]);
 
   const months = view?.summary.months ?? [];
   const current = months.at(-1);
@@ -72,7 +75,7 @@ export function ShopeeBench() {
           <div><h2 id="shopee-month-title">{current ? monthLabel(current.month) : "This month"}</h2></div>
         </div>
         <div className="ledger-controls">
-          <button type="button" className="secondary-button" aria-label={view ? "Reload Shopee orders" : undefined} disabled={busy} onClick={() => void load()}>
+          <button type="button" className="secondary-button" aria-label={view ? "Reload Shopee orders" : undefined} disabled={busy} onClick={() => { setSaveError(null); void load(); }}>
             {busy ? "Loading…" : view ? "Reload" : "Show Shopee orders"}
           </button>
         </div>
@@ -81,6 +84,12 @@ export function ShopeeBench() {
           <div className="warning error" role="alert">
             <strong>Not loaded</strong>
             <span>{error}</span>
+          </div>
+        ) : null}
+        {saveError ? (
+          <div className="warning error" role="alert">
+            <strong>Not saved</strong>
+            <span>{saveError}</span>
           </div>
         ) : null}
         {current ? (

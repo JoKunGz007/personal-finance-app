@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { displayBranch, formatDate, formatMonthParts } from "@/app/ledger-shared";
 import { CollapsibleSection } from "@/app/collapsible-section";
 import { LedgerNote } from "@/app/ledger-note";
-import { useLoadOnArrival } from "@/app/use-load-on-arrival";
+import { useBenchList } from "@/app/use-bench-list";
 import { formatThb } from "@/lib/money";
 import { receiptStatisticsSchema, type ReceiptStatistics } from "@/lib/receipt-statistics";
 import { ledgerRequest } from "@/lib/wire";
@@ -85,32 +85,11 @@ function GroupTable({ id, title, label, rows }: {
  * added to anything and do not appear on `/statistics`. Loaded on arrival, like the receipt list.
  */
 export function ReceiptStatisticsPanel({ saves }: { saves: number }) {
-  const [stats, setStats] = useState<ReceiptStatistics | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [signInNote, setSignInNote] = useState<string | null>(null);
-
-  const load = useCallback(async (automatic = false) => {
-    setBusy(true);
-    setError(null);
-    setSignInNote(null);
-    const result = await ledgerRequest("/api/v1/receipts/statistics", receiptStatisticsSchema, {
-      fallback: "Receipt statistics could not be loaded.",
-      unreachable: "The ledger could not be reached, so receipt statistics are not shown.",
-      offContract: "The receipt statistics did not match their contract, so none are shown."
-    });
-    setBusy(false);
-    if (!result.ok) {
-      if (automatic && (result.status === 401 || result.status === 403)) {
-        setSignInNote(result.status === 401 ? "Sign in to see receipt statistics." : result.why);
-        return;
-      }
-      setError(result.why);
-      return;
-    }
-    setStats(result.data);
-  }, []);
-  useLoadOnArrival(load, signInNote !== null);
+  const { data: stats, busy, error, signInNote, load } = useBenchList(() => ledgerRequest("/api/v1/receipts/statistics", receiptStatisticsSchema, {
+    fallback: "Receipt statistics could not be loaded.",
+    unreachable: "The ledger could not be reached, so receipt statistics are not shown.",
+    offContract: "The receipt statistics did not match their contract, so none are shown."
+  }), { signInText: "Sign in to see receipt statistics." });
 
   const shown = useRef(false);
   useEffect(() => { shown.current = stats !== null; }, [stats]);
