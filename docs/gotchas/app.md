@@ -390,3 +390,10 @@ the top of `GOTCHAS.md`.
 - Cause: `Intl.DateTimeFormat` and `toLocale*String` format an instant in the runtime's zone unless `timeZone` is given; the offset in the ISO string only fixes the instant, not the zone it is shown in.
 - Avoid: pass `timeZone: "Asia/Bangkok"` to every formatter that shows a ledger date or day; test under a forced non-Bangkok zone.
 - Verify: 2026-10-24 (D-304), `tests/bangkok-date-format.test.ts` pins a non-Bangkok zone over `formatDate`, `formatDateParts`, `formatDayHeading` and `shortDay`.
+
+## `PGRST303` does not mean the token expired
+
+- Symptom: a 500 whose log reads `code: 'PGRST303'` looks like an expired session, but sibling reads in the same request, carrying the same token, passed; a floor on remaining token life (D-303) does not stop it.
+- Cause: PostgREST uses PGRST303 for every JWT claim failure (expiry, issued-at or not-before in the future, audience), and the app logged only the code.
+- Avoid: read PostgREST's message before diagnosing; `authErrorMessage` (`lib/server/row-cap.ts`) logs it for PGRST3xx codes. Do not size a token-life floor from a PGRST303 alone.
+- Verify: 2026-10-24 (D-305), production log: one RPC failed with PGRST303 while eight reads on the same client passed, on a token refreshed moments before.

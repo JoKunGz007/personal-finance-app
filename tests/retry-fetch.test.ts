@@ -75,6 +75,51 @@ describe("retryingFetch", () => {
     await expect(pending).rejects.toThrow();
     expect(f.calls).toHaveLength(1);
   });
+  describe("PGRST303 (JWT refusal) on any method", () => {
+    const jwt = (code = "PGRST303") => ({ status: 401, body: JSON.stringify({ code, message: "JWT expired" }) });
+    function bodies(...answers: { status: number; body: string | null }[]) {
+      let calls = 0;
+      const base = (async () => {
+        const a = answers[calls] ?? { status: 200, body: null };
+        calls += 1;
+        return new Response(a.body, { status: a.status });
+      }) as typeof fetch;
+      return { base, count: () => calls };
+    }
+    for (const method of ["GET", "POST"]) {
+      it(`resends a ${method} once after a PGRST303 401 and returns the second answer`, async () => {
+        const f = bodies(jwt(), { status: 200, body: null });
+        const response = await retryingFetch(f.base, 0)("https://example.test/rest/v1/rpc/f", { method, body: method === "POST" ? "{}" : undefined });
+        expect(response.status).toBe(200);
+        expect(f.count()).toBe(2);
+      });
+    }
+    it("never sends a third time: a second PGRST303 is returned", async () => {
+      const f = bodies(jwt(), jwt(), { status: 200, body: null });
+      expect((await retryingFetch(f.base, 0)("https://example.test", { method: "POST" })).status).toBe(401);
+      expect(f.count()).toBe(2);
+    });
+    it("does not resend another PGRST3xx code", async () => {
+      const f = bodies(jwt("PGRST301"), { status: 200, body: null });
+      expect((await retryingFetch(f.base, 0)("https://example.test")).status).toBe(401);
+      expect(f.count()).toBe(1);
+    });
+    it("returns a non-JSON 401 untouched and readable", async () => {
+      const f = bodies({ status: 401, body: "not json" }, { status: 200, body: null });
+      const response = await retryingFetch(f.base, 0)("https://example.test", { method: "POST" });
+      expect(response.status).toBe(401);
+      expect(await response.text()).toBe("not json");
+      expect(f.count()).toBe(1);
+    });
+    it("does not resend when aborted during the delay", async () => {
+      const controller = new AbortController();
+      const f = bodies(jwt(), { status: 200, body: null });
+      const pending = retryingFetch(f.base, 20)("https://example.test", { method: "POST", signal: controller.signal });
+      setTimeout(() => controller.abort(), 5);
+      await expect(pending).rejects.toThrow();
+      expect(f.count()).toBe(1);
+    });
+  });
   it("reads the method from a Request when init has none", async () => {
     const f = scripted(503, 200);
     const response = await retryingFetch(f.base, 0)(new Request("https://example.test", { method: "POST", body: "{}" }));

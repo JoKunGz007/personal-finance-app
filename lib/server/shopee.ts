@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { strongOwnerClient } from "@/lib/server/supabase";
-import { readAll } from "@/lib/server/row-cap";
+import { authErrorMessage, readAll } from "@/lib/server/row-cap";
 import {
   currentLinks, proposeShopeeMatches, shopeeLedgerRowSchema, shopeeLinkKindSchema,
   type ShopeeOrderMatchState
@@ -164,7 +164,7 @@ export async function loadShopeeView(supabase: OwnerClient): Promise<({ ok: true
   if (!state.ok) return state;
   if (summary.error) {
     const e = summary.error as { code?: unknown; status?: unknown };
-    console.error("readAll failed", { label: "shopee_monthly_summary", reason: "error", code: e.code ?? null, status: e.status ?? null });
+    console.error("readAll failed", { label: "shopee_monthly_summary", reason: "error", code: e.code ?? null, status: e.status ?? null, ...authErrorMessage(summary.error) });
   }
   if (!items.ok || !priceLines.ok || summary.error) return { ok: false, message: LOAD_MESSAGE, status: 500 };
   const p = {

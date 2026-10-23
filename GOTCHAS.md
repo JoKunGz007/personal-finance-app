@@ -279,6 +279,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Ledger row labels write September as "Sept"
 - An owner link outside the candidate window has no row in its match state
 - `Intl.DateTimeFormat` without `timeZone` prints the viewer's day, not Bangkok's
+- `PGRST303` does not mean the token expired
 
 ## Traps
 

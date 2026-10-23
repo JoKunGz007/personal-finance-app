@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-288 … D-304**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-288 … D-305**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -430,6 +430,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-305** — A PGRST303 refusal is resent once for any method, and PostgREST's message is logged for PGRST3xx codes (Open item 1: the 500 recurred under D-303 with a fresh token)
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
@@ -447,6 +448,18 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 - **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
 - **D-288** — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
+
+## D-305 — A PGRST303 refusal is resent once for any method, and PostgREST's message is logged for PGRST3xx codes (Open item 1: the 500 recurred under D-303 with a fresh token)
+
+- Date: 2026-10-24
+- Status: **Built, not yet pushed** (the owner said to proceed with the proposed fix). Server fetch and logging only: no route contract, RPC, migration or stored-value change. Supplements D-303 and does not supersede it: D-303's floor stays, but its stated cause is now doubtful.
+- **Evidence against D-303's cause.** On production 2026-10-24, with D-303 live, the browser pane's first `GET /api/v1/shopee` after a long idle answered 500. The Vercel runtime log read `PGRST303` on `shopee_monthly_summary` only, and three immediate retries answered 200. That RPC runs in one `Promise.all` with eight paged reads on the same client (`lib/server/shopee.ts:157`), and none of them logged a failure. Every call in a request takes its token from one in-memory session, read in the installed `@supabase/ssr` and `supabase-js` by `finance-investigator` and checked against `shopee.ts` by the agent. So the siblings passed with the same token. After a long idle `getUser()` refreshes successfully: a failed refresh gives a 401, not a 500. So the token had about an hour left and the 30 s floor could not apply. D-303's own incident has the same shape: one label out of several. PGRST303 is PostgREST's code for any JWT claim failure, not only expiry. The real cause is unknown (clock skew on a just-minted token is one guess), because the log held only the code.
+- **Fix.**
+  - `retryingFetch` (`lib/server/retry-fetch.ts`) sends a request once more when the answer is a 401 whose JSON body has `code: "PGRST303"`. This applies to every method, writes included. PostgREST validates the JWT before it opens a transaction, so that refusal means no SQL ran. The second answer is returned whatever it is: there is never a third send. The GET/HEAD rule for a 5xx or a network failure is unchanged.
+  - `authErrorMessage` (`lib/server/row-cap.ts`) adds PostgREST's message, cut to 120 characters, to the `readAll failed` log line. It applies to PGRST3xx codes only, in `readAll` and in the Shopee summary log. Those messages are fixed auth texts that quote no row values. Every other message stays unlogged.
+- **Left, on purpose.** A resend after a real expiry fails the same way, which is harmless. A `Request` with a stream body could not be resent; supabase-js sends string bodies.
+- **Watch.** On the next 500, the log line now carries the message. "JWT expired" would put D-303's cause back in play; "JWT issued at future" or similar would point to clock skew.
+- Evidence: `tests/retry-fetch.test.ts` (+6: a GET and a POST resent once, never a third send, no resend on PGRST301 or a non-JSON 401, no resend after an abort) and `tests/row-cap.test.ts` (+1: the message is logged for PGRST303 and not for `42501`). Red-proved: against the HEAD `retry-fetch.ts`, 4 of the new tests fail. The `pnpm verify` result is recorded in `PLAN.md`.
 
 ## D-304 — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 

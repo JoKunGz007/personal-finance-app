@@ -10,6 +10,19 @@ export function isComplete(read: { data: readonly unknown[] | null; count: numbe
 
 export const PAGE_SIZE = 1000;
 
+/**
+ * The message of a PostgREST JWT error (code PGRST3xx), cut to 120 characters, as a spreadable
+ * object; empty for every other error. PGRST3xx messages are fixed auth texts (e.g. "JWT expired")
+ * that quote no row values; any other message can quote one and stays unlogged.
+ */
+export function authErrorMessage(error: unknown): { message?: string } {
+  const e = (error ?? {}) as { code?: unknown; message?: unknown };
+  if (typeof e.code === "string" && e.code.startsWith("PGRST3") && typeof e.message === "string") {
+    return { message: e.message.slice(0, 120) };
+  }
+  return {};
+}
+
 type Page = { data: readonly unknown[] | null; error: unknown; count: number | null };
 
 /**
@@ -23,9 +36,10 @@ export async function readAll<Row>(
   label = "read"
 ): Promise<{ ok: true; data: Row[] } | { ok: false }> {
   // Value-free: an error's code and HTTP status only, never its message (it can quote a value).
+  // Exception: PGRST3xx messages are fixed auth texts (e.g. "JWT expired") that quote no row values.
   const fail = (reason: string, error?: unknown) => {
     const e = (error ?? {}) as { code?: unknown; status?: unknown; name?: unknown };
-    console.error("readAll failed", { label, reason, code: e.code ?? e.name ?? null, status: e.status ?? null });
+    console.error("readAll failed", { label, reason, code: e.code ?? e.name ?? null, status: e.status ?? null, ...authErrorMessage(error) });
     return { ok: false as const };
   };
   const rows: Row[] = [];

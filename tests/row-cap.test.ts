@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readAll } from "@/lib/server/row-cap";
 
 // A fake builder over `n` invented rows, honouring the range as PostgREST does (max_rows 1000).
@@ -35,6 +35,15 @@ describe("readAll", () => {
   });
   it("fails closed on an error on page 2", async () => {
     expect(await readAll(fake(2345, (c, p) => { if (c === 2) { p.error = { message: "x" }; p.data = null; } }).page)).toEqual({ ok: false });
+  });
+  it("logs the message of a PGRST3xx error only", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fail = (error: unknown) => readAll(fake(5, (_c, p) => { p.error = error; p.data = null; }).page);
+    await fail({ code: "PGRST303", message: "JWT expired" });
+    await fail({ code: "42501", message: "permission denied for row 12345" });
+    expect(spy.mock.calls[0]?.[1]).toMatchObject({ code: "PGRST303", message: "JWT expired" });
+    expect(spy.mock.calls[1]?.[1]).not.toHaveProperty("message");
+    spy.mockRestore();
   });
   it("fails closed on a null count or a short page before the count", async () => {
     expect(await readAll(fake(5, (_c, p) => { p.count = null; }).page)).toEqual({ ok: false });
