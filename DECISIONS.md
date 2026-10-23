@@ -451,7 +451,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 ## D-304 — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 
 - Date: 2026-10-24
-- Status: **Built and gated, not committed.** No migration, RPC or stored-value change. One route contract widens (C1).
+- Status: **Built, pushed and live** (`c1369f0`; the owner granted commit and push). On production 2026-10-24, read-only: Shopee and `/ledger` load with no alert. No migration, RPC or stored-value change. One route contract widens (C1).
 - **Pass.** `finance-investigator` read the eight 800+ line files two at a time; findings were ranked with Open item 8 (b). Each fix below was built by a subagent and red-proved unless noted.
 - **Fixes (A).**
   - A1 `app/notification-card-capture.tsx`: changing the channel empties the typed form, so a card can no longer be submitted on one signal with boxes pre-filled for the other channel.
