@@ -35,7 +35,8 @@ function Figures(
   const percent = percentOf(share);
   return (
     <>
-      <span className="category-amount numeric">{money(spendingMinor)}</span>
+      {/* Money out, signed and red like the page's other withdrawal figures (D-215). */}
+      <span className="category-amount numeric negative">{money(`-${spendingMinor}`)}</span>
       <span className="category-meta field-help">
         {percent.toFixed(1)}% · {transactionCount} {transactionCount === 1 ? "row" : "rows"}
       </span>
