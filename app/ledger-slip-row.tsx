@@ -88,7 +88,7 @@ export function LedgerSlipRow({
               type="button"
               className="secondary-button"
               aria-label={`Choose a statement row for the slip dated ${formatDate(slip.occurred_on)}`}
-              disabled={modes.deciding !== null || modes.matching !== null}
+              disabled={modes.deciding !== null || modes.matching !== null || modes.correcting !== null}
               onClick={() => actions.chooseRowForSlip(slip.id)}
             >
               Choose a statement row

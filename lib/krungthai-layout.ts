@@ -4,9 +4,10 @@ import {
   describeLabelGeometry, describeStructure, describeValueLabels,
   type PageText, type TextItem
 } from "@/lib/masked-diagnostics";
-import { formatThb, parseThb, type MinorUnitString } from "@/lib/money";
+import { parseThb, type MinorUnitString } from "@/lib/money";
 import type { LayoutErrorCode, LayoutResult, StatementFrame } from "@/lib/statement-frame";
 import type { SourceRowCandidate } from "@/lib/statement";
+import { summarizeFailures, verifyTotals, type DirectionTally, type PrintedTotals, type RowFailure } from "@/lib/statement-checks";
 
 // Geometry reader for contract version krungthai-layout-v1 (docs/KRUNGTHAI_CONTRACT.md).
 //
@@ -125,13 +126,7 @@ const SUMMARY_LABELS = {
 
 const SUMMARY_COUNT_PATTERN = /^\d{1,9}$/;
 
-type StatementTotals = {
-  pageCount: number | null;
-  withdrawalCount: number | null;
-  withdrawalTotal: MinorUnitString | null;
-  depositCount: number | null;
-  depositTotal: MinorUnitString | null;
-};
+type StatementTotals = PrintedTotals & { pageCount: number | null };
 
 const CURRENCY_MARKER = /\b(THB)\b|บาท/u;
 
@@ -436,77 +431,28 @@ function extractTotals(lines: TextItem[][], headerY: number):
   }
 }
 
-// Compares the rows actually read against the statement's own printed summary. Counts are
-// reported plainly — a row count is not a financial value — but a total mismatch reports only
-// the masked shape of the gap, which gives its order of magnitude without the figure.
-function verifyTotals(totals: StatementTotals, rows: readonly SourceRowCandidate[], pageCount: number): LayoutResult | null {
-  const rowsWith = (kind: "withdrawal" | "deposit") =>
-    rows.filter((row) => row.components.some((component) => component.kind === kind)).length;
-  const magnitudeOf = (kind: "withdrawal" | "deposit") =>
-    rows.reduce((sum, row) => sum + row.components
+// Compares the rows actually read against the statement's own printed summary: the page count
+// here, the per-direction counts and totals in the shared check (D-295). A Krungthai row carries
+// components, so it counts toward each direction it has a component of, at that component's
+// magnitude.
+function checkPrintedSummary(totals: StatementTotals, rows: readonly SourceRowCandidate[], pageCount: number): LayoutResult | null {
+  if (totals.pageCount !== null && totals.pageCount !== pageCount) {
+    return {
+      ok: false,
+      code: "SUMMARY_MISMATCH",
+      message: `The statement says it has ${totals.pageCount} pages but the reader found ${pageCount}.`
+    };
+  }
+  const tally = (kind: "withdrawal" | "deposit"): DirectionTally => ({
+    rows: rows.filter((row) => row.components.some((component) => component.kind === kind)).length,
+    minor: rows.reduce((sum, row) => sum + row.components
       .filter((component) => component.kind === kind)
       .reduce((inner, component) => {
         const value = BigInt(component.amount.minor);
         return inner + (value < 0n ? -value : value);
-      }, 0n), 0n);
-
-  const mismatch = (message: string): LayoutResult => ({ ok: false, code: "SUMMARY_MISMATCH", message });
-
-  if (totals.pageCount !== null && totals.pageCount !== pageCount) {
-    return mismatch(`The statement says it has ${totals.pageCount} pages but the reader found ${pageCount}.`);
-  }
-  for (const kind of ["withdrawal", "deposit"] as const) {
-    const printedCount = kind === "withdrawal" ? totals.withdrawalCount : totals.depositCount;
-    const printedTotal = kind === "withdrawal" ? totals.withdrawalTotal : totals.depositTotal;
-    if (printedCount !== null && printedCount !== rowsWith(kind)) {
-      return mismatch(`The statement counts ${printedCount} ${kind} rows but the reader found ${rowsWith(kind)}.`);
-    }
-    if (printedTotal !== null) {
-      const gap = BigInt(printedTotal) - magnitudeOf(kind);
-      if (gap !== 0n) {
-        const absolute = ((gap < 0n ? -gap : gap).toString()) as MinorUnitString;
-        return mismatch(
-          `The statement's printed ${kind} total does not match the rows read; the gap is ` +
-          `${maskShape(formatThb(absolute))}.`
-        );
-      }
-    }
-  }
-  return null;
-}
-
-type RowFailure = { code: LayoutErrorCode; message: string };
-
-// How many distinct failure classes one result reports. Enough to cover a statement's
-// remaining defects in a single read without an unbounded status line.
-const MAX_REPORTED_FAILURE_CLASSES = 6;
-
-// Groups row failures by everything except which page and row they occurred on, so a
-// defect that repeats across 200 rows is reported once with a count and one location.
-// The message is already fully masked by `toRow`, so grouping adds no disclosure.
-function summarizeFailures(failures: readonly RowFailure[]): LayoutResult {
-  const classes = new Map<string, { exemplar: string; count: number }>();
-  for (const failure of failures) {
-    const key = failure.message.replace(/^Page \d+ row (?:\d+|—): /u, "");
-    const existing = classes.get(key);
-    if (existing) existing.count += 1;
-    else classes.set(key, { exemplar: failure.message, count: 1 });
-  }
-
-  const reported = [...classes.values()].slice(0, MAX_REPORTED_FAILURE_CLASSES);
-  const omitted = classes.size - reported.length;
-  const summary = reported.map(({ exemplar, count }) => count > 1 ? `${count}× ${exemplar}` : exemplar).join(" | ");
-
-  return {
-    ok: false,
-    // The first failure's code, so a single-defect statement reports exactly what it did
-    // before this batching existed.
-    code: failures[0]!.code,
-    message:
-      `${failures.length} row${failures.length === 1 ? "" : "s"} could not be read` +
-      `${classes.size > 1 ? `, in ${classes.size} distinct cases` : ""}. ${summary}` +
-      `${omitted > 0 ? ` | and ${omitted} further case${omitted === 1 ? "" : "s"} not shown` : ""}`
-  };
+      }, 0n), 0n)
+  });
+  return verifyTotals(totals, { withdrawal: tally("withdrawal"), deposit: tally("deposit") });
 }
 
 export function extractStatement(pages: readonly PageText[]): LayoutResult {
@@ -682,7 +628,7 @@ export function extractStatement(pages: readonly PageText[]): LayoutResult {
   if (lastPage) {
     const summary = extractTotals(lastPage.lines, lastPage.headerY);
     if (!summary.ok) return summary;
-    const mismatch = verifyTotals(summary.totals, rows, pages.length);
+    const mismatch = checkPrintedSummary(summary.totals, rows, pages.length);
     if (mismatch) return mismatch;
     // Strict: all four per-direction figures, or this is not a cross-check. `Total Page` is
     // not counted — a page count confirms nothing about the rows.

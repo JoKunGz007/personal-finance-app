@@ -118,7 +118,7 @@ export function LedgerCardRow({
               type="button"
               className="secondary-button"
               aria-label={`Choose a statement row for the card dated ${formatDate(card.occurred_on)}`}
-              disabled={modes.decidingCard !== null || modes.matchingCard !== null || modes.matching !== null}
+              disabled={modes.decidingCard !== null || modes.matchingCard !== null || modes.matching !== null || modes.correcting !== null}
               onClick={() => actions.chooseRowForCard(card.id)}
             >
               Choose a statement row

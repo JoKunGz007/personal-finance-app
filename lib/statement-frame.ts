@@ -8,7 +8,9 @@ import type { SourceRowCandidate } from "@/lib/statement";
 // `lib/statement-layout.ts`. Only the types are shared — no geometry logic is, which is
 // the whole point of DECISIONS D-011's successor note in `HANDOFF.md`: the Krungthai
 // reader is the highest-risk proven code in the repo and is not being refactored into an
-// abstraction that has never run against a second layout.
+// abstraction that has never run against a second layout. The two geometry-free checks every
+// reader runs after its geometry — printed totals and failure batching — are shared in
+// `lib/statement-checks.ts` (D-295).
 
 export const BANK_CODES = ["KTB", "SCB", "KBANK"] as const;
 export type BankCode = (typeof BANK_CODES)[number];

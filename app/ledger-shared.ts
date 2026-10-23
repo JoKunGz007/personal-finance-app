@@ -121,7 +121,11 @@ export type LedgerModes = {
   readonly deciding: string | null;
   /** The card whose decision is being written, by id, or null. */
   readonly decidingCard: string | null;
-  /** The record whose correction form is open, by its own id. One at a time. */
+  /**
+   * The record whose correction form is open, by its own id. One at a time, and never during a
+   * pick: every "Choose a statement row" disables on it (D-296), so a saved correction cannot
+   * re-derive the rows on offer under an open chooser, and no other form hides until the pick ends.
+   */
   readonly correcting: string | null;
   /**
    * The transaction whose `include_in_reporting` is being written, by id, or null.

@@ -2,6 +2,7 @@ import { gregorianYearFrom, type StatementEra } from "@/lib/dates";
 import { LINE_TOLERANCE, groupIntoLines, maskShape, type PageText, type TextItem } from "@/lib/masked-diagnostics";
 import { formatThb, parseThb, type MinorUnitString } from "@/lib/money";
 import type { SourceRowCandidate } from "@/lib/statement";
+import { summarizeFailures, verifyTotals, type DirectionTally, type PrintedTotals, type RowFailure } from "@/lib/statement-checks";
 import {
   EMPTY_STATEMENT_MESSAGE,
   type BankCode, type ContractVersion, type LayoutErrorCode, type LayoutResult, type StatementFrame
@@ -286,7 +287,7 @@ export const LAYOUTS: readonly LayoutDescriptor[] = [SCB_LAYOUT, KBANK_LAYOUT];
 // Reading
 // ---------------------------------------------------------------------------
 
-type Failure = { code: LayoutErrorCode; message: string };
+type Failure = RowFailure;
 
 // A row as read off the page, before its direction is known. Direction cannot be decided
 // here: the printed figure is unsigned and the column it sits in is one of two that share
@@ -781,7 +782,7 @@ export function extractWithLayout(descriptor: LayoutDescriptor, pages: readonly 
 
   const totals = extractTotals(descriptor, summaryRegionOf(descriptor, firstPage, lastPage));
   if (!totals.ok) return totals;
-  const mismatch = verifyTotals(totals.totals, directed.rows);
+  const mismatch = verifyTotals(totals.totals, tallyDirections(directed.rows));
   if (mismatch) return mismatch;
   // Strict on purpose: a partially read block confirms part of the parse, and reporting
   // that as "cross-checked" would overstate it. All four per-direction figures, or nothing.
@@ -1041,12 +1042,7 @@ function verifyMoneyColumns(rows: readonly DirectedRow[]): LayoutResult | null {
 // The statement's own totals
 // ---------------------------------------------------------------------------
 
-type StatementTotals = {
-  withdrawalCount: number | null;
-  withdrawalTotal: MinorUnitString | null;
-  depositCount: number | null;
-  depositTotal: MinorUnitString | null;
-};
+type StatementTotals = PrintedTotals;
 
 function extractTotals(
   descriptor: LayoutDescriptor,
@@ -1126,36 +1122,18 @@ function extractTotals(
   }
 }
 
-// The statement's own arithmetic, and the only global check the reader has. A mismatch
-// means the reader and the bank disagree about what the document contains, so it fails
-// closed rather than warning: an append-only ledger cannot take back a dropped row
-// (D-033). Counts are reported plainly — a row count is not a financial value — while a
-// total mismatch reports only the masked shape of the gap.
-function verifyTotals(totals: StatementTotals, rows: readonly DirectedRow[]): LayoutResult | null {
-  const mismatch = (message: string): LayoutResult => ({ ok: false, code: "SUMMARY_MISMATCH", message });
-  for (const kind of ["withdrawal", "deposit"] as const) {
-    const printedCount = kind === "withdrawal" ? totals.withdrawalCount : totals.depositCount;
-    const printedTotal = kind === "withdrawal" ? totals.withdrawalTotal : totals.depositTotal;
+// What `verifyTotals` (D-295) compares against the printed summary: each direction's row count
+// and summed amount. A directed row has one direction and an unsigned amount.
+function tallyDirections(rows: readonly DirectedRow[]): Record<"withdrawal" | "deposit", DirectionTally> {
+  const tally = (kind: "withdrawal" | "deposit"): DirectionTally => {
     const matching = rows.filter((row) => row.kind === kind);
-    if (printedCount !== null && printedCount !== matching.length) {
-      return mismatch(`The statement counts ${printedCount} ${kind} rows but the reader found ${matching.length}.`);
-    }
-    if (printedTotal !== null) {
-      const magnitude = matching.reduce((sum, row) => sum + row.amount, 0n);
-      const gap = BigInt(printedTotal) - magnitude;
-      if (gap !== 0n) {
-        return mismatch(
-          `The statement's printed ${kind} total does not match the rows read; the gap is ` +
-          `${maskShape(formatThb(((gap < 0n ? -gap : gap).toString()) as MinorUnitString))}.`
-        );
-      }
-    }
-  }
-  return null;
+    return { rows: matching.length, minor: matching.reduce((sum, row) => sum + row.amount, 0n) };
+  };
+  return { withdrawal: tally("withdrawal"), deposit: tally("deposit") };
 }
 
 // ---------------------------------------------------------------------------
-// Assembly and failure reporting
+// Assembly (failure batching is in `lib/statement-checks.ts`)
 // ---------------------------------------------------------------------------
 
 function toCandidate(descriptor: LayoutDescriptor, row: DirectedRow, frame: FrameDraft): SourceRowCandidate {
@@ -1189,34 +1167,6 @@ function toCandidate(descriptor: LayoutDescriptor, row: DirectedRow, frame: Fram
         era: frame.era
       }
     }
-  };
-}
-
-const MAX_REPORTED_FAILURE_CLASSES = 6;
-
-// Groups failures by everything except which page and row they occurred on, so a defect
-// repeating across 200 rows is reported once with a count. Every message is already fully
-// masked, so grouping adds no disclosure. Reading a real Krungthai statement cost seven
-// owner-driven runs because each surfaced one row and stopped (D-032).
-function summarizeFailures(failures: readonly Failure[]): LayoutResult {
-  const classes = new Map<string, { exemplar: string; count: number }>();
-  for (const failure of failures) {
-    const key = failure.message.replace(/^Page \d+ row (?:\d+|—): /u, "");
-    const existing = classes.get(key);
-    if (existing) existing.count += 1;
-    else classes.set(key, { exemplar: failure.message, count: 1 });
-  }
-  const reported = [...classes.values()].slice(0, MAX_REPORTED_FAILURE_CLASSES);
-  const omitted = classes.size - reported.length;
-  const summary = reported.map(({ exemplar, count }) => count > 1 ? `${count}× ${exemplar}` : exemplar).join(" | ");
-
-  return {
-    ok: false,
-    code: failures[0]!.code,
-    message:
-      `${failures.length} row${failures.length === 1 ? "" : "s"} could not be read` +
-      `${classes.size > 1 ? `, in ${classes.size} distinct cases` : ""}. ${summary}` +
-      `${omitted > 0 ? ` | and ${omitted} further case${omitted === 1 ? "" : "s"} not shown` : ""}`
   };
 }
 

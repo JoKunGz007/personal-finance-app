@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-273 … D-294**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-273 … D-296**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -410,6 +410,8 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-296** — A pick never starts while a correction form is open: both "Choose a statement row" buttons disable on `correcting` (Open item 7 #9)
+- **D-295** — The printed-totals check and the row-failure batching shared by the Krungthai and descriptor-driven readers, `lib/statement-checks.ts` (Open item 7 #8)
 - **D-294** — One Grab mail dispatch, `parseGrabMail`, called by Sync and by `scripts/measure-grab-mail.ts` (Open item 7 #7)
 - **D-293** — The ledger view's derivation becomes `deriveLedgerView` and its load `loadLedgerSnapshot` (Open item 7 #4–5); supersedes D-132's refusal
 - **D-292** — Architecture review (Open item 7): Grab matches decided in one pure module (owner links hold against two-part rides), one device statement reader, every import entry point discards first
@@ -432,6 +434,24 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
+
+## D-296 — A pick never starts while a correction form is open: both "Choose a statement row" buttons disable on `correcting` (Open item 7 #9)
+
+- Date: 2026-10-23
+- Status: **Built** (owner granted commit and push this session). UI guard only: no route, RPC, migration or stored-value change.
+- **The question was whether the Correct buttons' different disable conditions are a bug.** They are not, as the owner sees them. During a slip pick the table shows only that slip and the statement rows on offer, and during a card pick only that card and its rows (`lib/ledger-view.ts`), so cash rows never show during a pick and cards never show during a slip pick. That makes cash's missing pick guard and the card's extra slip-pick guard unreachable. The statement row's controls are hidden during a pick on purpose ("one question at a time", D-069).
+- **The gap ran the other way.** "Choose a statement row" on slips and cards did not check `modes.correcting`, and `chooseRowForSlip`/`chooseRowForCard` leave it set. So a pick could start with a form open. If that form was the matched slip's own, its "Stop correcting" toggle was disabled, and saving a new amount would re-derive the rows on offer under the open chooser. If it was another record's form, that form disappeared until the pick ended. No wrong money resulted.
+- **Decision:** a pick and a correction are never open at once. Both Choose buttons disable while `correcting` is set; the owner closes the form first. Clearing `correcting` on Choose was rejected: it would silently discard what the owner had typed. The per-kind Correct guards stay as they are, since the unreachable ones cost nothing and removing them would only matter if the picking view changed.
+- Evidence: `tests/ledger-row-controls.test.tsx` (2; red-proved on each row separately). Traced by the investigator, then checked against `app/ledger-slip-row.tsx`, `app/ledger-card-row.tsx` and `app/transactions-view.tsx`. Not exercised in the browser. `pnpm verify` green (lint 0 errors, tsc, docs, build); Vitest 105 files (1,986 passed / 19 skipped).
+
+## D-295 — The printed-totals check and the row-failure batching shared by the Krungthai and descriptor-driven readers, `lib/statement-checks.ts` (Open item 7 #8)
+
+- Date: 2026-10-23
+- Status: **Built** (owner granted commit and push this session). No message, code or accepted statement changes.
+- **Why.** `verifyTotals` and `summarizeFailures` existed twice, in `lib/krungthai-layout.ts` and `lib/statement-layout.ts`, with identical arithmetic and wording (D-032, D-033). A fix to one, such as the gap's masking, would not reach the other.
+- **What is shared, and what is not.** `verifyTotals(printed, tally)` compares each direction's printed count and total with a `DirectionTally` (`{ rows, minor }`), and `summarizeFailures` batches row failures (at most six classes). Each reader builds its own tally from its own row shape, and its geometry stays where it is (`lib/statement-frame.ts` keeps that rule; its header now names the exception). Krungthai counts a row toward each direction it has a component of, at the component's magnitude, and checks the printed page count before the shared check (`checkPrintedSummary`). The descriptor-driven reader counts directed rows (`tallyDirections`).
+- **One behaviour difference:** Krungthai now computes both tallies before comparing, where the old code computed them only for printed figures. They are pure, and every component amount comes from `parseThb`.
+- Evidence: `tests/statement-checks.test.ts` (7; red-proved: dropping the gap's absolute value makes the two signs' messages differ). `tests/krungthai-layout.test.ts`, `tests/statement-layout.test.ts` and `tests/privacy.test.ts` are unchanged and green, and they pin the old messages. `pnpm verify` green (lint 0 errors, tsc, docs, build); Vitest 104 files (1,984 passed / 19 skipped). Self-review: 3 findings: 1 fixed (stale section header), 1 intended (eager tally), 1 skipped (local type aliases kept to avoid renaming about 20 uses in the reader).
 
 ## D-294 — One Grab mail dispatch, `parseGrabMail`, called by Sync and by `scripts/measure-grab-mail.ts` (Open item 7 #7)
 
