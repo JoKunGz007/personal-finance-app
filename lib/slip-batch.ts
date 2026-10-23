@@ -263,6 +263,25 @@ async function rereadOnce(reread: BoxReread, box: Box, crop: BoxCrop): ReturnTyp
 }
 
 /**
+ * The amount's own box, cropped and enlarged, read through the same strict `proposeAmount` (D-259).
+ *
+ * Tries 2×, then 3× only if 2× still fails the grammar; a failed read is skipped. It does not check
+ * whether the full read already succeeded: callers ask only after a refusal. No label, or one that
+ * appears twice, has no box to crop, so nothing is read and the answer is `undefined`.
+ */
+export async function rereadSlipAmount(words: readonly OcrWord[], bankCode: BankCode, reread: BoxReread): Promise<OcrRead<string> | undefined> {
+  const located = locateAmount(words, bankCode);
+  if (!located.ok) return undefined;
+  for (const scale of AMOUNT_REREAD_SCALES) {
+    const again = await rereadOnce(reread, located.value, { field: "amount", scale });
+    if (!again.ok) continue;
+    const read = proposeAmount(again.words, bankCode);
+    if (read.ok) return read;
+  }
+  return undefined;
+}
+
+/**
  * `classifySlip`, plus a second, enlarged read of the amount (D-259) and of the printed year
  * (D-257), each only for the one state it can cure.
  *
@@ -296,14 +315,8 @@ export async function classifySlipRereadingYear(
   if (verdict.amountMinor === null) {
     // Read but not storable (zero) is not a reading problem: no second read.
     if (proposeAmount(words, input.bankCode).ok) return verdict;
-    const located = locateAmount(words, input.bankCode);
-    if (!located.ok) return verdict;
-    for (const scale of AMOUNT_REREAD_SCALES) {
-      const again = await rereadOnce(reread, located.value, { field: "amount", scale });
-      if (!again.ok) continue;
-      const read = proposeAmount(again.words, input.bankCode);
-      if (read.ok) { amount = read; break; }
-    }
+    if (!locateAmount(words, input.bankCode).ok) return verdict;
+    amount = await rereadSlipAmount(words, input.bankCode, reread);
     if (amount === undefined) return { ...verdict, retryable: true };
     verdict = classifySlip({ ...input, amount });
     if (verdict.status === "ready" || verdict.amountMinor === null) return verdict;

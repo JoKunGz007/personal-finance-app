@@ -5,8 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { openInboxSlip, releaseInboxSlip } from "@/lib/browser/inbox-slip";
 import { encodeForReader, readImageWords } from "@/lib/browser/ocr-reader";
 import { detectAtScale, resolveDetector } from "@/lib/browser/qr-detector";
+import { rereadBox } from "@/lib/browser/year-reread";
 import { bangkokToday } from "@/lib/dates";
 import { formatThb, parseThb, plainThb } from "@/lib/money";
+import { rereadSlipAmount } from "@/lib/slip-batch";
 import { locateAmount, paddedCrop, proposeAmount, type Box } from "@/lib/slip-ocr";
 import { scanForSlipIdentity, type SlipScanResult } from "@/lib/slip-scan";
 import { type SlipIdentity } from "@/lib/slip-qr";
@@ -292,7 +294,8 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
    *
    * **The crop is kept and is now the check rather than the product.** It is shown whenever the
    * region was located, including when the figure refused to parse — which is exactly when the
-   * owner most needs to see it enlarged.
+   * owner most needs to see it enlarged. A refused figure is read once more from the enlarged box
+   * (D-259) before the form gives up.
    */
   async function readAmountOnImage() {
     if (!image || !identity) return;
@@ -321,7 +324,13 @@ export function SlipCapture({ onCaptured }: { onCaptured?: () => void } = {}) {
       const located = locateAmount(read.words, identity.bankCode);
       if (located.ok) setAmountCrop(cropAmountRegion(bitmap, located.value));
 
-      const proposed = proposeAmount(read.words, identity.bankCode);
+      let proposed = proposeAmount(read.words, identity.bankCode);
+      if (!proposed.ok && located.ok) {
+        // A refused figure beside a found label is read once more from the enlarged box, through
+        // the same strict grammar (D-259). Without a located label there is no box to crop.
+        const again = await rereadSlipAmount(read.words, identity.bankCode, (box, crop) => rereadBox(image, box, crop));
+        if (again?.ok) proposed = again;
+      }
       if (!proposed.ok) {
         // The policy layer's own words. Its refusals distinguish a label that was never
         // recognised from a figure that did not read as money, and both are more use than

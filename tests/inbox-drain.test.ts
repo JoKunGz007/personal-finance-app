@@ -9,7 +9,7 @@ import {
   SLIP_WAITING_REASON, slipPostBody, TWO_ORDERS_REASON, UNMATCHED_PAGE_REASON, type ReadySlip, type RememberedKind
 } from "@/lib/inbox-drain";
 import { readScreenshotPage, readScreenshotReceipt } from "@/lib/receipt-screenshot";
-import { classifySlipRereadingYear } from "@/lib/slip-batch";
+import { classifySlipRereadingYear, rereadSlipAmount, type BoxReread } from "@/lib/slip-batch";
 import { proposeSlipText, type Box, type OcrWord } from "@/lib/slip-ocr";
 import type { ImageWordsRead } from "@/lib/browser/ocr-reader";
 import type { SlipScanResult } from "@/lib/slip-scan";
@@ -1112,6 +1112,60 @@ describe("classifySlipRereadingYear marks what a retry could change (D-259)", ()
 
   test("no amount label at all is definite", async () => {
     expect(await classifySlipRereadingYear({ ...base, words: slipWords().slice(3) }, never)).toMatchObject({ status: "review", retryable: false });
+  });
+});
+
+describe("rereadSlipAmount reads the amount's own box at 2x, then 3x (D-259)", () => {
+  const cropWords = (figure: string): ImageWordsRead =>
+    ({ ok: true, words: [{ text: "จำนวนเงิน", left: 0, right: 160, top: 0, bottom: 40 }, { text: figure, left: 400, right: 520, top: 0, bottom: 40 }] });
+  /** A fake reread that answers each scale from `answers` and records the crops it was asked for. */
+  const fakeReread = (answers: Record<number, ImageWordsRead>) => {
+    const asked: Array<{ box: Box; field: string; scale: number }> = [];
+    const reread: BoxReread = async (box, crop) => {
+      asked.push({ box, field: crop.field, scale: crop.scale });
+      return answers[crop.scale] ?? { ok: false, why: "invented" };
+    };
+    return { reread, asked };
+  };
+
+  test("a 2x read that parses is returned and 3x is never asked", async () => {
+    const { reread, asked } = fakeReread({ 2: cropWords("23.00") });
+    const result = await rereadSlipAmount(slipWords("23,00"), "SCB", reread);
+    expect(result).toMatchObject({ ok: true, value: "2300" });
+    expect(asked.map((entry) => [entry.field, entry.scale])).toEqual([["amount", 2]]);
+    expect(asked[0]!.box).toEqual({ left: 10, top: 100, right: 420, bottom: 120 }); // the amount line: label to suffix
+  });
+
+  test("a 2x read that still fails the grammar falls to 3x", async () => {
+    const { reread, asked } = fakeReread({ 2: cropWords("23,00"), 3: cropWords("23.00") });
+    expect(await rereadSlipAmount(slipWords("23,00"), "SCB", reread)).toMatchObject({ ok: true, value: "2300" });
+    expect(asked.map((entry) => entry.scale)).toEqual([2, 3]);
+  });
+
+  test("a failed 2x read is skipped and 3x is tried", async () => {
+    const { reread, asked } = fakeReread({ 3: cropWords("23.00") });
+    expect(await rereadSlipAmount(slipWords("23,00"), "SCB", reread)).toMatchObject({ ok: true, value: "2300" });
+    expect(asked.map((entry) => entry.scale)).toEqual([2, 3]);
+  });
+
+  test("both scales refused gives undefined after two reads", async () => {
+    const { reread, asked } = fakeReread({ 2: cropWords("23,00"), 3: cropWords("23,00") });
+    expect(await rereadSlipAmount(slipWords("23,00"), "SCB", reread)).toBeUndefined();
+    expect(asked.map((entry) => entry.scale)).toEqual([2, 3]);
+  });
+
+  test("a read that throws counts as failed", async () => {
+    const reread: BoxReread = async (_box, crop) => {
+      if (crop.scale === 2) throw new Error("boom");
+      return cropWords("23.00");
+    };
+    expect(await rereadSlipAmount(slipWords("23,00"), "SCB", reread)).toMatchObject({ ok: true, value: "2300" });
+  });
+
+  test("no label means no box: undefined and no read at all", async () => {
+    const { reread, asked } = fakeReread({ 2: cropWords("23.00") });
+    expect(await rereadSlipAmount(slipWords("23,00").slice(3), "SCB", reread)).toBeUndefined();
+    expect(asked).toEqual([]);
   });
 });
 

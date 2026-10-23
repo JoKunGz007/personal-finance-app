@@ -45,6 +45,23 @@ vi.mock("@/lib/slip-scan", () => ({
     ok: true, identity: { bankCode: "KBANK", bankQrCode: "004", reference: "INVENTEDREF0001" }, payload: "invented-payload", scale: 1, candidates: 1
   })
 }));
+// The reader: what the whole slip read as, and what the amount's enlarged box read as (D-259).
+const reader = {
+  full: [] as Array<{ text: string; left: number; right: number; top: number; bottom: number }>,
+  box: [] as Array<{ text: string; left: number; right: number; top: number; bottom: number }>,
+  boxCalls: [] as number[]
+};
+vi.mock("@/lib/browser/ocr-reader", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/browser/ocr-reader")>()),
+  encodeForReader: async () => ({ invented: true }),
+  readImageWords: async () => ({ ok: true, words: reader.full })
+}));
+vi.mock("@/lib/browser/year-reread", () => ({
+  rereadBox: async (_file: Blob, _box: unknown, crop: { scale: number }) => {
+    reader.boxCalls.push(crop.scale);
+    return { ok: true, words: reader.box };
+  }
+}));
 vi.mock("next/link", () => ({
   default: ({ href, children, className }: { href: string; children: unknown; className?: string }) =>
     createElement("a", { href, className }, children as never)
@@ -157,6 +174,40 @@ describe("a queued slip on the Slips page (D-261)", () => {
     expect(storage.removed).toEqual([[`owner-uid/${UPLOADED}`]]);
     expect(container.textContent).toContain(INBOX_SLIP_REMOVED);
     expect(container.querySelector('a[href="/inbox"]')).not.toBeNull();
+  });
+
+  // KBANK (the mocked scan) prints the figure on the line below its label. All values invented.
+  const kbank = (figure: string) => [
+    { text: "จำนวน:", left: 10, right: 90, top: 100, bottom: 120 },
+    { text: figure, left: 10, right: 90, top: 140, bottom: 160 }
+  ];
+  const amountInput = () => container.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!;
+  async function pressRead() {
+    const button = [...container.querySelectorAll("button")].find((b) => b.textContent === "Read the amount")!;
+    expect(button, "the read button must be present").not.toBeUndefined();
+    await act(async () => { button.click(); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  }
+
+  it("reads a refused figure again from the enlarged box and fills the amount (D-259)", async () => {
+    reader.full = kbank("23,00");
+    reader.box = kbank("23.00");
+    reader.boxCalls = [];
+    await open(UPLOADED);
+    await pressRead();
+    expect(reader.boxCalls).toEqual([2]);
+    expect(amountInput().value).toBe("23.00");
+  });
+
+  it("leaves the amount empty and says why when the enlarged box is refused too", async () => {
+    reader.full = kbank("23,00");
+    reader.box = kbank("23,00");
+    reader.boxCalls = [];
+    await open(UPLOADED);
+    await pressRead();
+    expect(reader.boxCalls).toEqual([2, 3]);
+    expect(amountInput().value).toBe("");
+    expect(container.textContent).toMatch(/does not read as a plain amount/u);
   });
 
   it("says the slip is saved when its removal fails", async () => {
