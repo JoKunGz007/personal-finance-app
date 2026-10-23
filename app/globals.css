@@ -1976,3 +1976,21 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
   .intro .heading-note .note-toggle { width: 26px; height: 26px; font-size: 13px; position: relative; }
   .intro .heading-note .note-toggle::after { content: ""; position: absolute; inset: -10px; }
 }
+
+/* Spending by category (statistics). Label wraps on the left, figures right-aligned; the bar is an
+   inline SVG sized by a width attribute, so no inline style is needed. */
+.category-list, .category-children { list-style: none; margin: 0; padding: 0; }
+.category-group { border-top: 1px solid var(--line); }
+.category-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 4px; align-items: baseline; padding: 10px 2px; }
+.category-toggle { width: 100%; min-height: 44px; box-sizing: border-box; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.category-toggle[aria-expanded="true"] .category-label::before { content: "\25BE\00a0"; }
+.category-toggle[aria-expanded="false"] .category-label::before { content: "\25B8\00a0"; }
+.category-label { min-width: 0; overflow-wrap: anywhere; }
+.category-amount { grid-column: 2; grid-row: 1; }
+.category-meta { grid-column: 1 / -1; }
+.category-bar { grid-column: 1 / -1; display: block; width: 100%; height: 8px; }
+.category-bar-track { fill: var(--line); }
+.category-bar-fill { fill: var(--blue); }
+.category-children { padding-left: 18px; }
+.category-child { border-top: 1px solid var(--line); }
+.category-children[hidden] { display: none; }

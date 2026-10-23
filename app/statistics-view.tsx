@@ -8,6 +8,7 @@ import { formatThb, type MinorUnitString } from "@/lib/money";
 import {
   ISO_DAY_NAMES,
   ledgerStatisticsSchema,
+  spendingByCategorySchema,
   monthLabel,
   magnitudeChange,
   pickerSearch,
@@ -23,10 +24,12 @@ import {
   WINDOW_PRESET_LABELS,
   type LargestMovement,
   type LedgerStatistics,
+  type SpendingByCategory,
   type WindowPreset
 } from "@/lib/statistics";
 import { ALL_ACCOUNTS } from "@/app/ledger-shared";
 import { BalanceChart, MonthlyChart } from "@/app/statistics-charts";
+import { SpendingByCategoryList } from "@/app/statistics-categories";
 import { SpendingCalendar } from "@/app/statistics-calendar";
 import { CollapsibleSection } from "@/app/collapsible-section";
 
@@ -254,6 +257,26 @@ export function StatisticsView() {
         setEarliestYear((current) => (current === null || year < current ? year : current));
       }
       setMessage("");
+    })();
+    return () => { cancelled = true; };
+  }, [search, usable]);
+
+  // **Spending by category is its own request over the same window and account**, and its failure
+  // is local: the rest of the page renders from `loaded` regardless. Stamped with `search` like the
+  // main load, and a cancelled flag drops a superseded response.
+  const [categories, setCategories] = useState<
+    { search: string; data: SpendingByCategory | null } | null
+  >(null);
+  useEffect(() => {
+    if (!usable) return;
+    let cancelled = false;
+    void (async () => {
+      const response = await fetch(`/api/v1/statistics/categories${search}`, { cache: "no-store" }).catch(() => null);
+      if (cancelled) return;
+      if (!response || !response.ok) { setCategories({ search, data: null }); return; }
+      const parsed = spendingByCategorySchema.safeParse(await response.json().catch(() => null));
+      if (cancelled) return;
+      setCategories({ search, data: parsed.success ? parsed.data : null });
     })();
     return () => { cancelled = true; };
   }, [search, usable]);
@@ -529,6 +552,22 @@ export function StatisticsView() {
             </button>
           ) : null}
         </div>
+      </CollapsibleSection>
+
+      {/* After the month table: the nearest section about money out over the window. */}
+      <CollapsibleSection id="category-spending" title="Spending by category">
+        <p className="field-help">
+          Money out by category over the same window and account. Excluded rows are not counted; refunds do not reduce a category.
+        </p>
+        {/* Gated on `usable` like `stale` above: a refused range keeps the last figures rather
+            than showing a load that will never run. */}
+        {categories === null && !usable
+          ? null
+          : categories === null || (categories.search !== search && usable)
+          ? <p className="field-help">Loading spending by category…</p>
+          : categories.data === null
+            ? <p className="field-help" role="alert">Spending by category could not be loaded.</p>
+            : <SpendingByCategoryList data={categories.data} />}
       </CollapsibleSection>
 
       {/* **Two lists, not one ranking.** A combined top ten is dominated by whichever direction

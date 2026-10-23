@@ -1,31 +1,7 @@
-import { z } from "zod";
-import { isUsableRange } from "@/lib/date-range";
+import { statisticsWindowSchema } from "@/lib/statistics";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
-
-/**
- * The statistics window and the account it is read over, as they arrive on the query string.
- *
- * Both ends are optional and independent — the RPC resolves an absent end to the ledger's own first
- * or last row, which is what makes "all time" the default rather than a special case the caller has
- * to ask for. An end before its start is refused here rather than in the database, because the
- * database's answer is an empty page and a caller that transposed two dates deserves to be told.
- *
- * **`account` is optional on exactly the same terms** (migration 024, PLAN task 46): absent means
- * every account, which is what the page shows until someone narrows it, and the RPC's
- * `p_account_id` is null-permissive in the same shape as its two date bounds. Only the uuid form is
- * checked here — whether that account is the caller's own is the database's question, and
- * `ledger_statistics` answers it by filtering on `auth.uid()` rather than by trusting this.
- */
-// **The refusal is `isUsableRange`, not a second copy of it** — `app/statistics-view.tsx` and
-// `app/transactions-view.tsx` both refuse a transposed pair client-side on that same function
-// (PLAN task 47, found duplicated by `/code-review high` when the ledger's own window landed).
-const windowSchema = z.object({
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  account: z.string().uuid().nullable()
-}).refine(isUsableRange, "A statistics window ends on or after it starts.");
 
 // The size of the largest-movements list is the route's decision, not the caller's, on the same
 // reasoning as the ledger's page size: a route that forwarded any number a query string carried
@@ -37,7 +13,7 @@ export async function GET(request: Request) {
   if (!auth.ok) return routeError(auth.message, auth.status);
 
   const url = new URL(request.url);
-  const parsed = windowSchema.safeParse({
+  const parsed = statisticsWindowSchema.safeParse({
     from: url.searchParams.get("from"),
     to: url.searchParams.get("to"),
     account: url.searchParams.get("account")

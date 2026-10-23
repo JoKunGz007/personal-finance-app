@@ -4,13 +4,15 @@ Last verified: 2026-10-21
 
 ## Current checkpoint
 
+**Read retry and spending by category built — 2026-10-23** (D-291). Server Supabase reads (GET/HEAD) retry once on a network error or 5xx; `/statistics` has a "Spending by category" section over its own window and account (migration 063, `GET /api/v1/statistics/categories`). Last gate: pgTAP 39 files (995), tsc, eslint 0 errors, build, Vitest 1,921 passed with the 2 failing new tests fixed and re-run alone. **Not yet on hosted:** 063 needs `db push` after a verified backup, before the code push (otherwise the section shows its error note). **Next:** the owner's call on the amount sign (D-291), then rollout; Open item 5 with the owner.
+
 **Duplicate marker, bounded candidates and the mail label built; migrations 061–062 on hosted — 2026-10-21** (D-288, D-289, D-290). Statement mail gets a visible `PL Imported` label; `list_match_candidates` is bounded to ±1 day and the chooser's set loads on demand; the owner can mark a row as a duplicate, hidden by default. Also: the `/receipts` re-capture message no longer says "upgraded" (Open item 4 of the previous list), and discount names on ledger rows were checked on production (63 of 63 named). Last gate: pgTAP 38 files (976), tsc, eslint 0 errors, Vitest 98 files (1,902 / 19 skipped), owner Playwright 32 of 32. 061–062 pushed after a backup verified at sequence 1318; sequence unchanged after. **Rolled out 2026-10-21:** the owner pushed `main` (`f9494dd` live); the agent marked the four D-265 duplicates with "Mark as duplicate" on production (sequence 1318 → 1322, 4 marker events, `list_duplicate_transactions` returns exactly those 4, all still Excluded); after a reload the ledger hides them behind "Show duplicates (4)" and `chooser-candidates` answers 200. **Next:** Open item 1 or 5.
 
 Older checkpoint paragraphs, finished tasks, the resolved review blockers, completed hardening and the discharged authorization gates are in [`docs/archive/PLAN-2026-10-17.md`](docs/archive/PLAN-2026-10-17.md), unchanged. Finished tasks keep their numbers there, so "`PLAN.md` task N" for a finished task resolves in that file.
 
 ## Open
 
-1. **Intermittent 500s** on production ("could not be loaded in full"): on hold by the owner (2026-10-21). Read the Vercel logs within the hour after the next one (Hobby retention); `readAll` logs a value-free line since `eede966`. Likely fix: one retry on network/5xx for idempotent reads.
+1. **Intermittent 500s** on production ("could not be loaded in full"): on hold by the owner (2026-10-21). Read the Vercel logs within the hour after the next one (Hobby retention); `readAll` logs a value-free line since `eede966`. One retry on network/5xx for GET/HEAD is built (D-291); a `retryingFetch retry` log line now marks a 500 the retry absorbed. Read-only RPCs (POST) are not retried.
 2. The owner links the 6 SPayLater repayment rows on `/orders?view=shopee` (D-276).
 3. The owner decides on "Libron (book figures)" now that it reaches amounts (D-284).
 4. Check the `PL Imported` Gmail label appears after the next imported statement (D-288).

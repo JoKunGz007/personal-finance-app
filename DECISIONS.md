@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-273 … D-290**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-273 … D-291**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -410,6 +410,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-291** — Server reads retry once on a network error or 5xx (GET/HEAD only); `/statistics` gains Spending by category over the page's own window (migration 063)
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 - **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
 - **D-288** — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
@@ -428,6 +429,15 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-275** — "Payment to Shopee" rows are PromptPay QR order payments: `other`-kind orders match like bank debits; no SPayLater repayment wording is known yet (supersedes D-273's repayment rule)
 - **D-274** — The Shopee matcher proposes no row the owner Excluded (task 64); an owner match or link on one is kept
 - **D-273** — A `Direct Debit` naming ShopeePay is a bank debit, not a SPayLater repayment (task 63; corrects D-270)
+
+## D-291 — Server reads retry once on a network error or 5xx (GET/HEAD only); `/statistics` gains Spending by category over the page's own window (migration 063)
+
+- Date: 2026-10-23
+- Status: **Built; local only.** Migration 063 not yet on hosted. Owner chose these from the agent's feature list: the retry (Open item 1's likely fix) first, then spending by category. Bulk categorising by description key is deferred to Open item 5; a backup-age reminder was already on `/recovery` ("Last export", changes since).
+- **Retry:** `lib/server/retry-fetch.ts` is the `global.fetch` of `strongOwnerClient`'s Supabase client. One retry after 200 ms, on a thrown network error or 500/502/503/504, for GET and HEAD only. Every write is a POST to an RPC and is never retried, since a POST whose answer was lost may already have run. That also leaves read-only RPCs (e.g. `ledger_statistics`) unretried. The discarded answer's body is cancelled; an aborted request (init or Request signal, including during the delay) is not resent. A retry logs `retryingFetch retry {method, reason}`, value-free. The 500s are still undiagnosed; a retry can hide one, and the log line is the trace.
+- **Spending by category:** `public.spending_by_category(p_from, p_to, p_account_id)` (security definer, strong-owner check, authenticated only) groups `private.reportable_movements` by `transaction_overlays.category_id` in one scan. Spending is `-sum(withdrawals_minor)`, exactly `ledger_statistics`' withdrawals with the sign flipped, so the categories sum to the page's money out. Deposits never enter, so a refund does not reduce a category. Excluded rows (transfers, duplicates) drop out through `include_in_reporting`; no category means one "Uncategorised" bucket; machine ("auto") categories count like owner ones. `GET /api/v1/statistics/categories` shares `statisticsWindowSchema` with `/api/v1/statistics`. `groupSpendingByParent` rolls children under their parent in BigInt: a group's share is of all spending, a child's of its group. The section sits after "By month", expands per parent, and draws bars as SVG width attributes, so the CSP is unchanged. No table, so the backup stays at v16.
+- **Open to the owner:** amounts show unsigned in ink, while the page's other money-out figures are −฿ in red.
+- Evidence: pgTAP `039_spending_by_category.sql` (19; the sum-equals-spending assertion red-proved, 6 of 19 failing); `tests/retry-fetch.test.ts` (10); `tests/spending-by-category.test.ts` (11); full gate: pgTAP 39 files (995), Vitest 100 files (1,921 passed / 19 skipped / 2 failed; the 2 were new abort tests run under jsdom, pinned to the node environment and passing in a targeted re-run), tsc, eslint 0 errors, build. Seen on a local build against invented rows at desktop and 375px (no horizontal scroll; category totals match the month table). `/code-review` high: 8 findings, 5 fixed (body cancel, Request-signal abort, reuse `shareOf`, one scan, unusable-window loading text), 3 skipped (timeout retries, sign display, a route test).
 
 ## D-290 — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 

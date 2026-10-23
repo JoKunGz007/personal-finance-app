@@ -136,6 +136,155 @@ export type DailyMovement = z.infer<typeof dailyMovementSchema>;
 export type LargestMovement = z.infer<typeof largestMovementSchema>;
 
 /**
+ * The statistics window and the account it is read over, as they arrive on the query string, shared
+ * by `/api/v1/statistics` and `/api/v1/statistics/categories`.
+ *
+ * Both ends are optional and independent — the RPC resolves an absent end to the ledger's own first
+ * or last row. An end before its start is refused here (`isUsableRange`, the same function the
+ * views use) rather than answered with an empty page. `account` is optional on the same terms; only
+ * its uuid form is checked, and whether it is the caller's own is the database's question.
+ */
+export const statisticsWindowSchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  account: z.string().uuid().nullable()
+}).refine(isUsableRange, "A statistics window ends on or after it starts.");
+
+/**
+ * Wire contract for `GET /api/v1/statistics/categories`, which returns `public.spending_by_category`
+ * verbatim (migration 063). `spendingMinor` is a positive magnitude — the statistics withdrawals
+ * total with its sign flipped — and every category listed has spending above zero; the categories
+ * sum to the top-level figure. `categoryId` and `name` are null for the uncategorised bucket.
+ */
+export const categorySpendingSchema = z.object({
+  categoryId: z.string().uuid().nullable(),
+  name: z.string().nullable(),
+  archived: z.boolean(),
+  parentId: z.string().uuid().nullable(),
+  parentName: z.string().nullable(),
+  spendingMinor: minorUnitStringSchema,
+  transactionCount: z.number().int().nonnegative()
+}).strict();
+
+export const spendingByCategorySchema = z.object({
+  from: isoDateSchema.nullable(),
+  to: isoDateSchema.nullable(),
+  spendingMinor: minorUnitStringSchema,
+  categories: z.array(categorySpendingSchema)
+}).strict();
+
+export type CategorySpending = z.infer<typeof categorySpendingSchema>;
+export type SpendingByCategory = z.infer<typeof spendingByCategorySchema>;
+
+/** A part of a whole, kept as the exact pair; percent formatting is the UI's job (D-160). */
+export type ExactShare = { numerator: string; denominator: string };
+
+export type SpendingChild = {
+  key: string;
+  categoryId: string | null;
+  label: string;
+  archived: boolean;
+  /** True for the parent's own directly-assigned rows, labelled with the parent's name. */
+  isParentOwn: boolean;
+  spendingMinor: string;
+  transactionCount: number;
+  /** Of its group's spending. */
+  share: ExactShare;
+};
+
+export type SpendingGroup = {
+  key: string;
+  label: string;
+  archived: boolean;
+  spendingMinor: string;
+  transactionCount: number;
+  /** Of the whole spending figure. */
+  share: ExactShare;
+  children: SpendingChild[];
+};
+
+export const UNCATEGORISED_LABEL = "Uncategorised";
+const UNCATEGORISED_KEY = "uncategorised";
+
+const bySpendingThenLabel = (
+  a: { spendingMinor: string; label: string },
+  b: { spendingMinor: string; label: string }
+): number => {
+  const x = BigInt(a.spendingMinor);
+  const y = BigInt(b.spendingMinor);
+  if (x !== y) return x > y ? -1 : 1;
+  return a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
+};
+
+/**
+ * Rolls the per-category rows up one level: a parent and its children form one group whose figure
+ * is their BigInt sum; a category with no parent (and no children) is its own group with no
+ * children; the uncategorised bucket is one group labelled "Uncategorised". A parent's own
+ * directly-assigned rows appear as a child labelled with the parent's name, but only when the group
+ * also has real children. Groups and children are sorted by spending descending.
+ *
+ * The denominator of every group share is `data.spendingMinor`; a child's is its group's total.
+ * Nothing here is converted to a `number`.
+ */
+export function groupSpendingByParent(data: SpendingByCategory): SpendingGroup[] {
+  const total = data.spendingMinor;
+  const buckets = new Map<string, CategorySpending[]>();
+  for (const row of data.categories) {
+    const key = row.categoryId === null ? UNCATEGORISED_KEY : (row.parentId ?? row.categoryId);
+    const bucket = buckets.get(key);
+    if (bucket === undefined) buckets.set(key, [row]);
+    else bucket.push(row);
+  }
+
+  const groups: SpendingGroup[] = [];
+  for (const [key, rows] of buckets) {
+    const sum = rows.reduce((acc, row) => acc + BigInt(row.spendingMinor), 0n);
+    const count = rows.reduce((acc, row) => acc + row.transactionCount, 0);
+    const groupTotal = sum.toString();
+    const hasChildren = rows.some((row) => row.parentId !== null);
+    const first = rows[0];
+    if (first === undefined) continue;
+
+    let label: string;
+    let archived: boolean;
+    if (key === UNCATEGORISED_KEY) {
+      label = UNCATEGORISED_LABEL;
+      archived = false;
+    } else if (hasChildren) {
+      const child = rows.find((row) => row.parentId !== null) ?? first;
+      const own = rows.find((row) => row.categoryId === key);
+      label = child.parentName ?? own?.name ?? "";
+      archived = own?.archived ?? false;
+    } else {
+      label = first.name ?? "";
+      archived = first.archived;
+    }
+
+    const children: SpendingChild[] = hasChildren
+      ? rows.map((row) => {
+        const isParentOwn = row.parentId === null;
+        return {
+          key: row.categoryId ?? UNCATEGORISED_KEY,
+          categoryId: row.categoryId,
+          label: isParentOwn ? label : (row.name ?? ""),
+          archived: row.archived,
+          isParentOwn,
+          spendingMinor: row.spendingMinor,
+          transactionCount: row.transactionCount,
+          share: { numerator: row.spendingMinor, denominator: groupTotal }
+        };
+      }).sort(bySpendingThenLabel)
+      : [];
+
+    groups.push({
+      key, label, archived, spendingMinor: groupTotal, transactionCount: count,
+      share: { numerator: groupTotal, denominator: total }, children
+    });
+  }
+  return groups.sort(bySpendingThenLabel);
+}
+
+/**
  * The number of whole weeks a window covers, for labelling only.
  *
  * Deliberately **not** the weekly average's divisor — that is the day count, because the average

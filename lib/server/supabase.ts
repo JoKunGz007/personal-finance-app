@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { REQUIRED_FACTORS } from "@/lib/owner-access";
+import { retryingFetch } from "@/lib/server/retry-fetch";
 
 function localConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -22,6 +23,7 @@ export async function strongOwnerClient() {
   if (!config) return { ok: false as const, status: 503, message: "Local Supabase is not configured." };
   const cookieStore = await cookies();
   const supabase = createServerClient(config.url, config.key, {
+    global: { fetch: retryingFetch() },
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (values) => values.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
