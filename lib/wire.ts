@@ -105,6 +105,14 @@ export async function ledgerRequest<T>(
   let response: Response;
   try {
     response = await fetch(path, { cache: "no-store", ...init });
+    // The owner's session was mid-renewal, so the route read nothing (D-303). One GET retry after
+    // the pause it names; the renewed cookies go with it. A write is never resent.
+    const method = (init?.method ?? "GET").toUpperCase();
+    const pause = Number(response.headers.get("Retry-After"));
+    if (response.status === 503 && method === "GET" && pause > 0 && pause <= 5) {
+      await new Promise((resume) => setTimeout(resume, pause * 1000));
+      response = await fetch(path, { cache: "no-store", ...init });
+    }
   } catch {
     // A transport failure carries nothing worth quoting — no status, no body, and the browser's own
     // message is about sockets rather than about a ledger.

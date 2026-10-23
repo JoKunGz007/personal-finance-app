@@ -84,6 +84,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Automatic ride, order and receipt matches exist only in TypeScript, never in the database
 - A `bigint` column from an RPC arrives as a JSON number, not text
 - An invoker SQL function over RLS tables can be fast as `postgres` and time out as the owner
+- A request that passes `getUser()` can still read with an expired token (PGRST303)
 
 ### Backup, restore and recovery
 

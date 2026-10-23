@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-288 … D-302**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-288 … D-303**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -430,6 +430,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
 - **D-301** — Five benches share one list load, `useBenchList`, and only the newest load commits (Open item 7 #14)
 - **D-300** — The twenty-second boundary moves D-273 … D-287, because the file passed its byte budget
@@ -445,6 +446,26 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 - **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
 - **D-288** — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
+
+## D-303 — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
+
+- Date: 2026-10-24
+- Status: **Built** (owner granted commit and push this session; the owner said "go ahead" to the fix). Auth path only: no RPC, migration or stored-value change.
+- **Cause, from the log.** The owner's Chrome read the Vercel runtime log for the 500 recorded in D-302. The one error line was `readAll failed`, label `shopee_refunds`, code `PGRST303` (PostgREST: JWT expired). It was not a timeout and not a network fault. In the installed auth-js (2.110.8), a session refreshes only when less than 90 s are left. A failed refresh keeps the old still-valid token and caches the failure for 60 s per refresh token, and supabase-js re-reads that session for every PostgREST call. So `strongOwnerClient`'s `getUser()` passed, and a later paged read arrived after `exp`. The agent checked those library lines itself after `finance-investigator` reported them. What made the refresh fail is not known: no auth log was read.
+- **Fix.**
+  - `strongOwnerClient` (`lib/server/supabase.ts`) calls `getSession()` after `getUser()`. That call makes no network refresh; it reads the state `getUser()` left. If the token has under 30 s left, it answers 503 `SESSION_RENEWING` before any owner check or read.
+  - Under 30 s left after `getUser()` only happens when a refresh failed, because a successful refresh leaves about an hour. A session with no readable expiry is not refused here, and the owner checks still decide.
+  - `routeError` adds `Retry-After: 1` to that message only. The other 503s mean "not configured" and stay unmarked.
+  - `ledgerRequest` (`lib/wire.ts`) retries a GET once on a 503 that carries a `Retry-After` of 1–5 s, by when the browser's own client has normally renewed the cookies. It never retries a write. Nothing has run when this 503 is answered, so the retry is safe.
+- **Rejected.** Retrying on PGRST303 after `refreshSession()` on the same client: the 60 s cooldown hands back the cached failure. A Next `proxy.ts` that refreshes first: it would run the same keep-the-old-token logic on every request and touch CSP and headers.
+- **Left, on purpose.**
+  - A token with 30–90 s left and a failed refresh still goes through. A route that runs longer than that can still reach PGRST303.
+  - A local clock that lags the auth container by about an hour would refuse every request (`finance-reviewer`, local dev only).
+  - A 503 with `Retry-After` from the platform also gets the one GET retry.
+- Evidence:
+  - Tests: `tests/owner-session-floor.test.ts` (4: 29 s refused, 31 s passes, no expiry passes, `Retry-After` only on the renewing 503) and `tests/wire.test.ts` (+4: one GET retry, no second retry, no write resend, no retry without `Retry-After`). Red-proved: against the HEAD `supabase.ts` and `wire.ts`, 4 of the new tests fail.
+  - `finance-reviewer`: no high-severity findings; fail-closed preserved; every caller answers through `routeError`.
+  - The `pnpm verify` result is recorded in `PLAN.md`.
 
 ## D-302 — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
 

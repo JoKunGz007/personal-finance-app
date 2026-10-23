@@ -98,6 +98,50 @@ describe("a route that refuses", () => {
   });
 });
 
+describe("a session mid-renewal (D-303)", () => {
+  const renewing = () => new Response(JSON.stringify({ error: "Renewing." }), {
+    status: 503, headers: { "content-type": "application/json", "Retry-After": "1" }
+  });
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  async function settle<T>(pending: Promise<T>): Promise<T> {
+    await vi.advanceTimersByTimeAsync(1000);
+    return pending;
+  }
+
+  it("retries a GET once after the pause the route names", async () => {
+    vi.useFakeTimers();
+    const answers = [renewing(), json({ accounts: ["one"] })];
+    const spy = stubFetch(async () => answers.shift()!);
+    const result = await settle(ledgerRequest("/api/v1/accounts", schema, WORDING));
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ ok: true, data: { accounts: ["one"] } });
+  });
+
+  it("retries only once, then reports the route's words", async () => {
+    vi.useFakeTimers();
+    const spy = stubFetch(async () => renewing());
+    const result = await settle(ledgerRequest("/api/v1/accounts", schema, WORDING));
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ ok: false, kind: "refused", why: "Renewing.", status: 503 });
+  });
+
+  it("never resends a write", async () => {
+    const spy = stubFetch(async () => renewing());
+    await ledgerRequest("/api/v1/accounts", schema, WORDING, { method: "POST", body: "{}" });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a 503 without Retry-After, which means not configured", async () => {
+    const spy = stubFetch(async () => json({ error: "Not configured." }, 503));
+    await ledgerRequest("/api/v1/accounts", schema, WORDING);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("an answer that is not JSON at all", () => {
   it("is unreachable rather than a thrown error, on a 200", async () => {
     // A platform error page is HTML with a 200 more often than anyone expects. Bare `.json()`

@@ -184,3 +184,10 @@ the top of `GOTCHAS.md`.
 - Cause: `db query` runs as `postgres`, which bypasses row-level security. As `authenticated`, every row a correlated subquery touches re-runs the policy (`private.has_strong_owner_access`), so cost grows with ledger rows × inner rows; a paged `count: "exact"` read runs the function twice; `authenticated` has an 8 s statement timeout. A small local database hides it.
 - Avoid: read each source once (materialized CTEs, a grouped join) rather than a correlated subquery per row. Before pushing a new read RPC, time it on hosted as the owner: in one transaction, `set_config('request.jwt.claims', …)` with the owner's `sub` and `aal2`, `set local role authenticated`, time the call, `rollback`.
 - Verify: 2026-10-11 (D-272): 056's `shopee_ledger_rows()` about 6 s as the owner, 058 119 ms, the same rows.
+
+## A request that passes `getUser()` can still read with an expired token (PGRST303)
+
+- Symptom: a page refuses its read on hosted ("could not be loaded in full", a 500), and the Vercel runtime log shows `readAll failed` with code `PGRST303` (JWT expired). Every retry seconds later answers 200.
+- Cause: auth-js (2.110.8) refreshes a session only when less than 90 s are left. When that refresh fails, it keeps sending the old token until its real expiry and caches the failure for 60 s per refresh token, so the same client never tries again. `getUser()` passes on the old token, and a later PostgREST read in the same request can arrive after `exp`. The server GET retry (D-291) resends the same token, and `refreshSession()` on the same client returns the cached failure.
+- Avoid: `strongOwnerClient` refuses before any read when the token has under 30 s left after `getUser()`, answering 503 with `Retry-After`; `ledgerRequest` retries a GET once on it (D-303). Don't fix it with a PGRST303 retry on the same client. A route that runs longer than 30 s can still outlive its token.
+- Verify: 2026-10-24, from the owner's Chrome, Vercel runtime log: one `PGRST303` line on `/api/v1/shopee` at the time of the 500 (D-303). `tests/owner-session-floor.test.ts`, `tests/wire.test.ts`.
