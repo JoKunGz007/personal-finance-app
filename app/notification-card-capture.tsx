@@ -636,6 +636,11 @@ export function NotificationCardCapture({ onCaptured }: { onCaptured?: () => voi
                   if (fileInput.current) fileInput.current.value = "";
                   cropPass.current += 1;
                   setReading(null);
+                  // The form goes with the image. Dropping only the reading left the pre-filled boxes
+                  // and the remembered offer behind, and with no card in hand the direction
+                  // cross-check stops applying: a card submittable on one signal, under the new
+                  // channel, while still reporting the pre-fill as offered.
+                  setTyped(emptyTyped());
                 }}
                 aria-describedby="card-channel-help"
               >

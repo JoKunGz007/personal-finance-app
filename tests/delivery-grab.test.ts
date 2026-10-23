@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { classifyGrabReceipt, htmlToLines, lineShape, parseGrabFood, readSentAt } from "@/lib/delivery-grab";
+import { classifyGrabReceipt, htmlToLines, lineShape, parseGrabFood, parseGrabMail, readSentAt } from "@/lib/delivery-grab";
 
 // Every value below is invented (`docs/FIXTURE_POLICY.md`): the booking ID, restaurant, dishes,
 // amounts, card and promo codes match no real order. The **layout** follows the masked shape of the
@@ -195,6 +195,39 @@ describe("parseGrabFood", () => {
   test("refuses an amount with no label above it", () => {
     const parsed = parseGrabFood(htmlToLines(receiptHtml({ tail: ["ค่าอาหาร", "฿ 250", "฿ 15", "รวม", "฿ 205"] })));
     expect(parsed).toMatchObject({ ok: false, code: "MALFORMED_LINE" });
+  });
+
+  test("refuses an amount that is not a plain figure instead of throwing (Open item 8 A2)", () => {
+    for (const bad of ["฿ ,", "฿ 05", "฿ ,,"]) {
+      const lines = htmlToLines(receiptHtml({ tail: ["ค่าอาหาร", "฿ 250", "ค่าจัดส่ง", bad, "รวม", "฿ 205"] }));
+      expect(() => parseGrabMail(lines, null), bad).not.toThrow();
+      expect(parseGrabMail(lines, null), bad).toMatchObject({
+        kind: "food", read: { ok: false, code: "MALFORMED_LINE", message: "An amount is not a plain figure." }
+      });
+    }
+  });
+
+  test("refuses a priced line among the dishes as an unknown charge", () => {
+    const parsed = parseGrabFood(htmlToLines(receiptHtml({
+      items: ["1x", "Invented Noodles", "฿ 150", "Extra invented egg", "฿ 5", "2x", "Invented Tea", "฿ 100"]
+    })));
+    expect(parsed).toMatchObject({ ok: false, code: "UNKNOWN_CHARGE" });
+  });
+
+  test("refuses two delivery fee lines", () => {
+    const parsed = parseGrabFood(htmlToLines(receiptHtml({
+      top: ["ทานอาหารให้อร่อย!"],
+      tail: ["ค่าอาหาร", "฿ 250", "ค่าจัดส่ง", "฿ 15", "ค่าจัดส่ง", "฿ 15", "รวม", "฿ 280"]
+    })));
+    expect(parsed).toMatchObject({ ok: false, code: "MALFORMED_LINE", message: "Two delivery fee lines were found." });
+  });
+
+  test("refuses an amount that carries two minus signs", () => {
+    const parsed = parseGrabFood(htmlToLines(receiptHtml({
+      top: ["ทานอาหารให้อร่อย!"],
+      tail: ["ค่าอาหาร", "฿ 250", "INVENTEDCODE", "- ฿ -50", "รวม", "฿ 200"]
+    })));
+    expect(parsed).toMatchObject({ ok: false, code: "MALFORMED_LINE", message: "An amount carries two minus signs." });
   });
 
   test("refuses a receipt with no booking ID", () => {

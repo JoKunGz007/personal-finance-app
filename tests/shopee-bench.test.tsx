@@ -61,9 +61,21 @@ describe("ShopeeBench save errors (D-302)", () => {
 
     await act(async () => button("Match deposit").click());
     expect(client.getShopeeView).toHaveBeenCalledTimes(2);
-    expect(alerts()).toEqual(["Not savedSomeone else changed it."]);
+    expect(alerts()).toEqual(["Not savedSomeone else changed it.Dismiss"]);
 
     await act(async () => button("Reload").click());
+    expect(alerts()).toEqual([]);
+  });
+
+  it("shows Not saved as a bar until Dismiss removes it", async () => {
+    client.postShopeeLinks.mockResolvedValue({ ok: false, kind: "refused", why: "Someone else changed it.", status: 409 });
+    await act(async () => root.render(createElement(ShopeeBench)));
+
+    await act(async () => button("Match deposit").click());
+    expect(alerts()).toEqual(["Not savedSomeone else changed it.Dismiss"]);
+    expect(container.querySelector('[role="alert"]')?.classList.contains("save-toast")).toBe(true);
+
+    await act(async () => button("Dismiss").click());
     expect(alerts()).toEqual([]);
   });
 

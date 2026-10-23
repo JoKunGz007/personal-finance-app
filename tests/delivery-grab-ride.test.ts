@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { classifyGrabReceipt, htmlToLines, parseGrabRide } from "@/lib/delivery-grab";
+import { classifyGrabReceipt, htmlToLines, parseGrabMail, parseGrabRide } from "@/lib/delivery-grab";
 
 // Every value below is invented (`docs/FIXTURE_POLICY.md`): the booking ID, places, times, names,
 // card digits and amounts match no real ride. The **layout** follows the ride template measured
@@ -115,6 +115,36 @@ describe("parseGrabRide", () => {
     expect(parseGrabRide(rideLines({ type: "Hope you enjoyed your ride!" }))).toMatchObject({ ok: false, code: "MISSING_FIELD" });
     expect(parseGrabRide(rideLines({ type: "ขอบคุณ" }))).toMatchObject({ ok: false, code: "MISSING_FIELD" });
     expect(parseGrabRide(rideLines({ type: "฿ 81" }))).toMatchObject({ ok: false, code: "MISSING_FIELD" });
+  });
+
+  test("refuses an amount that is not a plain figure instead of throwing (Open item 8 A2)", () => {
+    for (const bad of ["฿ ,", "฿ 05"]) {
+      const lines = rideLines({ breakdown: ["Fare", "฿ 90", "Platform Fee", "฿ 6*", "Promo", bad] });
+      expect(() => parseGrabMail(lines, null), bad).not.toThrow();
+      expect(parseGrabMail(lines, null), bad).toMatchObject({ kind: "ride", read: { ok: false, code: "MALFORMED_LINE" } });
+    }
+    // The top total and the bare GrabCoins form reach the same amount reader.
+    const topTotal = rideLines({ total: "฿ 05" });
+    expect(() => parseGrabMail(topTotal, null)).not.toThrow();
+    expect(parseGrabMail(topTotal, null)).toMatchObject({ kind: "ride", read: { ok: false } });
+    const coins = rideLines({ breakdown: ["Fare", "฿ 200", "Platform Fee", "฿ 6*", "GrabCoins", "-05"], total: "฿ 107" });
+    expect(() => parseGrabMail(coins, null)).not.toThrow();
+    expect(parseGrabMail(coins, null)).toMatchObject({ kind: "ride", read: { ok: false, code: "MALFORMED_LINE" } });
+  });
+
+  test("refuses a zero breakdown line", () => {
+    const parsed = parseGrabRide(rideLines({ breakdown: ["Fare", "฿ 96", "Platform Fee", "฿ 6*", "Promo", "฿ 0"], total: "฿ 102" }));
+    expect(parsed).toMatchObject({ ok: false, code: "MALFORMED_LINE", message: "A breakdown line is zero." });
+  });
+
+  test("refuses a fare that prints negative", () => {
+    const parsed = parseGrabRide(rideLines({ breakdown: ["Fare", "฿ -90", "Platform Fee", "฿ 6*"], total: "฿ 16" }));
+    expect(parsed).toMatchObject({ ok: false, code: "MALFORMED_LINE", message: "A fare or fee prints negative." });
+  });
+
+  test("refuses a fare printed twice", () => {
+    const parsed = parseGrabRide(rideLines({ breakdown: ["Fare", "฿ 90", "Fare", "฿ 90", "Platform Fee", "฿ 6*"], total: "฿ 186" }));
+    expect(parsed).toMatchObject({ ok: false, code: "MALFORMED_LINE", message: "A fare or fee line is printed twice." });
   });
 
   test("refuses an impossible pickup date rather than rolling it over", () => {

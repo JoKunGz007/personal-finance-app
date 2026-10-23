@@ -4,6 +4,7 @@ import type { CapturedSlip } from "@/lib/slips";
 import type { CashEntry } from "@/lib/cash";
 import { emptyWindow, withPage, type LedgerWindow } from "@/lib/ledger-window";
 import {
+  applyReportingChange,
   createLedgerViewDeriver,
   deriveLedgerView,
   type LedgerChoosing,
@@ -314,5 +315,28 @@ describe("the deriver's cache", () => {
     const fresh = deriveLedgerView(data, filtersOf({ status: "cash", order: "oldest" }), NO_CHOOSING);
     expect(cached.visibleRows.map((r) => r.id)).toEqual(fresh.visibleRows.map((r) => r.id));
     expect(cached.totals).toEqual(fresh.totals);
+  });
+});
+
+describe("applyReportingChange (server reporting rules, D-207 / D-290)", () => {
+  const plain = { autoExcluded: false, duplicate: false };
+  it("Include on an auto-excluded row clears the auto-exclusion", () => {
+    expect(applyReportingChange({ autoExcluded: true, duplicate: false }, "include")).toEqual(plain);
+  });
+  it("Include on a duplicate-marked row clears the mark", () => {
+    expect(applyReportingChange({ autoExcluded: false, duplicate: true }, "include")).toEqual(plain);
+  });
+  it("Exclude on a duplicate-marked row keeps the mark", () => {
+    expect(applyReportingChange({ autoExcluded: false, duplicate: true }, "exclude")).toEqual({ autoExcluded: false, duplicate: true });
+  });
+  it("Exclude on an auto-excluded row makes it the owner's", () => {
+    expect(applyReportingChange({ autoExcluded: true, duplicate: false }, "exclude")).toEqual(plain);
+  });
+  it("Exclude on a plain row adds no mark", () => {
+    expect(applyReportingChange(plain, "exclude")).toEqual(plain);
+  });
+  it("Mark as duplicate sets the mark and clears auto-exclusion", () => {
+    expect(applyReportingChange(plain, "duplicate")).toEqual({ autoExcluded: false, duplicate: true });
+    expect(applyReportingChange({ autoExcluded: true, duplicate: false }, "duplicate")).toEqual({ autoExcluded: false, duplicate: true });
   });
 });

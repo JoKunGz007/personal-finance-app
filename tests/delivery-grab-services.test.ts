@@ -94,6 +94,22 @@ describe("parseGrabMart", () => {
   });
 });
 
+describe("parseGrabMart, refusals", () => {
+  test("refuses two delivery fee lines", () => {
+    const read = parseGrabMart(martLines({ top: ["ทั้งหมด", "฿ 180"], tail: ["ราคาคำสั่งซื้อ", "฿ 160", "ค่าจัดส่ง", "฿ 10", "ค่าจัดส่ง", "฿ 10", "ทั้งหมด", "฿ 180"] }));
+    expect(read).toMatchObject({ ok: false, code: "MALFORMED_LINE", message: "Two delivery fee lines were found." });
+  });
+  test("refuses an amount that is not a plain figure instead of throwing (Open item 8 A2)", () => {
+    for (const bad of ["฿ ,", "฿ 05"]) {
+      const lines = martLines({ tail: ["ราคาคำสั่งซื้อ", "฿ 160", "ค่าจัดส่ง", bad, "ทั้งหมด", "฿ 150"] });
+      expect(() => parseGrabMail(lines, null), bad).not.toThrow();
+      expect(parseGrabMail(lines, null), bad).toMatchObject({
+        kind: "mart", read: { ok: false, code: "MALFORMED_LINE", message: "An amount is not a plain figure." }
+      });
+    }
+  });
+});
+
 describe("parseGrabDineOut", () => {
   test("reads the happy path and suffixes the booking ID with the Bangkok date", () => {
     const read = parseGrabDineOut(dineOutLines());
@@ -135,6 +151,22 @@ describe("parseGrabDineOut", () => {
     expect(parseGrabDineOut(dineOutLines({ tail: ["ค่าอาหาร", "฿ 450", "10% off", "- ฿ 40", "Total", "฿ 405"] })))
       .toMatchObject({ ok: false, code: "TOTAL_MISMATCH" });
     expect(parseGrabDineOut(dineOutLines({ top: ["รวม", "฿ 400"] }))).toMatchObject({ ok: false, code: "TOTAL_MISMATCH" });
+  });
+});
+
+describe("parseGrabDineOut, refusals", () => {
+  test("refuses a positive line between the food line and the total as an unknown charge", () => {
+    const read = parseGrabDineOut(dineOutLines({ top: ["รวม", "฿ 455"], tail: ["ค่าอาหาร", "฿ 450", "Invented fee", "฿ 5", "Total", "฿ 455"] }));
+    expect(read).toMatchObject({ ok: false, code: "UNKNOWN_CHARGE" });
+  });
+  test("refuses an amount that is not a plain figure instead of throwing (Open item 8 A2)", () => {
+    for (const bad of ["฿ ,", "฿ 05"]) {
+      const lines = dineOutLines({ tail: ["ค่าอาหาร", "฿ 450", "10% off", `- ${bad}`, "Total", "฿ 405"] });
+      expect(() => parseGrabMail(lines, null), bad).not.toThrow();
+      expect(parseGrabMail(lines, null), bad).toMatchObject({
+        kind: "dine_out", read: { ok: false, code: "MALFORMED_LINE", message: "An amount is not a plain figure." }
+      });
+    }
   });
 });
 
@@ -203,6 +235,27 @@ describe("parseGrabExpress", () => {
   });
   test("no printed date is refused", () => {
     expect(parseGrabExpress(expressLines({ date: "yesterday" }), null)).toMatchObject({ ok: false, code: "MISSING_FIELD" });
+  });
+});
+
+describe("parseGrabExpress, refusals", () => {
+  test("refuses a priced line in the receipt summary that is not known", () => {
+    const tail = ["Basic Delivery Guarantee*", "฿ 70", "Invented Surcharge", "฿ 15", "TOTAL", "฿ 85"];
+    expect(parseGrabExpress(expressLines({ tail }), null)).toMatchObject({ ok: false, code: "UNKNOWN_CHARGE" });
+  });
+  test("refuses two delivery fee lines", () => {
+    const tail = ["Basic Delivery Guarantee*", "฿ 40", "Basic Delivery Guarantee*", "฿ 45", "TOTAL", "฿ 85"];
+    expect(parseGrabExpress(expressLines({ tail }), null))
+      .toMatchObject({ ok: false, code: "MALFORMED_LINE", message: "Two delivery fee lines were found." });
+  });
+  test("refuses an amount that is not a plain figure instead of throwing (Open item 8 A2)", () => {
+    for (const bad of ["฿ ,", "฿ 05"]) {
+      const tail = ["Basic Delivery Guarantee*", bad, "TOTAL", "฿ 85"];
+      expect(() => parseGrabMail(expressLines({ tail }), null), bad).not.toThrow();
+      expect(parseGrabMail(expressLines({ tail }), null), bad).toMatchObject({
+        kind: "express", read: { ok: false, code: "MALFORMED_LINE", message: "An amount is not a plain figure." }
+      });
+    }
   });
 });
 
@@ -282,6 +335,10 @@ describe("parseGrabLateDelivery", () => {
     expect(read.ok).toBe(true);
     if (!read.ok) return;
     expect(read.value.items).toEqual([{ position: 1, quantity: 1, name: "Invented Noodle", options: ["2"], amountMinor: "12000" }]);
+  });
+  test("refuses two delivery fee lines", () => {
+    const read = parseGrabLateDelivery(lateLines({ fees: ["Delivery Fee", "10.00", "Delivery Fee", "10.00"] }), sent);
+    expect(read).toMatchObject({ ok: false, code: "MALFORMED_LINE", message: "Two delivery fee lines were found." });
   });
   test("a null mail time is refused", () => {
     expect(parseGrabLateDelivery(lateLines(), null)).toMatchObject({ ok: false, code: "MISSING_FIELD" });

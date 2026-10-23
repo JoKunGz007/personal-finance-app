@@ -229,6 +229,7 @@ describe.skipIf(!reachable)("import and accounts route handlers", () => {
       expect(response.status, JSON.stringify(body)).toBe(201);
       expect(body.batchId).toMatch(/^[0-9a-f-]{36}$/);
       expect(body.fingerprints).toHaveLength(payload.rows.length);
+      expect(body.linkedRows).toBe(0);
 
       // The route's own fingerprint and digest computation, which the PostgREST suite
       // could only mirror by hand, is what the database accepted.

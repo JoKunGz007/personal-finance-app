@@ -22,10 +22,13 @@ export { ALL_ACCOUNTS, ALL_STATUSES, type LedgerBalance, type LedgerLayout, type
  *
  * `+07:00` rather than the browser's zone, matching the rule `lib/dates.ts` carries for every
  * derived instant: a row dated from a statement is a Bangkok date, and formatting it in the
- * viewer's zone would move it across a day boundary for anyone reading from elsewhere.
+ * viewer's zone would move it across a day boundary for anyone reading from elsewhere. Both halves
+ * are needed: `+07:00` pins the instant, and `timeZone: "Asia/Bangkok"` makes `Intl` read that
+ * instant back in the same zone (without it the formatter uses the runtime's zone, and a viewer
+ * west of UTC+7, or a server rendering in UTC, sees the previous day).
  */
 export function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Bangkok" })
     .format(new Date(`${date}T00:00:00+07:00`));
 }
 
@@ -36,7 +39,7 @@ export function formatDate(date: string) {
  * classification: `day` and `year` are numeric, `month` and every literal (spaces, commas) are not.
  */
 export function formatDateParts(date: string): { value: string; numeric: boolean }[] {
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Bangkok" })
     .formatToParts(new Date(`${date}T00:00:00+07:00`))
     .map((part) => ({ value: part.value, numeric: part.type === "day" || part.type === "year" }));
 }
@@ -69,7 +72,7 @@ export function formatMonthParts(month: string): { value: string; numeric: boole
  * for anyone west of here.
  */
 export function formatDayHeading(date: string) {
-  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
+  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Bangkok" })
     .format(new Date(`${date}T00:00:00+07:00`));
 }
 
@@ -89,7 +92,7 @@ export function splitFigures(text: string): { value: string; numeric: boolean }[
 
 /** `formatDayHeading`, split the same way `formatDateParts` splits `formatDate`. */
 export function formatDayHeadingParts(date: string): { value: string; numeric: boolean }[] {
-  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
+  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Bangkok" })
     .formatToParts(new Date(`${date}T00:00:00+07:00`))
     .map((part) => ({ value: part.value, numeric: part.type === "day" || part.type === "year" }));
 }

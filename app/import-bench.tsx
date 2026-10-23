@@ -7,11 +7,12 @@ import { accountListSchema, createAccountSchema, ledgerAccountSchema, type Ledge
 import { encryptBackup } from "@/lib/backup";
 import { downloadFile } from "@/lib/download";
 import { rowFingerprint } from "@/lib/canonical";
-import { flagExisting, ledgerCheckNotice, type LedgerCheck } from "@/lib/existing-rows";
+import { confirmedRowsText, confirmResponseSchema, existingResponseSchema, flagExisting, ledgerCheckNotice, type LedgerCheck } from "@/lib/existing-rows";
 import { assembleImportPayload } from "@/lib/import-assembly";
 import type { StatementFrame } from "@/lib/statement-frame";
 import { soleMatchingAccount } from "@/lib/statement-binding";
-import { addMinor, formatThb } from "@/lib/money";
+import { formatThb } from "@/lib/money";
+import { movedRowIndexes, pageCountOf, statementTotals } from "@/lib/import-review";
 import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema, type ImportPayload, type SourceRowCandidate } from "@/lib/statement";
 import {
@@ -26,6 +27,7 @@ import { removeQueuedFile } from "@/lib/browser/inbox-slip";
 import { readStatementPdf } from "@/lib/browser/statement-reader";
 import { statementHeldReason } from "@/lib/inbox-drain";
 import { LedgerNote } from "@/app/ledger-note";
+import { formatDate } from "@/app/ledger-shared";
 
 type Stage = "select" | "unlock" | "bind" | "review" | "confirmed";
 const stages: Array<{ id: Stage; label: string }> = [
@@ -107,8 +109,9 @@ export function ImportBench() {
   // and confirming is still an explicit act — which is what D-055's reordering warning needs.
   const [autoBind, setAutoBind] = useState(true);
   const dialog = useRef<HTMLDialogElement>(null);
-  // Bumped by each parse and each file choice, so a read that finishes after the owner moved on
-  // cannot install its statement over the newer choice.
+  // Bumped by each parse and by every `discardLoadedStatement` (file choice, synthetic statement,
+  // batch entry), so a read that finishes after the owner moved on cannot install its statement
+  // over the newer choice.
   const parseRun = useRef(0);
   // Derived, not stored. It was a third `useState` that had to be set on confirming and cleared on
   // everything else, which is the exact shape that produced D-147.
@@ -167,12 +170,18 @@ export function ImportBench() {
         const response = await fetch("/api/v1/imports/existing", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accountId: statement.accountId, fingerprints })
+          body: JSON.stringify({ payload: statement })
         });
         const body: unknown = await response.json().catch(() => null);
-        const list = (body as { existing?: unknown } | null)?.existing;
-        if (!response.ok || !Array.isArray(list) || !list.every((item) => typeof item === "string")) throw new Error("lookup failed");
-        if (current) setLedgerCheck(statement, { status: "done", existing: flagExisting(fingerprints, list as string[]) });
+        const answer = existingResponseSchema.safeParse(body);
+        if (!response.ok || !answer.success) throw new Error("lookup failed");
+        if (current) {
+          setLedgerCheck(statement, {
+            status: "done",
+            existing: flagExisting(fingerprints, answer.data.existing),
+            linkedCount: answer.data.existingCount
+          });
+        }
       } catch {
         if (current) setLedgerCheck(statement, { status: "failed" });
       }
@@ -185,32 +194,11 @@ export function ImportBench() {
     () => statement ? reconcileRows(statement.openingBalance.minor, statement.rows) : null,
     [statement]
   );
-  const totals = useMemo(() => {
-    if (!statement) return null;
-    const deposits = statement.rows.flatMap((row) => row.components).filter((item) => item.kind === "deposit").map((item) => item.amount.minor);
-    const withdrawals = statement.rows.flatMap((row) => row.components).filter((item) => item.kind === "withdrawal").map((item) => item.amount.minor);
-    return {
-      deposits: addMinor(deposits),
-      withdrawals: addMinor(withdrawals),
-      net: addMinor([...deposits, ...withdrawals])
-    };
-  }, [statement]);
+  const totals = useMemo(() => statement ? statementTotals(statement.rows) : null, [statement]);
 
   // Rows are submitted and displayed in applied order, so a row the reconciliation moved is
-  // one printed later on the page than the row now above it. Derived from provenance rather
-  // than carried as a flag, because provenance is what survives into the payload (D-055).
-  const movedRows = useMemo(() => {
-    const moved = new Set<number>();
-    if (!statement) return moved;
-    for (let index = 1; index < statement.rows.length; index += 1) {
-      const previous = statement.rows[index - 1]!.provenance;
-      const current = statement.rows[index]!.provenance;
-      if (current.page < previous.page || (current.page === previous.page && current.row < previous.row)) {
-        moved.add(index);
-      }
-    }
-    return moved;
-  }, [statement]);
+  // one printed later on the page than the row now above it (D-055).
+  const movedRows = useMemo(() => statement ? movedRowIndexes(statement.rows) : new Set<number>(), [statement]);
 
   // At review the payload is what will be imported, so its own reconciliation drives the
   // table — but the warnings must come from the reconciliation that built it.
@@ -234,6 +222,8 @@ export function ImportBench() {
    * what matters is that nothing survives *between* choosing a document and reading it.
    */
   function discardLoadedStatement() {
+    // Any parse still in flight belongs to a document the owner has now put down.
+    parseRun.current += 1;
     setWorklist(null);
     setStatement(null);
     setExtracted(null);
@@ -413,7 +403,7 @@ export function ImportBench() {
       setStatus(read.held === null ? read.why : statementHeldReason(read.held));
       return;
     }
-    const pageCount = Math.max(1, ...read.rows.map((row) => row.provenance.page));
+    const pageCount = pageCountOf(read.rows);
     workBatchEntry(
       { artifactDigest: read.artifactDigest, label: "Inbox statement", frame: read.frame, rows: read.rows, pageCount, mailboxRef: null },
       { accounts: loaded, inbox: true }
@@ -438,18 +428,11 @@ export function ImportBench() {
       setStatus(read.held === null ? read.why : statementHeldReason(read.held));
       return;
     }
-    const pageCount = Math.max(1, ...read.rows.map((row) => row.provenance.page));
+    const pageCount = pageCountOf(read.rows);
     workBatchEntry(
       { artifactDigest: read.artifactDigest, label: "Mailbox statement", frame: read.frame, rows: read.rows, pageCount, mailboxRef: ref },
       { accounts: loaded, inbox: false, mailbox: true }
     );
-  }
-
-  /** Removes a confirmed statement from the Inbox; says in words whether that worked. A failure never undoes the import. */
-  async function removeInboxObject(name: string): Promise<string> {
-    return (await removeQueuedFile(name))
-      ? " The PDF was removed from the Inbox."
-      : " The PDF could not be removed from the Inbox; remove it there.";
   }
 
   async function loadAccounts(): Promise<LedgerAccount[] | null> {
@@ -598,7 +581,10 @@ export function ImportBench() {
     }
     // An Inbox statement leaves the Inbox only now, after the ledger answered. A failed removal is
     // reported but is never an error: the import is done, and a repeat would be refused as a duplicate.
-    const inboxNote = inboxName ? await removeInboxObject(inboxName) : "";
+    const inboxNote = !inboxName ? ""
+      : (await removeQueuedFile(inboxName))
+        ? " The PDF was removed from the Inbox."
+        : " The PDF could not be removed from the Inbox; remove it there.";
     if (inboxName) {
       setInboxName(null);
       // The object is gone, so a reload must not ask the server for it again.
@@ -619,7 +605,9 @@ export function ImportBench() {
     // The ledger has moved, so whatever backup exists no longer covers it. Said here rather
     // than shown on the recovery route: the two are separate routes now and share no state,
     // and the authoritative check is the sequence `confirm_backup_custody` compares anyway.
-    setStatus(`Confirmed ${statement.rows.length} rows into ${boundAccount.label} as batch ${String(record.batchId)}. The last backup is now stale — export a new one from Recovery.${inboxNote}`);
+    const confirmedAnswer = confirmResponseSchema.safeParse(body);
+    const linkedRows = confirmedAnswer.success ? confirmedAnswer.data.linkedRows ?? null : null;
+    setStatus(`Confirmed ${confirmedRowsText(statement.rows.length, linkedRows)} into ${boundAccount.label} as batch ${String(record.batchId)}. The last backup is now stale — export a new one from Recovery.${inboxNote}`);
   }
 
   /**
@@ -736,7 +724,6 @@ export function ImportBench() {
               // is shown over the new one. Nothing was cleared here at all until 2026-08-25, so
               // picking an unrelated PDF, or failing to unlock one, left the previous statement's
               // banner, review table and **enabled Confirm button** in place (D-148, D-150).
-              parseRun.current += 1;
               discardLoadedStatement();
               setStage(nextFile ? "unlock" : "select");
               setStatus(nextFile ? `${nextFile.name} selected. Its bytes have not been read yet.` : "No PDF selected.");
@@ -942,7 +929,7 @@ export function ImportBench() {
             <div className="warning" key={`${warning.code}-${warning.row}`} role="status">
               {warning.code === "out-of-order-run" ? (
                 <>
-                  <strong>Rows reordered on {new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${warning.date}T00:00:00+07:00`))}</strong>
+                  <strong>Rows reordered on {formatDate(warning.date)}</strong>
                   <span>
                     {warning.message} That date&rsquo;s {warning.order.length} rows are shown and imported in the applied order, running from {formatThb(warning.entryBalance)} to {formatThb(warning.recoveredClosing)}. Each row marked <em>reordered</em> below sits later on the printed page than the row above it — read the balance column straight down to check the chain joins up. Original page/row is kept for every row.
                   </span>
@@ -976,7 +963,7 @@ export function ImportBench() {
                 <tbody>
                   {reconciliation.rows.map((row, index) => (
                     <tr key={`${row.provenance.page}-${row.provenance.row}`} className={row.status === "resynchronized" || row.status === "reordered" || movedRows.has(index) ? "resync-row" : ""}>
-                      <td data-label="Date"><time dateTime={row.sourceDate}>{new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" }).format(new Date(`${row.sourceDate}T00:00:00+07:00`))}</time><small>{row.sourceTime ?? "—"}</small></td>
+                      <td data-label="Date"><time dateTime={row.sourceDate}>{new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "Asia/Bangkok" }).format(new Date(`${row.sourceDate}T00:00:00+07:00`))}</time><small>{row.sourceTime ?? "—"}</small></td>
                       <td data-label="Description"><strong lang="th">{row.transactionLabel}</strong><span>{row.description}</span>{row.components.length > 1 && <em>2 components</em>}{ledgerCheck?.status === "done" && ledgerCheck.existing[index] ? <small className="resync-label">already in ledger</small> : null}</td>
                       <td data-label="Category">
                         <select aria-label={`Category for ${row.description}`} value={rowCategories[index] ?? "Uncategorized"} onChange={(event) => { setRowCategories((current) => ({ ...current, [index]: event.target.value })); setPreviewStale(true); }}>

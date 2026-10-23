@@ -39,7 +39,7 @@ import {
   type NotificationCardCorrection,
   type NotificationCardDecision
 } from "@/lib/notification-cards";
-import { createLedgerViewDeriver, type ChooserSet } from "@/lib/ledger-view";
+import { applyReportingChange, createLedgerViewDeriver, type ChooserSet, type ReportingChange, type ReportingMarks } from "@/lib/ledger-view";
 import {
   slipCorrectionResponseSchema,
   slipMatchResponseSchema,
@@ -729,6 +729,21 @@ export function TransactionsView() {
     }
   }
 
+  /** Folds one reporting write's marks into the two id sets through `applyReportingChange`. */
+  function foldReportingChange(id: string, change: ReportingChange) {
+    // Each updater reads its own set's current value, so a state change during the request is not lost.
+    const fold = (pick: (after: ReportingMarks) => boolean, own: (current: ReadonlySet<string>) => ReportingMarks) =>
+      (current: ReadonlySet<string>) => {
+        const flag = pick(applyReportingChange(own(current), change));
+        if (current.has(id) === flag) return current;
+        const next = new Set(current);
+        if (flag) next.add(id); else next.delete(id);
+        return next;
+      };
+    setAutoExcluded(fold((m) => m.autoExcluded, (c) => ({ autoExcluded: c.has(id), duplicate: false })));
+    setDuplicates(fold((m) => m.duplicate, (c) => ({ autoExcluded: false, duplicate: c.has(id) })));
+  }
+
   /**
    * Takes one confirmed row in or out of reporting (PLAN task 48).
    *
@@ -765,22 +780,8 @@ export function TransactionsView() {
       return;
     }
     setLedgerWindow((current) => current === null ? current : withOverlay(current, transaction.id, result.data.overlay));
-    // A hand decision moves the revision on, so the row is the owner's from here (D-207).
-    setAutoExcluded((current) => {
-      if (!current.has(transaction.id)) return current;
-      const next = new Set(current);
-      next.delete(transaction.id);
-      return next;
-    });
-    // Re-including clears the duplicate mark in the database; excluding a marked row keeps it.
-    if (includeInReporting) {
-      setDuplicates((current) => {
-        if (!current.has(transaction.id)) return current;
-        const next = new Set(current);
-        next.delete(transaction.id);
-        return next;
-      });
-    }
+    // The marks the database leaves after this write (D-207, D-290), from one shared rule.
+    foldReportingChange(transaction.id, includeInReporting ? "include" : "exclude");
   }
 
   /**
@@ -813,13 +814,7 @@ export function TransactionsView() {
       return;
     }
     setLedgerWindow((current) => current === null ? current : withOverlay(current, transaction.id, result.data.overlay));
-    setAutoExcluded((current) => {
-      if (!current.has(transaction.id)) return current;
-      const next = new Set(current);
-      next.delete(transaction.id);
-      return next;
-    });
-    setDuplicates((current) => new Set(current).add(transaction.id));
+    foldReportingChange(transaction.id, "duplicate");
   }
 
   /**

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isoDateSchema } from "@/lib/dates";
-import { minorUnitStringSchema, toMinorAmount } from "@/lib/money";
+import { minorUnitStringSchema, nonNegativeMinorUnitStringSchema, positiveMinorUnitStringSchema, toMinorAmount } from "@/lib/money";
 import { BANK_CODES, CONTRACT_VERSIONS } from "@/lib/statement-frame";
 
 // Order is contract, not style. A manifest binds each chunk to its index, so `slips` is
@@ -580,6 +580,10 @@ const receiptMatchRevisionRowSchema = z.object({
 
 // A food delivery order (migration 032). Never money in the ledger sense, like a receipt; its
 // money fields are still canonical int64 text, and the delivery fee is null on a pickup order.
+// The delivery, ride, LINE MAN and Shopee schemas below restate their tables' sign CHECKs
+// (`>= 0`, or `> 0` for an adjustment and a refund) for the same reason the ledger tables do:
+// a file the database would refuse is refused here, not halfway through `restore_backup`.
+// Each CHECK existed from its table's creation migration, so no older file can carry a violation.
 const deliveryRowSchema = z.object({
   id: uuidSchema,
   owner_id: uuidSchema,
@@ -589,9 +593,9 @@ const deliveryRowSchema = z.object({
   restaurant: z.string().min(1),
   payment_method: nullableText,
   receipt_sent_at: timestampSchema.nullable(),
-  food_minor: minorUnitStringSchema,
-  delivery_fee_minor: minorUnitStringSchema.nullable(),
-  total_minor: minorUnitStringSchema,
+  food_minor: nonNegativeMinorUnitStringSchema,
+  delivery_fee_minor: nonNegativeMinorUnitStringSchema.nullable(),
+  total_minor: nonNegativeMinorUnitStringSchema,
   created_at: timestampSchema
 }).strict();
 
@@ -609,7 +613,7 @@ const deliveryItemRowSchema = z.object({
   quantity: z.number().int(),
   name: z.string().min(1),
   options: z.array(z.string()),
-  amount_minor: minorUnitStringSchema
+  amount_minor: nonNegativeMinorUnitStringSchema
 }).strict();
 
 const deliveryAdjustmentRowSchema = z.object({
@@ -619,7 +623,7 @@ const deliveryAdjustmentRowSchema = z.object({
   position: z.number().int(),
   kind: z.enum(["discount", "charge", "unprinted"]),
   name: z.string().min(1),
-  amount_minor: minorUnitStringSchema
+  amount_minor: positiveMinorUnitStringSchema
 }).strict();
 
 // The owner's say over which ledger row an order itemizes (migration 033), the receipt pair's shape.
@@ -659,9 +663,9 @@ const rideRowSchema = z.object({
   distance_meters: z.number().int().nonnegative(),
   duration_minutes: z.number().int().nonnegative(),
   payment_method: z.string().min(1),
-  fare_minor: minorUnitStringSchema,
-  platform_fee_minor: minorUnitStringSchema,
-  total_minor: minorUnitStringSchema,
+  fare_minor: nonNegativeMinorUnitStringSchema,
+  platform_fee_minor: nonNegativeMinorUnitStringSchema,
+  total_minor: nonNegativeMinorUnitStringSchema,
   created_at: timestampSchema
 }).strict();
 
@@ -672,7 +676,7 @@ const rideAdjustmentRowSchema = z.object({
   position: z.number().int(),
   kind: z.enum(["discount", "charge"]),
   name: z.string().min(1),
-  amount_minor: minorUnitStringSchema
+  amount_minor: positiveMinorUnitStringSchema
 }).strict();
 
 const rideMatchOverlayRowSchema = z.object({
@@ -715,7 +719,7 @@ const linemanOrderDetailRowSchema = z.object({
   delivery_id: uuidSchema,
   owner_id: uuidSchema,
   ordered_at: timestampSchema,
-  charged_minor: minorUnitStringSchema
+  charged_minor: nonNegativeMinorUnitStringSchema
 }).strict();
 
 const rideMatchRevisionRowSchema = z.object({
@@ -740,7 +744,7 @@ const shopeeOrderRowSchema = z.object({
   shop: z.string().min(1),
   payment_method: z.string().min(1),
   payment_kind: z.enum(["bank_debit", "wallet", "spaylater", "other"]),
-  total_minor: minorUnitStringSchema,
+  total_minor: nonNegativeMinorUnitStringSchema,
   item_price_is: z.enum(["line total", "unit price"]).nullable(),
   facts_digest: digestSchema,
   created_at: timestampSchema
@@ -755,8 +759,8 @@ const shopeeOrderItemRowSchema = z.object({
   variation: nullableText,
   quantity: z.number().int(),
   // Null for a gift line that prints no price.
-  price_minor: minorUnitStringSchema.nullable(),
-  original_price_minor: minorUnitStringSchema.nullable()
+  price_minor: nonNegativeMinorUnitStringSchema.nullable(),
+  original_price_minor: nonNegativeMinorUnitStringSchema.nullable()
 }).strict();
 
 // Signed: a voucher or a shipping discount is negative.
@@ -775,7 +779,7 @@ const shopeeRefundRowSchema = z.object({
   order_id: uuidSchema,
   request_id: z.string().regex(/^[0-9A-Z]{10,20}$/),
   requested_at: timestampSchema,
-  refund_minor: minorUnitStringSchema,
+  refund_minor: positiveMinorUnitStringSchema,
   refund_to: z.enum(["wallet", "bank"]),
   requested_by: z.enum(["buyer", "shopee"]),
   reason: nullableText,

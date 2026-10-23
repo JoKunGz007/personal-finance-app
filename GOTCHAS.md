@@ -278,6 +278,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - Opening `/inbox` drains and captures, so it is no place to inspect the queue
 - Ledger row labels write September as "Sept"
 - An owner link outside the candidate window has no row in its match state
+- `Intl.DateTimeFormat` without `timeZone` prints the viewer's day, not Bangkok's
 
 ## Traps
 

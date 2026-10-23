@@ -573,9 +573,9 @@ function matchSegment(
           if (spec.optional) break;
           return false;
         }
-        // A money-shaped or date-shaped run is never text. Refusing it here is what keeps
-        // a third figure on the line from being absorbed into a description instead of
-        // failing closed.
+        // A money-shaped run is never text. Refusing it here is what keeps a third figure
+        // on the line from being absorbed into a description instead of failing closed.
+        // Date-shaped runs are not refused here: only `isMoney` is checked.
         if (taken.some((item) => isMoney(item))) return false;
         into.text[spec.field] = textOf(taken);
         index += taken.length;

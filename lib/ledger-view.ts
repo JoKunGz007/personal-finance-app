@@ -611,3 +611,24 @@ export function deriveLedgerView(
 ): LedgerView {
   return createLedgerViewDeriver()(data, filters, choosing);
 }
+
+/** The reporting marks one row carries beyond the overlay itself: both are read from audit events. */
+export type ReportingMarks = { readonly autoExcluded: boolean; readonly duplicate: boolean };
+
+/** A hand decision on a row's reporting: Include, Exclude, or Mark as duplicate. */
+export type ReportingChange = "include" | "exclude" | "duplicate";
+
+/**
+ * The marks a row carries after a successful reporting write, exactly as the database leaves them
+ * (`update_transaction_overlay` migration 026/D-207, `mark_duplicate` migration 062/D-290):
+ * every write moves the overlay revision on, so the auto-exclusion label (current only while its
+ * event's revision equals the overlay's) always goes; Include clears the duplicate mark (a marked row
+ * must still be excluded); Exclude keeps an existing mark; Mark as duplicate sets it.
+ */
+export function applyReportingChange(marks: ReportingMarks, change: ReportingChange): ReportingMarks {
+  switch (change) {
+    case "include": return { autoExcluded: false, duplicate: false };
+    case "exclude": return { autoExcluded: false, duplicate: marks.duplicate };
+    case "duplicate": return { autoExcluded: false, duplicate: true };
+  }
+}

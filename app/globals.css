@@ -999,6 +999,9 @@ div:has(> .heading-note) > :not(h1, h2, h3, .heading-note) { flex-basis: 100%; }
 .warning { margin-top: 22px; padding: 14px 16px; display: flex; gap: 18px; color: var(--warn-ink); border: 1px solid var(--saffron); background: var(--saffron-wash); font-size: 13px; }
 .warning strong { white-space: nowrap; }
 .warning.error { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--paper)); }
+/* Shopee's "Not saved" alert: a bar fixed to the viewport bottom, so a refused write shows beside the button the owner pressed. */
+.save-toast { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 50; width: min(560px, calc(100vw - 32px)); display: flex; align-items: center; gap: 12px; box-shadow: 0 6px 24px rgb(0 0 0 / 25%); }
+.save-toast > button { margin-left: auto; flex: none; }
 
 .ledger-wrap { position: relative; margin-top: 24px; padding-left: 72px; border-block: 1px solid var(--navy); background: var(--paper); }
 .balance-rail { position: absolute; inset: 0 auto 0 0; width: 72px; display: grid; grid-template-rows: 58px repeat(5, minmax(76px, 1fr)); justify-items: center; border-right: 1px solid var(--line); }

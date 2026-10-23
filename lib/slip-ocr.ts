@@ -50,8 +50,9 @@ import type { BankCode } from "@/lib/statement-frame";
  * **The printed date**, as of 2026-08-10, once the month vocabulary was measured across all
  * three layouts (`docs/SLIP_CONTRACT.md` § The month vocabulary). 14 of 23 slips carry a
  * Gregorian date inside the QR reference already, exactly and under the QR's own CRC (D-059),
- * so this matters most on KBANK, whose reference carries none — and KBANK is also the one
- * layout this still refuses, because it prints a two-digit year. See `readPrintedDate`.
+ * so this matters most on KBANK, whose reference carries none — and KBANK prints a two-digit
+ * year, which `readDateLine` completes by arithmetic (`gregorianFromTwoDigitYear`) only when
+ * exactly one candidate fits the slip window, and otherwise refuses. See `readPrintedDate`.
  */
 
 /** One recognised word and where it sits. The only thing an engine must supply. */
@@ -435,9 +436,10 @@ function escapeForPattern(token: string): string {
  * (`docs/NOTIFICATION_CARD_CONTRACT.md` § KBank Live), and two hand-kept alternations would be two
  * chances to disagree about which token shadows which — the argument `dayNumber` in `lib/dates.ts`
  * makes for sharing rather than copying. **What is deliberately not shared is the era decision**: a
- * slip refuses a two-digit year because nothing tells it which calendar (D-059), while a card
- * resolves one from its layout. That difference is the whole of why `readDateLine` below cannot
- * simply be called by the card reader.
+ * slip has no layout to say which calendar a two-digit year is in (D-059), so `readDateLine` completes
+ * one only when exactly one candidate fits the slip window, while a card resolves one from its
+ * layout. That difference is the whole of why `readDateLine` below cannot simply be called by the
+ * card reader; the matcher, `MONTH_NAME_DATE`, is shared.
  */
 export const MONTH_ALTERNATION = [...THAI_MONTH_TOKENS]
   .sort((a, b) => b[0].length - a[0].length)
@@ -456,7 +458,12 @@ export const MONTH_ALTERNATION = [...THAI_MONTH_TOKENS]
 // image" about a slip that plainly prints one. Requiring the match to consume to the end of
 // the line makes the four-digit reading fail and the two-digit one succeed, which is the
 // correct split rather than a lucky one.
-const PRINTED_DATE = new RegExp(
+//
+// **Exported so the card pre-fill reads the same grammar rather than a copy that drifts** (it had
+// lost the multi-hyphen and trailing-mark tolerances above). No `g` or `y` flag, so `exec` carries
+// no state between callers. What each caller does with the match stays its own: a slip keeps a date
+// whose time is out of range with a null time, a card refuses the whole timestamp.
+export const MONTH_NAME_DATE = new RegExp(
   // A trailing mark that is neither letter nor digit is background read as text (`>` after a
   // Krungthai time, D-262); it can never move the year/time split, which is all digits.
   `(\\d{1,2})(${MONTH_ALTERNATION})(\\d{4}|\\d{2})(?:[-–—]*(\\d{1,2}):(\\d{2}))?(?:น\\.)?[^\\p{L}\\p{N}]*$`,
@@ -503,13 +510,13 @@ function hasInWindowYearAlternative(printedYear: number, month: number, day: num
  * that word's normalised text, and the word's box. Null unless exactly one line reads as a printed
  * date, that line has a four-digit year, and the year lies wholly inside a single word.
  *
- * Shares `PRINTED_DATE` and `groupIntoLines` with `readDateLine` rather than keeping its own
+ * Shares `MONTH_NAME_DATE` and `groupIntoLines` with `readDateLine` rather than keeping its own
  * grammar, so the line this finds is the line the reader would have used (D-257).
  */
 function findPrintedYear(words: readonly OcrWord[]): { index: number; offset: number; box: Box } | null {
   let found: { line: OcrWord[]; yearStart: number } | null = null;
   for (const line of groupIntoLines(words)) {
-    const match = PRINTED_DATE.exec(normalise(line.map((word) => word.text).join("")));
+    const match = MONTH_NAME_DATE.exec(normalise(line.map((word) => word.text).join("")));
     if (!match) continue;
     if (found !== null || match[3]!.length !== 4) return null;
     found = { line, yearStart: match.index + match[1]!.length + match[2]!.length };
@@ -569,7 +576,7 @@ function readDateLine(
   text: string,
   today: Date
 ): PrintedDate | { unresolvedYear: true } | { doubtfulYear: true } | { outOfRangeYear: true } | null {
-  const match = PRINTED_DATE.exec(normalise(text));
+  const match = MONTH_NAME_DATE.exec(normalise(text));
   if (!match) return null;
   const day = Number(match[1]);
   const month = THAI_MONTH_TOKENS.find(([token]) => token === match[2])?.[1];

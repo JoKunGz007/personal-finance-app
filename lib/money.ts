@@ -15,6 +15,18 @@ export const minorUnitStringSchema = z.string().superRefine((value, context) => 
   }
 });
 
+// For a column whose SQL CHECK is `>= 0` / `> 0`. `toMinorAmount` rather than a bare `BigInt`:
+// a refinement still runs after the canonical-form check has failed, and casting there would throw.
+export const nonNegativeMinorUnitStringSchema = minorUnitStringSchema.refine(
+  (value) => { const amount = toMinorAmount(value); return amount === null || amount >= 0n; },
+  { message: "Money must not be negative." }
+);
+
+export const positiveMinorUnitStringSchema = minorUnitStringSchema.refine(
+  (value) => { const amount = toMinorAmount(value); return amount === null || amount > 0n; },
+  { message: "Money must be positive." }
+);
+
 export const moneySchema = z.object({
   minor: minorUnitStringSchema,
   currency: z.literal("THB")

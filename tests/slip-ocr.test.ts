@@ -306,6 +306,14 @@ describe("reading the printed date", () => {
     expect(read.ok && read.value).toEqual({ iso: "2026-07-14", time: "09:05" });
   });
 
+  // A card refuses the whole timestamp in this case; a slip keeps the date and drops only the time.
+  it("keeps the date and returns a null time when the printed time is out of range", () => {
+    const minute = readPrintedDate(dateLine("14 ก.ค. 2569 - 09:75"), today);
+    expect(minute.ok && minute.value).toEqual({ iso: "2026-07-14", time: null });
+    const hour = readPrintedDate(dateLine("14 ก.ค. 2569 - 24:05"), today);
+    expect(hour.ok && hour.value).toEqual({ iso: "2026-07-14", time: null });
+  });
+
   it("converts out of the Buddhist era rather than believing the printed year", () => {
     // The whole hazard in one assertion: 2569 must not reach the ledger as the year 2569, and
     // must not be silently accepted as 2026 without the subtraction either (D-031).

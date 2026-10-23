@@ -86,12 +86,6 @@ export function ShopeeBench() {
             <span>{error}</span>
           </div>
         ) : null}
-        {saveError ? (
-          <div className="warning error" role="alert">
-            <strong>Not saved</strong>
-            <span>{saveError}</span>
-          </div>
-        ) : null}
         {current ? (
           <>
             <dl className="shopee-figures">
@@ -134,6 +128,14 @@ export function ShopeeBench() {
           </>
         )}
       </section>
+
+      {saveError ? (
+        <div className="warning error save-toast" role="alert">
+          <strong>Not saved</strong>
+          <span>{saveError}</span>
+          <button type="button" className="secondary-button" onClick={() => setSaveError(null)}>Dismiss</button>
+        </div>
+      ) : null}
     </>
   );
 }

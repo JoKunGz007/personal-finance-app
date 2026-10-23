@@ -2,7 +2,7 @@ import { isoDateSchema } from "@/lib/dates";
 import { parseThb } from "@/lib/money";
 import { resolveCardYear, type NotificationCardLayout } from "@/lib/notification-card";
 import type { Box, CardFieldName, CardOcrRead, OcrWord } from "@/lib/notification-card-ocr";
-import { MONTH_ALTERNATION, THAI_MONTH_TOKENS, groupIntoLines, normalise } from "@/lib/slip-ocr";
+import { MONTH_NAME_DATE, THAI_MONTH_TOKENS, groupIntoLines, normalise } from "@/lib/slip-ocr";
 
 /**
  * What a card's located fields would offer a form, or why they offer nothing (PLAN task 34 part 1).
@@ -149,15 +149,14 @@ const PRINTED_TIME = /^([01]\d|2[0-3]):[0-5]\d$/u;
  * history is worth keeping: it is the difference between a feature that does not work and a feature
  * whose input never arrived.
  *
- * **The tail anchor is load-bearing and is the same one `lib/slip-ocr.ts` documents.** `normalise`
- * has already removed the spaces this layout separates its parts with, so `… 69  09:41 น.` arrives
- * as `…6909:41น.` — and an unanchored year group reads `6909` as the year, which then fails the era
- * rule and reports no date about a card that plainly prints one.
+ * **The matcher is `MONTH_NAME_DATE` from `lib/slip-ocr.ts`, shared rather than copied**, so the
+ * tail anchor, the any-number-of-dashes tolerance and the trailing-mark tolerance (D-262) cannot
+ * drift between the two readers. The anchor is load-bearing: `normalise` has already removed the
+ * spaces this layout separates its parts with, so `… 69  09:41 น.` arrives as `…6909:41น.` — and an
+ * unanchored year group reads `6909` as the year, which then fails the era rule and reports no date
+ * about a card that plainly prints one. What this module does with a match stays its own: an
+ * out-of-range time refuses the whole timestamp here, where a slip keeps the date with no time.
  */
-const MONTH_NAME_DATE = new RegExp(
-  `(\\d{1,2})(${MONTH_ALTERNATION})(\\d{4}|\\d{2})(?:[-–—]?(\\d{1,2}):(\\d{2}))?(?:น\\.)?$`,
-  "u"
-);
 /** The sign characters a minus is misread as. Also the only characters `repairToken` promotes. */
 const MISREAD_MINUS = /^[=~—–]/u;
 

@@ -383,3 +383,10 @@ the top of `GOTCHAS.md`.
 - Cause: `proposeLedgerMatches` builds `linked` from the document's own candidates, so a link to a row outside that window comes back `linked` with `row: null`.
 - Avoid: take held rows from the stored `matched` decisions' `transaction_id`, as `heldRows` and `decideGrabMatches` do, never from `state.row` alone.
 - Verify: 2026-10-23 (D-292), red-proved in `tests/delivery-match.test.ts` (2 of 35 failing on the state-only rule).
+
+## `Intl.DateTimeFormat` without `timeZone` prints the viewer's day, not Bangkok's
+
+- Symptom: a row stamped late evening or early morning (a `+07:00` instant) shows the neighbouring day or weekday when the browser, a CI runner or a test sits outside UTC+7; tests run on this machine pass because it is in Bangkok.
+- Cause: `Intl.DateTimeFormat` and `toLocale*String` format an instant in the runtime's zone unless `timeZone` is given; the offset in the ISO string only fixes the instant, not the zone it is shown in.
+- Avoid: pass `timeZone: "Asia/Bangkok"` to every formatter that shows a ledger date or day; test under a forced non-Bangkok zone.
+- Verify: 2026-10-24 (D-304), `tests/bangkok-date-format.test.ts` pins a non-Bangkok zone over `formatDate`, `formatDateParts`, `formatDayHeading` and `shortDay`.

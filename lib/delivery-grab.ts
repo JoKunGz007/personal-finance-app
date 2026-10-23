@@ -197,6 +197,19 @@ function labelValue(lines: readonly string[], label: string): string | null {
 const AMOUNT_ONLY = /^(?:(-|−)\s*)?฿\s*(-|−)?\s*([\d,]+(?:\.\d{1,2})?)$/u;
 const QUANTITY = /^(\d{1,3})\s*[x×X](?:\s+(.+))?$/u;
 
+/**
+ * The amount patterns accept any run of digits and commas, so matched text such as `,` or `05` still
+ * reaches `parseThb`, which throws. Every site that parses matched amount text goes through here, so a
+ * malformed figure is the reader's refusal and never an exception that aborts a whole sync batch.
+ */
+function readAmount(text: string): MinorUnitString | null {
+  try {
+    return parseThb(text).minor;
+  } catch {
+    return null;
+  }
+}
+
 type Line = { readonly text: string; amount: { readonly negative: boolean; readonly minor: MinorUnitString } | null };
 
 /** Lines with each amount-only line folded into the line above it. */
@@ -215,7 +228,9 @@ export function pairAmounts(lines: readonly string[]): DeliveryRead<Line[]> {
     if (match[1] !== undefined && match[2] !== undefined) {
       return { ok: false, code: "MALFORMED_LINE", message: "An amount carries two minus signs." };
     }
-    previous.amount = { negative: match[1] !== undefined || match[2] !== undefined, minor: parseThb(match[3]!).minor };
+    const amountMinor = readAmount(match[3]!);
+    if (amountMinor === null) return { ok: false, code: "MALFORMED_LINE", message: "An amount is not a plain figure." };
+    previous.amount = { negative: match[1] !== undefined || match[2] !== undefined, minor: amountMinor };
   }
   return { ok: true, value: out };
 }
@@ -432,7 +447,9 @@ type RideAmount = { readonly negative: boolean; readonly minor: MinorUnitString 
 function rideAmount(line: string | undefined): RideAmount | null {
   const match = line === undefined ? null : RIDE_AMOUNT.exec(line);
   if (!match || (match[1] !== undefined && match[2] !== undefined)) return null;
-  return { negative: match[1] !== undefined || match[2] !== undefined, minor: parseThb(match[3]!).minor };
+  const amountMinor = readAmount(match[3]!);
+  if (amountMinor === null) return null;
+  return { negative: match[1] !== undefined || match[2] !== undefined, minor: amountMinor };
 }
 
 /** `8:05PM` as minutes after midnight, or null. */
@@ -507,7 +524,8 @@ export function parseGrabRide(lines: readonly string[]): DeliveryRead<ParsedRide
     // A GrabCoins redemption can print as a bare `-99`, with no baht sign — only after that label.
     if (!amount && label.includes(RIDE_COINS_LABEL)) {
       const bare = BARE_NEGATIVE.exec(pairs[index + 1]!);
-      if (bare) amount = { negative: true, minor: parseThb(bare[1]!).minor };
+      const coinsMinor = bare ? readAmount(bare[1]!) : null;
+      if (coinsMinor !== null) amount = { negative: true, minor: coinsMinor };
     }
     if (!amount) return refuse("MALFORMED_LINE", "A breakdown line has no amount.");
     if (label === RIDE_FARE_LABEL || label === RIDE_FEE_LABEL) {
@@ -812,7 +830,7 @@ const LATE_DELIVERY_FEE = "Delivery Fee";
 const LATE_COMBINED_NAME = "Service Fee + Delivery Fee";
 
 const bareMinor = (line: string | undefined): MinorUnitString | null =>
-  line !== undefined && BARE_AMOUNT.test(line) ? parseThb(line).minor : null;
+  line !== undefined && BARE_AMOUNT.test(line) ? readAmount(line) : null;
 
 /**
  * Reads a late-delivery apology mail's GrabFood order breakdown. Call only on lines

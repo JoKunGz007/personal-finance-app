@@ -317,6 +317,73 @@ describe("kbank-layout-v1", () => {
   });
 });
 
+describe("refusals reachable only through the public entry point (Open item 8, B1)", () => {
+  const scbRow = { dateTime: "02/01/26 09:15", code: "E1", channel: "ENET", debit: "250.50", balance: "4,749.50", description: "Synthetic outbound" };
+
+  it("refuses a KBANK closing balance that disagrees with the last row's balance", () => {
+    // The three rows chain 800.00 -> 2,000.00 -> 1,500.00 -> 0.00 and agree with the default
+    // totals, so the printed closing balance is the only thing wrong.
+    const pages: PageText[] = [
+      buildKbankPage([
+        { date: "02-01-26", time: "09:15", description: "Transfer Deposit", deposit: "1,200.00", balance: "2,000.00" },
+        { date: "05-01-26", time: "18:42", description: "Cash Withdrawal", withdrawal: "500.00", balance: "1,500.00" },
+        { date: "09-01-26", time: "12:00", description: "Payment", withdrawal: "1,500.00", balance: "0.00" }
+      ], { frame: { endingBalance: "1.00" }, carryForward: "800.00", totals: {} })
+    ];
+    expect(expectFailure(extractStatement(pages), "CLOSING_BALANCE_MISMATCH"))
+      .toBe("The final row balance does not match the printed closing balance.");
+  });
+
+  it("refuses an amount printed with a sign rather than reading its direction from it", () => {
+    const pages: PageText[] = [buildScbPage([{ ...scbRow, debit: "-250.50" }], { carryForward: "5,000.00" })];
+    expect(expectFailure(extractStatement(pages), "INVALID_ROW_CONTENT")).toMatch(/printed with a sign/u);
+  });
+
+  it("refuses a wrapped line that carries a figure instead of folding it into the row above", () => {
+    // On the continuation line (650 - 9), beside its `DESC :` marker.
+    const page: PageText = [
+      ...buildScbPage([scbRow], { carryForward: "5,000.00" }),
+      { str: "12.00", x: 480, y: 641, width: 20 }
+    ];
+    expect(expectFailure(extractStatement([page]), "AMBIGUOUS_ROW_GEOMETRY"))
+      .toMatch(/a wrapped line carries a figure, so it is not a continuation/u);
+  });
+
+  it("refuses a period that starts after it ends", () => {
+    const pages: PageText[] = [buildScbPage([], { frame: { period: "31/01/2026 - 01/01/2026" }, carryForward: "5,000.00" })];
+    expect(expectFailure(extractStatement(pages), "INVALID_FRAME_CONTENT")).toBe("The statement period starts after it ends.");
+  });
+
+  it("refuses a frame that prints two period ranges", () => {
+    const page: PageText = [
+      ...buildScbPage([scbRow], { carryForward: "5,000.00" }),
+      { str: "วันที่", x: 420, y: 760 },
+      { str: "01/02/2026 - 28/02/2026", x: 500, y: 760 }
+    ];
+    expect(expectFailure(extractStatement([page]), "INVALID_FRAME_CONTENT")).toMatch(/2 period-shaped date ranges/u);
+  });
+
+  it("refuses a row date that is not a real calendar date", () => {
+    const pages: PageText[] = [buildScbPage([{ ...scbRow, dateTime: "31/02/26 09:15" }], { carryForward: "5,000.00" })];
+    expect(expectFailure(extractStatement(pages), "INVALID_ROW_CONTENT")).toMatch(/not a real calendar date/u);
+  });
+
+  it("reads both a Buddhist and a Gregorian four-digit period year", () => {
+    const buddhist = extractStatement([
+      buildScbPage([{ ...scbRow, dateTime: "02/01/69 09:15" }], { frame: { period: "01/01/2569 - 31/01/2569" }, carryForward: "5,000.00" })
+    ]);
+    const gregorian = extractStatement([
+      buildScbPage([scbRow], { frame: { period: "01/01/2026 - 31/01/2026" }, carryForward: "5,000.00" })
+    ]);
+    if (!buddhist.ok) throw new Error(buddhist.message);
+    if (!gregorian.ok) throw new Error(gregorian.message);
+    expect(buddhist.frame.periodEnd).toBe("2026-01-31");
+    expect(gregorian.frame.periodEnd).toBe("2026-01-31");
+    expect(buddhist.rows[0]!.provenance.parserFields).toMatchObject({ era: "buddhist" });
+    expect(gregorian.rows[0]!.provenance.parserFields).toMatchObject({ era: "gregorian" });
+  });
+});
+
 describe("empty statements (no transactions, zero totals)", () => {
   const zeroTotals = { debitTotal: "0.00", creditTotal: "0.00", debitCount: "0", creditCount: "0" };
 

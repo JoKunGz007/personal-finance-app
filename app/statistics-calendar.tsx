@@ -72,8 +72,8 @@ function intensity(value: bigint, peakValue: bigint): number {
  * `app/ledger-shared.ts`'s rule rather than the viewer's zone - a ledger date is a Bangkok date,
  * and formatting it locally would move it across a day boundary for anyone reading from elsewhere.
  */
-function shortDay(date: string): string {
-  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" })
+export function shortDay(date: string): string {
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Bangkok" })
     .format(new Date(`${date}T00:00:00+07:00`));
 }
 

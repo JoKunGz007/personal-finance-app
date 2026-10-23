@@ -151,6 +151,13 @@ describe("what the amount offers, and what it refuses", () => {
     expect(amount).toMatchObject({ ok: false, code: "GRAMMAR_REFUSED" });
   });
 
+  // A leading zero in a grouped figure passes the shape gate and is refused by `parseThb`, so it is
+  // never offered as a (wrong) amount; pinned because the slip's own shape gate refuses it earlier.
+  it("refuses a grouped figure with a leading zero", () => {
+    const { amount } = readField("amount", ["จำนวนเงิน", "01,234.00"]);
+    expect(amount).toMatchObject({ ok: false, code: "GRAMMAR_REFUSED" });
+  });
+
   // Two figures in one region, one of them plainly signed. The unsigned one is reached first, and
   // offering it would be reporting a movement whose direction the card stated and this did not
   // read. Refused rather than given the benefit of the doubt.
@@ -261,6 +268,24 @@ describe("what the timestamp offers, resolved per layout because a global year r
   it("does not swallow the time into the year when the spaces between them are gone", () => {
     expect(readField("occurredAt", ["7ส.ค.6909:41น."], KBANK).occurredAt)
       .toMatchObject({ ok: true, value: { date: "2026-08-07", time: "09:41" } });
+  });
+
+  // The card shares the slip's matcher (`MONTH_NAME_DATE`), so it tolerates what the slip measured:
+  // a doubled separator before the time, and a trailing mark read off the background (D-262).
+  it("reads a month-name timestamp with more than one dash before the time", () => {
+    expect(readField("occurredAt", ["7", "ส.ค.", "69", "-", "-", "09:41", "น."], KBANK).occurredAt)
+      .toEqual({ ok: true, value: { date: "2026-08-07", time: "09:41" } });
+  });
+
+  it("reads a month-name timestamp followed by a stray mark", () => {
+    expect(readField("occurredAt", ["7", "ส.ค.", "69", "09:41", "น.", ">"], KBANK).occurredAt)
+      .toEqual({ ok: true, value: { date: "2026-08-07", time: "09:41" } });
+  });
+
+  // Each caller keeps its own handling: a slip keeps the date with a null time, a card refuses both.
+  it("refuses the whole timestamp when the month-name time is out of range", () => {
+    expect(readField("occurredAt", ["7", "ส.ค.", "69", "09:75", "น."], KBANK).occurredAt)
+      .toMatchObject({ ok: false, code: "TIME_NOT_READ" });
   });
 
   // A month token carrying a vowel, which is the class a shape-based pattern silently misses:

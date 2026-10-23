@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-288 … D-303**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-288 … D-304**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -430,6 +430,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
 - **D-301** — Five benches share one list load, `useBenchList`, and only the newest load commits (Open item 7 #14)
@@ -446,6 +447,33 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-290** — Task 59: the owner marks a ledger row as a duplicate — Excluded plus an audit marker that only re-including clears (migration 062); marked rows hidden by default
 - **D-289** — D-158 closed: the automatic candidate set is bounded to ±1 day of each slip or card (migration 061); the manual chooser's unbounded set loads only when picking starts
 - **D-288** — D-141 answered: imported statement mail stays in the mailbox and gets a visible Gmail label `PL Imported` beside the hidden keyword
+
+## D-304 — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
+
+- Date: 2026-10-24
+- Status: **Built and gated, not committed.** No migration, RPC or stored-value change. One route contract widens (C1).
+- **Pass.** `finance-investigator` read the eight 800+ line files two at a time; findings were ranked with Open item 8 (b). Each fix below was built by a subagent and red-proved unless noted.
+- **Fixes (A).**
+  - A1 `app/notification-card-capture.tsx`: changing the channel empties the typed form, so a card can no longer be submitted on one signal with boxes pre-filled for the other channel.
+  - A2 `lib/delivery-grab.ts`: `readAmount` wraps `parseThb`, so a malformed amount is a `MALFORMED_LINE` refusal of that receipt instead of a throw that aborted the whole Grab Sync batch.
+  - A3 Dates format with `timeZone: "Asia/Bangkok"`: four formatters in `app/ledger-shared.ts`, two in `app/import-bench.tsx`, `shortDay` in `app/statistics-calendar.tsx` (now exported). See the GOTCHAS trap on `Intl.DateTimeFormat` without `timeZone`.
+  - A4 `lib/backup-contract.ts`: delivery, ride, LINE MAN and Shopee money columns restate their SQL sign CHECKs through `nonNegativeMinorUnitStringSchema` / `positiveMinorUnitStringSchema` (new in `lib/money.ts`).
+- **Tests only (B).** B1 seven statement-layout refusal and era tests (existing branches, so no red-proof) and a comment fix at `lib/statement-layout.ts:576`; B2 39 backup row-rule tests; B3 Grab refusal tests.
+- **Leftovers (C, D).**
+  - C1 (D-283 leftover): `POST /api/v1/imports/existing` takes `{ payload }` and returns `{ existing, existingCount }` from `count_existing_import_rows`; the confirm route returns `linkedRows`; the review notice and status line use them (`lib/existing-rows.ts`). No migration: the count RPC already existed. Per-row tags stay exact-fingerprint, so tags can be fewer than the count; the notice says so (`/code-review` fix).
+  - C2 `app/import-bench.tsx`: `discardLoadedStatement` bumps `parseRun`, so a slow parse can no longer overwrite a later synthetic or batch statement.
+  - C3 `applyReportingChange` (`lib/ledger-view.ts`), used by `app/transactions-view.tsx`; the browser copies matched the server, so no defect.
+  - C4 One month-name date matcher, `MONTH_NAME_DATE` in `lib/slip-ocr.ts`, also serves `lib/notification-card-prefill.ts` (the card gains multi-dash and trailing-mark tolerance).
+  - C5 `lib/import-review.ts` (`statementTotals`, `movedRowIndexes`, `pageCountOf`) out of the bench.
+  - D Render tests for both statistics panels; `removeInboxObject` inlined.
+  - Shopee "Not saved" moves to a fixed bottom bar with Dismiss (`.save-toast`): the owner chose variant C of four mocked on the production page.
+- **Refused.**
+  - The import-session reducer (D-292 candidate 3): with C2 the reset is already one helper, so a reducer adds structure without removing a copy.
+  - Ride totals via bigint (`lib/delivery-match.ts:310`): candidates are JS numbers already and the comparison is exact.
+  - Hand-written fetches moved onto `ledgerRequest`, and the copied crop/date/total loops: identical, not drifted.
+  - Grab `receiptSentAt` `Z` form: nothing slices it.
+- **Left open.** An era plausibility bound in `resolveStatementEra`: it needs a clock, and a clock-free bound is a design choice of low value. Card money leading zeros: already fail-closed.
+- Evidence: new tests `tests/notification-card-capture.test.tsx`, `tests/bangkok-date-format.test.ts`, `tests/backup-row-rules.test.ts`, `tests/existing-rows.test.ts`, `tests/import-confirm-linked.test.ts`, `tests/import-bench-stale-parse.test.tsx`, `tests/import-review.test.ts`, `tests/delivery-statistics-panel.test.tsx`, `tests/receipt-statistics-panel.test.tsx`, plus additions to the Grab, statement-layout, ledger-view, prefill, slip-ocr, import-route and Shopee bench suites. `/code-review` (high) over the whole diff: 6 findings, 1 fixed (notice vs tags). The `pnpm verify` result is recorded in `PLAN.md`.
 
 ## D-303 — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 
