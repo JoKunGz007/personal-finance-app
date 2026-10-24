@@ -110,6 +110,7 @@ Moved from the retired `HANDOFF.md` (D-268). Each line is a reading; re-take it 
 - Every push to `main` deploys to production. The remedy for a bad deploy is Instant Rollback in the Vercel dashboard, never a revert push. Trust the commit hash, not the dashboard's relative time (UTC against UTC+7).
 - A Ready badge is not a working page: check the deployed page itself.
 - The browser pane has no file upload; Claude in Chrome's `file_upload` reaches the `/receipts` file input (21 screenshots, 3 MB, one call, 2026-10-17). Uploading opens a read-and-review list with a "Save all" button; nothing is stored until it is pressed.
+- The browser pane shows a `file://` page only as a static snapshot: no screenshot, resize or script. To check a component without the local stack (D-308), render it with the real `app/globals.css` into a page in the scratchpad, serve that folder with a temporary `.claude/launch.json` entry (`python -m http.server`), and delete the entry afterwards.
 - Mailbox Sync skips a 7-Eleven invoice mail carrying the IMAP keyword `PLReceipt`. To re-capture stored invoices (e.g. after a reader change), the owner runs `scripts/clear-receipt-flag.ts` (count only; `--clear` removes the keyword; build line in its header), then Sync.
 
 **Local stack hazards** (traps with full write-ups are in `GOTCHAS.md`).
