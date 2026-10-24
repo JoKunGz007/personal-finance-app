@@ -42,6 +42,8 @@ node_modules/
 .next/
 .runtime/
 .tmp-node-install/
+# Long build/test output saved for grep and tail rather than read into context (CLAUDE.md).
+.tmp/
 *.tsbuildinfo
 coverage/
 playwright-report/

@@ -18,6 +18,7 @@ Every call re-reads the whole context, so raw tool output in this session is the
 - **Keep each delegation to ~20–40 tool calls.** Split larger work (migration → write path → UI → tests) into sequential delegations. Don't bundle independent items (e.g. several review findings) into one run: give each non-trivial item its own delegation, and group only small items in the same file or function. The only runs past 40 calls so far were bundles (59 and 71 calls). Use `SendMessage` for a short follow-up to the same agent and a fresh spawn for a new topic.
 - **`/ux-review`** → `finance-ux-auditor`, one 2–3 page group at a time, in sequence (they share the browser pane). Not `general-purpose`: it starts at ~48K context and ran 41–64 calls per whole-app round.
 - **Do inline**: trivial edits, commands with small output, anything touching `shared-statements/` (D-049), money / idempotency / migration judgement calls, anything involving the owner, and continuity-doc updates. Subagents don't edit continuity docs; record what they find yourself.
+- **Long command output** (builds, test runs, logs) goes to a file, not the context: `cmd > .tmp/out.log 2>&1; echo "exit=$? lines=$(wc -l < .tmp/out.log)"`, then grep it for errors and `tail` it. Read more of the log if that doesn't explain the result. For a big source file, Read with offset/limit around a grep hit.
 
 ## Local runtime
 
