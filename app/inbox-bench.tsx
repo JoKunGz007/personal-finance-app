@@ -74,19 +74,57 @@ export function InboxBench() {
             {running ? "Syncing…" : "Sync all mail"}
           </button>
         </div>
-        {started ? (
-          <ul className="receipt-queue">
-            {SOURCES.map((name, index) => (
-              <li key={name}>
-                <strong>{name}</strong>
-                <SourceLine line={lines[index] ?? { state: "waiting" }} />
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        {started ? <SyncTable lines={lines} /> : null}
       </div>
     </section>
   );
+}
+
+/** Source · Status · Details on desktop, checklist rows on phone (PLAN Open item 10; CSS `.sync-table`). */
+export function SyncTable({ lines }: { lines: readonly Line[] }) {
+  return (
+    <ul className="sync-table">
+      <li className="sync-head" aria-hidden="true"><span>Source</span><span>Status</span><span>Details</span></li>
+      {SOURCES.map((name, index) => {
+        const line = lines[index] ?? { state: "waiting" };
+        const status = sourceStatus(line);
+        return (
+          <li key={name} className={`sync-row sync-${status}`}>
+            <span className="sync-mark" aria-hidden="true">{STATUS_MARK[status]}</span>
+            <span className="sync-body">
+              <strong>{name}</strong>
+              <span className="sync-status">{STATUS_LABEL[status]}</span>
+              <span className="sync-details"><SourceLine line={line} /></span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+export type SourceStatus = "waiting" | "running" | "done" | "failed" | "check";
+const STATUS_LABEL: Record<SourceStatus, string> = { waiting: "Waiting", running: "Running", done: "Done", failed: "Failed", check: "Check" };
+const STATUS_MARK: Record<SourceStatus, string> = { waiting: "·", running: "…", done: "✓", failed: "✕", check: "!" };
+
+/**
+ * The status column (desktop) and the mark (phone) of one source line. An error outranks a held
+ * statement: a total with an error is Failed even when some statements also need a look.
+ */
+export function sourceStatus(line: Line): SourceStatus {
+  switch (line.state) {
+    case "waiting":
+      return "waiting";
+    case "running":
+      return "running";
+    case "done":
+      return line.error ? "failed" : "done";
+    case "failed":
+      return "failed";
+    case "statements":
+      if (line.total.error) return "failed";
+      return line.total.held.length > 0 || statementsNeedDeviceImport(line.total) ? "check" : "done";
+  }
 }
 
 /** Exported for its render test only. */

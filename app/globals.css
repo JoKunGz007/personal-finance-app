@@ -1260,6 +1260,41 @@ footer p { margin: 0; }
 .receipt-list .ledger-table { min-width: 0; }
 .receipt-queue li { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
 .receipt-list li { border-top: 1px solid var(--line); padding: 8px 0; }
+/* Inbox "From the mailbox" (PLAN Open item 10): Source · Status · Details columns on desktop, checklist
+   rows (mark, then source and details inline) on phone. A grid list, not a <table>: the global table
+   rules (900px floor, fixed cell height, the ≤700px card layout) would all hit a table. */
+.sync-table {
+  --sync-ok: color-mix(in srgb, var(--grab) 70%, var(--navy));
+  --sync-warn: color-mix(in srgb, var(--saffron) 70%, var(--navy));
+  list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: max-content max-content minmax(0, 1fr);
+  border-bottom: 1px solid var(--line); font-size: 14px;
+}
+.sync-table > li, .sync-body { display: contents; }
+.sync-mark { display: none; }
+.sync-head > span, .sync-body > strong, .sync-status, .sync-details { padding: 10px 16px 10px 0; border-top: 1px solid var(--line); }
+.sync-head > span { padding: 0 16px 8px 0; border-top: 0; color: var(--muted); font: 500 10px/1 var(--font-data); text-transform: uppercase; letter-spacing: .08em; }
+.sync-status { font: 600 12px/1.6 var(--font-data); white-space: nowrap; }
+.sync-status::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: currentColor; }
+.sync-details { display: grid; gap: 4px; align-content: start; padding-right: 0; color: var(--navy); overflow-wrap: anywhere; }
+.sync-done :is(.sync-mark, .sync-status) { color: var(--sync-ok); }
+.sync-failed :is(.sync-mark, .sync-status) { color: var(--red); }
+.sync-check :is(.sync-mark, .sync-status) { color: var(--sync-warn); }
+.sync-running :is(.sync-mark, .sync-status) { color: var(--navy); }
+.sync-waiting :is(.sync-mark, .sync-status) { color: var(--muted); }
+@media (max-width: 700px) {
+  .sync-table { display: block; }
+  .sync-table > .sync-head { display: none; }
+  .sync-table > li.sync-row { display: grid; grid-template-columns: 1.2em minmax(0, 1fr); gap: 0 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .sync-mark { display: block; font-weight: 700; text-align: center; }
+  .sync-body { display: block; min-width: 0; }
+  .sync-body > strong, .sync-status, .sync-details { padding: 0; border: 0; }
+  .sync-body > strong { margin-right: 8px; }
+  .sync-status { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .sync-details { display: inline; }
+  /* Scoped under .sync-table to outrank `.cash-bench .status { margin: 0 }` on error lines. */
+  .sync-table .sync-details > * + * { display: block; margin-top: 4px; }
+  .sync-table .sync-details > .slip-actions { display: flex; }
+}
 /* Inbox "Waiting" queue: a table or cards, each with a thumbnail of a queued image. */
 .slip-actions a.secondary-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .inbox-view-toggle { margin: 0 0 12px; }

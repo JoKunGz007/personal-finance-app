@@ -4,6 +4,8 @@ Last verified: 2026-10-24
 
 ## Current checkpoint
 
+**"From the mailbox" layout built — 2026-10-24** (D-308, Open item 10; D-307 moved D-288 … D-301 to an archive first). One grid list, `SyncTable` (`app/inbox-bench.tsx`), shows Source · Status · Details on desktop and checklist rows on phone, with the status from the tested pure `sourceStatus`. The agent checked the shipped component with the real stylesheet in the browser pane at 1200px and at the mobile preset, in the light and `night` themes; not inside the running app (Docker was down). `/code-review` found one phone spacing defect, now fixed. `pnpm verify` green with the local stack **down** (lint 0 errors / 3 warnings, tsc, docs, build; Vitest 120 files, 2,032 passed / 115 skipped: the database suites skipped). **Next:** look at the Inbox after the next real Sync on production, then Open item 5 with the owner.
+
 **Sync failures made diagnosable — 2026-10-24** (D-306, Open item 9). The four mailbox Sync routes log `mail sync failed { route, stage, status, code }` with no values, and the browser says "could not be reached" or "the server answered N" instead of one fallback. `pnpm verify` green (lint 0 errors / 3 warnings, tsc, docs, build; Vitest 120 files, 2,123 passed / 19 skipped). **Next:** Open item 10, the "From the mailbox" layout the owner chose (C on desktop, D on phone), in a fresh session; then Open item 5.
 
 **PGRST303 resend and message logging built — 2026-10-24** (D-305, Open item 1). A 401 `PGRST303` is sent once more for any method, and the log line carries PostgREST's message for PGRST3xx codes. `pnpm verify` green with the local stack up (lint 0 errors / 3 warnings, tsc, docs, build; Vitest 118 files, 2,110 passed / 19 skipped). The agent reviewed the diff and did not run `/code-review`. **Next:** Open item 9 (Sync failure logging, if the owner wants it), then the owner's table layout for "From the mailbox", rendered as variants on the real page; then Open item 5.
@@ -44,18 +46,7 @@ Older checkpoint paragraphs, finished tasks, the resolved review blockers, compl
    - All three steps share one mailbox login, so the credential is fine and that failure was transient.
 
    The failing run was older than the hour of logs Vercel keeps, so the cause is unconfirmed. The agent re-ran Sync in the pane: every step answered 200 (Grab 4 s, 7-Eleven 20 s, statements 39 s), 5 new receipts were stored, and the logs were clean. **Built (D-306):** a value-free failure log line in every Sync route, and browser wording that names the status. **Watch:** on the next failure, read the request log status and the `mail sync failed` line.
-10. **"From the mailbox" as a table — owner chose 2026-10-24, build next session.** The owner compared four variants mocked on the production Inbox page: A current list, B two-column table, C three-column table with status, D checklist rows. **Choice: C on desktop, D on phone, with D using C's colours** (details in the body text colour, failures red, the mark coloured like C's status dot). If the two cannot be separated, build D everywhere. They can be: one markup, switched at the house `max-width: 700px` breakpoint. Design notes from the mock (`app/inbox-bench.tsx` `InboxBench` / `SourceLine`, styles in `app/globals.css`):
-    - **Do not use a `<table>`.** The global rules in `app/globals.css` (`table { min-width: 900px; table-layout: fixed }`, `td { height: 76px }`, `td span { 12px muted }`, the ≤700px card layout) and a `.collapse` utility class all hit it. Use a grid list instead: `ul.sync-table` with `grid-template-columns: max-content max-content 1fr`, each `li` `display: contents`, and a header row (Source · Status · Details) hidden from assistive technology.
-    - **Each row** holds a mark (`✓` `✕` `!` `…` `·`, hidden on desktop), the source in bold, a status word with a dot (hidden on phone), and the existing `SourceLine` output as details.
-    - **On phone,** the `li` becomes a two-column grid: mark, then source and details flowing inline, with any further detail lines as blocks below.
-    - **Status rule:** a pure function, exported and unit-tested, from `Line`:
-      - waiting → Waiting (muted);
-      - running → Running;
-      - done with no error → Done;
-      - done with an error, or failed, or a statements total with an error → Failed;
-      - statements held or `statementsNeedDeviceImport` → Check.
-    - **Colours:** green as `color-mix(in srgb, var(--grab) 70%, var(--navy))` (raw `--grab`/`--lineman` is about 2.3:1 on the light paper), red `var(--red)`, warn `color-mix(in srgb, var(--saffron) 70%, var(--navy))`, muted `var(--muted)`.
-    - **Checks:** `tests/inbox-bench.test.ts` holds the `SourceLine` render test; keep its roles (`status`, `alert`). Check desktop and the pane's mobile preset in both a dark and a light theme.
+10. **"From the mailbox" layout — built 2026-10-24 (D-308).** C on desktop, D on phone, from one grid list. Left: the agent has not seen it inside the running app with real Sync results; check it on production after the next Sync.
 
 ## Next local tasks
 
