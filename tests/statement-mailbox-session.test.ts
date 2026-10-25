@@ -114,6 +114,16 @@ describe("timing a mailbox route's steps", () => {
   it("is an empty header before any step", () => {
     expect(stepTimer(() => 0).header()).toBe("");
   });
+
+  it("tells onLap each step as it ends, so a request killed at its time limit still leaves its steps", () => {
+    const clock = [0, 120.4, 1500.6];
+    const seen: [string, number][] = [];
+    const timer = stepTimer(() => clock.shift() ?? 0, (step, ms) => seen.push([step, ms]));
+    timer.lap("auth");
+    expect(seen).toEqual([["auth", 120]]);
+    timer.lap("pdf-read");
+    expect(seen).toEqual([["auth", 120], ["pdf-read", 1380]]);
+  });
 });
 
 describe("markFetched visible Gmail label (D-141)", () => {

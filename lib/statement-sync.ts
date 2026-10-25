@@ -239,14 +239,21 @@ export function buildManifest(
  *
  * **Durations and fixed step names only.** A header reaches devtools and anything that captures one,
  * so nothing here may carry an address, a filename or a count from the mailbox.
+ *
+ * `onLap`, when given, is told each step as it ends. A request Vercel kills at `maxDuration` never
+ * sends its header, so a route that can time out logs its steps as they happen instead.
  */
-export function stepTimer(now: () => number = () => performance.now()) {
+export function stepTimer(
+  now: () => number = () => performance.now(),
+  onLap?: (step: string, ms: number) => void
+) {
   const steps: [string, number][] = [];
   let last = now();
   return {
     lap(step: string) {
       const current = now();
       steps.push([step, current - last]);
+      onLap?.(step, Math.round(current - last));
       last = current;
     },
     header(): string {

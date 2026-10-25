@@ -7,10 +7,11 @@ import { mailboxConfig, markFetched, openMailbox, verifyAttachment } from "@/lib
 import { readStatementPdf, readStatementPdfPages } from "@/lib/server/statement-pdf-node";
 import { logMailSyncFailure } from "@/lib/server/mail-sync-log";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
-import { isSafePartPath, MAX_ATTACHMENT_BYTES, parseUid } from "@/lib/statement-sync";
+import { isSafePartPath, MAX_ATTACHMENT_BYTES, parseUid, stepTimer } from "@/lib/statement-sync";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// Fluid compute is on (Hobby allows 300 s). One statement ran past 60 s on 2026-10-25 and was killed.
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
@@ -30,10 +31,16 @@ const FAILURE_STATUS = { NOT_FOUND: 404, TOO_LARGE: 413, ACCOUNTS_UNAVAILABLE: 5
  * The message is flagged fetched here, on the server, only after the statement is in the ledger
  * (captured or already there). `uid`/`part` are checked as the attachment route checks them, and
  * `verifyAttachment` re-derives them from the mailbox.
+ *
+ * Each step's duration is logged as it ends (fixed step names and milliseconds only), because a
+ * request Vercel kills at `maxDuration` never sends its `Server-Timing` header. A step's time runs
+ * from the previous lap, so it includes any work between the two.
  */
 export async function POST(request: Request) {
+  const timer = stepTimer(undefined, (step, ms) => console.info("mailbox statement step", { step, ms }));
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
+  timer.lap("auth");
 
   const settings = mailboxConfig();
   if (!settings.ok) {
@@ -57,6 +64,7 @@ export async function POST(request: Request) {
   let session;
   try {
     session = await openMailbox(settings.config);
+    timer.lap("imap-open");
   } catch (error) {
     logMailSyncFailure("imports/mailbox/statement", "open", 502, error);
     return routeError(
@@ -71,6 +79,7 @@ export async function POST(request: Request) {
     const outcome = await processMailboxStatement(mode, {
       download: async () => {
         const attachment = await verifyAttachment(session.client, settings.config.senders, uid, part);
+        timer.lap("verify");
         if (!attachment) return { ok: false, code: "NOT_FOUND" };
         sourceName = attachment.name;
         if (attachment.sizeBytes > MAX_ATTACHMENT_BYTES) return { ok: false, code: "TOO_LARGE" };
@@ -78,10 +87,16 @@ export async function POST(request: Request) {
         const chunks: Buffer[] = [];
         for await (const chunk of download.content) chunks.push(Buffer.from(chunk as Uint8Array));
         // The bytes are in hand: do not hold the mailbox through decrypt and confirm.
+        timer.lap("download");
         await session.release();
+        timer.lap("release");
         return { ok: true, bytes: new Uint8Array(Buffer.concat(chunks)) };
       },
-      readStatementPdf,
+      readStatementPdf: async (bytes) => {
+        const read = await readStatementPdf(bytes);
+        timer.lap("pdf-read");
+        return read;
+      },
       readStatementPdfPages,
       // Read after the download has set it; only a masked dump ever shows it.
       get sourceName() { return sourceName; },
@@ -90,6 +105,7 @@ export async function POST(request: Request) {
           .from("accounts")
           .select("id,bank_code,label,account_type,last_four,currency,timezone")
           .order("label");
+        timer.lap("accounts");
         if (error) return null;
         const list = accountListSchema.safeParse({ accounts: data });
         return list.success ? list.data.accounts : null;
@@ -100,21 +116,33 @@ export async function POST(request: Request) {
           .select("id")
           .eq("artifact_digest", artifactDigest)
           .limit(1);
+        timer.lap("artifact-lookup");
         return error ? null : (data?.length ?? 0) > 0;
       },
-      existingRowCount: (accountId, rows) => existingImportRowCount(supabase, accountId, rows),
-      linkedRowCount: (batchId) => linkedBatchRowCount(supabase, batchId),
-      confirmImport: (body) => confirmImport(supabase, body),
+      existingRowCount: async (accountId, rows) => {
+        const count = await existingImportRowCount(supabase, accountId, rows);
+        timer.lap("existing-rows");
+        return count;
+      },
+      linkedRowCount: async (batchId) => {
+        const count = await linkedBatchRowCount(supabase, batchId);
+        timer.lap("linked-rows");
+        return count;
+      },
+      confirmImport: (body) => confirmImport(supabase, body, timer.lap),
       // The first session was released after the download; the flag gets a fresh, short one.
       markFetched: async () => {
         let fresh;
         try {
           fresh = await openMailbox(settings.config);
+          timer.lap("flag-open");
         } catch {
           return false;
         }
         try {
-          return await markFetched(fresh.client, uid, part);
+          const flagged = await markFetched(fresh.client, uid, part);
+          timer.lap("flag");
+          return flagged;
         } catch {
           return false;
         } finally {
@@ -128,7 +156,7 @@ export async function POST(request: Request) {
       if (FAILURE_STATUS[outcome.code] >= 500) logMailSyncFailure("imports/mailbox/statement", "store", FAILURE_STATUS[outcome.code]);
       return routeError("The statement could not be fetched.", FAILURE_STATUS[outcome.code], { code: outcome.code });
     }
-    return Response.json(outcome, { status: 200, headers: noStoreHeaders });
+    return Response.json(outcome, { status: 200, headers: { ...noStoreHeaders, "Server-Timing": timer.header() } });
   } catch (error) {
     logMailSyncFailure("imports/mailbox/statement", "read", 502, error);
     return routeError("That attachment could not be downloaded from the mailbox.", 502, { code: "MAILBOX_FAILED" });

@@ -29,8 +29,13 @@ export async function buildRpcRows(payload: ConfirmImportBody["payload"]) {
   return { fingerprints, rows };
 }
 
-/** Everything after auth and body parse: refusals, digest, the `confirm_import` RPC, transfer exclusion. */
-export async function confirmImport(client: SupabaseClient, body: ConfirmImportBody): Promise<ConfirmImportResult> {
+/** Everything after auth and body parse: refusals, digest, the `confirm_import` RPC, transfer exclusion.
+ * `lap`, when given, is told after the confirm and after each follow-up step (the mailbox route's timing). */
+export async function confirmImport(
+  client: SupabaseClient,
+  body: ConfirmImportBody,
+  lap?: (step: string) => void
+): Promise<ConfirmImportResult> {
   const { payload, idempotencyKey, artifactDigest } = body;
   const { fingerprints, rows: rpcRows } = await buildRpcRows(payload);
   const duplicates = fingerprints.filter((fingerprint, index) => fingerprints.indexOf(fingerprint) !== index);
@@ -68,7 +73,9 @@ export async function confirmImport(client: SupabaseClient, body: ConfirmImportB
   // Internal transfers the new rows complete are excluded from reporting (D-207). The import is
   // already committed, so a failure here must not turn it into an error; the next import or a
   // manual run from the ledger picks the pair up.
+  lap?.("confirm-rpc");
   await client.rpc("auto_exclude_internal_transfers");
+  lap?.("auto-exclude");
   // Machine categories after the exclusion, because an own transfer is categorised from it (D-245).
   // Same rule: the import is committed, so a failure here is ignored and the next ledger open retries.
   try {
@@ -76,5 +83,6 @@ export async function confirmImport(client: SupabaseClient, body: ConfirmImportB
   } catch {
     // ignored
   }
+  lap?.("auto-categorise");
   return { kind: "ok", batchId: data, payloadDigest: digest, fingerprints, warnings: reconciliation.warnings };
 }
