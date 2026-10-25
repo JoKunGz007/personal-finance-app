@@ -1,6 +1,6 @@
 # Private Ledger gotchas — Statement and slip parsing
 
-Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **17 traps.**
+Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **18 traps.**
 
 `GOTCHAS.md` keeps the index across every section and is still the way in — it lists every
 trap in this file, so a reader finds the one that applies without loading any body. Add a trap
@@ -224,3 +224,10 @@ the top of `GOTCHAS.md`.
 - Cause: one bank labels a ShopeePay bank-debit payment `Direct Debit` with a "To … SHOPEEPAY" description; D-270 had read that wording as a repayment, which removed the row from the matchable outflows.
 - Avoid: no wording marks a repayment; `proposeShopeeMatches` (`lib/shopee-match.ts`) lists repayments only among leftover ShopeePay outflows on day 7–13 of the month, after order matching (D-276). Before treating any wording as a repayment, count its rows that equal an order within the minute.
 - Verify: 2026-10-11 (D-273): 5 of 5 such rows on hosted equalled one bank-debit order each; red-proof in `tests/shopee-match.test.ts`.
+
+## A Krungthai statement's period end is the requested range, not what it covers
+
+- Symptom: comparing a KTB statement's closing balance with the opening of the statement whose period starts the next day never matches (35 of 35 pairs on hosted), which reads like missing rows or a misread balance.
+- Cause: KTB prints the date range the owner asked for. Requested mid-period, the statement stops at the request, 3–21 days before its printed `period_end`. Each statement is internally exact (opening + rows = closing = balance after the last row, 14 of 14); the rows between two "back-to-back" statements came from other, overlapping ones.
+- Avoid: for KTB, use the newest row (or the mail arrival time) as coverage, never `import_batches.period_end`. SCB's and KBANK's period end is the day before the request, so it is coverage there, except that SCB leaves out rows after about 23:00 on that day when requested the next day (PLAN Open item 12).
+- Verify: 2026-10-25 (hosted, read-only): every pair's balance difference equalled exactly the ledger rows between the two statements; only 2 claimed KTB days were covered by no statement, and neither held a row.

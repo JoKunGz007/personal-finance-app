@@ -1,6 +1,6 @@
 # Private Ledger gotchas — Tests, Playwright and the gate
 
-Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **26 traps.**
+Split out of `GOTCHAS.md` on 2026-08-25 (D-149), unchanged. **27 traps.**
 
 `GOTCHAS.md` keeps the index across every section and is still the way in — it lists every
 trap in this file, so a reader finds the one that applies without loading any body. Add a trap
@@ -330,3 +330,10 @@ the top of `GOTCHAS.md`.
 - Cause: the suite's default environment is jsdom, whose global `AbortController` makes jsdom signals, while `Request` and `fetch` are still Node's (undici), which accepts only its own `AbortSignal`.
 - Avoid: start a test file that exercises server-side `fetch`, `Request` or abort handling with `// @vitest-environment node`, as `tests/retry-fetch.test.ts`, `tests/receipt-mailbox.test.ts` and `tests/statement-mailbox-session.test.ts` do.
 - Verify: 2026-10-23 (D-291). `tests/retry-fetch.test.ts`'s two abort tests failed in the full `pnpm test` run under jsdom, and passed once the file was pinned to node (10 of 10).
+
+## Running only the test files beside a change misses the privacy guards, which read every route by source
+
+- Symptom: a change passes its own test files, tsc and the build, is pushed, and the full suite then fails in `tests/privacy.test.ts` (2026-10-25: `8f64a42` was live about 20 minutes with two red guards).
+- Cause: `tests/privacy.test.ts` greps sources across `app/`: no `console.` in any app source (mailbox routes included), and the statement route may name `readStatementPdf` exactly twice (import and hand-off). A test run scoped to the touched module never loads it.
+- Avoid: before a push, run the whole Vitest suite (`pnpm exec vitest run`, about 2.5 min), not a file list. Route logging goes through `lib/server/mail-sync-log.ts` (`logMailSyncFailure`, `logMailSyncStep`), never `console` in the route.
+- Verify: 2026-10-25. The full run failed 2 privacy tests on `8f64a42`; `05d8c44` moved the step log into `mail-sync-log.ts` and dropped the `readStatementPdf` wrapper, and the full run passed (2,037).

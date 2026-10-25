@@ -138,6 +138,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - The same bank row does not always give the same fingerprint: a re-printed statement words it differently
 
 - KBank-style `Direct Debit … SHOPEEPAY` rows are ordinary ShopeePay bank debits, not SPayLater repayments
+- A Krungthai statement's period end is the requested range, not what it covers
 
 ### Real data, masking and privacy
 
@@ -198,6 +199,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A ledger row-count locator written before day headings counts them as data rows
 - In a hidden browser pane, `element.focus()` takes focus but `:focus` styles never apply
 - Under Vitest's jsdom environment, a `Request` refuses jsdom's `AbortSignal`
+- Running only the test files beside a change misses the privacy guards, which read every route by source
 
 ### Layout, typography and accessibility
 

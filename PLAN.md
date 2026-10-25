@@ -1,8 +1,10 @@
 # Private Ledger execution plan
 
-Last verified: 2026-10-24
+Last verified: 2026-10-25
 
 ## Current checkpoint
+
+**Mailbox Sync timing, categoriser and statement freshness — 2026-10-25** (D-309, D-310, Open items 11–12). The statement route no longer times out (300 s) and flags on one login; per-command IMAP timing showed the slow logins are Gmail's side after AUTHENTICATE. The ledger categorises once per visit. Statement freshness and gaps were measured read-only: no boundary lost a row; KTB `period_end` is the requested range, not coverage. Last gate: full Vitest 2,039 passed / 115 skipped (Docker down, database suites skipped), tsc, eslint 0 errors, build. Live: `8e55702`; `dcfab99` and `2def61a` (script and docs) are committed, not pushed. **Next:** the per-account coverage line (newest transaction per account) with placements rendered for the owner; the owner also wants the last statement mail date and the last Sync time shown beside it.
 
 **"From the mailbox" layout built — 2026-10-24** (D-308, Open item 10; D-307 moved D-288 … D-301 to an archive first). One grid list, `SyncTable` (`app/inbox-bench.tsx`), shows Source · Status · Details on desktop and checklist rows on phone, with the status from the tested pure `sourceStatus`. The agent checked the shipped component with the real stylesheet in the browser pane at 1200px and at the mobile preset, in the light and `night` themes; not inside the running app (Docker was down). `/code-review` found one phone spacing defect, now fixed. `pnpm verify` green with the local stack **down** (lint 0 errors / 3 warnings, tsc, docs, build; Vitest 120 files, 2,032 passed / 115 skipped: the database suites skipped). **Live** (`15ecc54`): on the owner's word the agent pressed "Sync all mail" once on production; all three sources finished Done in 12 s and stored nothing new. The table read correctly at 1200px and at the mobile preset in the owner's Night Town theme and in the light theme (set on the page only, not saved), with no sideways scroll on phone. Only the Done status has been seen on real results. **Next:** Open item 5 with the owner.
 

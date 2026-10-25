@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-302 … D-308**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-302 … D-310**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -449,6 +449,8 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-310** — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
+- **D-309** — A mailbox statement is fetched and flagged on one IMAP login, the route allows 300 s, and every step and IMAP command is logged by name and milliseconds only
 - **D-308** — "From the mailbox" shows Source · Status · Details on desktop and checklist rows on phone, from one grid list (Open item 10)
 - **D-307** — The twenty-third boundary moves D-288 … D-301, before D-308, because the file had reached 97% of its budget
 - **D-306** — A failed mailbox Sync request logs one value-free line, and the browser names "could not reach the server" apart from "the server answered N" (Open item 9)
@@ -456,6 +458,27 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
+
+## D-310 — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
+
+- Date: 2026-10-25
+- Status: **Built and live** (`eb59a01`). On production, opening the ledger and pressing Reload twice made 3 loads and 1 `POST /api/v1/transactions/auto-categorised`.
+- **Why.** `finance-investigator` read the path: `autoCategorise` (`lib/server/auto-categorise.ts:185`) reads every transaction, every category, the auto-excluded list and about 17 match-source queries on each run, and writes nothing when nothing changed (no audit event, no sequence bump). The ledger started it on every `load()` (mount, Reload, a cash entry, the sign-in retry and its own reload after a write), about 1.8 s of function time each, nearly always for nothing. It never blocked the screen.
+- **Rule.** `categorisedThisVisit` (`app/transactions-view.tsx`) gates the request; a failed request clears it, so the next load retries. A remount (a new visit) runs it again. An import still runs it after `auto_exclude_internal_transfers` (`lib/server/confirm-import.ts`).
+- **Cost accepted.** An owner category change, a new match or a deploy that changes the keyword rules is applied on the next visit, not the next Reload; the rows stay uncategorised meanwhile.
+- **Refused:** a server-side skip keyed on (`mutation_sequences.sequence`, build id), because it needs a stored marker (a new table kept out of backups) and a missed bump would leave rows silently uncategorised; browser storage, because the privacy guard forbids it on ledger surfaces.
+- **Correction to D-245.** D-245 says the auto-exclusion also runs on ledger open. The ledger only reads it (`GET /api/v1/transactions/auto-excluded`); detection runs after an import or a manual POST.
+- Evidence: `tests/auto-categorise-wiring.test.ts` asserts the guard and the failure reset (red-proved by removing the guard); full Vitest 2,039 passed / 115 skipped (Docker down).
+
+## D-309 — A mailbox statement is fetched and flagged on one IMAP login, the route allows 300 s, and every step and IMAP command is logged by name and milliseconds only
+
+- Date: 2026-10-25
+- Status: **Built and live** (`8f64a42`, `05d8c44`, `d707ae8`; `eb59a01` tried and `8e55702` removed `noDelay`). PLAN Open item 11 holds the measurements.
+- **Trigger.** A Sync's `POST /api/v1/imports/mailbox/statement` was killed at `maxDuration` 60 (Vercel 504) and the rest showed as waiting. The statement had been committed; the next Sync answered "already in the ledger".
+- **Measured.** A Gmail IMAP login takes about 2 s or 13–18 s. Per command (`imapCommandLogger`): before AUTHENTICATE every step is about 190 ms; from AUTHENTICATE on, every command on that socket is about 195 ms, 0.5–1.3 s, or 3.5–12 s, in runs. Same socket, so the slowness is Gmail's account backend, not the network. The PDF read is 0.1–0.6 s; the categoriser about 1.8 s. `noDelay` on the socket left the 190 ms floor unchanged, so it is server time and was removed.
+- **Rules.** `maxDuration = 300` (Fluid compute is on, Hobby allows 300 s). The route keeps the download's login, releases only the INBOX lock through decrypt and confirm, and flags on the same login (`markFetchedOnSession`); it signs in again only when that login has dropped or refused the store. An `error` listener stops an idle connection's timeout from crashing the function. Steps log through `logMailSyncStep` (`lib/server/mail-sync-log.ts`); `imapCommandLogger` keeps only the tag and a verb from a fixed list, never the line.
+- **Refused:** a reconnect on a slow AUTHENTICATE (slow draws came in runs, so a second login is likely slow too); a `pdf-read` lap (the privacy guard holds `readStatementPdf` to one hand-off). **Left:** one login for the whole Sync (listing plus every statement), the remaining lever.
+- Evidence: `tests/statement-mailbox-session.test.ts` (step timer `onLap`, four `markFetchedOnSession` cases, two `imapCommandLogger` cases incl. no mail words; each red-proved); on production two import-mode calls on a stored statement answered `duplicate`, `flagged: true`, with no `flag-open` step.
 
 ## D-308 — "From the mailbox" shows Source · Status · Details on desktop and checklist rows on phone, from one grid list (Open item 10)
 
