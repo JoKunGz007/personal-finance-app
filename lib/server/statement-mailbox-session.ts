@@ -91,6 +91,10 @@ export type MailboxSession = {
   readonly client: ImapFlow;
   /** Releases the mailbox lock and logs out. Safe to call more than once. */
   readonly release: () => Promise<void>;
+  /** Releases the mailbox lock and stays signed in, so a later step can `relock` without a new login. */
+  readonly unlock: () => void;
+  /** Takes the INBOX lock again on the same login. Resolves false when the connection is gone or released. */
+  readonly relock: () => Promise<boolean>;
 };
 
 /**
@@ -123,6 +127,9 @@ export async function openMailbox(config: MailboxConfig): Promise<MailboxSession
     socketTimeout: 30_000
   });
 
+  // A kept, idle login can time out or be hung up on (`markFetchedOnSession`). imapflow reports that
+  // as an `error` event, which with no listener would crash the function; `client.usable` carries it.
+  client.on("error", () => {});
   await client.connect();
   let lock: Awaited<ReturnType<ImapFlow["getMailboxLock"]>> | null = null;
   try {
@@ -133,16 +140,72 @@ export async function openMailbox(config: MailboxConfig): Promise<MailboxSession
   }
 
   let released = false;
+  const unlock = () => {
+    const held = lock;
+    lock = null;
+    held?.release();
+  };
+  const relock = async () => {
+    if (released || !client.usable) return false;
+    if (lock) return true;
+    try {
+      lock = await client.getMailboxLock("INBOX");
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const release = async () => {
     if (released) return;
     released = true;
     try {
-      lock?.release();
+      unlock();
     } finally {
       await client.logout().catch(() => {});
     }
   };
-  return { client, release };
+  return { client, release, unlock, relock };
+}
+
+/**
+ * Flags a statement on the login that downloaded it, and signs in again only when that one is gone.
+ *
+ * **A second login is the expensive step.** Measured on production 2026-10-25 (PLAN Open item 11):
+ * a Gmail IMAP login takes about 2 s or 13–18 s, and the mark-fetched login alone took 13 s. The
+ * download's session is kept signed in, unlocked, through decrypt and confirm; it can still have
+ * dropped by then (`socketTimeout`, a server hang-up), so a failed relock or a refused store on it
+ * falls back to one fresh session. Same contract as `markFetched`: resolves, never throws.
+ */
+export async function markFetchedOnSession(
+  session: MailboxSession,
+  reopen: () => Promise<MailboxSession>,
+  uid: number,
+  part: string,
+  lap?: (step: string) => void
+): Promise<boolean> {
+  if (await session.relock()) {
+    try {
+      const flagged = await markFetched(session.client, uid, part).catch(() => false);
+      lap?.("flag");
+      if (flagged) return true;
+    } finally {
+      session.unlock();
+    }
+  }
+  let fresh: MailboxSession;
+  try {
+    fresh = await reopen();
+    lap?.("flag-open");
+  } catch {
+    return false;
+  }
+  try {
+    const flagged = await markFetched(fresh.client, uid, part).catch(() => false);
+    lap?.("flag-fresh");
+    return flagged;
+  } finally {
+    await fresh.release().catch(() => {});
+  }
 }
 
 /**

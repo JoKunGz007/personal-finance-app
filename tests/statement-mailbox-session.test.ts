@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import type { ImapFlow } from "imapflow";
-import { findAttachments, markFetched } from "@/lib/server/statement-mailbox-session";
+import { findAttachments, markFetched, markFetchedOnSession, type MailboxSession } from "@/lib/server/statement-mailbox-session";
 import { MAX_SYNC_ATTACHMENTS, MAX_SYNC_MESSAGES_SCANNED, stepTimer } from "@/lib/statement-sync";
 import { IMPORTED_GMAIL_LABEL, fetchedFlag } from "@/lib/server/statement-mailbox";
 
@@ -167,5 +167,59 @@ describe("markFetched visible Gmail label (D-141)", () => {
     expect(await markFetched(client, 7, "1")).toBe(true);
     expect(calls).toHaveLength(2);
     warn.mockRestore();
+  });
+});
+
+describe("flagging on the download's login (PLAN Open item 11)", () => {
+  function fakeSession(relocks: boolean, stores: boolean) {
+    const events: string[] = [];
+    const client = {
+      messageFlagsAdd: async () => {
+        events.push("store");
+        return stores;
+      }
+    } as unknown as ImapFlow;
+    const session: MailboxSession = {
+      client,
+      relock: async () => {
+        events.push("relock");
+        return relocks;
+      },
+      unlock: () => void events.push("unlock"),
+      release: async () => void events.push("release")
+    };
+    return { session, events };
+  }
+
+  it("flags on the same login and signs in no second time", async () => {
+    const kept = fakeSession(true, true);
+    const reopen = vi.fn(async () => fakeSession(true, true).session);
+    expect(await markFetchedOnSession(kept.session, reopen, 7, "1")).toBe(true);
+    expect(reopen).not.toHaveBeenCalled();
+    expect(kept.events).toEqual(["relock", "store", "store", "unlock"]);
+  });
+
+  it("signs in once more when the kept login has dropped, and releases that one", async () => {
+    const kept = fakeSession(false, true);
+    const fresh = fakeSession(true, true);
+    expect(await markFetchedOnSession(kept.session, async () => fresh.session, 7, "1")).toBe(true);
+    expect(kept.events).toEqual(["relock"]);
+    expect(fresh.events).toEqual(["store", "store", "release"]);
+  });
+
+  it("retries on a fresh login when the kept one refuses the store", async () => {
+    const kept = fakeSession(true, false);
+    const fresh = fakeSession(true, true);
+    expect(await markFetchedOnSession(kept.session, async () => fresh.session, 7, "1")).toBe(true);
+    expect(kept.events).toEqual(["relock", "store", "unlock"]);
+    expect(fresh.events).toEqual(["store", "store", "release"]);
+  });
+
+  it("resolves false, never throws, when the fresh login fails too", async () => {
+    const kept = fakeSession(false, true);
+    const reopen = async (): Promise<MailboxSession> => {
+      throw new Error("login refused");
+    };
+    expect(await markFetchedOnSession(kept.session, reopen, 7, "1")).toBe(false);
   });
 });

@@ -20,3 +20,8 @@ export type MailSyncStage = "config" | "open" | "read" | "store" | "unexpected";
 export function logMailSyncFailure(route: string, stage: MailSyncStage, status: number, error?: unknown): void {
   console.error("mail sync failed", { route, stage, status, code: safeErrorCode(error) });
 }
+
+/** One step of a mailbox route and how long it took: a fixed step name and milliseconds, nothing else. */
+export function logMailSyncStep(route: string, step: string, ms: number): void {
+  console.info("mail sync step", { route, step, ms });
+}

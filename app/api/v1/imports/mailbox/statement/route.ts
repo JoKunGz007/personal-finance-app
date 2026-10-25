@@ -3,9 +3,9 @@ import { accountListSchema } from "@/lib/accounts";
 import { confirmImport } from "@/lib/server/confirm-import";
 import { existingImportRowCount, linkedBatchRowCount } from "@/lib/server/fingerprint-lookup";
 import { processMailboxStatement } from "@/lib/server/mailbox-statement";
-import { mailboxConfig, markFetched, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
+import { mailboxConfig, markFetchedOnSession, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
 import { readStatementPdf, readStatementPdfPages } from "@/lib/server/statement-pdf-node";
-import { logMailSyncFailure } from "@/lib/server/mail-sync-log";
+import { logMailSyncFailure, logMailSyncStep } from "@/lib/server/mail-sync-log";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { isSafePartPath, MAX_ATTACHMENT_BYTES, parseUid, stepTimer } from "@/lib/statement-sync";
 
@@ -37,7 +37,7 @@ const FAILURE_STATUS = { NOT_FOUND: 404, TOO_LARGE: 413, ACCOUNTS_UNAVAILABLE: 5
  * from the previous lap, so it includes any work between the two.
  */
 export async function POST(request: Request) {
-  const timer = stepTimer(undefined, (step, ms) => console.info("mailbox statement step", { step, ms }));
+  const timer = stepTimer(undefined, (step, ms) => logMailSyncStep("imports/mailbox/statement", step, ms));
   const auth = await strongOwnerClient();
   if (!auth.ok) return routeError(auth.message, auth.status);
   timer.lap("auth");
@@ -86,17 +86,15 @@ export async function POST(request: Request) {
         const download = await session.client.download(uid, part, { uid: true, maxBytes: MAX_ATTACHMENT_BYTES });
         const chunks: Buffer[] = [];
         for await (const chunk of download.content) chunks.push(Buffer.from(chunk as Uint8Array));
-        // The bytes are in hand: do not hold the mailbox through decrypt and confirm.
+        // The bytes are in hand: do not hold the mailbox lock through decrypt and confirm. The login
+        // stays, so the flag below does not pay for a second one (PLAN Open item 11).
         timer.lap("download");
-        await session.release();
-        timer.lap("release");
+        session.unlock();
         return { ok: true, bytes: new Uint8Array(Buffer.concat(chunks)) };
       },
-      readStatementPdf: async (bytes) => {
-        const read = await readStatementPdf(bytes);
-        timer.lap("pdf-read");
-        return read;
-      },
+      // Not wrapped for timing: the privacy guard holds this to one hand-off. Its time lands in the next
+      // lap (measured 2026-10-25 at 0.1–0.6 s, PLAN Open item 11).
+      readStatementPdf,
       readStatementPdfPages,
       // Read after the download has set it; only a masked dump ever shows it.
       get sourceName() { return sourceName; },
@@ -130,25 +128,8 @@ export async function POST(request: Request) {
         return count;
       },
       confirmImport: (body) => confirmImport(supabase, body, timer.lap),
-      // The first session was released after the download; the flag gets a fresh, short one.
-      markFetched: async () => {
-        let fresh;
-        try {
-          fresh = await openMailbox(settings.config);
-          timer.lap("flag-open");
-        } catch {
-          return false;
-        }
-        try {
-          const flagged = await markFetched(fresh.client, uid, part);
-          timer.lap("flag");
-          return flagged;
-        } catch {
-          return false;
-        } finally {
-          await fresh.release().catch(() => {});
-        }
-      }
+      // Flags on the download's login; a fresh one only if that has dropped.
+      markFetched: () => markFetchedOnSession(session, () => openMailbox(settings.config), uid, part, timer.lap)
     });
 
     if (outcome.kind === "failed") {
