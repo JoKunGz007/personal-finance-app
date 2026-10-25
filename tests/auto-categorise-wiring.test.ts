@@ -14,7 +14,12 @@ describe("auto-categoriser wiring", () => {
     expect(committed).toBeGreaterThan(-1);
     expect(categorised).toBeGreaterThan(committed);
     expect(view.indexOf('"/api/v1/transactions/auto-categorised"')).toBe(view.lastIndexOf('"/api/v1/transactions/auto-categorised"'));
-    expect(view).toMatch(/categorised\.ok && categorised\.data\.applied > 0\) void load\(automatic\)/u);
+    expect(view).toMatch(/else if \(!superseded\(\) && categorised\.data\.applied > 0\) void load\(automatic\)/u);
+    // Once per visit, not per load: the request sits behind the visit flag, and a failure clears it.
+    const guard = view.indexOf("if (!categorisedThisVisit.current) {");
+    expect(guard).toBeGreaterThan(committed);
+    expect(categorised).toBeGreaterThan(guard);
+    expect(view).toContain("if (!categorised.ok) categorisedThisVisit.current = false;");
     // D-293: the loader is read-only, so the write cannot start before the exclusion it depends on is read.
     expect(source("lib/browser/ledger-snapshot.ts")).not.toContain("auto-categorised");
   });

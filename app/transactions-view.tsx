@@ -387,6 +387,10 @@ export function TransactionsView() {
    */
   const loadSequence = useRef(0);
   const loadRequested = useRef(false);
+  // Machine categories run once per visit to the ledger, not on every load (PLAN Open item 11): a
+  // re-run with nothing changed writes nothing but still re-reads the whole ledger and every match
+  // source. Imports run it on the server anyway. A failed run clears this, so the next load retries.
+  const categorisedThisVisit = useRef(false);
   useEffect(() => {
     if (loadRequested.current) return;
     loadRequested.current = true;
@@ -566,12 +570,16 @@ export function TransactionsView() {
       // transfer is categorised from the exclusion the snapshot already read. Quiet like that
       // label: a failure changes nothing on screen, and the rows are reloaded only when it wrote
       // something (a re-run writes nothing, so this settles).
-      const categorisedRequest = ledgerRequest("/api/v1/transactions/auto-categorised", autoCategorisedResultSchema, {
-        fallback: "Categories could not be applied."
-      }, { method: "POST" });
-      void categorisedRequest.then((categorised) => {
-        if (!superseded() && categorised.ok && categorised.data.applied > 0) void load(automatic);
-      });
+      if (!categorisedThisVisit.current) {
+        categorisedThisVisit.current = true;
+        const categorisedRequest = ledgerRequest("/api/v1/transactions/auto-categorised", autoCategorisedResultSchema, {
+          fallback: "Categories could not be applied."
+        }, { method: "POST" });
+        void categorisedRequest.then((categorised) => {
+          if (!categorised.ok) categorisedThisVisit.current = false;
+          else if (!superseded() && categorised.data.applied > 0) void load(automatic);
+        });
+      }
     } finally {
       // **Only the newest load owns `busy`.** A superseded one clearing it would put the control
       // back to "Reload" while a load is still in flight — and the owner suite waits on exactly

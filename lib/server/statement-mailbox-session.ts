@@ -35,6 +35,7 @@
 // and dedupes by checking whether a same-named file is already there, so it has no need to mark
 // anything on the server.
 
+import type { ConnectionOptions } from "node:tls";
 import { ImapFlow, type FetchMessageObject, type SearchObject } from "imapflow";
 import { IMPORTED_GMAIL_LABEL, collectPdfParts, fetchedFlag, safeFileName, senderSearch, unfetchedParts } from "@/lib/server/statement-mailbox";
 import {
@@ -184,6 +185,11 @@ export async function openMailbox(
     // would otherwise hold the function open until the platform killed it, which surfaces as a
     // gateway timeout with no sentence in it rather than as "the mailbox did not answer".
     disableAutoIdle: true,
+    // Nagle off (imapflow spreads `tls` into `tls.connect`, which honours `noDelay`). Every command
+    // measured a flat ~190 ms even before login on an 8 ms socket (PLAN Open item 11); this tests
+    // whether that floor is a small-write stall rather than server time.
+    // Node types omit `noDelay` from `ConnectionOptions`, though `tls.connect` passes it to the socket.
+    tls: { noDelay: true } as ConnectionOptions,
     greetingTimeout: 10_000,
     socketTimeout: 30_000
   });
