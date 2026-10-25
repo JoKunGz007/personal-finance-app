@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { SourceLine, SyncTable, sourceStatus } from "@/app/inbox-bench";
+import { CoverageTable, SourceLine, SyncTable, describeLastSync, sourceStatus } from "@/app/inbox-bench";
 import { EMPTY_STATEMENT_TOTAL } from "@/lib/browser/mail-sync";
 import { REVIEW_LINK_LABEL } from "@/lib/inbox-drain";
 
@@ -80,5 +80,39 @@ describe("SyncTable (PLAN Open item 10)", () => {
     expect(rows.every((row) => row.querySelector(".sync-mark")!.getAttribute("aria-hidden") === "true")).toBe(true);
     expect(rows.map((row) => row.querySelector(".sync-status")!.textContent)).toEqual(["Done", "Failed", "Check"]);
     expect(rows[1]!.querySelector('.sync-details [role="alert"]')!.textContent).toBe("Could not be reached.");
+  });
+});
+
+describe("the Coverage table", () => {
+  const rows = [
+    { accountId: "a", name: "Everyday account", newestDate: "2026-03-13", newestTime: "21:40:00", lastStatementMailAt: "2026-03-11T05:00:00Z" },
+    { accountId: "b", name: "Savings account", newestDate: "2026-03-06", newestTime: null, lastStatementMailAt: null },
+    { accountId: "c", name: "Credit card", newestDate: null, newestTime: null, lastStatementMailAt: null }
+  ];
+  const doc = new DOMParser().parseFromString(renderToStaticMarkup(createElement(CoverageTable, { rows, today: "2026-03-14" })), "text/html");
+  const items = [...doc.querySelectorAll("li.sync-row")];
+
+  it("prints newest row with time and age, and the statement mail day", () => {
+    expect(items[0]!.className).toBe("sync-row sync-done");
+    expect(items[0]!.querySelector(".sync-status")!.textContent).toBe("13 Mar 21:40 · 1 day");
+    expect(items[0]!.querySelector(".sync-details")!.textContent).toBe("Statement mail 11 Mar");
+    expect(items[0]!.querySelector(".sync-mark")!.textContent).toBe("✓");
+  });
+  it("flags an old account without a time and shows a dash for no mail", () => {
+    expect(items[1]!.className).toBe("sync-row sync-check");
+    expect(items[1]!.querySelector(".sync-status")!.textContent).toBe("6 Mar · 8 days");
+    expect(items[1]!.querySelector(".sync-details")!.textContent).toBe("Statement mail —");
+    expect(items[1]!.querySelector(".sync-mark")!.textContent).toBe("!");
+  });
+  it("marks an account with no rows as waiting", () => {
+    expect(items[2]!.className).toBe("sync-row sync-waiting");
+    expect(items[2]!.querySelector(".sync-status")!.textContent).toBe("No rows yet");
+    expect(items[2]!.querySelector(".sync-mark")!.textContent).toBe("·");
+  });
+  it("words the last Sync line", () => {
+    const now = new Date("2026-03-14T09:30:00Z");
+    expect(describeLastSync(null, now)).toBe("No mail Sync recorded yet");
+    expect(describeLastSync({ finishedAt: "2026-03-14T02:30:00Z", complete: true }, now)).toBe("Last mail Sync 14 Mar 09:30 · 7 hours ago");
+    expect(describeLastSync({ finishedAt: "2026-03-14T02:30:00Z", complete: false }, now)).toContain(" · some sources failed");
   });
 });

@@ -50,7 +50,9 @@ insert into backup_exclusions(kind, reason) values
   ('ledger_owners', 'the binding record itself (owner_id is its primary key, not owned data) — carrying it in a backup would let a restore rebind an owner rather than have the caller''s own session do so'),
   ('backup_records', 'a log of past exports; restoring one would fabricate export history that never happened on the destination'),
   ('restore_runs', 'the restore machinery''s own bookkeeping; a backup that carried it could stage a restore inside a restore'),
-  ('restore_chunks', 'the restore machinery''s own staged payload storage, for the same reason restore_runs is excluded');
+  ('restore_chunks', 'the restore machinery''s own staged payload storage, for the same reason restore_runs is excluded'),
+  ('statement_mail_arrivals', 'mailbox bookkeeping, not ledger data (migration 064); a restored ledger shows no statement-mail date until the next statement mail is imported'),
+  ('mail_sync_runs', 'mailbox bookkeeping, not ledger data (migration 064); a restored ledger shows no last Sync until the next Sync');
 
 select is(
   (

@@ -382,19 +382,22 @@ export async function verifyAttachment(
   uid: number,
   part: string,
   lap?: (step: string) => void
-): Promise<SyncAttachment | null> {
+): Promise<(SyncAttachment & { internalDate: Date | null }) | null> {
   const criteria = senderSearch(senders) as SearchObject;
   const uids = await client.search({ ...criteria, uid: String(uid) }, { uid: true });
   lap?.("search");
   if (!uids || !uids.includes(uid)) return null;
 
-  const message = await client.fetchOne(uid, { bodyStructure: true }, { uid: true });
+  const message = await client.fetchOne(uid, { bodyStructure: true, internalDate: true }, { uid: true });
   lap?.("fetch");
   if (!message || !message.bodyStructure) return null;
 
   const match = collectPdfParts(message.bodyStructure, uid).find((item) => item.part === part);
   if (!match) return null;
+  // The server's arrival time for the message; imapflow gives a Date, or a string for some servers.
+  const arrived = message.internalDate instanceof Date ? message.internalDate : message.internalDate ? new Date(message.internalDate) : null;
   return {
+    internalDate: arrived && !Number.isNaN(arrived.getTime()) ? arrived : null,
     id: attachmentId(uid, match.part),
     uid,
     part: match.part,

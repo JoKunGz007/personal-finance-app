@@ -45,7 +45,7 @@ node_modules/
 # Long build/test output saved for grep and tail rather than read into context (CLAUDE.md).
 .tmp/
 *.tsbuildinfo
-coverage/
+/coverage/
 playwright-report/
 test-results/
 .supabase/

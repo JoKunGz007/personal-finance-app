@@ -6,6 +6,7 @@ import { processMailboxStatement } from "@/lib/server/mailbox-statement";
 import { mailboxConfig, markFetchedOnSession, openMailbox, verifyAttachment } from "@/lib/server/statement-mailbox-session";
 import { readStatementPdf, readStatementPdfPages } from "@/lib/server/statement-pdf-node";
 import { logMailSyncFailure, logMailSyncStep } from "@/lib/server/mail-sync-log";
+import { logStatementMailSkipped, recordStatementMail } from "@/lib/server/statement-mail";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { isSafePartPath, MAX_ATTACHMENT_BYTES, parseUid, stepTimer } from "@/lib/statement-sync";
 
@@ -75,6 +76,10 @@ export async function POST(request: Request) {
 
   const { supabase } = auth;
   let sourceName = "";
+  // For the mail-arrival record (import mode only): the message's server arrival time, and the batch
+  // the statement is in, by a fresh confirm or by the earlier one a replay finds.
+  let internalDate: Date | null = null;
+  let batchId: string | null = null;
   try {
     const outcome = await processMailboxStatement(mode, {
       download: async () => {
@@ -82,6 +87,7 @@ export async function POST(request: Request) {
         timer.lap("verify");
         if (!attachment) return { ok: false, code: "NOT_FOUND" };
         sourceName = attachment.name;
+        internalDate = attachment.internalDate;
         if (attachment.sizeBytes > MAX_ATTACHMENT_BYTES) return { ok: false, code: "TOO_LARGE" };
         const download = await session.client.download(uid, part, { uid: true, maxBytes: MAX_ATTACHMENT_BYTES });
         const chunks: Buffer[] = [];
@@ -115,7 +121,15 @@ export async function POST(request: Request) {
           .eq("artifact_digest", artifactDigest)
           .limit(1);
         timer.lap("artifact-lookup");
-        return error ? null : (data?.length ?? 0) > 0;
+        if (error) return null;
+        const artifactId = data?.[0]?.id;
+        if (typeof artifactId !== "string") return false;
+        // A replay: find the batch the first import made, so its mail time can be recorded. Best effort.
+        const { data: batches, error: batchError } = await supabase.from("import_batches").select("id").eq("artifact_id", artifactId).limit(1);
+        const found = batches?.[0]?.id;
+        if (typeof found === "string") batchId = found;
+        else if (mode === "import") logStatementMailSkipped(batchError);
+        return true;
       },
       existingRowCount: async (accountId, rows) => {
         const count = await existingImportRowCount(supabase, accountId, rows);
@@ -127,7 +141,11 @@ export async function POST(request: Request) {
         timer.lap("linked-rows");
         return count;
       },
-      confirmImport: (body) => confirmImport(supabase, body, timer.lap),
+      confirmImport: async (body) => {
+        const result = await confirmImport(supabase, body, timer.lap);
+        if (result.kind === "ok") batchId = String(result.batchId);
+        return result;
+      },
       // Flags on the download's login; a fresh one only if that has dropped.
       markFetched: () => markFetchedOnSession(session, () => openMailbox(settings.config), uid, part, timer.lap)
     });
@@ -136,6 +154,9 @@ export async function POST(request: Request) {
       // 404 and 413 are answers about one statement, not faults; the 502 codes are lookups that failed.
       if (FAILURE_STATUS[outcome.code] >= 500) logMailSyncFailure("imports/mailbox/statement", "store", FAILURE_STATUS[outcome.code]);
       return routeError("The statement could not be fetched.", FAILURE_STATUS[outcome.code], { code: outcome.code });
+    }
+    if (mode === "import" && batchId && (outcome.kind === "captured" || outcome.kind === "duplicate")) {
+      await recordStatementMail(supabase, batchId, internalDate);
     }
     return Response.json(outcome, { status: 200, headers: { ...noStoreHeaders, "Server-Timing": timer.header() } });
   } catch (error) {

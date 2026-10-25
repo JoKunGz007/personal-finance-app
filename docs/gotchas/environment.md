@@ -188,3 +188,10 @@ the top of `GOTCHAS.md`.
 - Cause: on this Windows machine Python decodes stdin with the ANSI code page, not UTF-8, so the Thai in the script is mangled before it runs. The files themselves are fine. Text the script reads with `open(..., encoding="utf-8")` is unaffected.
 - Avoid: prefix the run with `PYTHONUTF8=1` (Bash) or `$env:PYTHONUTF8=1` (PowerShell), or write the script to a file first. Keep the "exactly once" assertion, which is what caught it before anything was written.
 - Verify: 2026-10-07 (D-249). The round-2 rule edit failed its assertion on the coffee rule's Thai; the same script under `PYTHONUTF8=1` applied cleanly.
+
+## An unanchored `coverage/` in `.gitignore` hides any source folder named `coverage`
+
+- Symptom: a new route at `app/api/v1/accounts/coverage/route.ts` builds and passes its tests, but `git status --short` does not list it, so a commit would ship the client without its route.
+- Cause: `.gitignore` held `coverage/` (meant for the Vitest coverage report at the root), which matches a folder of that name at any depth.
+- Avoid: the line is now anchored, `/coverage/`. Anchor any new ignore line meant for a root-level tool folder, and read `git status --short` for every new file before staging.
+- Verify: 2026-10-25 (D-311). Before the change `git status --short` omitted the folder; after it the folder showed as untracked.

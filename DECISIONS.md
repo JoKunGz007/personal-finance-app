@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-302 … D-310**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-302 … D-311**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -449,6 +449,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 —
  this file
 
+- **D-311** — The Inbox shows per-account coverage, the last statement mail and the last mail Sync, from two append-only bookkeeping tables (migration 064)
 - **D-310** — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
 - **D-309** — A mailbox statement is fetched and flagged on one IMAP login, the route allows 300 s, and every step and IMAP command is logged by name and milliseconds only
 - **D-308** — "From the mailbox" shows Source · Status · Details on desktop and checklist rows on phone, from one grid list (Open item 10)
@@ -458,6 +459,18 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
+
+## D-311 — The Inbox shows per-account coverage, the last statement mail and the last mail Sync, from two append-only bookkeeping tables (migration 064)
+
+- Date: 2026-10-25
+- Status: **Built, applied locally and tested; not on hosted or production yet.** The owner chose placement B (its own "Coverage" section at the top of the Inbox) from three placements rendered side by side with the real stylesheet and invented values, and approved the migration.
+- **Coverage.** Per account, the newest `source_transactions` row by `source_date desc, source_time desc nulls last` (`list_account_coverage()`, security invoker, matching `source_transactions_ledger_order_idx`). Not `period_end`, which for KTB is the requested range (PLAN Open item 12). The age is in calendar days against the Bangkok date; ✓ up to 7 days, ! beyond, · with no rows; a row dated after today reads "today". The 7-day line is the agent's default and the owner may change it.
+- **Last statement mail.** `statement_mail_arrivals` keeps the IMAP `internalDate` of the mail per batch, written by `record_statement_mail` after a mailbox `mode: "import"` run that captures a statement or meets one already imported (a replay finds the earlier batch by `artifact_id`). A held statement (locked, needs-account, warnings) has no batch and records nothing; a locked one cannot even name its account. Device imports record nothing. Earlier statements are not backfilled, so an account reads "Statement mail —" until its next statement mail is imported.
+- **Last mail Sync.** `mail_sync_runs` gets one row each time "Sync all mail" finishes (`record_mail_sync`, `complete` = no source ended Failed), sent by the browser after the three sources; browser storage was not an option on ledger surfaces (privacy guard).
+- **Bookkeeping, not ledger data.** Both tables are append-only (`private.reject_change`) with owner-only select and no insert grant. Neither RPC bumps `mutation_sequences`, writes `audit_events` or takes the ledger lock, so a Sync does not mark the backup stale. Both are explicit backup exclusions in `supabase/tests/016_backup_coverage.sql`; a restored ledger shows "—" until the next statement mail or Sync. A failure to record never fails an import or a Sync; it leaves one value-free log line.
+- **Routes.** `GET /api/v1/accounts/coverage` and `POST /api/v1/mail-sync-runs`, gated by `strongOwnerClient()` like `app/api/v1/accounts/route.ts`; failures log `mail sync failed { route, stage, status, code }`.
+- **Review.** `/code-review` (high) found 8; 5 fixed (negative age, unlogged route failures, an unlogged replay-lookup skip, the lateral tie-break against the index, identical fallback names). Left: held mails record nothing (above), the 7-day line (above), and the relative "N hours ago" does not refresh on a long-open page.
+- Evidence: pgTAP 40 files / 1,024 with Docker up, including `040_coverage_mail_and_sync.sql` (29; red-proved by making `record_mail_sync` bump the sequence: 1 failed, then green after restoring) and the updated `016`. `pnpm verify` with the local stack up: lint 0 errors, tsc, docs, Vitest 124 files (2,167 passed / 19 skipped), build. New Vitest files: `tests/coverage-helpers.test.ts`, `tests/coverage-routes.test.ts`, `tests/mailbox-statement-route-mail-time.test.ts`, `tests/inbox-sync-record.test.ts`.
 
 ## D-310 — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
 

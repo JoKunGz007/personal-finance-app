@@ -1295,6 +1295,12 @@ footer p { margin: 0; }
   .sync-table .sync-details > * + * { display: block; margin-top: 4px; }
   .sync-table .sync-details > .slip-actions { display: flex; }
 }
+@media (max-width: 700px) {
+  /* On phone the status carries the newest row, so it stays visible (unlike "From the mailbox"). */
+  .coverage-table .sync-status { position: static; width: auto; height: auto; margin: 0 8px 0 0; overflow: visible; clip: auto; }
+  .coverage-table .sync-status::before { display: none; }
+  .coverage-table .sync-details { display: block; }
+}
 /* Inbox "Waiting" queue: a table or cards, each with a thumbnail of a queued image. */
 .slip-actions a.secondary-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .inbox-view-toggle { margin: 0 0 12px; }

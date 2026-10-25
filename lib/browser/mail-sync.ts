@@ -276,3 +276,37 @@ export async function checkStatementMail(): Promise<{ ok: true; waiting: Stateme
   const manifest: Pick<SyncManifest, "truncated"> & { attachments: readonly unknown[] } = result.data;
   return { ok: true, waiting: { count: manifest.attachments.length, more: manifest.truncated } };
 }
+
+/** Records that a mailbox sync finished (`POST /api/v1/mail-sync-runs`, migration 064). Never throws. */
+export function recordMailSync(complete: boolean) {
+  return ledgerRequest("/api/v1/mail-sync-runs", z.object({ finishedAt: z.string() }), {
+    fallback: "The sync could not be recorded.",
+    unreachable: NO_ROUTE_TEXT,
+    offContract: "The sync record did not match its contract."
+  }, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ complete })
+  });
+}
+
+const coverageSchema = z.object({
+  accounts: z.array(z.object({
+    accountId: z.string(),
+    newestDate: z.string().nullable(),
+    newestTime: z.string().nullable(),
+    lastStatementMailAt: z.string().nullable()
+  })),
+  lastSync: z.object({ finishedAt: z.string(), complete: z.boolean() }).nullable()
+});
+
+export type AccountCoverage = z.infer<typeof coverageSchema>;
+
+/** Per-account coverage and the last mailbox sync (`GET /api/v1/accounts/coverage`). */
+export function loadAccountCoverage() {
+  return ledgerRequest("/api/v1/accounts/coverage", coverageSchema, {
+    fallback: "Account coverage could not be loaded.",
+    unreachable: NO_ROUTE_TEXT,
+    offContract: "The coverage response did not match its contract."
+  });
+}

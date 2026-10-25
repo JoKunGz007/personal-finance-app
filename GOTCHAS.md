@@ -39,6 +39,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A scripted replacement's escape sequences survive one layer of quoting and not two, and land real newlines inside string literals
 - A `\uXXXX` escape written through the agent's file tools lands as the literal character, invisible ones included
 - pdf.js loads under `next start` and fails on Vercel with "DOMMatrix is not defined"
+- An unanchored `coverage/` in `.gitignore` hides any source folder named `coverage`
 
 ### Docker and the local Supabase projects
 
