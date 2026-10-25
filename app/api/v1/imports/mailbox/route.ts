@@ -2,7 +2,7 @@ import {
   buildManifest, stepTimer, syncSince, type SyncManifest
 } from "@/lib/statement-sync";
 import { findAttachments, mailboxConfig, openMailbox } from "@/lib/server/statement-mailbox-session";
-import { logMailSyncFailure } from "@/lib/server/mail-sync-log";
+import { logMailSyncFailure, logMailSyncStep } from "@/lib/server/mail-sync-log";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +55,8 @@ export async function GET(request: Request) {
 
   let session;
   try {
-    session = await openMailbox(settings.config);
+    // Per-command IMAP timing (verbs and milliseconds only) for PLAN Open item 11.
+    session = await openMailbox(settings.config, (step, ms) => logMailSyncStep("imports/mailbox", step, ms));
   } catch (error) {
     logMailSyncFailure("imports/mailbox", "open", 502, error);
     // **The underlying message is deliberately not passed through.** `imapflow` puts the mailbox

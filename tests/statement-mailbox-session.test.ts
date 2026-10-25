@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import type { ImapFlow } from "imapflow";
-import { findAttachments, markFetched, markFetchedOnSession, type MailboxSession } from "@/lib/server/statement-mailbox-session";
+import { findAttachments, imapCommandLogger, markFetched, markFetchedOnSession, type MailboxSession } from "@/lib/server/statement-mailbox-session";
 import { MAX_SYNC_ATTACHMENTS, MAX_SYNC_MESSAGES_SCANNED, stepTimer } from "@/lib/statement-sync";
 import { IMPORTED_GMAIL_LABEL, fetchedFlag } from "@/lib/server/statement-mailbox";
 
@@ -221,5 +221,44 @@ describe("flagging on the download's login (PLAN Open item 11)", () => {
       throw new Error("login refused");
     };
     expect(await markFetchedOnSession(kept.session, reopen, 7, "1")).toBe(false);
+  });
+});
+
+describe("per-command IMAP timing (PLAN Open item 11)", () => {
+  function run(entries: [level: "info" | "debug", entry: Record<string, unknown>, at: number][]) {
+    let time = 0;
+    const seen: [string, number][] = [];
+    const logger = imapCommandLogger((step, ms) => seen.push([step, ms]), () => time);
+    for (const [level, entry, at] of entries) {
+      time = at;
+      logger[level](entry);
+    }
+    return seen;
+  }
+
+  it("times the socket, the greeting and each tagged command by its verb", () => {
+    expect(run([
+      ["info", { msg: "Established secure TCP connection" }, 300],
+      ["debug", { src: "s", msg: "* OK Gimap ready" }, 400],
+      ["debug", { src: "c", msg: "1 CAPABILITY" }, 400],
+      ["debug", { src: "s", msg: "* CAPABILITY IMAP4rev1" }, 450],
+      ["debug", { src: "s", msg: "1 OK Thats all she wrote" }, 1400],
+      ["debug", { src: "c", msg: "5 UID SEARCH FROM statements@bank.example.test" }, 1500],
+      ["debug", { src: "s", msg: "5 OK SEARCH completed" }, 1700],
+      ["debug", { src: "c", msg: "6 XCUSTOM thing" }, 1700],
+      ["debug", { src: "s", msg: "6 NO not today" }, 1750]
+    ])).toEqual([
+      ["tls", 300], ["greeting", 100], ["imap-CAPABILITY", 1000], ["imap-SEARCH", 200], ["imap-OTHER-refused", 50]
+    ]);
+  });
+
+  it("reports only fixed step names, never a word from the mail or the mailbox", () => {
+    const steps = run([
+      ["debug", { src: "c", msg: "7 SELECT \"Statements owner@example.test\"" }, 10],
+      ["debug", { src: "s", msg: "7 OK [READ-WRITE] owner@example.test selected" }, 20],
+      ["debug", { src: "s", msg: "* 3 FETCH (BODY[HEADER] {120} Subject: invented)" }, 30]
+    ]).map(([step]) => step);
+    expect(steps).toEqual(["imap-SELECT", "greeting"]);
+    expect(steps.join(" ")).not.toMatch(/example|invented|Statements/u);
   });
 });

@@ -106,7 +106,67 @@ export type MailboxSession = {
  * cancelled download would surface as a server error about a mailbox rather than as the cancelled
  * download it was.
  */
-export async function openMailbox(config: MailboxConfig): Promise<MailboxSession> {
+const TIMED_VERBS = new Set([
+  "CAPABILITY", "ID", "AUTHENTICATE", "LOGIN", "NAMESPACE", "COMPRESS", "ENABLE", "LIST", "SELECT",
+  "EXAMINE", "SEARCH", "FETCH", "STORE", "STATUS", "NOOP", "LOGOUT"
+]);
+
+/**
+ * An imapflow logger that reports how long each IMAP command took, and nothing else.
+ *
+ * **Why it exists:** a Gmail login measured either about 2 s or 13–18 s (PLAN Open item 11), and the
+ * question was whether a slow one is slow on every command or on one step. imapflow logs each
+ * command it sends and each response it reads at debug level. This reads only the tag and the verb
+ * from those lines, and reports a verb from a fixed list (anything else is `OTHER`) with milliseconds.
+ * **The line itself is never kept or passed on**: a command line can carry a mailbox name or search
+ * terms, and a response line can quote mail. `tls` is the time from creation to the secure socket,
+ * `greeting` from there to the server's first line.
+ */
+export function imapCommandLogger(report: (step: string, ms: number) => void, now: () => number = () => performance.now()) {
+  const sent = new Map<string, { verb: string; at: number }>();
+  let last = now();
+  let greeted = false;
+  const firstWords = (msg: unknown) => (typeof msg === "string" ? msg.split(" ", 3) : []);
+  const ignore = () => {};
+  return {
+    trace: ignore,
+    warn: ignore,
+    error: ignore,
+    info(entry: { msg?: unknown }) {
+      if (typeof entry?.msg === "string" && entry.msg.startsWith("Established secure")) {
+        const at = now();
+        report("tls", Math.round(at - last));
+        last = at;
+      }
+    },
+    debug(entry: { src?: unknown; msg?: unknown }) {
+      const [tag, first, second] = firstWords(entry?.msg);
+      if (!tag) return;
+      if (entry.src === "s" && tag === "*" && !greeted) {
+        greeted = true;
+        const at = now();
+        report("greeting", Math.round(at - last));
+        last = at;
+        return;
+      }
+      if (tag === "*" || tag === "+" || tag.startsWith("(")) return;
+      if (entry.src === "c") {
+        const word = first === "UID" ? second : first;
+        sent.set(tag, { verb: word && TIMED_VERBS.has(word) ? word : "OTHER", at: now() });
+      } else if (entry.src === "s" && (first === "OK" || first === "NO" || first === "BAD")) {
+        const command = sent.get(tag);
+        if (!command) return;
+        sent.delete(tag);
+        report(`imap-${command.verb}${first === "OK" ? "" : "-refused"}`, Math.round(now() - command.at));
+      }
+    }
+  };
+}
+
+export async function openMailbox(
+  config: MailboxConfig,
+  reportCommand?: (step: string, ms: number) => void
+): Promise<MailboxSession> {
   const client = new ImapFlow({
     host: HOST,
     port: PORT,
@@ -115,7 +175,8 @@ export async function openMailbox(config: MailboxConfig): Promise<MailboxSession
     // The library logs message subjects and addresses at info level, and a hosted platform captures
     // stdout into a retained log. Off entirely: this connection handles real financial mail, and a
     // log line naming a counterparty is exactly the value-free rule being broken by a library.
-    logger: false,
+    // `reportCommand` swaps in a logger that keeps only command verbs and durations (`imapCommandLogger`).
+    logger: reportCommand ? imapCommandLogger(reportCommand) : false,
     // Named so a mail server's connection list shows this app rather than a bare library default.
     clientInfo: { name: "private-ledger" },
     // **Auto-IDLE off, and both timeouts bounded, because a route is not a daemon.** The script can
