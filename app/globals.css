@@ -1305,7 +1305,7 @@ footer p { margin: 0; }
 .slip-actions a.secondary-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
 .warn-days-editor { display: grid; gap: 10px; }
 .warn-days-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; }
-.warn-days-row input { width: 96px; }
+.warn-days-row input { width: 96px; height: 47px; padding: 10px 12px; color: var(--navy); border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); font: inherit; }
 .inbox-view-toggle { margin: 0 0 12px; }
 .ledger-table.inbox-table { min-width: 560px; }
 .ledger-table.inbox-table th:nth-child(1) { width: 64px; }
