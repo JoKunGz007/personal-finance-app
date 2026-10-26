@@ -5,11 +5,11 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { accountListSchema } from "@/lib/accounts";
 import {
   describeGrabOutcome, describeGrabProgress, describeSevenElevenOutcome, describeSevenElevenProgress,
-  describeStatementTotal, loadAccountCoverage, recordMailSync, statementsNeedDeviceImport, syncGrabMail, syncMailboxStatements,
+  describeStatementTotal, loadAccountCoverage, recordMailSync, saveCoverageWarnDays, statementsNeedDeviceImport, syncGrabMail, syncMailboxStatements,
   syncSevenElevenMail, type AccountCoverage, type MailboxStatementTotal, type MailSyncOutcome
 } from "@/lib/browser/mail-sync";
 import {
-  coverageAge, coverageAgeDays, coverageTone, formatDayMonth, formatInstantDay, formatInstantDayTime, formatWallTime, relativeAge
+  coverageAge, coverageAgeDays, coverageTone, dayCount, formatDayMonth, formatInstantDay, formatInstantDayTime, formatWallTime, relativeAge
 } from "@/lib/coverage";
 import { bangkokToday } from "@/lib/dates";
 import { REVIEW_LINK_LABEL } from "@/lib/inbox-drain";
@@ -83,7 +83,7 @@ export function InboxBench() {
 
   return (
     <>
-    <CoverageSection state={coverage} />
+    <CoverageSection state={coverage} reload={reloadCoverage} />
     <section className="cash-bench compact" aria-labelledby="inbox-sync-title">
       <div className="cash-heading">
         <p className="section-index">Sync</p>
@@ -131,10 +131,11 @@ export type CoverageRowView = {
   readonly newestDate: string | null;
   readonly newestTime: string | null;
   readonly lastStatementMailAt: string | null;
+  readonly warnAfterDays: number;
 };
 
 /** "Up to date until": the newest statement row per account and the last mail Sync (migration 064). */
-function CoverageSection({ state }: { state: CoverageState }) {
+function CoverageSection({ state, reload }: { state: CoverageState; reload: () => Promise<void> }) {
   const rows: CoverageRowView[] = state.kind === "ready"
     ? state.data.accounts.map((account) => ({ ...account, name: state.names.get(account.accountId) ?? `Account ${account.accountId.slice(0, 4)}` }))
     : [];
@@ -150,6 +151,7 @@ function CoverageSection({ state }: { state: CoverageState }) {
           <>
             <p className="field-help">{describeLastSync(state.data.lastSync, new Date())}</p>
             <CoverageTable rows={rows} today={bangkokToday()} />
+            <WarnDaysEditor rows={rows} reload={reload} />
           </>
         ) : null}
       </div>
@@ -169,7 +171,7 @@ export function CoverageTable({ rows, today }: { rows: readonly CoverageRowView[
     <ul className="sync-table coverage-table">
       <li className="sync-head" aria-hidden="true"><span>Account</span><span>Newest row</span><span>Last statement mail</span></li>
       {rows.map((row) => {
-        const tone = row.newestDate === null ? "waiting" : coverageTone(coverageAgeDays(row.newestDate, today));
+        const tone = row.newestDate === null ? "waiting" : coverageTone(coverageAgeDays(row.newestDate, today), row.warnAfterDays);
         const status = row.newestDate === null
           ? "No rows yet"
           : `${formatDayMonth(row.newestDate)}${row.newestTime ? ` ${formatWallTime(row.newestTime)}` : ""} · ${coverageAge(row.newestDate, today)}`;
@@ -179,12 +181,89 @@ export function CoverageTable({ rows, today }: { rows: readonly CoverageRowView[
             <span className="sync-body">
               <strong>{row.name}</strong>
               <span className="sync-status">{status}</span>
-              <span className="sync-details"><span>Statement mail {row.lastStatementMailAt ? formatInstantDay(row.lastStatementMailAt) : "—"}</span></span>
+              <span className="sync-details"><span>Statement mail {row.lastStatementMailAt ? formatInstantDay(row.lastStatementMailAt) : "—"}</span><span>Warns after {dayCount(row.warnAfterDays)}</span></span>
             </span>
           </li>
         );
       })}
     </ul>
+  );
+}
+
+const WARN_DAYS_INVALID = "Enter a whole number of days from 1 to 365.";
+
+/** "Change warning days": one number per account; saves only the rows that changed, one request each. */
+function WarnDaysEditor({ rows, reload }: { rows: readonly CoverageRowView[]; reload: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState<{ readonly text: string; readonly error: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  function begin() {
+    setValues(Object.fromEntries(rows.map((row) => [row.accountId, String(row.warnAfterDays)])));
+    setMessage(null);
+    setOpen(true);
+  }
+
+  async function save() {
+    const changes: { accountId: string; days: number }[] = [];
+    for (const row of rows) {
+      const raw = (values[row.accountId] ?? "").trim();
+      const days = Number(raw);
+      if (!/^\d+$/u.test(raw) || !Number.isInteger(days) || days < 1 || days > 365) {
+        setMessage({ text: WARN_DAYS_INVALID, error: true });
+        return;
+      }
+      if (days !== row.warnAfterDays) changes.push({ accountId: row.accountId, days });
+    }
+    setSaving(true);
+    setMessage(null);
+    for (const change of changes) {
+      const result = await saveCoverageWarnDays(change.accountId, change.days);
+      if (!result.ok) {
+        setSaving(false);
+        setMessage({ text: "The warning days could not be saved.", error: true });
+        // Earlier rows may already be saved: show them.
+        await reload();
+        return;
+      }
+    }
+    setSaving(false);
+    setOpen(false);
+    await reload();
+    setMessage({ text: "Warning days saved.", error: false });
+  }
+
+  return (
+    <>
+      {open ? (
+        <div className="warn-days-editor">
+          {rows.map((row) => (
+            <label key={row.accountId} className="warn-days-row">
+              <span>{row.name}</span>
+              <input
+                type="number" min={1} max={365} step={1} inputMode="numeric"
+                value={values[row.accountId] ?? ""}
+                onChange={(event) => setValues((current) => ({ ...current, [row.accountId]: event.target.value }))}
+              />
+            </label>
+          ))}
+          <div className="slip-actions">
+            <button type="button" className="primary-button" disabled={saving} onClick={() => void save()}>Save</button>
+            <button type="button" className="secondary-button" disabled={saving} onClick={() => { setOpen(false); setMessage(null); }}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="slip-actions">
+          <button type="button" className="secondary-button" onClick={begin}>Change warning days</button>
+        </div>
+      )}
+      {message ? (
+        message.error
+          ? <p className="status error" role="alert">{message.text}</p>
+          : <p className="status" role="status">{message.text}</p>
+      ) : null}
+    </>
   );
 }
 

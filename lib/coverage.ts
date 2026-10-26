@@ -57,10 +57,18 @@ export function coverageAgeDays(newestDate: string, today: string): number {
 export function coverageAge(newestDate: string, today: string): string {
   const days = coverageAgeDays(newestDate, today);
   if (days <= 0) return "today";
+  return dayCount(days);
+}
+
+/** "1 day" | "N days". */
+export function dayCount(days: number): string {
   return days === 1 ? "1 day" : `${days} days`;
 }
 
-/** "done" up to 7 days old, "check" beyond. */
-export function coverageTone(ageDays: number): "done" | "check" {
-  return ageDays <= 7 ? "done" : "check";
+/** The warning days an account has until the owner sets its own (matches migration 065's default). */
+export const DEFAULT_COVERAGE_WARN_DAYS = 35;
+
+/** "done" up to `warnAfterDays` days old (inclusive), "check" beyond. */
+export function coverageTone(ageDays: number, warnAfterDays: number): "done" | "check" {
+  return ageDays <= warnAfterDays ? "done" : "check";
 }

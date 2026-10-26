@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  coverageAge, coverageAgeDays, coverageTone, formatDayMonth, formatInstantDay, formatInstantDayTime, formatWallTime, relativeAge
+  DEFAULT_COVERAGE_WARN_DAYS, coverageAge, coverageAgeDays, coverageTone, formatDayMonth, formatInstantDay, formatInstantDayTime, formatWallTime, relativeAge
 } from "@/lib/coverage";
 
 describe("coverageAge (calendar dates, invented values)", () => {
@@ -19,10 +19,15 @@ describe("coverageAge (calendar dates, invented values)", () => {
 });
 
 describe("coverageTone", () => {
-  it("is done at 7 days and check at 8", () => {
-    expect(coverageTone(coverageAgeDays("2026-03-07", "2026-03-14"))).toBe("done");
-    expect(coverageTone(coverageAgeDays("2026-03-06", "2026-03-14"))).toBe("check");
-    expect(coverageTone(0)).toBe("done");
+  it("is done at the warning days and check one day beyond (7 and 35)", () => {
+    expect(coverageTone(coverageAgeDays("2026-03-07", "2026-03-14"), 7)).toBe("done");
+    expect(coverageTone(coverageAgeDays("2026-03-06", "2026-03-14"), 7)).toBe("check");
+    expect(coverageTone(35, 35)).toBe("done");
+    expect(coverageTone(36, 35)).toBe("check");
+    expect(coverageTone(0, 1)).toBe("done");
+  });
+  it("defaults to 35 days", () => {
+    expect(DEFAULT_COVERAGE_WARN_DAYS).toBe(35);
   });
 });
 

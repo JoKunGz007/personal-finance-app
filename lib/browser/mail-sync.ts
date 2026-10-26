@@ -11,6 +11,7 @@
 // request opens its own session.
 
 import { z } from "zod";
+import { DEFAULT_COVERAGE_WARN_DAYS } from "@/lib/coverage";
 import {
   deliverySyncReportSchema, describeSyncReport, type DeliverySyncReport
 } from "@/lib/deliveries";
@@ -295,7 +296,9 @@ const coverageSchema = z.object({
     accountId: z.string(),
     newestDate: z.string().nullable(),
     newestTime: z.string().nullable(),
-    lastStatementMailAt: z.string().nullable()
+    lastStatementMailAt: z.string().nullable(),
+    // Defaulted so a build ahead of migration 065 still loads coverage at the 065 default.
+    warnAfterDays: z.number().int().min(1).max(365).default(DEFAULT_COVERAGE_WARN_DAYS)
   })),
   lastSync: z.object({ finishedAt: z.string(), complete: z.boolean() }).nullable()
 });
@@ -308,5 +311,18 @@ export function loadAccountCoverage() {
     fallback: "Account coverage could not be loaded.",
     unreachable: NO_ROUTE_TEXT,
     offContract: "The coverage response did not match its contract."
+  });
+}
+
+/** Sets one account's warning days (`POST /api/v1/accounts/coverage`, migration 065). Never throws. */
+export function saveCoverageWarnDays(accountId: string, warnAfterDays: number) {
+  return ledgerRequest("/api/v1/accounts/coverage", z.object({ ok: z.literal(true) }), {
+    fallback: "The warning days could not be saved.",
+    unreachable: NO_ROUTE_TEXT,
+    offContract: "The save answer did not match its contract."
+  }, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ accountId, warnAfterDays })
   });
 }

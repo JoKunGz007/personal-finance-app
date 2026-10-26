@@ -80,7 +80,7 @@ describe("POST /api/v1/mail-sync-runs", () => {
 describe("GET /api/v1/accounts/coverage", () => {
   it("maps rows and the newest sync, passing database strings through", async () => {
     state.rpc = {
-      data: [{ account_id: ACCOUNT, newest_date: "2026-10-20", newest_time: "13:45:00", last_statement_mail_at: "2026-10-21T02:00:00+00:00" }],
+      data: [{ account_id: ACCOUNT, newest_date: "2026-10-20", newest_time: "13:45:00", last_statement_mail_at: "2026-10-21T02:00:00+00:00", warn_after_days: 7 }],
       error: null
     };
     state.syncRows = { data: [{ finished_at: "2026-10-25T01:00:00+00:00", complete: true }], error: null };
@@ -88,17 +88,17 @@ describe("GET /api/v1/accounts/coverage", () => {
     const response = await GET();
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      accounts: [{ accountId: ACCOUNT, newestDate: "2026-10-20", newestTime: "13:45:00", lastStatementMailAt: "2026-10-21T02:00:00+00:00" }],
+      accounts: [{ accountId: ACCOUNT, newestDate: "2026-10-20", newestTime: "13:45:00", lastStatementMailAt: "2026-10-21T02:00:00+00:00", warnAfterDays: 7 }],
       lastSync: { finishedAt: "2026-10-25T01:00:00+00:00", complete: true }
     });
     expect(state.rpcCalls).toEqual([{ name: "list_account_coverage", args: undefined }]);
   });
 
   it("keeps nulls and answers lastSync null when no sync row exists", async () => {
-    state.rpc = { data: [{ account_id: ACCOUNT, newest_date: null, newest_time: null, last_statement_mail_at: null }], error: null };
+    state.rpc = { data: [{ account_id: ACCOUNT, newest_date: null, newest_time: null, last_statement_mail_at: null, warn_after_days: 35 }], error: null };
     const { GET } = await import("@/app/api/v1/accounts/coverage/route");
     expect(await (await GET()).json()).toEqual({
-      accounts: [{ accountId: ACCOUNT, newestDate: null, newestTime: null, lastStatementMailAt: null }],
+      accounts: [{ accountId: ACCOUNT, newestDate: null, newestTime: null, lastStatementMailAt: null, warnAfterDays: 35 }],
       lastSync: null
     });
   });
@@ -116,5 +116,56 @@ describe("GET /api/v1/accounts/coverage", () => {
     state.rpc = { data: [], error: null };
     state.syncRows = { data: [], error: { message: "invented" } };
     expect((await GET()).status).toBe(400);
+  });
+});
+
+describe("POST /api/v1/accounts/coverage", () => {
+  const post = (body: unknown) => new Request("http://x.test/api/v1/accounts/coverage", {
+    method: "POST", headers: { "content-type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body)
+  });
+
+  it("calls set_account_coverage_warn_days with exact arguments", async () => {
+    const { POST } = await import("@/app/api/v1/accounts/coverage/route");
+    const response = await POST(post({ accountId: ACCOUNT, warnAfterDays: 7 }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(state.rpcCalls).toEqual([{ name: "set_account_coverage_warn_days", args: { p_account_id: ACCOUNT, p_days: 7 } }]);
+  });
+
+  it("accepts both ends of the range", async () => {
+    const { POST } = await import("@/app/api/v1/accounts/coverage/route");
+    expect((await POST(post({ accountId: ACCOUNT, warnAfterDays: 1 }))).status).toBe(200);
+    expect((await POST(post({ accountId: ACCOUNT, warnAfterDays: 365 }))).status).toBe(200);
+  });
+
+  it.each([
+    ["zero days", { accountId: ACCOUNT, warnAfterDays: 0 }],
+    ["366 days", { accountId: ACCOUNT, warnAfterDays: 366 }],
+    ["a fractional day", { accountId: ACCOUNT, warnAfterDays: 1.5 }],
+    ["a string number", { accountId: ACCOUNT, warnAfterDays: "7" }],
+    ["a non-uuid account", { accountId: "nope", warnAfterDays: 7 }],
+    ["a missing account", { warnAfterDays: 7 }],
+    ["missing days", { accountId: ACCOUNT }],
+    ["an extra key", { accountId: ACCOUNT, warnAfterDays: 7, extra: 1 }],
+    ["bad JSON", "{nope"]
+  ])("rejects %s with 400 and calls nothing", async (_label, body) => {
+    const { POST } = await import("@/app/api/v1/accounts/coverage/route");
+    expect((await POST(post(body))).status).toBe(400);
+    expect(state.rpcCalls).toEqual([]);
+  });
+
+  it("answers an unauthorised owner as other routes do", async () => {
+    state.owner = false;
+    const { POST } = await import("@/app/api/v1/accounts/coverage/route");
+    expect((await POST(post({ accountId: ACCOUNT, warnAfterDays: 7 }))).status).toBe(403);
+    expect(state.rpcCalls).toEqual([]);
+  });
+
+  it("answers 400 with the message when the RPC errors", async () => {
+    state.rpc = { data: null, error: { message: "account not owned" } };
+    const { POST } = await import("@/app/api/v1/accounts/coverage/route");
+    const response = await POST(post({ accountId: ACCOUNT, warnAfterDays: 7 }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "The warning days could not be saved." });
   });
 });
