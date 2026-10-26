@@ -9,9 +9,11 @@ import {
   syncSevenElevenMail, type AccountCoverage, type MailboxStatementTotal, type MailSyncOutcome
 } from "@/lib/browser/mail-sync";
 import {
-  coverageAge, coverageAgeDays, coverageTone, dayCount, formatDayMonth, formatInstantDay, formatInstantDayTime, formatWallTime, relativeAge
+  coverageAge, coverageAgeDays, coverageTone, dayCount, formatDayMonth, formatInstantDay, formatInstantDayTime, formatWallTime, relativeAge,
+  requestNowReach
 } from "@/lib/coverage";
 import { bangkokToday } from "@/lib/dates";
+import type { BankCode } from "@/lib/statement-frame";
 import { REVIEW_LINK_LABEL } from "@/lib/inbox-drain";
 import { ledgerRequest } from "@/lib/wire";
 
@@ -108,7 +110,7 @@ export function InboxBench() {
 type CoverageState =
   | { readonly kind: "loading" }
   | { readonly kind: "failed" }
-  | { readonly kind: "ready"; readonly data: AccountCoverage; readonly names: ReadonlyMap<string, string> };
+  | { readonly kind: "ready"; readonly data: AccountCoverage; readonly names: ReadonlyMap<string, { readonly label: string; readonly bankCode: BankCode }> };
 
 async function fetchCoverage(): Promise<CoverageState> {
   const [loaded, accounts] = await Promise.all([
@@ -119,8 +121,8 @@ async function fetchCoverage(): Promise<CoverageState> {
     })
   ]);
   if (!loaded.ok) return { kind: "failed" };
-  const names = new Map<string, string>();
-  if (accounts.ok) for (const account of accounts.data.accounts) names.set(account.id, account.label);
+  const names = new Map<string, { readonly label: string; readonly bankCode: BankCode }>();
+  if (accounts.ok) for (const account of accounts.data.accounts) names.set(account.id, { label: account.label, bankCode: account.bank_code });
   return { kind: "ready", data: loaded.data, names };
 }
 
@@ -128,6 +130,7 @@ async function fetchCoverage(): Promise<CoverageState> {
 export type CoverageRowView = {
   readonly accountId: string;
   readonly name: string;
+  readonly bankCode: BankCode | null;
   readonly newestDate: string | null;
   readonly newestTime: string | null;
   readonly lastStatementMailAt: string | null;
@@ -136,26 +139,68 @@ export type CoverageRowView = {
 
 /** "Up to date until": the newest statement row per account and the last mail Sync (migration 064). */
 function CoverageSection({ state, reload }: { state: CoverageState; reload: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ readonly text: string; readonly error: boolean } | null>(null);
   const rows: CoverageRowView[] = state.kind === "ready"
-    ? state.data.accounts.map((account) => ({ ...account, name: state.names.get(account.accountId) ?? `Account ${account.accountId.slice(0, 4)}` }))
+    ? state.data.accounts.map((account) => {
+      const known = state.names.get(account.accountId);
+      return { ...account, name: known?.label ?? `Account ${account.accountId.slice(0, 4)}`, bankCode: known?.bankCode ?? null };
+    })
     : [];
   return (
     <section className="cash-bench compact" aria-labelledby="inbox-coverage-title">
       <div className="cash-heading">
         <p className="section-index">Coverage</p>
         <h2 id="inbox-coverage-title">Up to date until</h2>
+        {state.kind === "ready" ? (
+          <button
+            type="button"
+            className="note-toggle coverage-settings"
+            aria-expanded={editing}
+            aria-controls={editing ? "coverage-warn-days" : undefined}
+            disabled={saving}
+            onClick={() => { setEditing((current) => !current); setMessage(null); }}
+          >
+            <GearIcon />
+            <span className="sr-only">Change warning days</span>
+          </button>
+        ) : null}
       </div>
       <div className="slip-form">
         {state.kind === "failed" ? <p className="status error" role="alert">Coverage could not be loaded.</p> : null}
         {state.kind === "ready" ? (
           <>
+            {editing ? (
+              <WarnDaysEditor
+                rows={rows}
+                reload={reload}
+                saving={saving}
+                onSaving={setSaving}
+                onClose={() => setEditing(false)}
+                onMessage={setMessage}
+              />
+            ) : null}
+            {message ? (
+              message.error
+                ? <p className="status error" role="alert">{message.text}</p>
+                : <p className="status" role="status">{message.text}</p>
+            ) : null}
             <p className="field-help">{describeLastSync(state.data.lastSync, new Date())}</p>
             <CoverageTable rows={rows} today={bangkokToday()} />
-            <WarnDaysEditor rows={rows} reload={reload} />
           </>
         ) : null}
       </div>
     </section>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+    </svg>
   );
 }
 
@@ -165,23 +210,28 @@ export function describeLastSync(lastSync: AccountCoverage["lastSync"], now: Dat
   return `Last mail Sync ${formatInstantDayTime(lastSync.finishedAt)} · ${relativeAge(lastSync.finishedAt, now)}${lastSync.complete ? "" : " · some sources failed"}`;
 }
 
-/** Account · Newest row · Last statement mail (CSS `.sync-table.coverage-table`). */
+/** Account · Newest row · Statements: requested now, last mail, warning (CSS `.sync-table.coverage-table`). */
 export function CoverageTable({ rows, today }: { rows: readonly CoverageRowView[]; today: string }) {
   return (
     <ul className="sync-table coverage-table">
-      <li className="sync-head" aria-hidden="true"><span>Account</span><span>Newest row</span><span>Last statement mail</span></li>
+      <li className="sync-head" aria-hidden="true"><span>Account</span><span>Newest row</span><span>Statements</span></li>
       {rows.map((row) => {
         const tone = row.newestDate === null ? "waiting" : coverageTone(coverageAgeDays(row.newestDate, today), row.warnAfterDays);
         const status = row.newestDate === null
           ? "No rows yet"
           : `${formatDayMonth(row.newestDate)}${row.newestTime ? ` ${formatWallTime(row.newestTime)}` : ""} · ${coverageAge(row.newestDate, today)}`;
+        const reach = requestNowReach(row.bankCode, today);
         return (
           <li key={row.accountId} className={`sync-row sync-${tone}`}>
             <span className="sync-mark" aria-hidden="true">{tone === "done" ? "✓" : tone === "check" ? "!" : "·"}</span>
             <span className="sync-body">
               <strong>{row.name}</strong>
               <span className="sync-status">{status}</span>
-              <span className="sync-details"><span>Statement mail {row.lastStatementMailAt ? formatInstantDay(row.lastStatementMailAt) : "—"}</span><span>Warns after {dayCount(row.warnAfterDays)}</span></span>
+              <span className="sync-details">
+                {reach ? <span className="coverage-reach">{reach}</span> : null}
+                <span>Last mail {row.lastStatementMailAt ? formatInstantDay(row.lastStatementMailAt) : "—"}</span>
+                <span>Warns after {dayCount(row.warnAfterDays)}</span>
+              </span>
             </span>
           </li>
         );
@@ -192,18 +242,19 @@ export function CoverageTable({ rows, today }: { rows: readonly CoverageRowView[
 
 const WARN_DAYS_INVALID = "Enter a whole number of days from 1 to 365.";
 
-/** "Change warning days": one number per account; saves only the rows that changed, one request each. */
-function WarnDaysEditor({ rows, reload }: { rows: readonly CoverageRowView[]; reload: () => Promise<void> }) {
-  const [open, setOpen] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [message, setMessage] = useState<{ readonly text: string; readonly error: boolean } | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  function begin() {
-    setValues(Object.fromEntries(rows.map((row) => [row.accountId, String(row.warnAfterDays)])));
-    setMessage(null);
-    setOpen(true);
-  }
+/**
+ * "Change warning days", opened from the Coverage heading's gear: one number per account; saves only
+ * the rows that changed, one request each. The section owns the message, so it outlives the editor.
+ */
+function WarnDaysEditor({ rows, reload, saving, onSaving: setSaving, onClose, onMessage: setMessage }: {
+  rows: readonly CoverageRowView[];
+  reload: () => Promise<void>;
+  saving: boolean;
+  onSaving: (saving: boolean) => void;
+  onClose: () => void;
+  onMessage: (message: { readonly text: string; readonly error: boolean } | null) => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((row) => [row.accountId, String(row.warnAfterDays)])));
 
   async function save() {
     const changes: { accountId: string; days: number }[] = [];
@@ -229,41 +280,28 @@ function WarnDaysEditor({ rows, reload }: { rows: readonly CoverageRowView[]; re
       }
     }
     setSaving(false);
-    setOpen(false);
-    await reload();
+    onClose();
     setMessage({ text: "Warning days saved.", error: false });
+    await reload();
   }
 
   return (
-    <>
-      {open ? (
-        <div className="warn-days-editor">
-          {rows.map((row) => (
-            <label key={row.accountId} className="warn-days-row">
-              <span>{row.name}</span>
-              <input
-                type="number" min={1} max={365} step={1} inputMode="numeric"
-                value={values[row.accountId] ?? ""}
-                onChange={(event) => setValues((current) => ({ ...current, [row.accountId]: event.target.value }))}
-              />
-            </label>
-          ))}
-          <div className="slip-actions">
-            <button type="button" className="primary-button" disabled={saving} onClick={() => void save()}>Save</button>
-            <button type="button" className="secondary-button" disabled={saving} onClick={() => { setOpen(false); setMessage(null); }}>Cancel</button>
-          </div>
-        </div>
-      ) : (
-        <div className="slip-actions">
-          <button type="button" className="secondary-button" onClick={begin}>Change warning days</button>
-        </div>
-      )}
-      {message ? (
-        message.error
-          ? <p className="status error" role="alert">{message.text}</p>
-          : <p className="status" role="status">{message.text}</p>
-      ) : null}
-    </>
+    <div id="coverage-warn-days" className="warn-days-editor">
+      {rows.map((row) => (
+        <label key={row.accountId} className="warn-days-row">
+          <span>{row.name}</span>
+          <input
+            type="number" min={1} max={365} step={1} inputMode="numeric"
+            value={values[row.accountId] ?? ""}
+            onChange={(event) => setValues((current) => ({ ...current, [row.accountId]: event.target.value }))}
+          />
+        </label>
+      ))}
+      <div className="slip-actions">
+        <button type="button" className="primary-button" disabled={saving} onClick={() => void save()}>Save</button>
+        <button type="button" className="secondary-button" disabled={saving} onClick={() => { onClose(); setMessage(null); }}>Cancel</button>
+      </div>
+    </div>
   );
 }
 

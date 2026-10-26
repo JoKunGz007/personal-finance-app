@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-302 … D-312**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-302 … D-313**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -451,6 +451,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 
 - **D-311** — The Inbox shows per-account coverage, the last statement mail and the last mail Sync, from two append-only bookkeeping tables (migration 064)
 - **D-312** — Coverage warns per account (migration 065), and past statement mail dates are backfilled (supersedes D-311's fixed 7-day line)
+- **D-313** — Coverage says how far a statement requested now would reach, per bank, and the warning-days editor opens from a gear in the section heading
 - **D-310** — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
 - **D-309** — A mailbox statement is fetched and flagged on one IMAP login, the route allows 300 s, and every step and IMAP command is logged by name and milliseconds only
 - **D-308** — "From the mailbox" shows Source · Status · Details on desktop and checklist rows on phone, from one grid list (Open item 10)
@@ -460,6 +461,16 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
+
+## D-313 — Coverage says how far a statement requested now would reach, per bank, and the warning-days editor opens from a gear in the section heading
+
+- Date: 2026-10-26
+- Status: **Built** (UI only: no route, stored value or migration changes). The owner asked for both; the agent chose the gear's place (top right of the heading, where a settings control is expected).
+- **Reach rule.** `requestNowReach(bankCode, today)` (`lib/coverage.ts`) follows the per-bank behaviour in GOTCHAS "A Krungthai statement's period end is the requested range": KBANK "up to end of" yesterday; SCB "up to" yesterday "~23:00" (SCB leaves out rows after about 23:00 when requested the next day, PLAN Open item 12); KTB "up to now". It is a `Record<BankCode, …>`, so a new bank in `BANK_CODES` fails tsc until it has a rule; an account whose bank is unknown (the accounts read failed) shows no line. The bank comes from `GET /api/v1/accounts` (`bank_code`), which Coverage already read for labels.
+- **Unverified assumption.** "Up to now" for KTB assumes an on-request statement includes the request day's own rows. One observation fits it (a Krungthai row on the same day as its statement mail); it has not been measured.
+- **Layout.** The third column is "Statements": Requested now, Last mail, Warns after. The gear (`note-toggle coverage-settings`, accessible name "Change warning days") toggles the editor above the table; it is disabled while a save runs. The section owns the saved/failed message, so "Warning days saved." now appears even when the reload after a save fails (closes D-312's open review item).
+- **Review.** `/code-review` (high) found 6; fixed 4 (the gear could reopen the editor during a save, `aria-controls` named a missing element, `bankCode` typed as `string`, the phrase split across two files). Left: the KTB assumption (above), and the ad-hoc yesterday arithmetic beside `lib/dates`.
+- Evidence: `tests/coverage-helpers.test.ts` (month and year boundaries, KTB, no bank) and `tests/inbox-bench.test.ts` (one line per bank, none without one). The agent rendered the shipped `CoverageTable` with invented rows and the real `app/globals.css` into a static page and checked it in the browser pane at desktop width and the mobile preset (light theme only; static pages do not take the dark scheme). Not yet seen on production.
 
 ## D-312 — Coverage warns per account (migration 065), and past statement mail dates are backfilled (supersedes D-311's fixed 7-day line)
 

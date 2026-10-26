@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CoverageTable, SourceLine, SyncTable, describeLastSync, sourceStatus } from "@/app/inbox-bench";
+import { CoverageTable, type CoverageRowView, SourceLine, SyncTable, describeLastSync, sourceStatus } from "@/app/inbox-bench";
 import { EMPTY_STATEMENT_TOTAL } from "@/lib/browser/mail-sync";
 import { REVIEW_LINK_LABEL } from "@/lib/inbox-drain";
 
@@ -84,11 +84,14 @@ describe("SyncTable (PLAN Open item 10)", () => {
 });
 
 describe("the Coverage table", () => {
-  const rows = [
-    { accountId: "a", name: "Everyday account", newestDate: "2026-03-13", newestTime: "21:40:00", lastStatementMailAt: "2026-03-11T05:00:00Z", warnAfterDays: 7 },
-    { accountId: "b", name: "Savings account", newestDate: "2026-03-06", newestTime: null, lastStatementMailAt: null, warnAfterDays: 7 },
-    { accountId: "c", name: "Credit card", newestDate: null, newestTime: null, lastStatementMailAt: null, warnAfterDays: 1 },
-    { accountId: "d", name: "Old card", newestDate: "2026-03-06", newestTime: null, lastStatementMailAt: null, warnAfterDays: 35 }
+  const rows: CoverageRowView[] = [
+    { accountId: "a", name: "Everyday account", bankCode: null, newestDate: "2026-03-13", newestTime: "21:40:00", lastStatementMailAt: "2026-03-11T05:00:00Z", warnAfterDays: 7 },
+    { accountId: "b", name: "Savings account", bankCode: null, newestDate: "2026-03-06", newestTime: null, lastStatementMailAt: null, warnAfterDays: 7 },
+    { accountId: "c", name: "Credit card", bankCode: null, newestDate: null, newestTime: null, lastStatementMailAt: null, warnAfterDays: 1 },
+    { accountId: "d", name: "Old card", bankCode: null, newestDate: "2026-03-06", newestTime: null, lastStatementMailAt: null, warnAfterDays: 35 },
+    { accountId: "e", name: "Bank K", bankCode: "KBANK", newestDate: "2026-03-10", newestTime: null, lastStatementMailAt: null, warnAfterDays: 35 },
+    { accountId: "f", name: "Bank S", bankCode: "SCB", newestDate: "2026-03-10", newestTime: null, lastStatementMailAt: null, warnAfterDays: 35 },
+    { accountId: "g", name: "Bank T", bankCode: "KTB", newestDate: "2026-03-10", newestTime: null, lastStatementMailAt: null, warnAfterDays: 35 }
   ];
   const doc = new DOMParser().parseFromString(renderToStaticMarkup(createElement(CoverageTable, { rows, today: "2026-03-14" })), "text/html");
   const items = [...doc.querySelectorAll("li.sync-row")];
@@ -96,28 +99,35 @@ describe("the Coverage table", () => {
   it("prints newest row with time and age, and the statement mail day", () => {
     expect(items[0]!.className).toBe("sync-row sync-done");
     expect(items[0]!.querySelector(".sync-status")!.textContent).toBe("13 Mar 21:40 · 1 day");
-    expect(items[0]!.querySelector(".sync-details")!.textContent).toBe("Statement mail 11 MarWarns after 7 days");
+    expect(items[0]!.querySelector(".sync-details")!.textContent).toBe("Last mail 11 MarWarns after 7 days");
     expect(items[0]!.querySelector(".sync-mark")!.textContent).toBe("✓");
   });
   it("flags an old account without a time and shows a dash for no mail", () => {
     expect(items[1]!.className).toBe("sync-row sync-check");
     expect(items[1]!.querySelector(".sync-status")!.textContent).toBe("6 Mar · 8 days");
-    expect(items[1]!.querySelector(".sync-details")!.textContent).toBe("Statement mail —Warns after 7 days");
+    expect(items[1]!.querySelector(".sync-details")!.textContent).toBe("Last mail —Warns after 7 days");
     expect(items[1]!.querySelector(".sync-mark")!.textContent).toBe("!");
   });
   it("flags only when the age passes the account's own warning days", () => {
     expect(items[3]!.className).toBe("sync-row sync-done");
     expect(items[3]!.querySelector(".sync-mark")!.textContent).toBe("✓");
     expect(items[3]!.querySelector(".sync-status")!.textContent).toBe("6 Mar · 8 days");
-    expect(items[3]!.querySelector(".sync-details")!.textContent).toBe("Statement mail —Warns after 35 days");
+    expect(items[3]!.querySelector(".sync-details")!.textContent).toBe("Last mail —Warns after 35 days");
   });
   it("says 1 day in the singular", () => {
-    expect(items[2]!.querySelector(".sync-details")!.textContent).toBe("Statement mail —Warns after 1 day");
+    expect(items[2]!.querySelector(".sync-details")!.textContent).toBe("Last mail —Warns after 1 day");
   });
   it("marks an account with no rows as waiting", () => {
     expect(items[2]!.className).toBe("sync-row sync-waiting");
     expect(items[2]!.querySelector(".sync-status")!.textContent).toBe("No rows yet");
     expect(items[2]!.querySelector(".sync-mark")!.textContent).toBe("·");
+  });
+  it("says how far a statement requested now would reach, per bank", () => {
+    const reach = (index: number) => items[index]!.querySelector(".coverage-reach")?.textContent;
+    expect(reach(0)).toBeUndefined();
+    expect(reach(4)).toBe("Requested now: up to end of 13 Mar");
+    expect(reach(5)).toBe("Requested now: up to 13 Mar ~23:00");
+    expect(reach(6)).toBe("Requested now: up to now");
   });
   it("words the last Sync line", () => {
     const now = new Date("2026-03-14T09:30:00Z");

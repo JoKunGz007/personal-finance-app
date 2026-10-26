@@ -4,6 +4,7 @@
 // `lastStatementMailAt` and `finishedAt` are timestamptz instants, read in Asia/Bangkok.
 
 import { dayNumber } from "@/lib/dates";
+import type { BankCode } from "@/lib/statement-frame";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
@@ -63,6 +64,19 @@ export function coverageAge(newestDate: string, today: string): string {
 /** "1 day" | "N days". */
 export function dayCount(days: number): string {
   return days === 1 ? "1 day" : `${days} days`;
+}
+
+/**
+ * How far a statement requested today would reach, per bank (GOTCHAS "A Krungthai statement's period
+ * end is the requested range"): KBANK and SCB end the day before the request, SCB leaving out rows
+ * after about 23:00 on that day; KTB runs to the request. `null` when the account's bank is unknown.
+ * A Record, so a bank added to `BANK_CODES` fails tsc here until it has a rule.
+ */
+export function requestNowReach(bankCode: BankCode | null, today: string): string | null {
+  if (bankCode === null) return null;
+  const yesterday = formatDayMonth(new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10));
+  const reach: Record<BankCode, string> = { KBANK: `end of ${yesterday}`, SCB: `${yesterday} ~23:00`, KTB: "now" };
+  return `Requested now: up to ${reach[bankCode]}`;
 }
 
 /** The warning days an account has until the owner sets its own (matches migration 065's default). */

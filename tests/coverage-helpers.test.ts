@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_COVERAGE_WARN_DAYS, coverageAge, coverageAgeDays, coverageTone, formatDayMonth, formatInstantDay, formatInstantDayTime, formatWallTime, relativeAge
+  DEFAULT_COVERAGE_WARN_DAYS, coverageAge, coverageAgeDays, coverageTone, formatDayMonth, formatInstantDay, formatInstantDayTime, formatWallTime, relativeAge, requestNowReach
 } from "@/lib/coverage";
 
 describe("coverageAge (calendar dates, invented values)", () => {
@@ -51,5 +51,16 @@ describe("instants are read in Bangkok", () => {
     expect(relativeAge("2026-03-14T09:00:00Z", now)).toBe("30 minutes ago");
     expect(relativeAge("2026-03-14T06:30:00Z", now)).toBe("3 hours ago");
     expect(relativeAge("2026-03-12T09:30:00Z", now)).toBe("2 days ago");
+  });
+});
+
+describe("requestNowReach", () => {
+  it("ends KBANK and SCB the day before, across a month and a year boundary", () => {
+    expect(requestNowReach("KBANK", "2026-03-01")).toBe("Requested now: up to end of 28 Feb");
+    expect(requestNowReach("SCB", "2027-01-01")).toBe("Requested now: up to 31 Dec ~23:00");
+  });
+  it("runs KTB to the request and says nothing without a bank", () => {
+    expect(requestNowReach("KTB", "2026-03-14")).toBe("Requested now: up to now");
+    expect(requestNowReach(null, "2026-03-14")).toBeNull();
   });
 });
