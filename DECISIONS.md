@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-302 … D-311**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-302 … D-312**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -450,6 +450,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
  this file
 
 - **D-311** — The Inbox shows per-account coverage, the last statement mail and the last mail Sync, from two append-only bookkeeping tables (migration 064)
+- **D-312** — Coverage warns per account (migration 065), and past statement mail dates are backfilled (supersedes D-311's fixed 7-day line)
 - **D-310** — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
 - **D-309** — A mailbox statement is fetched and flagged on one IMAP login, the route allows 300 s, and every step and IMAP command is logged by name and milliseconds only
 - **D-308** — "From the mailbox" shows Source · Status · Details on desktop and checklist rows on phone, from one grid list (Open item 10)
@@ -459,6 +460,17 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
+
+## D-312 — Coverage warns per account (migration 065), and past statement mail dates are backfilled (supersedes D-311's fixed 7-day line)
+
+- Date: 2026-10-26
+- Status: **Shipped as `52d2a64`, pushed; migration 065 applied to hosted.** The owner chose a per-account line over one shared line or removing the mark. The agent set SCB savings to 7 days through the new editor on production on the owner's word; KBANK and Krungthai stay at the 35-day default.
+- **Setting.** `account_coverage_settings` (owner, account, `warn_after_days` 1–365) is a display preference: mutable (latest wins), owner-only select, written only by `set_account_coverage_warn_days`, which takes no ledger lock, writes no audit row and does not bump `mutation_sequences`. It is excluded from backups (`016_backup_coverage.sql`); a restored ledger warns at 35 days until set again. `list_account_coverage()` gains a last column, `warn_after_days`, 35 when unset.
+- **App.** `coverageTone(ageDays, warnAfterDays)`; each Coverage row reads "Warns after N days"; "Change warning days" opens one number per account, saves only changed rows (`POST /api/v1/accounts/coverage`) and reloads coverage, also after a partial failure. The client schema defaults a missing `warnAfterDays` to 35, so a build ahead of 065 still loads.
+- **Backfill.** The owner ran `scripts/measure-statement-freshness.ts` (read-only, mail arrival times by PDF digest). The agent paired digests to confirmed batches on hosted by `import_artifacts.artifact_digest` and inserted the earliest arrival per batch into `statement_mail_arrivals` (`on conflict do nothing`): 34 of 39 PDFs matched, across all 3 accounts; every matched mail arrived before its import. The 5 unmatched PDFs have no confirmed batch. Sequence unchanged. The agent deleted the arrival-time file and the generated SQL afterwards.
+- **Held mails** still record no date (D-311); the owner agreed to leave it.
+- **Review.** `/code-review` (high) found 5; fixed 4 (client schema default, reload after a partial failure, the unused default constant, a duplicated day wording now `dayCount`). Left: a failed reload after a successful save unmounts the editor, so "Warning days saved." is not shown.
+- Evidence: pgTAP 41 files / 1,042 locally, including `041_coverage_warn_days.sql` (18; red-proved). `pnpm verify`: Vitest 124 files, 2,183 passed / 19 skipped, lint 0 errors, tsc, docs, build. Production at 1200px and the mobile preset: the save showed "Warning days saved.", the rows read 35 / 35 / 7, and there is no sideways scroll. Noticed, not fixed: the editor's number inputs show no visible border in the Night Town theme.
 
 ## D-311 — The Inbox shows per-account coverage, the last statement mail and the last mail Sync, from two append-only bookkeeping tables (migration 064)
 
