@@ -32,7 +32,10 @@ export const metadata: Metadata = {
   // Declares the share target that lets a bank app hand a slip straight to this one
   // (D-050, PLAN task 20). Installing needs HTTPS, so it is inert until hosting lands —
   // task 19, which is why 20 can be built now but not used from a phone yet.
-  manifest: "/manifest.webmanifest"
+  manifest: "/manifest.webmanifest",
+  // Safari's home-screen icon: iOS ignores the manifest's SVG and wants a PNG. Square corners,
+  // because iOS rounds the tile itself and fills transparent corners with black.
+  icons: { apple: "/apple-touch-icon.png" }
 };
 
 // **`themeColor` must equal the chosen scheme's `--mist`, and it is the one colour no screenshot can

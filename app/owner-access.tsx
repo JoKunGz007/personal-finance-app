@@ -178,7 +178,10 @@ export function OwnerAccess() {
   }
 
   return (
-    <div className="owner-access">
+    // `data-pending` marks a sign-in still to finish, which the phone header shows even while the
+    // Settings panel is closed (`globals.css`): a home-screen app on iOS starts with no session of
+    // its own, and a "Sign in to continue." alert with the button folded away left nothing to tap.
+    <div className="owner-access" data-pending={checked && state.kind !== "ready" ? "true" : undefined}>
       {state.kind === "signed-out" && (checked || !supabase) ? (
         <button className="primary-button" type="button" onClick={signIn} disabled={busy}>
           Sign in with Google

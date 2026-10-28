@@ -1472,6 +1472,9 @@ button.inbox-thumb:hover, button.inbox-thumb:focus-visible { border-color: var(-
   .header-toggle[aria-expanded="true"] { color: var(--paper-strong); border-color: var(--blue); background: var(--blue); }
   .header-panel { order: 4; flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 12px; }
   .header-panel[data-open="false"] { display: none; }
+  /* An unfinished sign-in stays in view with the panel closed; only the pickers fold away. */
+  .header-panel[data-open="false"]:has(> .owner-access[data-pending]) { display: flex; }
+  .header-panel[data-open="false"]:has(> .owner-access[data-pending]) > :not(.owner-access) { display: none; }
   .header-panel .header-side { flex-basis: 100%; }
   /* The standing face note is behind the `(i)` since PLAN task 49, so what is left here is only a
      refusal or a "stored but not shown" line — rare, and worth the width when it does appear. */
