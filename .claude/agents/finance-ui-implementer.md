@@ -2,6 +2,7 @@
 name: finance-ui-implementer
 description: Haiku trial (D-278). Decision-complete UI-only changes — layout, styling, markup, copy, presentational component structure in `app/**/*.tsx` and `app/globals.css`. Never money, data, server or migration code; those go to `finance-implementer`. Returns anything outside that scope to the parent.
 model: haiku
+effort: high
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
 
