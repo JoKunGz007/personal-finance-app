@@ -144,7 +144,13 @@ describe("processInboxStatement", () => {
 
   it("reports duplicate when every row of the confirmed batch was linked (task 60)", async () => {
     const d = deps({ existingRowCount: async () => 0, linkedRowCount: async () => 4 });
-    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "duplicate", rowCount: 4 });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "duplicate", rowCount: 4, accountLabel: "Invented savings" });
+  });
+
+  it("names the account when the pre-count finds every row stored", async () => {
+    const d = deps({ existingRowCount: async () => 4 });
+    expect(await processInboxStatement("import", d)).toMatchObject({ kind: "duplicate", rowCount: 4, accountLabel: "Invented savings" });
+    expect(d.confirmImport).not.toHaveBeenCalled();
   });
 
   it("still counts a genuinely new row as new (task 60)", async () => {

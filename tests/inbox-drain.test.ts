@@ -677,9 +677,27 @@ describe("drainInbox with statement PDFs", () => {
   test("the row sentence wording (D-260)", () => {
     expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 2, existingRows: 1 })).toBe("s.pdf: 1 new row imported, 1 already in the ledger.");
     expect(describeStatementRows("s.pdf", { kind: "duplicate", rowCount: 1 })).toBe("s.pdf: Its 1 row is already in the ledger.");
-    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 4, existingRows: 0 })).toBeNull();
+    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 4, existingRows: 0 })).toBe("s.pdf: 4 new rows imported.");
+    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 4 })).toBe("s.pdf: 4 new rows imported.");
+    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 1, existingRows: 0 })).toBe("s.pdf: 1 new row imported.");
     expect(describeStatementRows("s.pdf", { kind: "captured" })).toBeNull();
     expect(describeStatementRows("s.pdf", { kind: "duplicate" })).toBeNull();
+    expect(describeStatementRows("s.pdf", { kind: "empty" })).toBeNull();
+    expect(describeStatementRows("s.pdf", { kind: "held", reason: "locked" })).toBeNull();
+  });
+
+  test("the account label prefixes all three wordings, and is left out when missing or empty", () => {
+    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 2, existingRows: 1, accountLabel: "Everyday" })).toBe("s.pdf (Everyday): 1 new row imported, 1 already in the ledger.");
+    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 3, existingRows: 0, accountLabel: "Everyday" })).toBe("s.pdf (Everyday): 3 new rows imported.");
+    expect(describeStatementRows("s.pdf", { kind: "duplicate", rowCount: 5, accountLabel: "Everyday" })).toBe("s.pdf (Everyday): All 5 rows are already in the ledger.");
+    expect(describeStatementRows("s.pdf", { kind: "captured", rowCount: 3, accountLabel: "" })).toBe("s.pdf: 3 new rows imported.");
+    expect(describeStatementRows("s.pdf", { kind: "duplicate", rowCount: 5, accountLabel: "" })).toBe("s.pdf: All 5 rows are already in the ledger.");
+  });
+
+  test("a statement with no overlap is reported too, so the lines match the count", async () => {
+    const { deps } = fakes({ statement: { ok: true, answer: { kind: "captured", rowCount: 4, existingRows: 0, accountLabel: "Everyday" } } });
+    const result = await drainInbox([file(NAME)], status, deps);
+    expect(result).toMatchObject({ statements: 1, summary: "1 statement imported. Statement (Everyday): 4 new rows imported." });
   });
 
   test("a held statement stays with its reason and a review link when Import can help", async () => {

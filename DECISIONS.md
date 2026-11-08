@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-302 … D-314**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-302 … D-315**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -453,6 +453,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-312** — Coverage warns per account (migration 065), and past statement mail dates are backfilled (supersedes D-311's fixed 7-day line)
 - **D-313** — Coverage says how far a statement requested now would reach, per bank, and the warning-days editor opens from a gear in the section heading
 - **D-314** — A second SCB print template (`Description` heading, one-line rows without `DESC :`) is read by `SCB_PLAIN_LAYOUT` under `scb-layout-v1`
+- **D-315** — Every statement that read rows gets a report line, named with its account (extends D-260)
 - **D-310** — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
 - **D-309** — A mailbox statement is fetched and flagged on one IMAP login, the route allows 300 s, and every step and IMAP command is logged by name and milliseconds only
 - **D-308** — "From the mailbox" shows Source · Status · Details on desktop and checklist rows on phone, from one grid list (Open item 10)
@@ -462,6 +463,14 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
+
+## D-315 — Every statement that read rows gets a report line, named with its account (extends D-260)
+
+- Date: 2026-11-08
+- Status: committed and pushed by the agent under the owner's grant; live wording is seen on the next Sync that reads a statement.
+- **Trigger.** The owner's Sync report said "3 statements imported" over two detail lines (a statement with no overlap printed none), and three files shared the name `AcctSt_Oct26.pdf` with nothing to tell their accounts apart.
+- **Decision.** `describeStatementRows` (`lib/inbox-drain.ts`) prints "name (account): N new rows imported." for a captured statement with no overlap, and prefixes every line with the account label when the server sent one. The server's `duplicate` answer with `rowCount` now carries `accountLabel` (`lib/server/inbox-statement.ts`), as `captured` already did; the client parser (`lib/browser/inbox-statement-client.ts`) keeps a non-empty string label and still parses an older server's answer. No line for `empty`, `held`, or a `duplicate` without `rowCount` (the same file was already stored and nothing was read, so no account is known). The Inbox drain shares the helper and gains the same lines.
+- Evidence: 7 new or changed tests across `tests/inbox-drain.test.ts`, `tests/mailbox-statement-sync.test.ts`, `tests/inbox-statement.test.ts`, red-proved (7 fail on the old code). Full Vitest 2098 passed / 115 skipped, `tsc --noEmit` and eslint clean.
 
 ## D-314 — A second SCB print template (`Description` heading, one-line rows without `DESC :`) is read by `SCB_PLAIN_LAYOUT` under `scb-layout-v1`
 

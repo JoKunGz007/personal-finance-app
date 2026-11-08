@@ -47,7 +47,9 @@ export type InboxStatementOutcome =
    * Already in the ledger. `rowCount` is set only when the file itself is new but every one of its
    * rows is already stored (D-260): nothing was confirmed and there is nothing to add.
    */
-  | { kind: "duplicate"; artifactDigest: string; rowCount?: number }
+  | { kind: "duplicate"; artifactDigest: string; rowCount?: number;
+      /** The account the statement bound to; set together with `rowCount`, so a report can tell same-named files apart. */
+      accountLabel?: string }
   /** No transactions and zero totals: nothing to import, and nothing for the owner to fix. */
   | { kind: "empty"; artifactDigest: string; periodStart: string; periodEnd: string }
   | { kind: "captured"; artifactDigest: string; accountLabel: string; periodStart: string; periodEnd: string; rowCount: number;
@@ -131,7 +133,7 @@ export async function processInboxStatement(
   const { payload } = assembled;
   const { rows: rpcRows } = await buildRpcRows(payload);
   const existing = await deps.existingRowCount(payload.accountId, rpcRows);
-  if (existing !== null && existing >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length };
+  if (existing !== null && existing >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length, accountLabel: account.label };
 
   const confirmed = await deps.confirmImport({
     idempotencyKey: await inboxIdempotencyKey(artifactDigest),
@@ -143,7 +145,7 @@ export async function processInboxStatement(
   // read fails keep the pre-count. A batch that linked every row added nothing.
   const linked = await deps.linkedRowCount(String(confirmed.batchId));
   const existingRows = linked === null ? existing ?? 0 : Math.min(linked, payload.rows.length);
-  if (existingRows >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length };
+  if (existingRows >= payload.rows.length) return { kind: "duplicate", artifactDigest, rowCount: payload.rows.length, accountLabel: account.label };
   return {
     kind: "captured",
     artifactDigest,

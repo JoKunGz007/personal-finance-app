@@ -60,25 +60,35 @@ export function needsStatementRoute(reply: PdfReply): boolean {
 
 /** What the statement route answered to an import, as the drain needs it. */
 export type StatementAnswer =
-  /** `existingRows` of `rowCount` were already in the ledger and skipped (D-260); absent from an older server. */
-  | { readonly kind: "captured"; readonly rowCount?: number; readonly existingRows?: number }
-  /** `rowCount` is set when the file was new but every row of it was already in the ledger (D-260). */
-  | { readonly kind: "duplicate"; readonly rowCount?: number }
+  /**
+   * `existingRows` of `rowCount` were already in the ledger and skipped (D-260); absent from an older server.
+   * `accountLabel` names the account the statement bound to; absent from an older server.
+   */
+  | { readonly kind: "captured"; readonly rowCount?: number; readonly existingRows?: number; readonly accountLabel?: string }
+  /** `rowCount` and `accountLabel` are set when the file was new but every row of it was already in the ledger (D-260). */
+  | { readonly kind: "duplicate"; readonly rowCount?: number; readonly accountLabel?: string }
   /** No transactions and zero totals: released like a captured one, since there is nothing to import. */
   | { readonly kind: "empty" }
   | { readonly kind: "held"; readonly reason: string };
 
 /**
- * "Statement: 12 new rows imported, 30 already in the ledger." for a statement that overlapped the
- * ledger, "Statement: All 42 rows are already in the ledger." for one that added nothing, else null (D-260).
+ * One report line per statement that read rows, prefixed "name (account)" when the account is known, else "name":
+ * "12 new rows imported, 30 already in the ledger." for one that overlapped the ledger, "4 new rows imported."
+ * for one with no overlap, "All 42 rows are already in the ledger." for one that added nothing (D-260).
+ * Null for `empty`, `held`, and a `duplicate` without `rowCount` (the same file was already stored; nothing was read).
  */
 export function describeStatementRows(name: string, answer: StatementAnswer): string | null {
-  if (answer.kind === "captured" && answer.rowCount !== undefined && answer.existingRows !== undefined && answer.existingRows > 0) {
-    const fresh = answer.rowCount - answer.existingRows;
-    return `${name}: ${fresh} new ${fresh === 1 ? "row" : "rows"} imported, ${answer.existingRows} already in the ledger.`;
+  const prefix = "accountLabel" in answer && answer.accountLabel ? `${name} (${answer.accountLabel})` : name;
+  if (answer.kind === "captured" && answer.rowCount !== undefined) {
+    const existing = answer.existingRows ?? 0;
+    if (existing > 0) {
+      const fresh = answer.rowCount - existing;
+      return `${prefix}: ${fresh} new ${fresh === 1 ? "row" : "rows"} imported, ${existing} already in the ledger.`;
+    }
+    return `${prefix}: ${answer.rowCount} new ${answer.rowCount === 1 ? "row" : "rows"} imported.`;
   }
   if (answer.kind === "duplicate" && answer.rowCount !== undefined) {
-    return `${name}: ${answer.rowCount === 1 ? "Its 1 row is" : `All ${answer.rowCount} rows are`} already in the ledger.`;
+    return `${prefix}: ${answer.rowCount === 1 ? "Its 1 row is" : `All ${answer.rowCount} rows are`} already in the ledger.`;
   }
   return null;
 }

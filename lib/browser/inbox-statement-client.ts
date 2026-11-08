@@ -64,17 +64,18 @@ export async function postMailboxStatementImport(ref: MailboxRefLike): Promise<S
 
 function importAnswer(answer: Awaited<ReturnType<typeof post>>): StatementImportPosted {
   if (!answer.ok) return answer;
-  const { kind, reason, rowCount, existingRows } = answer.body;
+  const { kind, reason, rowCount, existingRows, accountLabel } = answer.body;
+  const label = typeof accountLabel === "string" && accountLabel !== "" ? { accountLabel } : {};
   const count = (value: unknown) => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined);
   if (kind === "captured") {
     const rows = count(rowCount);
     const existing = count(existingRows);
     // Both or neither: a split pair would report counts that do not add up.
-    return { ok: true, answer: rows !== undefined && existing !== undefined && existing <= rows ? { kind, rowCount: rows, existingRows: existing } : { kind } };
+    return { ok: true, answer: rows !== undefined && existing !== undefined && existing <= rows ? { kind, rowCount: rows, existingRows: existing, ...label } : { kind, ...label } };
   }
   if (kind === "duplicate") {
     const rows = count(rowCount);
-    return { ok: true, answer: rows === undefined ? { kind } : { kind, rowCount: rows } };
+    return { ok: true, answer: rows === undefined ? { kind } : { kind, rowCount: rows, ...label } };
   }
   if (kind === "empty") return { ok: true, answer: { kind } };
   if (kind === "held" && typeof reason === "string") return { ok: true, answer: { kind: "held", reason } };

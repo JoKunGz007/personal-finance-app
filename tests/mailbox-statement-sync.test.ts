@@ -82,7 +82,24 @@ describe("the statements import loop", () => {
     expect(result.total).toMatchObject({ captured: 2, duplicates: 1, held: [] });
     expect(result.total.notes).toEqual([
       "s4.pdf: 12 new rows imported, 30 already in the ledger.",
-      "s5.pdf: All 7 rows are already in the ledger."
+      "s5.pdf: All 7 rows are already in the ledger.",
+      "s6.pdf: 5 new rows imported."
+    ]);
+  });
+
+  it("names the account on each line when the server sends it, and still parses an answer without it", async () => {
+    stubFetch((call) => call === 0 ? listing([4, 5, 6, 7])
+      : call === 1 ? json({ kind: "captured", artifactDigest: "d", rowCount: 1, existingRows: 0, accountLabel: "Everyday" })
+      : call === 2 ? json({ kind: "captured", artifactDigest: "d", rowCount: 2, existingRows: 0, accountLabel: "Savings" })
+      : call === 3 ? json({ kind: "duplicate", artifactDigest: "d", rowCount: 7, accountLabel: "Card" })
+      : json({ kind: "captured", artifactDigest: "d", rowCount: 3, existingRows: 0, accountLabel: 42 }));
+    const result = await syncMailboxStatements();
+    if (!result.ok) throw new Error(result.why);
+    expect(result.total.notes).toEqual([
+      "s4.pdf (Everyday): 1 new row imported.",
+      "s5.pdf (Savings): 2 new rows imported.",
+      "s6.pdf (Card): All 7 rows are already in the ledger.",
+      "s7.pdf: 3 new rows imported."
     ]);
   });
 
