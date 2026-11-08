@@ -163,6 +163,28 @@ line does repeat on the middle pages**: the reader requires it on every page and
 `MISSING_COLUMN_ANCHOR` otherwise, so pages two through four must have carried it. It was
 an inference from symmetry before; it is an observation now.
 
+## The plain template (D-314)
+
+On 2026-11-08 a mailbox Sync held one SCB statement as `UNSUPPORTED_LAYOUT`. Its masked
+dump (3 pages) shows a second print template that differs from the above in two ways
+only:
+
+- The last heading prints as the single word `Description`, without `/Note`.
+- **Each transaction is one printed line**: the date-time run, code, channel, amount,
+  balance, then the description text directly. There is no `DESC :` literal and no
+  continuation line, and rows follow one another at a pitch as small as the reader's
+  continuation tolerance.
+
+Everything else matched the shapes above: the frame and its account-number shape, the
+heading line with the six-run Thai mirror beneath it, the two right-aligned money
+clusters, the brought-forward line, and the three-line summary block.
+
+`SCB_PLAIN_LAYOUT` reads it under the same contract version, `scb-layout-v1`, because
+the rows it produces have the same shape. Its anchors match per run, so `Description`
+and `Description/Note` never both match one document. A row line is recognised by its
+two money runs before any continuation logic runs, so the next transaction is never
+merged into the one above it.
+
 ## Not yet known
 
 - Whether the brought-forward row is printed on the middle pages. Still open — the reader

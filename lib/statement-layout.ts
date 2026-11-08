@@ -235,6 +235,17 @@ export const SCB_LAYOUT: LayoutDescriptor = {
   detailTolerance: 14
 };
 
+// Second SCB print template (D-314): one-line rows with the description printed directly
+// after the balance, no `DESC :` literal and no continuation line, under a heading that
+// reads `Description` rather than `Description/Note`. It shares the contract version
+// because the rows it produces are identical in shape. The two heading sets are mutually
+// exclusive per run, so `matchLayout` never sees both.
+export const SCB_PLAIN_LAYOUT: LayoutDescriptor = {
+  ...SCB_LAYOUT,
+  headingAnchors: [...SCB_LAYOUT.headingAnchors.slice(0, 6), /^Description$/iu],
+  trailingFields: [{ kind: "text", field: "description", absorb: true }]
+};
+
 export const KBANK_LAYOUT: LayoutDescriptor = {
   contractVersion: "kbank-layout-v1",
   bankCode: "KBANK",
@@ -281,7 +292,7 @@ export const KBANK_LAYOUT: LayoutDescriptor = {
   detailTolerance: 14
 };
 
-export const LAYOUTS: readonly LayoutDescriptor[] = [SCB_LAYOUT, KBANK_LAYOUT];
+export const LAYOUTS: readonly LayoutDescriptor[] = [SCB_LAYOUT, SCB_PLAIN_LAYOUT, KBANK_LAYOUT];
 
 // ---------------------------------------------------------------------------
 // Reading

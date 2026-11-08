@@ -3,9 +3,11 @@ import { assembleImportPayload } from "@/lib/import-assembly";
 import type { PageText } from "@/lib/masked-diagnostics";
 import { readStatement } from "@/lib/read-statement";
 import { importPayloadSchema } from "@/lib/statement";
-import { extractStatement } from "@/lib/statement-layout";
+import { LAYOUTS, SCB_LAYOUT, SCB_PLAIN_LAYOUT, extractStatement, matchLayout } from "@/lib/statement-layout";
 import { validStatement as krungthaiStatement } from "./fixtures/krungthai-layout-v1";
-import { buildKbankPage, buildScbPage, kbankStatement, scbStatement } from "./fixtures/statement-layouts";
+import {
+  SCB_PLAIN_ROW_PITCH, buildKbankPage, buildScbPage, kbankStatement, scbPlainStatement, scbStatement
+} from "./fixtures/statement-layouts";
 
 // Geometry reading for scb-layout-v1 and kbank-layout-v1. The fixtures are invented
 // (docs/FIXTURE_POLICY.md): the structure comes from masked dumps of real statements
@@ -221,6 +223,59 @@ describe("scb-layout-v1", () => {
       ], { carryForward: "5,000.00" })
     ];
     expect(expectFailure(extractStatement(pages), "INVALID_ROW_CONTENT")).toMatch(/outside the statement period/u);
+  });
+});
+
+describe("scb-layout-v1, plain print template (D-314)", () => {
+  it("reads one-line rows, every field as invented", () => {
+    const result = extractStatement(scbPlainStatement);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.message);
+
+    expect(result.frame).toMatchObject({
+      bankCode: "SCB",
+      contractVersion: "scb-layout-v1",
+      openingBalance: "500000",
+      closingBalance: "500000",
+      crossChecked: true
+    });
+    expect(result.rows.map((row) => row.sourceDate)).toEqual(["2026-01-02", "2026-01-05", "2026-01-09"]);
+    expect(result.rows.map((row) => row.sourceTime)).toEqual(["09:15", "18:42", "12:00"]);
+    expect(result.rows.map((row) => row.reference)).toEqual(["E1", "C2", "P3"]);
+    expect(result.rows.map((row) => row.transactionLabel)).toEqual(["ENET", "ECOM", "POS"]);
+    expect(result.rows.map((row) => row.description)).toEqual([
+      "Synthetic plain transfer out", "Synthetic plain transfer in", "Synthetic plain purchase"
+    ]);
+    expect(result.rows.map((row) => row.components[0]!.kind)).toEqual(["withdrawal", "deposit", "withdrawal"]);
+    expect(result.rows.map((row) => row.components[0]!.amount.minor)).toEqual(["-25050", "100000", "-74950"]);
+    expect(result.rows.map((row) => row.postBalance.minor)).toEqual(["474950", "574950", "500000"]);
+  });
+
+  it("does not merge a next row into the row above at a pitch within the tolerance", () => {
+    expect(SCB_PLAIN_ROW_PITCH).toBeLessThanOrEqual(SCB_LAYOUT.detailTolerance);
+    const result = extractStatement(scbPlainStatement);
+    if (!result.ok) throw new Error(result.message);
+    expect(result.rows).toHaveLength(3);
+    expect(result.rows[0]!.description).not.toContain("2026");
+  });
+
+  it("dispatches each heading set to exactly one descriptor", () => {
+    expect(matchLayout(scbPlainStatement)).toBe(SCB_PLAIN_LAYOUT);
+    expect(matchLayout(scbStatement)).toBe(SCB_LAYOUT);
+    expect(LAYOUTS.filter((layout) => layout === SCB_PLAIN_LAYOUT)).toHaveLength(1);
+    expect(LAYOUTS.filter((layout) => layout === SCB_LAYOUT)).toHaveLength(1);
+  });
+
+  it("fails closed on a row with no description, as the v1 template does", () => {
+    const row = { dateTime: "02/01/26 09:15", code: "E1", channel: "ENET", debit: "250.50", balance: "4,749.50", description: "" };
+    const plain = extractStatement([buildScbPage([row], { carryForward: "5,000.00", template: "plain", rowPitch: SCB_PLAIN_ROW_PITCH })]);
+    expect(plain.ok).toBe(false);
+    // v1 with the description run omitted entirely (marker kept) fails the same way.
+    const v1Page = buildScbPage([row], { carryForward: "5,000.00" }).filter((item) => item.y !== 641 && item.str !== "");
+    const v1 = extractStatement([v1Page]);
+    expect(v1.ok).toBe(false);
+    if (plain.ok || v1.ok) throw new Error("unreachable");
+    expect(plain.code).toBe(v1.code);
   });
 });
 

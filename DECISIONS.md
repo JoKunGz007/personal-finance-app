@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-302 … D-313**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-302 … D-314**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -452,6 +452,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-311** — The Inbox shows per-account coverage, the last statement mail and the last mail Sync, from two append-only bookkeeping tables (migration 064)
 - **D-312** — Coverage warns per account (migration 065), and past statement mail dates are backfilled (supersedes D-311's fixed 7-day line)
 - **D-313** — Coverage says how far a statement requested now would reach, per bank, and the warning-days editor opens from a gear in the section heading
+- **D-314** — A second SCB print template (`Description` heading, one-line rows without `DESC :`) is read by `SCB_PLAIN_LAYOUT` under `scb-layout-v1`
 - **D-310** — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
 - **D-309** — A mailbox statement is fetched and flagged on one IMAP login, the route allows 300 s, and every step and IMAP command is logged by name and milliseconds only
 - **D-308** — "From the mailbox" shows Source · Status · Details on desktop and checklist rows on phone, from one grid list (Open item 10)
@@ -461,6 +462,16 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
+
+## D-314 — A second SCB print template (`Description` heading, one-line rows without `DESC :`) is read by `SCB_PLAIN_LAYOUT` under `scb-layout-v1`
+
+- Date: 2026-11-08
+- Status: committed; live check pending (re-sync the held statement).
+- **Trigger.** A mailbox Sync held one SCB statement as "This PDF could not be read as a statement." The server's `read` mode answered `held / unreadable / UNSUPPORTED_LAYOUT`. Its masked dump (`dump` mode, shapes only) showed the SCB frame, money columns, brought-forward line and summary block, but the last heading printed as one 11-letter word with no slash, and every transaction was one printed line with no `DESC :` literal and no continuation (docs/SCB_CONTRACT.md § The plain template).
+- **Decision.** Add a second descriptor, `SCB_PLAIN_LAYOUT` (`lib/statement-layout.ts`): `SCB_LAYOUT` with the last anchor `^Description$` and a single absorbing description field. It keeps `contractVersion` `scb-layout-v1`, so no migration, CHECK or `contract_bank_code` change is needed: the rows it produces have the same shape. `matchLayout` still refuses a document two layouts claim; anchors match per run, so the two SCB heading sets are exclusive. No engine change: a line is a row by its two money runs before continuation logic runs, so a tight row pitch cannot merge two transactions.
+- **Accepted gap.** `parserFields.contractVersion` does not say which SCB template a row came from. The artifact digest identifies the file; recording the template would need a parser field or a new contract version plus a migration, and nothing reads it.
+- **Review.** `/code-review` (low) on the reader hunk: no findings.
+- Evidence: 4 new tests in `tests/statement-layout.test.ts` on an invented two-page fixture (`scbPlainStatement`, row pitch 12 under `detailTolerance` 14): every row field, totals cross-check, no merge at the tight pitch, `matchLayout` picks exactly one per template, and a missing description fails closed with v1's code. Red-proved: with the descriptor removed from `LAYOUTS` all 4 fail. Full Vitest 2094 passed / 115 skipped (120 files), `tsc --noEmit` and eslint clean.
 
 ## D-313 — Coverage says how far a statement requested now would reach, per bank, and the warning-days editor opens from a gear in the section heading
 

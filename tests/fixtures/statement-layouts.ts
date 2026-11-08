@@ -95,12 +95,18 @@ export function buildScbPage(
     totals?: ScbTotalsSpec | null;
     balanceHeading?: string;
     footer?: boolean;
+    // "plain" is the second print template (D-314): heading `Description`, one line per
+    // row, description straight after the balance, no `DESC :` marker, no continuation.
+    template?: "v1" | "plain";
+    rowPitch?: number;
   } = {}
 ): PageText {
   const {
     headings = true, frame = {}, carryForward = null, totals = null,
-    balanceHeading = "Balance/Baht", footer = true
+    balanceHeading = "Balance/Baht", footer = true, template = "v1"
   } = options;
+  const plain = template === "plain";
+  const rowPitch = options.rowPitch ?? SCB.rowPitch;
   const items: TextItem[] = [];
 
   if (frame) {
@@ -126,7 +132,7 @@ export function buildScbPage(
     items.push({ str: "Debit/Credit", x: SCB.columns.money, y: SCB.headingY });
     // Carries the currency as well as the column name; see docs/SCB_CONTRACT.md.
     items.push({ str: balanceHeading, x: SCB.columns.balance, y: SCB.headingY });
-    items.push({ str: "Description/Note", x: SCB.columns.description, y: SCB.headingY });
+    items.push({ str: plain ? "Description" : "Description/Note", x: SCB.columns.description, y: SCB.headingY });
     // The Thai mirror line, which prints six runs for seven columns and must never be
     // taken as a second heading row.
     items.push({ str: "วันที่", x: SCB.columns.date, y: SCB.thaiMirrorY });
@@ -143,7 +149,7 @@ export function buildScbPage(
   }
 
   rows.forEach((row, index) => {
-    const y = SCB.firstRowY - index * SCB.rowPitch;
+    const y = SCB.firstRowY - index * rowPitch;
     items.push({ str: row.dateTime, x: SCB.columns.date, y });
     items.push({ str: row.code, x: SCB.codeX, y });
     items.push({ str: row.channel, x: SCB.channelX, y });
@@ -152,6 +158,10 @@ export function buildScbPage(
     if (row.debit !== undefined) items.push(rightAligned(row.debit, debitEdge, y));
     if (row.credit !== undefined) items.push(rightAligned(row.credit, creditEdge, y));
     items.push(rightAligned(row.balance, SCB.balanceEdge, y));
+    if (plain) {
+      if (row.description !== "") items.push({ str: row.description, x: SCB.descriptionX, y });
+      return;
+    }
     items.push({ str: "DESC :", x: SCB.markerX, y });
     items.push({ str: row.description, x: SCB.descriptionX, y });
     // The continuation line, present on every real row, carrying the marker again.
@@ -197,6 +207,20 @@ export const scbStatement: PageText[] = [
   buildScbPage([
     { dateTime: "09/01/26 12:00", code: "P3", channel: "POS", debit: "749.50", balance: "5,000.00", description: "Synthetic market purchase", detail: "Synthetic note" }
   ], { frame: null, carryForward: "5,749.50", totals: {} })
+];
+
+// The plain template (D-314), two pages. Rows are 12 apart, under the descriptor's
+// detailTolerance of 14, so a next row must not be taken for a continuation. Same totals
+// as `scbStatement`: two debits of 1,000.00 and one credit of 1,000.00.
+export const SCB_PLAIN_ROW_PITCH = 12;
+export const scbPlainStatement: PageText[] = [
+  buildScbPage([
+    { dateTime: "02/01/26 09:15", code: "E1", channel: "ENET", debit: "250.50", balance: "4,749.50", description: "Synthetic plain transfer out" },
+    { dateTime: "05/01/26 18:42", code: "C2", channel: "ECOM", credit: "1,000.00", balance: "5,749.50", description: "Synthetic plain transfer in" }
+  ], { carryForward: "5,000.00", template: "plain", rowPitch: SCB_PLAIN_ROW_PITCH }),
+  buildScbPage([
+    { dateTime: "09/01/26 12:00", code: "P3", channel: "POS", debit: "749.50", balance: "5,000.00", description: "Synthetic plain purchase" }
+  ], { frame: null, carryForward: "5,749.50", totals: {}, template: "plain", rowPitch: SCB_PLAIN_ROW_PITCH })
 ];
 
 // ---------------------------------------------------------------------------
