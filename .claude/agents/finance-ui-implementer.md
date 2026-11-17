@@ -31,3 +31,6 @@ Moving or restyling an existing money display is fine. Changing what it computes
 - Do not inspect `private-statements/`, `shared-statements/`, `.env*`, or real financial data. Use synthetic data only.
 - Do not broaden scope or tidy adjacent code.
 - Do not commit or push.
+
+## Report ending
+**Worth recording** (required, last): traps, facts or decisions a future agent would otherwise re-derive (a command that fails and its fix, a non-obvious path, constant or address, a dead end), one line each with where it belongs, or `none`. Names, paths and counts only, never real data values.

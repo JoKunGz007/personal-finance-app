@@ -27,3 +27,6 @@ Return a concise summary rather than shipping a plausible-looking guess. A retur
 - Do not weaken the strict CSP or any exact-money / append-only / audit / least-privilege invariant.
 - Do not inspect `private-statements/`, `.env*`, or real financial data; synthetic data only. D-049 opened `shared-statements/` to the **parent only** — you write fixtures, which is where a real value would do lasting damage. Ask the parent for structural findings instead.
 - Do not commit or push.
+
+## Report ending
+**Worth recording** (required, last): traps, facts or decisions a future agent would otherwise re-derive (a command that fails and its fix, a non-obvious path, constant or address, a dead end), one line each with where it belongs, or `none`. Names, paths and counts only, never real data values.

@@ -28,4 +28,4 @@ You investigate one question for the parent session and report back. The parent 
 1. **Answer**: the direct answer, or "not determined".
 2. **Evidence**: file:line, the commands run, and the key results.
 3. **Confidence and gaps**: what's verified and what's inferred.
-4. **Follow-ups**: anything the parent should record in `GOTCHAS` / `DECISIONS` / `PLAN`.
+4. **Worth recording** (required, last): traps, facts or decisions a future agent would otherwise re-derive (a command that fails and its fix, a non-obvious path, constant or address, a dead end), one line each with where it belongs, or `none`. Names, paths and counts only, never real data values.

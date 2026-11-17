@@ -26,3 +26,5 @@ Findings table rows only, no ranking or first impression; the parent does those:
 | Tier | Page · viewport | What's wrong | Why it matters (heuristic / WCAG) | Proposed fix | Effort |
 
 Then up to 2 "works well" bullets, and anything not covered.
+
+**Worth recording** (required, last): traps, facts or decisions a future agent would otherwise re-derive (a command that fails and its fix, a non-obvious path, constant or address, a dead end), one line each with where it belongs, or `none`. Names, paths and counts only, never real data values.
