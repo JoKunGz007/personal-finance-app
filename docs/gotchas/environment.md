@@ -195,3 +195,10 @@ the top of `GOTCHAS.md`.
 - Cause: `.gitignore` held `coverage/` (meant for the Vitest coverage report at the root), which matches a folder of that name at any depth.
 - Avoid: the line is now anchored, `/coverage/`. Anchor any new ignore line meant for a root-level tool folder, and read `git status --short` for every new file before staging.
 - Verify: 2026-10-25 (D-311). Before the change `git status --short` omitted the folder; after it the folder showed as untracked.
+
+## Every Vision read answers `HTTP 403` once the Google Cloud billing account closes
+
+- Symptom: every Inbox, slip and card image says "The reader could not read this image (HTTP 403)", on images that read before, with no code change.
+- Cause: Google refuses Vision for a project without active billing. On 2026-11-18 the free trial had ended and the only billing account was **Closed**, so `ledger-ocr-test` (the project holding the Vision key) had none.
+- Avoid: in the Cloud console, Billing → Your billing accounts (clear the `Status: Active` filter to see a closed one) and Your projects. Upgrading the account restores the key unchanged; no app change is needed. Google has no spend cap for Vision, which is why the route counts its own calls (D-316).
+- Verify: 2026-11-18 (D-316). The console showed the closed free-trial account and `ledger-ocr-test` linked to it; after the owner upgraded, the account read Paid account.

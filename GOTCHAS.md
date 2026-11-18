@@ -40,6 +40,7 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 - A `\uXXXX` escape written through the agent's file tools lands as the literal character, invisible ones included
 - pdf.js loads under `next start` and fails on Vercel with "DOMMatrix is not defined"
 - An unanchored `coverage/` in `.gitignore` hides any source folder named `coverage`
+- Every Vision read answers `HTTP 403` once the Google Cloud billing account closes
 
 ### Docker and the local Supabase projects
 
@@ -294,7 +295,7 @@ these section headings rather than a third raise. The owner chose the split.
 
 | Section | Traps | File |
 | --- | --- | --- |
-| Environment, shell and toolchain | 21 | [`docs/gotchas/environment.md`](docs/gotchas/environment.md) |
+| Environment, shell and toolchain | 22 | [`docs/gotchas/environment.md`](docs/gotchas/environment.md) |
 | Docker and the local Supabase projects | 15 | [`docs/gotchas/docker-supabase.md`](docs/gotchas/docker-supabase.md) |
 | Database, migrations and pgTAP | 21 | [`docs/gotchas/database.md`](docs/gotchas/database.md) |
 | Backup, restore and recovery | 11 | [`docs/gotchas/recovery.md`](docs/gotchas/recovery.md) |

@@ -4,7 +4,7 @@ Last reviewed: 2026-08-09
 
 Entries are append-only. A superseding decision must reference the earlier entry rather than rewriting its history.
 
-This file holds **D-141**, **D-158** and **D-302 … D-315**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
+This file holds **D-141**, **D-158** and **D-302 … D-316**. D-141 and D-158 were the two open questions; both are answered (D-288, D-289), and none is open now. The index below covers every file, so any entry can be found without opening a body; `scripts/check-docs.mjs` pools this file with every archive and checks ids for duplicates and omissions.
 
 **Size rule:** budgeted in bytes, not lines (`scripts/check-docs.mjs`). When the budget is reached, move a settled range unchanged into `docs/decisions/` (D-080), with the boundary where an argument ends rather than where a number is round.
 
@@ -453,6 +453,7 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-312** — Coverage warns per account (migration 065), and past statement mail dates are backfilled (supersedes D-311's fixed 7-day line)
 - **D-313** — Coverage says how far a statement requested now would reach, per bank, and the warning-days editor opens from a gear in the section heading
 - **D-314** — A second SCB print template (`Description` heading, one-line rows without `DESC :`) is read by `SCB_PLAIN_LAYOUT` under `scb-layout-v1`
+- **D-316** — Vision reads stop at 800 a Pacific-time month, counted in the database before each billed call (migration 066)
 - **D-315** — Every statement that read rows gets a report line, named with its account (extends D-260)
 - **D-310** — The ledger runs the categoriser once per visit, not on every load; imports still run it on the server (supersedes D-245's every-open wording)
 - **D-309** — A mailbox statement is fetched and flagged on one IMAP login, the route allows 300 s, and every step and IMAP command is logged by name and milliseconds only
@@ -463,6 +464,15 @@ The longer header these lines replace is in [`docs/archive/DOC-HEADERS-2026-10-1
 - **D-304** — Large-file pass and leftovers (Open item 8): eleven fixes and test sets; the import-session reducer and the ride-total bigint are refused
 - **D-303** — A token about to expire after `getUser()` is refused before any read, and the browser retries a GET once (Open item 1: the intermittent 500 was PGRST303)
 - **D-302** — A refused Shopee save reads "Not saved", and the two statistics panels load through `useBenchList` (Open item 7 leftovers)
+
+## D-316 — Vision reads stop at 800 a Pacific-time month, counted in the database before each billed call (migration 066)
+
+- Date: 2026-11-18
+- Status: **Shipped as `8b33ec1`, pushed by the agent under the owner's grant; migration 066 applied to hosted 2026-11-18** after the owner's fresh export (hosted `sequence` equalled `last_exported_sequence`, the dry run named only 066). Read back: forced RLS on `vision_call_months`, `claim_vision_call` executable by `authenticated` and not `anon`, the migration recorded, the sequence unchanged.
+- **Trigger.** Every Inbox image read answered `HTTP 403`. The agent read the owner's Google Cloud console in Chrome: the only billing account was a closed free-trial account, so `ledger-ocr-test` (which holds `vision-test-key`, restricted to the Vision API) had no active billing. The owner upgraded it and asked for protection against charges.
+- **Why the cap is in the app.** Google offers none for Vision. The API's quotas are per minute only (no per-day or per-month quota), and a budget's spend-cap enforcement lists only Cloud Run, Cloud Run Functions, Gemini API and Vertex AI. The existing budget `vision-test-guard` emails at 50/90/100% and stops nothing. A budget → Pub/Sub → function that unlinks billing was explained to the owner and not built: it reacts to cost reports hours late, needs new hosted resources and a billing-admin credential.
+- **Decision.** `claim_vision_call(p_limit)` (security definer, strong owner access) increments `vision_call_months` in one insert-or-update that refuses at the limit and returns 0; `readWordsWithVision` (`lib/vision-ocr.ts`) takes an optional `claim` and calls it before every billed attempt, the retry included. The OCR route passes `VISION_MONTHLY_LIMIT` (800, in `lib/vision-ocr.ts`): refused → 429 `LIMIT_REACHED`; a meter error → 503 `LIMIT_UNCHECKED`, and Vision is not called (fail closed). The month is `America/Los_Angeles`, because Google's billing months run on Pacific time, so the message says it resets on the 1st from about 3 p.m. Bangkok time. 800 leaves 200 of Google's 1,000 free units for the owner-run measurement scripts, which call Vision directly and are not counted (a run has been 100 images, and a retry doubles a call). A refused or unreachable call still spends a unit; that errs safe. `vision_call_months` is a meter, not ledger data: no sequence bump, no audit event, and it is a backup exclusion in `supabase/tests/016_backup_coverage.sql`.
+- Evidence: `tests/vision-ocr.test.ts` (6 new; red-proved, 5 fail on the old function, the empty-key case passes either way) and `supabase/tests/042_vision_call_limit.sql` (16, claims run as `authenticated`). pgTAP 42 files / 1,058; `pnpm verify` with the local stack up (lint 0 errors, tsc, docs, Vitest 124 files, 2,200 passed / 19 skipped, build). `/code-review` high: 8 findings, 4 fixed (reset wording, margin 100 → 200, pgTAP role, constant moved out of the route); not covered: no route test for the 429/503 mapping, `vision_calls_this_month()` has no caller yet.
 
 ## D-315 — Every statement that read rows gets a report line, named with its account (extends D-260)
 
