@@ -53,6 +53,7 @@ insert into backup_exclusions(kind, reason) values
   ('restore_chunks', 'the restore machinery''s own staged payload storage, for the same reason restore_runs is excluded'),
   ('statement_mail_arrivals', 'mailbox bookkeeping, not ledger data (migration 064); a restored ledger shows no statement-mail date until the next statement mail is imported'),
   ('mail_sync_runs', 'mailbox bookkeeping, not ledger data (migration 064); a restored ledger shows no last Sync until the next Sync'),
+  ('vision_call_months', 'a meter of billed Vision calls, not ledger data (migration 066); a restored ledger starts the month at zero, and Google''s own count is the one that bills'),
   ('account_coverage_settings', 'display preference, not ledger data (migration 065); a restored ledger warns at the 35-day default until set again');
 
 select is(

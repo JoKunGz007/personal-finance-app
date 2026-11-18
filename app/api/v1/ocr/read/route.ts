@@ -1,5 +1,5 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
-import { readWordsWithVision } from "@/lib/vision-ocr";
+import { readWordsWithVision, VISION_MONTHLY_LIMIT } from "@/lib/vision-ocr";
 
 export const dynamic = "force-dynamic";
 
@@ -92,8 +92,25 @@ export async function POST(request: Request) {
   // no rebuild — and so the absence of a key is a runtime refusal the owner can act on rather than
   // a build that fails somewhere unrelated.
   const apiKey = process.env.GOOGLE_VISION_KEY ?? "";
-  const read = await readWordsWithVision(new Uint8Array(body), apiKey);
+  // The claim is a database call that counts before Vision is asked, so two reads at once cannot
+  // both take the last unit. An error is thrown, not read as "granted", so a failing meter stops
+  // the call rather than letting it through uncounted.
+  const claim = async () => {
+    const { data, error } = await auth.supabase.rpc("claim_vision_call", { p_limit: VISION_MONTHLY_LIMIT });
+    if (error) throw new Error("claim_vision_call failed");
+    return typeof data === "number" && data > 0;
+  };
+  const read = await readWordsWithVision(new Uint8Array(body), apiKey, undefined, undefined, claim);
   if (!read.ok) {
+    if (read.code === "LIMIT_REACHED") {
+      return routeError(
+        `This month's reading limit (${VISION_MONTHLY_LIMIT} reads) is used up; it resets on the 1st, from about 3 p.m. Bangkok time. Type the values yourself.`,
+        429
+      );
+    }
+    if (read.code === "LIMIT_UNCHECKED") {
+      return routeError("The reader's monthly limit could not be checked, so the image was not sent. Type the values yourself.", 503);
+    }
     // Three causes, three sentences, because they call for different things from the owner: a
     // missing key is the deployment's problem, an unreachable service is worth retrying, and a
     // refusal is not. None of them echoes anything Vision said — its messages can quote the image.

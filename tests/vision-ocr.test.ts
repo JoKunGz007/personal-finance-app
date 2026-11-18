@@ -253,3 +253,58 @@ describe("which failures are told apart", () => {
       .toEqual({ ok: true, words: [{ text: "ยอด", left: 4, top: 8, right: 40, bottom: 30, spaceAfter: false }] });
   });
 });
+
+describe("the monthly call limit", () => {
+  const image = new Uint8Array([1, 2, 3]);
+  const ok = () => new Response(JSON.stringify({ responses: [{}] }), { status: 200 });
+  const busy = () => new Response(JSON.stringify({ responses: [{ error: { code: 8 } }] }), { status: 200 });
+  const noWait = vi.fn(async () => {});
+
+  it("claims once per billed call, so twice when a temporary refusal is retried", async () => {
+    const claim = vi.fn(async () => true);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(busy()).mockResolvedValueOnce(ok());
+    const result = await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch, noWait, claim);
+    expect(result.ok).toBe(true);
+    expect(claim).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("claims once for a single call", async () => {
+    const claim = vi.fn(async () => true);
+    const fetchImpl = vi.fn(async () => ok());
+    await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch, noWait, claim);
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call Vision when the first claim is refused", async () => {
+    const fetchImpl = vi.fn(async () => ok());
+    const result = await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch, noWait, async () => false);
+    expect(result).toEqual({ ok: false, code: "LIMIT_REACHED" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not retry past the limit: one call, then LIMIT_REACHED", async () => {
+    const claim = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const fetchImpl = vi.fn(async () => busy());
+    const result = await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch, noWait, claim);
+    expect(result).toEqual({ ok: false, code: "LIMIT_REACHED" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed when the claim throws, with its own code", async () => {
+    const fetchImpl = vi.fn(async () => ok());
+    const result = await readWordsWithVision(image, "k", fetchImpl as unknown as typeof fetch, noWait, async () => {
+      throw new Error("database down");
+    });
+    expect(result).toEqual({ ok: false, code: "LIMIT_UNCHECKED" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("claims nothing when no key is configured", async () => {
+    const claim = vi.fn(async () => true);
+    const fetchImpl = vi.fn();
+    const result = await readWordsWithVision(image, "", fetchImpl as unknown as typeof fetch, noWait, claim);
+    expect(result).toEqual({ ok: false, code: "NOT_CONFIGURED" });
+    expect(claim).not.toHaveBeenCalled();
+  });
+});

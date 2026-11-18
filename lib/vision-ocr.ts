@@ -148,7 +148,11 @@ export type VisionReadFailure =
   /** The call did not complete — no network, a timeout, DNS, a refused connection. */
   | "UNREACHABLE"
   /** Vision answered and refused: a bad key, a disabled API, a quota, an unreadable image. */
-  | "REFUSED";
+  | "REFUSED"
+  /** The monthly call limit is used up, so Vision was not called. Nothing was sent. */
+  | "LIMIT_REACHED"
+  /** The limit could not be checked (a database error), so Vision was not called: fail closed. */
+  | "LIMIT_UNCHECKED";
 
 export type VisionReadResult =
   | { readonly ok: true; readonly words: OcrWord[] }
@@ -184,15 +188,50 @@ export async function readWordsWithVision(
   image: Uint8Array,
   apiKey: string,
   fetchImpl: typeof fetch = fetch,
-  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  claim?: () => Promise<boolean>
 ): Promise<VisionReadResult> {
-  const first = await readOnce(image, apiKey, fetchImpl);
+  const first = await readClaimed(image, apiKey, fetchImpl, claim);
   if (first.ok || first.reference === undefined || !RETRYABLE.has(first.reference)) return first;
   await wait(VISION_RETRY_DELAY_MS);
+  return readClaimed(image, apiKey, fetchImpl, claim);
+}
+
+/**
+ * Takes one unit of the monthly limit before each billed call, the retry included, because Google
+ * bills every request. Google offers no spend cap for Vision, so the app is the cap. A refused or
+ * failing claim means no call is made: when the meter cannot be read, the safe answer is to not
+ * spend. An empty key claims nothing, since no call would be billed.
+ */
+async function readClaimed(
+  image: Uint8Array,
+  apiKey: string,
+  fetchImpl: typeof fetch,
+  claim: (() => Promise<boolean>) | undefined
+): Promise<VisionReadResult> {
+  if (claim && apiKey.length > 0) {
+    let granted: boolean;
+    try {
+      granted = await claim();
+    } catch {
+      return { ok: false, code: "LIMIT_UNCHECKED" };
+    }
+    if (!granted) return { ok: false, code: "LIMIT_REACHED" };
+  }
   return readOnce(image, apiKey, fetchImpl);
 }
 
 export const VISION_RETRY_DELAY_MS = 1500;
+
+/**
+ * Reads the OCR route allows per Pacific-time month (migration 066). Google Cloud Vision is free to
+ * 1,000 units a month and offers no spend cap, so this app is the cap: each read asks for one
+ * feature, which is one unit. **The figure sits 200 below Google's** because the owner-run
+ * measurement scripts call Vision directly and bypass the route; one measurement run has been 100
+ * images, and a temporary refusal is retried once, so a run can cost up to twice its image count.
+ * The month turns at Pacific midnight, which is 2–3 p.m. Bangkok time on the 1st.
+ */
+export const VISION_MONTHLY_LIMIT = 800;
 
 /** Refusals Vision means as "try again": resource exhausted, internal, unavailable, and their HTTP forms. */
 const RETRYABLE = new Set(["Vision error 8", "Vision error 13", "Vision error 14", "HTTP 429", "HTTP 500", "HTTP 503"]);
