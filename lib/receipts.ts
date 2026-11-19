@@ -60,17 +60,28 @@ export const receiptCaptureSchema = z.object({
     }).strict().nullable(),
     vatCode: z.string().regex(/^\d{1,20}$/).nullable(),
     supersedesReceiptNumber: z.string().regex(/^\d{1,24}$/).nullable()
-  }).strict()
-}).strict().superRefine(({ form, receipt }, context) => {
+  }).strict(),
+  /**
+   * The two readings of the purchase time (`[R# time, header time]`) when a screenshot's header and
+   * R# line disagree and the enlarged re-read did not settle it; the time is then null. Migration 067.
+   */
+  timeCandidates: z.tuple([printedTime, printedTime]).refine(([a, b]) => a !== b, "The two candidate times must differ.").optional()
+}).strict().superRefine(({ form, receipt, timeCandidates }, context) => {
   // Each form's fields are that form's own limits (`lib/receipt-text.ts`), so a parse carrying a
   // field its form never prints did not come from the reader.
   const expectPresent = form !== "full"
     ? { purchasedAtTime: true, paymentMethod: true, unitCount: true, vat: false, vatCode: false, supersedesReceiptNumber: false }
     : { purchasedAtTime: false, paymentMethod: false, unitCount: false, vat: true, vatCode: true, supersedesReceiptNumber: true };
+  // A screenshot may leave its time blank, but only with the two candidates that explain why.
+  const blankTimeAllowed = form === "screenshot" && timeCandidates !== undefined;
   for (const [field, present] of Object.entries(expectPresent)) {
+    if (field === "purchasedAtTime" && blankTimeAllowed) continue;
     if ((receipt[field as keyof typeof expectPresent] !== null) !== present) {
       context.addIssue({ code: "custom", message: `A ${form} receipt ${present ? "always prints" : "never prints"} ${field}.`, path: ["receipt", field] });
     }
+  }
+  if (timeCandidates !== undefined && (form !== "screenshot" || receipt.purchasedAtTime !== null)) {
+    context.addIssue({ code: "custom", message: "Candidate times belong only to a screenshot whose time is blank.", path: ["timeCandidates"] });
   }
   // The same bound slips use (SLIP_MAX_AGE_YEARS): wide enough for an old receipt, narrow enough
   // that a Buddhist year read through unconverted — 543 years out — cannot be stored.
@@ -86,9 +97,10 @@ export const receiptCaptureSchema = z.object({
 export type ReceiptCapture = z.infer<typeof receiptCaptureSchema>;
 
 /** What the device sends: the parse without its self-assessment, which the server redoes. */
-export function receiptCaptureBody(form: CaptureForm, receipt: ParsedReceipt): ReceiptCapture {
+export function receiptCaptureBody(form: CaptureForm, receipt: ParsedReceipt, timeCandidates?: readonly [string, string]): ReceiptCapture {
   return {
     form,
+    ...(timeCandidates ? { timeCandidates: [timeCandidates[0], timeCandidates[1]] as [string, string] } : {}),
     receipt: {
       receiptNumber: receipt.receiptNumber,
       storeCode: receipt.storeCode,
@@ -118,9 +130,11 @@ export function receiptCaptureBody(form: CaptureForm, receipt: ParsedReceipt): R
  * twice, which is the one thing `docs/RECEIPT_CONTRACT.md` § Identity and deduplication forbids.
  * The invoice's own number is not stored: nothing reads it.
  */
-export function captureReceiptRequest({ form, receipt }: ReceiptCapture) {
+export function captureReceiptRequest({ form, receipt, timeCandidates }: ReceiptCapture) {
   const assessed = assessReceipt(receipt);
   return {
+    // Top level of the request jsonb, where `capture_receipt` (migration 067) reads it; absent otherwise.
+    ...(timeCandidates ? { timeCandidates } : {}),
     merchant: "7-eleven",
     source: form,
     storeCode: receipt.storeCode,

@@ -18,6 +18,10 @@ export const YEAR_CROP_PAD_PX = 12;
  * what was measured; a year word is a few dozen pixels wide, so a proportional margin would be
  * either too thin to matter or wide enough to bring the neighbouring time into the crop.
  *
+ * **The 7-Eleven screenshot's header time** (`crop.field` "time") uses the same fixed 12 px pad: Vision
+ * misread one header time digit on a real screenshot, and the time word's own enlarged crop read it
+ * correctly (1 real image, 2x and 3x both correct; the R# line's crop also read unchanged).
+ *
  * It goes through `readImageWords` and nowhere else, so the same-origin rule and the strict CSP are
  * untouched. The box is in the coordinate space of the image the first read decoded; `readImageFileWords`
  * and this both decode the same file, so they agree. Always resolves; the bitmap is released either way.

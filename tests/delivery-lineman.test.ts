@@ -112,6 +112,21 @@ describe("readLinemanOrder", () => {
     expect(readLinemanPage(words(FIRST.map((line) => line.replace("260912", "260911"))))).toMatchObject({ ok: false, code: "MALFORMED_LINE" });
   });
 
+  test("reads the order time with a comma after the year, glued or split off as its own word", () => {
+    const plain = page(FIRST).orderedAt;
+    expect(plain).toBe("2026-09-12T21:00:00+07:00");
+    for (const printed of ["12 SEP 26, 21:00", "12 SEP 26 , 21:00"]) {
+      expect(page(FIRST.map((line) => line === "12 SEP 26 21:00" ? printed : line)).orderedAt).toBe(plain);
+    }
+  });
+
+  test("refuses an order number with no order time or no restaurant as MALFORMED_LINE, not NOT_AN_ORDER", () => {
+    expect(readLinemanPage(words(FIRST.filter((line) => line !== "12 SEP 26 21:00"))))
+      .toEqual({ ok: false, code: "MALFORMED_LINE", message: "The first screenshot shows no order time." });
+    expect(readLinemanPage(words(FIRST.filter((line) => !line.startsWith("ร้าน")))))
+      .toEqual({ ok: false, code: "MALFORMED_LINE", message: "The first screenshot shows no restaurant." });
+  });
+
   test("refuses an image that is not an order page", () => {
     expect(readLinemanPage(words(["Invented other app", "Menu"]))).toMatchObject({ ok: false, code: "NOT_AN_ORDER" });
   });

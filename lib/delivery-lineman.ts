@@ -88,7 +88,7 @@ export function linemanLine(words: readonly OcrWord[]): string {
 }
 
 const ORDER_NUMBER = /^Order No\.?\s*([A-Z]{2,4})\s*-\s*(\d{6})\s*-\s*(\d{6,})$/u;
-const ORDER_TIME = /^(\d{1,2}) ([A-Z]{3}) (\d{2}) (\d{2}):(\d{2})$/u;
+const ORDER_TIME = /^(\d{1,2}) ([A-Z]{3}) (\d{2}),? (\d{2}):(\d{2})$/u;
 const MENU = /^Menu$/u;
 const REORDER = /^Reorder$/u;
 // An amount at the end of a line: the baht sign, however Vision read it, then `n.nn`.
@@ -139,7 +139,7 @@ export function readLinemanPage(words: readonly OcrWord[]): LinemanRead<LinemanP
     const number = ORDER_NUMBER.exec(lines[numberAt]!)!;
     orderNumber = `${number[1]}-${number[2]}-${number[3]}`;
     const timeAt = lines.findIndex((line, index) => index > numberAt && index < menuAt && ORDER_TIME.test(line));
-    if (timeAt < 0) return { ok: false, code: "NOT_AN_ORDER", message: "The first screenshot shows no order time." };
+    if (timeAt < 0) return { ok: false, code: "MALFORMED_LINE", message: "The first screenshot shows no order time." };
     orderedAt = orderTime(ORDER_TIME.exec(lines[timeAt]!)!);
     if (!orderedAt) return { ok: false, code: "MALFORMED_LINE", message: "The order time is not a date." };
     // The order number carries its own date, which must be the printed one.
@@ -147,7 +147,7 @@ export function readLinemanPage(words: readonly OcrWord[]): LinemanRead<LinemanP
       return { ok: false, code: "MALFORMED_LINE", message: "The order number's date is not the order date." };
     }
     restaurant = lines.slice(numberAt + 1, timeAt).join(" ").replace(/\s*>$/u, "").replace(/\s*\(?\s*\.\.\.\s*$/u, "").trim() || null;
-    if (!restaurant) return { ok: false, code: "NOT_AN_ORDER", message: "The first screenshot shows no restaurant." };
+    if (!restaurant) return { ok: false, code: "MALFORMED_LINE", message: "The first screenshot shows no restaurant." };
   }
   const endAt = lines.findIndex((line, index) => index > menuAt && REORDER.test(line));
   return {

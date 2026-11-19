@@ -1,5 +1,5 @@
 import { parseReceiptText, type ParsedReceipt } from "@/lib/receipt-text";
-import { groupIntoLines, type OcrWord } from "@/lib/slip-ocr";
+import { groupIntoLines, type Box, type OcrWord } from "@/lib/slip-ocr";
 
 /**
  * Reading 7-Eleven app receipt screenshots (PLAN task 56, `docs/RECEIPT_CONTRACT.md` § The
@@ -25,15 +25,25 @@ export type ScreenshotPage = {
   /** As printed in the app header: `dd/mm/yy` Buddhist era, and `HH:MM`. */
   headerDate: { day: number; month: number; buddhistYear2: number };
   headerTime: string;
+  /** Where the header time's word(s) sit in the decoded image, for a second read; null when not determined. */
+  headerTimeBox: Box | null;
   /** The item region's lines, top to bottom, canonicalised (`canonicalLine`). */
   body: string[];
 };
 
-export type ScreenshotRefusal = "NOT_A_RECEIPT" | "NEEDS_MORE" | "NO_OVERLAP" | "MISMATCH" | "UNREADABLE";
+export type ScreenshotRefusal = "NOT_A_RECEIPT" | "NEEDS_MORE" | "NO_OVERLAP" | "MISMATCH" | "TIME_DISPUTED" | "UNREADABLE";
 
 export type ScreenshotRead<T> = { ok: true; value: T } | { ok: false; code: ScreenshotRefusal; message: string };
 
-const THAI = "\u0E00-\u0E7F";
+/**
+ * `readScreenshotReceipt`'s result: a `ScreenshotRead<ParsedReceipt>` whose ok case may also carry
+ * the two candidate times `[R# time, header time]` when the time was left blank (never otherwise).
+ */
+export type ScreenshotReceiptRead =
+  | { ok: true; value: ParsedReceipt; timeCandidates?: readonly [string, string] }
+  | { ok: false; code: ScreenshotRefusal; message: string };
+
+const THAI ="\u0E00-\u0E7F";
 
 /**
  * Puts one OCR line back into the printed line's text. Each rule answers something measured on
@@ -63,7 +73,11 @@ export function canonicalLine(words: readonly OcrWord[]): string {
     .trim();
 }
 
-const HEADER_DATE = /^(\d{2})\/(\d{2})\/(\d{2})\s*\S?\s*(\d{2}):(\d{2})$/u;
+// One grammar for the header time: the date line ends with it, and the header time's own crop is
+// read with it (`readHeaderTime`).
+const TIME_SOURCE = String.raw`(\d{2}):(\d{2})`;
+const HEADER_DATE = new RegExp(String.raw`^(\d{2})\/(\d{2})\/(\d{2})\s*\S?\s*${TIME_SOURCE}$`, "u");
+const HEADER_TIME_ONLY = new RegExp(`^${TIME_SOURCE}$`, "u");
 const HEADER_NUMBER = /^เลขที่ใบเสร็จ\s*(\d+)$/u;
 const HEADER_BRANCH = /^สาขา\s*7-Eleven\s+(.+)$/u;
 const HEADER_STORE = /^รหัสร้าน:(\d+)$/u;
@@ -71,11 +85,39 @@ const BODY_START = /^รายการสินค้า$/u;
 // The two buttons under the receipt card; everything from the first of them down is app chrome.
 const BODY_END = /^(ดูใบกำกับ|ขอใบกำกับ)/u;
 
+/**
+ * The header time out of the words Vision returned for the header time's own enlarged crop, in the
+ * form `headerTime` uses, or null unless exactly one time is present.
+ */
+export function readHeaderTime(words: readonly OcrWord[]): string | null {
+  const times = groupIntoLines(words).map(canonicalLine).flatMap((line) => line.split(" ")).filter((part) => HEADER_TIME_ONLY.test(part));
+  if (times.length !== 1) return null;
+  const match = HEADER_TIME_ONLY.exec(times[0]!)!;
+  return `${match[1]}:${match[2]}`;
+}
+
+/** The words of a date line that make up its trailing time: the shortest suffix that reads as a time alone. */
+function timeBoxOf(lineWords: readonly OcrWord[]): Box | null {
+  for (let size = 1; size <= lineWords.length; size += 1) {
+    const suffix = lineWords.slice(lineWords.length - size);
+    if (!HEADER_TIME_ONLY.test(canonicalLine(suffix))) continue;
+    return {
+      left: Math.min(...suffix.map((word) => word.left)),
+      top: Math.min(...suffix.map((word) => word.top)),
+      right: Math.max(...suffix.map((word) => word.right)),
+      bottom: Math.max(...suffix.map((word) => word.bottom))
+    };
+  }
+  return null;
+}
+
 /** One screenshot's header and item region, or why it is not a receipt screenshot. */
 export function readScreenshotPage(words: readonly OcrWord[]): ScreenshotRead<ScreenshotPage> {
-  const lines = groupIntoLines(words).map(canonicalLine);
+  const lineWords = groupIntoLines(words);
+  const lines = lineWords.map(canonicalLine);
   let date: ScreenshotPage["headerDate"] | null = null;
   let time: string | null = null;
+  let timeBox: Box | null = null;
   let receiptNumber: string | null = null;
   let branchName: string | null = null;
   let storeCode: string | null = null;
@@ -86,6 +128,7 @@ export function readScreenshotPage(words: readonly OcrWord[]): ScreenshotRead<Sc
     if ((match = HEADER_DATE.exec(line))) {
       date = { day: Number(match[1]), month: Number(match[2]), buddhistYear2: Number(match[3]) };
       time = `${match[4]}:${match[5]}`;
+      timeBox = timeBoxOf(lineWords[index]!);
     } else if ((match = HEADER_NUMBER.exec(line))) receiptNumber = match[1]!;
     else if ((match = HEADER_BRANCH.exec(line))) branchName = match[1]!.trim();
     else if ((match = HEADER_STORE.exec(line))) storeCode = match[1]!;
@@ -96,7 +139,7 @@ export function readScreenshotPage(words: readonly OcrWord[]): ScreenshotRead<Sc
   }
   const end = lines.findIndex((line, index) => index >= start && BODY_END.test(line));
   const body = lines.slice(start, end < 0 ? undefined : end).filter((line) => line.length > 0);
-  return { ok: true, value: { receiptNumber, storeCode, branchName, headerDate: date, headerTime: time, body } };
+  return { ok: true, value: { receiptNumber, storeCode, branchName, headerDate: date, headerTime: time, headerTimeBox: timeBox, body } };
 }
 
 const stripZeros = (value: string) => value.replace(/^0+(?=.)/u, "");
@@ -177,14 +220,17 @@ const MAX_PAGES = 5;
  * the first join would let it win over the right order (code review, D-210). One screenshot needs
  * no seam.
  */
-export function readScreenshotReceipt(pages: readonly ScreenshotPage[]): ScreenshotRead<ParsedReceipt> {
+export function readScreenshotReceipt(pages: readonly ScreenshotPage[], headerTimeReread?: string | null): ScreenshotReceiptRead {
   if (pages.length === 0 || pages.length > MAX_PAGES) {
     return { ok: false, code: "UNREADABLE", message: `A receipt is read from 1 to ${MAX_PAGES} screenshots.` };
   }
   const first = pages[0]!;
+  // Screenshots are of one receipt when store, number (zero-stripped) and header date agree. The
+  // header time is not compared here: a misread time digit on one screenshot is checked against
+  // the R# time below, not a reason to call them different receipts.
   for (const page of pages) {
     if (page.storeCode !== first.storeCode || stripZeros(page.receiptNumber) !== stripZeros(first.receiptNumber)
-      || page.headerTime !== first.headerTime || JSON.stringify(page.headerDate) !== JSON.stringify(first.headerDate)) {
+      || JSON.stringify(page.headerDate) !== JSON.stringify(first.headerDate)) {
       return { ok: false, code: "MISMATCH", message: "These screenshots are not all of the same receipt." };
     }
   }
@@ -210,12 +256,32 @@ export function readScreenshotReceipt(pages: readonly ScreenshotPage[]): Screens
   }
 
   // The header is a third printing of the number, date and time; it must agree with `R#`/`TID#`.
+  // Number or date disagreeing refuses. **The time alone disagreeing is a misread digit, not a
+  // different receipt**: Vision misread one header time digit on a real screenshot while number and
+  // date agreed, and the header time's own crop, enlarged, read it correctly (measured on 1 real
+  // image: 2x and 3x both read it correctly; the R# line's crop also read unchanged). So the caller
+  // With several screenshots, any one header time equal to the R# time settles it (no dispute);
+  // only when every header time differs is it disputed. The caller then re-reads the first
+  // screenshot's header time crop (`headerTimeReread`): equal to the R# time keeps it; anything else (a
+  // different time, or a read that failed) saves the receipt with no time rather than a doubtful one.
   const receipt = parsed.value;
   const [year, month, day] = receipt.purchasedAt.split("-").map(Number) as [number, number, number];
   if (stripZeros(receipt.receiptNumber) !== stripZeros(first.receiptNumber)
-    || first.headerDate.day !== day || first.headerDate.month !== month || first.headerDate.buddhistYear2 !== (year + 543) % 100
-    || first.headerTime !== receipt.purchasedAtTime) {
+    || first.headerDate.day !== day || first.headerDate.month !== month || first.headerDate.buddhistYear2 !== (year + 543) % 100) {
     return { ok: false, code: "MISMATCH", message: "The screen header and the receipt's own R# line disagree, so neither is trusted." };
+  }
+  if (!pages.some((page) => page.headerTime === receipt.purchasedAtTime)) {
+    if (headerTimeReread === undefined) {
+      return { ok: false, code: "TIME_DISPUTED", message: "The screen header's time and the receipt's R# time disagree, so the header time is read again." };
+    }
+    if (headerTimeReread !== receipt.purchasedAtTime) {
+      // Both readings are kept for the server. They are always distinct: this branch is reached only
+      // when no page's header time equals the R# time (so the first page's differs), and the
+      // re-read answer is used only when it is not null and (by the test above) not the R# time.
+      // The R# time is non-null on a parsed screenshot receipt (the condensed form always prints it).
+      const headerTime = headerTimeReread ?? first.headerTime;
+      return { ok: true, value: { ...receipt, purchasedAtTime: null }, timeCandidates: [receipt.purchasedAtTime!, headerTime] };
+    }
   }
   return { ok: true, value: receipt };
 }

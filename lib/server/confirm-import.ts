@@ -4,6 +4,7 @@ import { confirmationDigest, rowFingerprint } from "@/lib/canonical";
 import { reconcileRows, type ReconciliationWarning } from "@/lib/reconcile";
 import { importPayloadSchema } from "@/lib/statement";
 import { autoCategorise } from "@/lib/server/auto-categorise";
+import { fillReceiptTimes } from "@/lib/server/receipt-time-fill";
 
 export const confirmSchema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -84,5 +85,9 @@ export async function confirmImport(
     // ignored
   }
   lap?.("auto-categorise");
+  // New rows may be the TRUE MONEY row a time-less receipt was waiting for (migration 067). Best
+  // effort and never throws; covers the confirm, mailbox and Inbox import routes alike.
+  await fillReceiptTimes(client as Parameters<typeof fillReceiptTimes>[0]);
+  lap?.("receipt-time-fill");
   return { kind: "ok", batchId: data, payloadDigest: digest, fingerprints, warnings: reconciliation.warnings };
 }

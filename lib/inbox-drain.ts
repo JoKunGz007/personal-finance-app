@@ -13,7 +13,7 @@ import { readLinemanOrder, readLinemanPage, type LinemanPage, type ParsedLineman
 import type { ReceiptForm } from "@/lib/receipt-pdf";
 import { groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
-import type { OcrWord } from "@/lib/slip-ocr";
+import type { Box, OcrWord } from "@/lib/slip-ocr";
 import type { SlipIdentity } from "@/lib/slip-qr";
 import type { MinorUnitString } from "@/lib/money";
 import type { SlipKind } from "@/lib/slips";
@@ -165,20 +165,41 @@ export function recogniseImage(words: readonly OcrWord[]): ImageRecognition {
 
 // --- 7-Eleven screenshots ---
 
-export type ReceiptShotGroup = { readonly names: string[]; readonly plan: Plan<ParsedReceipt> };
+export type ReceiptShotGroup = {
+  readonly names: string[];
+  readonly plan: Plan<ParsedReceipt>;
+  /** Set when only the header time disagreed: the first page and the box to read again, then plan again with the answer. */
+  readonly headerTimeReread?: { readonly name: string; readonly box: Box | null };
+  /** Set on a capture whose time was left blank: the two readings `[R# time, header time]` the server keeps. */
+  readonly timeCandidates?: readonly [string, string];
+};
 
 /**
  * The recognised receipt pages of one drain, grouped by receipt, each group read once. Only a
  * receipt whose own checksums close is captured; a group that does not complete keeps every one of
  * its files, which the next drain reads together with any page added later.
  */
-export function planReceiptScreenshots(pages: readonly { name: string; page: ScreenshotPage }[]): ReceiptShotGroup[] {
-  return groupScreenshotPages(pages).map((group) => {
+export function planReceiptScreenshots(
+  pages: readonly { name: string; page: ScreenshotPage }[],
+  headerTimeRereads?: ReadonlyMap<string, string | null>
+): ReceiptShotGroup[] {
+  return groupScreenshotPages(pages).map((group): ReceiptShotGroup => {
     const names = group.map((entry) => entry.name);
-    const read = readScreenshotReceipt(group.map((entry) => entry.page));
-    if (!read.ok) return { names, plan: { action: "keep", reason: read.message } };
+    const first = group[0]!;
+    const read = readScreenshotReceipt(
+      group.map((entry) => entry.page),
+      headerTimeRereads?.has(first.name) ? headerTimeRereads.get(first.name) : undefined
+    );
+    if (!read.ok) {
+      const plan: Plan<ParsedReceipt> = { action: "keep", reason: read.message };
+      return read.code === "TIME_DISPUTED"
+        ? { names, plan, headerTimeReread: { name: first.name, box: first.page.headerTimeBox } }
+        : { names, plan };
+    }
     if (read.value.completeness !== "complete") return { names, plan: { action: "keep", reason: PARTIAL_SCREENSHOTS_REASON } };
-    return { names, plan: { action: "capture", value: read.value } };
+    return read.timeCandidates
+      ? { names, plan: { action: "capture", value: read.value }, timeCandidates: read.timeCandidates }
+      : { names, plan: { action: "capture", value: read.value } };
   });
 }
 
@@ -416,7 +437,9 @@ export type RememberedKind =
   | "unrecognised"
   | "slip-review"
   /** A statement the server held: its reason code and the build that said so (another build retries it once). */
-  | { readonly kind: "held"; readonly reason: string; readonly build: string };
+  | { readonly kind: "held"; readonly reason: string; readonly build: string }
+  /** A LINE MAN page the reader recognised but refused: its sentence, and the build that said so. The verdict is about this image alone, so no other page changes it. */
+  | { readonly kind: "refused"; readonly reason: string; readonly build: string };
 
 /** The build this page was served from; read here and nowhere else. A deploy changes it, so held statements are retried once. */
 export const BUILD_ID: string = process.env.NEXT_PUBLIC_BUILD_ID ?? "local";
@@ -452,8 +475,8 @@ export function parseRemembered(raw: string | null, build: string = BUILD_ID): M
       const stored = kind as { kind?: unknown; reason?: unknown; build?: unknown };
       if (stored.build !== build) continue;
       if (stored.kind === "unrecognised" || stored.kind === "slip-review") remembered.set(name, stored.kind);
-      else if (stored.kind === "held" && typeof stored.reason === "string") {
-        remembered.set(name, { kind: "held", reason: stored.reason, build });
+      else if ((stored.kind === "held" || stored.kind === "refused") && typeof stored.reason === "string") {
+        remembered.set(name, { kind: stored.kind, reason: stored.reason, build });
       }
     }
     return remembered;
@@ -465,7 +488,7 @@ export function parseRemembered(raw: string | null, build: string = BUILD_ID): M
 /** One stored entry: every kind carries the build that settled it (`parseRemembered`). */
 export type StoredRemembered =
   | { readonly kind: "unrecognised" | "slip-review"; readonly build: string }
-  | { readonly kind: "held"; readonly reason: string; readonly build: string };
+  | { readonly kind: "held" | "refused"; readonly reason: string; readonly build: string };
 
 /** What to store: the remembered names that are still in the queue, so the memory cannot grow, each stamped with `build`. */
 export function pruneRemembered(

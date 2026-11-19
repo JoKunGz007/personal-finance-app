@@ -14,6 +14,7 @@ import {
   type PdfReply, type ReadySlip, type ReadySlipIdentity, type RememberedKind, type SlipPostBody
 } from "@/lib/inbox-drain";
 import { kindOfObject, lineReceivedAt } from "@/lib/inbox-queue";
+import { resolveHeaderTime } from "@/lib/browser/header-time";
 import type { ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import type { CaptureForm } from "@/lib/receipts";
@@ -75,11 +76,11 @@ export type DrainDeps = {
   readonly remove: (names: readonly string[]) => Promise<Outcome<number>>;
   readonly readPdf: (file: Blob) => Promise<PdfReply>;
   readonly readImage: (file: Blob) => Promise<ImageWordsRead>;
-  /** A second, enlarged read of one box of the image (the printed year D-257, the amount D-259); any failure is a not-ok result, never a throw. */
+  /** A second, enlarged read of one box of the image (the printed year D-257, the amount D-259, a 7-Eleven screenshot's header time); any failure is a not-ok result, never a throw. */
   readonly rereadBox: (file: Blob, box: Box, crop: BoxCrop) => Promise<ImageWordsRead>;
   /** The slip QR on this device; any failure is a not-ok result, never a throw. */
   readonly scanSlip: (file: Blob) => Promise<SlipScanAttempt>;
-  readonly postReceipt: (form: CaptureForm, receipt: ParsedReceipt) => Promise<Posted>;
+  readonly postReceipt: (form: CaptureForm, receipt: ParsedReceipt, timeCandidates?: readonly [string, string]) => Promise<Posted>;
   readonly postOrder: (order: ParsedLinemanOrder) => Promise<Posted>;
   readonly postSlip: (body: SlipPostBody) => Promise<SlipPosted>;
   /** Asks the server to open and import a statement PDF waiting in the queue; never throws. */
@@ -149,7 +150,7 @@ export function browserDrainDeps(supabase: Client, uid: string): DrainDeps {
         bitmap?.close();
       }
     },
-    postReceipt: async (form, receipt) => posted(await postReceiptCapture(form, receipt)),
+    postReceipt: async (form, receipt, timeCandidates) => posted(await postReceiptCapture(form, receipt, timeCandidates)),
     postOrder: async (order) => posted(await postLinemanCapture(order)),
     postSlip: postSlipCapture,
     postStatement: postStatementImport,
@@ -290,6 +291,8 @@ export async function drainInbox(
     if (kind === "image" && typeof earlier === "string") {
       return earlier === "slip-review" ? { reason: SLIP_REVIEW_REMEMBERED_REASON, slipReview: true } : { reason: NOT_YET };
     }
+    // A LINE MAN page this build already found unreadable: its own sentence, no download or Vision read.
+    if (kind === "image" && typeof earlier === "object" && earlier.kind === "refused") return { reason: earlier.reason };
     // A statement the server held on this build: shown again without a download or a server read.
     if (kind === "pdf" && typeof earlier === "object") {
       return { reason: statementHeldReason(earlier.reason), reviewable: statementNeedsReview(earlier.reason) };
@@ -363,7 +366,11 @@ export async function drainInbox(
       return { linemanPage: { name: file.name, page: recognised.page, createdAt: lineReceivedAt(file.name) ?? file.created_at } };
     }
     // Not when the scan itself failed: the image may be a slip the next open can scan.
-    return { reason: recognised.reason, remember: recognised.reason === NOT_YET && (scan.ok || scan.code !== "SCAN_FAILED") ? "unrecognised" : undefined };
+    const scanned = scan.ok || scan.code !== "SCAN_FAILED";
+    const verdict: RememberedKind | undefined = !scanned ? undefined
+      : recognised.reason === NOT_YET ? "unrecognised"
+      : { kind: "refused", reason: recognised.reason, build: BUILD_ID };
+    return { reason: recognised.reason, remember: verdict };
   }
 
   onStatus(progressLine(0, files.length));
@@ -404,12 +411,38 @@ export async function drainInbox(
     if (outcome.linemanPage) linemanPages.push(outcome.linemanPage);
   }
 
-  for (const group of planReceiptScreenshots(receiptPages)) {
+  // A receipt whose header time alone disagreed with its R# line: read the header time's box again,
+  // enlarged, one counted Vision unit each, in order. A transport failure (the file, the reader, the
+  // monthly limit) keeps the group with its own reason and saves nothing, so the next open retries;
+  // a read with no single time saves a blank time (never a guessed one).
+  let groups = planReceiptScreenshots(receiptPages);
+  const timeRereads = new Map<string, string | null>();
+  const timeRereadFailed = new Map<string, string>();
+  let anyDisputed = false;
+  for (const group of groups) {
+    const request = group.headerTimeReread;
+    if (request === undefined) continue;
+    anyDisputed = true;
+    // No box needs no download: the answer is a blank time.
+    const downloaded = request.box === null ? { ok: true as const, value: new Blob() } : await deps.download(request.name);
+    if (!downloaded.ok) { timeRereadFailed.set(request.name, downloaded.why); continue; }
+    const time = await resolveHeaderTime(downloaded.value, request.box, deps.rereadBox);
+    if (!time.ok) { timeRereadFailed.set(request.name, time.why); continue; }
+    timeRereads.set(request.name, time.answer);
+  }
+  if (anyDisputed) groups = planReceiptScreenshots(receiptPages, timeRereads);
+
+  for (const group of groups) {
+    const failure = group.headerTimeReread === undefined ? undefined : timeRereadFailed.get(group.headerTimeReread.name);
+    if (failure !== undefined) {
+      for (const name of group.names) reasons[name] = failure;
+      continue;
+    }
     if (group.plan.action === "keep") {
       for (const name of group.names) reasons[name] = group.plan.reason;
       continue;
     }
-    const saved = await deps.postReceipt("screenshot", group.plan.value);
+    const saved = await deps.postReceipt("screenshot", group.plan.value, group.timeCandidates);
     if (!saved.ok) {
       for (const name of group.names) reasons[name] = saved.why;
       continue;

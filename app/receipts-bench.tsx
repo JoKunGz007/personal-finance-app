@@ -12,6 +12,7 @@ import { readImageFileWords } from "@/lib/browser/ocr-reader";
 import { readReceiptPdf } from "@/lib/browser/receipt-reader";
 import { formatThb } from "@/lib/money";
 import { receiptMatchResponseSchema } from "@/lib/receipt-match";
+import { resolveHeaderTime } from "@/lib/browser/header-time";
 import { groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { ParsedReceipt } from "@/lib/receipt-text";
 import { receiptListSchema, type CaptureForm, type StoredReceipt } from "@/lib/receipts";
@@ -20,10 +21,10 @@ import { ledgerRequest } from "@/lib/wire";
 type Picked =
   | { key: string; file: string; state: "reading" }
   | { key: string; file: string; state: "refused"; message: string }
-  | { key: string; file: string; state: "ready"; form: CaptureForm; receipt: ParsedReceipt }
-  | { key: string; file: string; state: "saving"; form: CaptureForm; receipt: ParsedReceipt }
-  | { key: string; file: string; state: "saved"; form: CaptureForm; receipt: ParsedReceipt; outcome: string }
-  | { key: string; file: string; state: "failed"; form: CaptureForm; receipt: ParsedReceipt; message: string };
+  | { key: string; file: string; state: "ready"; form: CaptureForm; receipt: ParsedReceipt; timeCandidates?: readonly [string, string] }
+  | { key: string; file: string; state: "saving"; form: CaptureForm; receipt: ParsedReceipt; timeCandidates?: readonly [string, string] }
+  | { key: string; file: string; state: "saved"; form: CaptureForm; receipt: ParsedReceipt; outcome: string; timeCandidates?: readonly [string, string] }
+  | { key: string; file: string; state: "failed"; form: CaptureForm; receipt: ParsedReceipt; message: string; timeCandidates?: readonly [string, string] };
 
 const FORM_LABEL: Record<CaptureForm, string> = { condensed: "Short receipt", full: "Full tax invoice", screenshot: "Screenshot" };
 
@@ -76,7 +77,8 @@ export function ReceiptsBench() {
   // Screenshots of receipts that did not read complete, kept so a missing part picked later joins
   // the parts already read — the refusal tells the owner to "add a screenshot", which only works
   // if an added one meets the earlier ones. Keyed by receipt; a complete reading drops its pages.
-  const heldPages = useRef(new Map<string, { file: string; page: ScreenshotPage }[]>());
+  // The picked File is kept with its page: a disputed header time is read again from the image.
+  const heldPages = useRef(new Map<string, { file: string; blob: File; page: ScreenshotPage }[]>());
   useEffect(() => { listShown.current = receipts !== null; }, [receipts]);
 
   const update = (key: string, next: Picked) => setPicked((current) => current.map((entry) => (entry.key === key ? next : entry)));
@@ -104,11 +106,11 @@ export function ReceiptsBench() {
     }
     if (images.length === 0) return;
 
-    const pages: { file: string; page: ScreenshotPage }[] = [];
+    const pages: { file: string; blob: File; page: ScreenshotPage }[] = [];
     const entries: Picked[] = [];
     for (const [index, file] of images.entries()) {
       const read = await readScreenshotFile(file);
-      if (read.ok) pages.push({ file: file.name, page: read.page });
+      if (read.ok) pages.push({ file: file.name, blob: file, page: read.page });
       else entries.push({ key: `${shotsKey}-x${index}`, file: file.name, state: "refused", message: read.message });
     }
     // Each receipt's entry is keyed by the receipt, so re-reading it with an added screenshot
@@ -119,12 +121,19 @@ export function ReceiptsBench() {
       const all = [...(heldPages.current.get(receiptKey) ?? []), ...group];
       regrouped.add(`shot:${receiptKey}`);
       const names = all.map((entry) => entry.file).join(" + ");
-      const read = readScreenshotReceipt(all.map((entry) => entry.page));
+      const allPages = all.map((entry) => entry.page);
+      let read = readScreenshotReceipt(allPages);
+      // The header time alone disagreed: read its box again (the Inbox does the same). A failed
+      // re-read is shown as the refusal; it never saves a blank time.
+      if (!read.ok && read.code === "TIME_DISPUTED") {
+        const time = await resolveHeaderTime(all[0]!.blob, all[0]!.page.headerTimeBox);
+        read = time.ok ? readScreenshotReceipt(allPages, time.answer) : { ok: false, code: "UNREADABLE", message: time.why };
+      }
       if (read.ok && read.value.completeness === "complete") heldPages.current.delete(receiptKey);
       else heldPages.current.set(receiptKey, all);
       const key = `shot:${receiptKey}`;
       entries.push(read.ok
-        ? { key, file: names, state: "ready", form: "screenshot", receipt: read.value }
+        ? { key, file: names, state: "ready", form: "screenshot", receipt: read.value, ...(read.timeCandidates ? { timeCandidates: read.timeCandidates } : {}) }
         : { key, file: names, state: "refused", message: read.message });
     }
     setPicked((current) => current
@@ -143,10 +152,11 @@ export function ReceiptsBench() {
   }
 
   async function saveOnce(entry: Extract<Picked, { state: "ready" | "failed" }>) {
-    update(entry.key, { key: entry.key, file: entry.file, state: "saving", form: entry.form, receipt: entry.receipt });
-    const result = await postReceiptCapture(entry.form, entry.receipt);
+    const held = entry.timeCandidates ? { timeCandidates: entry.timeCandidates } : {};
+    update(entry.key, { key: entry.key, file: entry.file, state: "saving", form: entry.form, receipt: entry.receipt, ...held });
+    const result = await postReceiptCapture(entry.form, entry.receipt, entry.timeCandidates);
     if (!result.ok) {
-      update(entry.key, { key: entry.key, file: entry.file, state: "failed", form: entry.form, receipt: entry.receipt, message: result.why });
+      update(entry.key, { key: entry.key, file: entry.file, state: "failed", form: entry.form, receipt: entry.receipt, message: result.why, ...held });
       return;
     }
     const outcome = result.data.captured
@@ -154,7 +164,7 @@ export function ReceiptsBench() {
       : result.data.itemsReplaced
         ? "Merged into the receipt already stored for this purchase; its item list was replaced by this one's."
         : "Merged into the receipt already stored for this purchase; its existing item list was kept.";
-    update(entry.key, { key: entry.key, file: entry.file, state: "saved", form: entry.form, receipt: entry.receipt, outcome });
+    update(entry.key, { key: entry.key, file: entry.file, state: "saved", form: entry.form, receipt: entry.receipt, outcome, ...held });
     if (listShown.current) void load();
     setSaves((count) => count + 1);
   }

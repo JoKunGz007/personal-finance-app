@@ -106,6 +106,13 @@ describe("recogniseImage", () => {
     expect(noMenu.kind === "keep" && noMenu.reason).not.toBe(NOT_YET);
     expect(noMenu.kind === "keep" && noMenu.reason).toMatch(/Menu/u);
   });
+
+  test("an order number with no time or no restaurant keeps its own sentence, not NOT_YET", () => {
+    const noTime = recogniseImage(sentences(LM_FIRST().filter((line) => line !== "12 SEP 26 21:00")));
+    expect(noTime).toEqual({ kind: "keep", reason: "The first screenshot shows no order time." });
+    const noRestaurant = recogniseImage(sentences(LM_FIRST().filter((line) => !line.startsWith("ร้าน"))));
+    expect(noRestaurant).toEqual({ kind: "keep", reason: "The first screenshot shows no restaurant." });
+  });
 });
 
 describe("planPdf", () => {
@@ -164,6 +171,42 @@ describe("planReceiptScreenshots", () => {
     expect(group!.names).toEqual(["top.png"]);
     expect(group!.plan.action).toBe("keep");
     expect(group!.plan.action === "keep" && group!.plan.reason).toMatch(/bottom of this receipt/u);
+  });
+
+  describe("a header time that alone disagrees with the R# line", () => {
+    const disputed = () => receiptPage(tokens([
+      ["01/06/69", "|", "14:36"], ...header("12345").slice(1), ...ITEMS, ...TAIL, ...FOOTER
+    ]));
+
+    test("keeps the files and names the first page and the time's box to read again", () => {
+      const [group] = planReceiptScreenshots([{ name: "a.png", page: disputed() }]);
+      expect(group!.plan.action).toBe("keep");
+      expect(group!.headerTimeReread).toEqual({ name: "a.png", box: { left: 130, right: 180, top: 100, bottom: 130 } });
+    });
+
+    test("an ordinary refusal carries no re-read request", () => {
+      const [group] = planReceiptScreenshots([{ name: "a.png", page: receiptPage(topOnly()) }]);
+      expect(group!.headerTimeReread).toBeUndefined();
+    });
+
+    test("captures with the matching time, or a blank one, once the re-read is in", () => {
+      const page = disputed();
+      const [same] = planReceiptScreenshots([{ name: "a.png", page }], new Map([["a.png", "14:35"]]));
+      expect(same).toMatchObject({ plan: { action: "capture", value: { purchasedAtTime: "14:35" } } });
+      expect(same!.headerTimeReread).toBeUndefined();
+      for (const again of ["14:36", null]) {
+        const [blank] = planReceiptScreenshots([{ name: "a.png", page }], new Map([["a.png", again]]));
+        expect(blank).toMatchObject({ plan: { action: "capture", value: { purchasedAtTime: null } }, timeCandidates: ["14:35", "14:36"] });
+      }
+      const [other] = planReceiptScreenshots([{ name: "a.png", page }], new Map([["a.png", "09:00"]]));
+      expect(other!.timeCandidates).toEqual(["14:35", "09:00"]);
+      expect(same!.timeCandidates).toBeUndefined();
+    });
+
+    test("a re-read keyed on another file is not applied", () => {
+      const [group] = planReceiptScreenshots([{ name: "a.png", page: disputed() }], new Map([["b.png", "14:35"]]));
+      expect(group!.headerTimeReread?.name).toBe("a.png");
+    });
   });
 
   test("nothing recognised, nothing planned", () => {
@@ -439,18 +482,28 @@ type FakeOptions = {
   crop?: () => ImageWordsRead | Promise<ImageWordsRead>;
   /** What the enlarged re-read of the amount's box answers at a scale (D-259); defaults to a failure. */
   amountCrop?: (scale: number) => ImageWordsRead | Promise<ImageWordsRead>;
+  /** What the enlarged re-read of a receipt's header time answers; defaults to a failure. */
+  timeCrop?: () => ImageWordsRead;
+  /** A name to the why its second download (the header time's re-read) fails with. */
+  redownloadFails?: Record<string, string>;
 };
 
 /** Fakes for everything outside the drain; `words` maps an image's name to what Vision "read". */
 function fakes(options: FakeOptions = {}) {
   const calls = {
     statementPosts: [] as string[], ocr: [] as string[], scans: [] as string[], downloads: [] as string[], removed: [] as string[][], receipts: 0, orders: 0, slipPosts: 0, rereads: [] as Array<{ name: string; box: Box }>, amountRereads: [] as number[],
+    timeRereads: [] as Array<{ name: string; box: Box; scale: number }>, receiptTimes: [] as Array<string | null>, receiptTimeCandidates: [] as Array<readonly [string, string] | null>,
     // Every scan and read in the order it happened, to show the scan comes first.
     order: [] as string[],
     saved: undefined as undefined | ReadonlyMap<string, RememberedKind>
   };
   const deps: DrainDeps = {
-    download: async (name) => { calls.downloads.push(name); return { ok: true, value: blobOf(name) }; },
+    download: async (name) => {
+      calls.downloads.push(name);
+      const why = options.redownloadFails?.[name];
+      if (why !== undefined && calls.downloads.filter((each) => each === name).length > 1) return { ok: false, why };
+      return { ok: true, value: blobOf(name) };
+    },
     remove: async (names) => { calls.removed.push([...names]); return { ok: true, value: options.removes ? options.removes(names) : names.length }; },
     readPdf: async () => options.pdf ?? { type: "error", message: "This file could not be opened as a PDF.", code: "UNREADABLE_PDF" },
     readImage: async (blob) => {
@@ -463,6 +516,10 @@ function fakes(options: FakeOptions = {}) {
       if (crop.field === "amount") {
         calls.amountRereads.push(crop.scale);
         return options.amountCrop ? options.amountCrop(crop.scale) : { ok: false, why: "The amount could not be read a second time." };
+      }
+      if (crop.field === "time") {
+        calls.timeRereads.push({ name: labels.get(blob)!, box, scale: crop.scale });
+        return options.timeCrop ? options.timeCrop() : { ok: false, why: "The time could not be read a second time." };
       }
       calls.rereads.push({ name: labels.get(blob)!, box });
       return options.crop ? options.crop() : { ok: false, why: "The year could not be read a second time." };
@@ -478,8 +535,10 @@ function fakes(options: FakeOptions = {}) {
       calls.statementPosts.push(name);
       return options.statement ?? { ok: true, answer: { kind: "captured" } };
     },
-    postReceipt: async () => {
+    postReceipt: async (_form, receipt, timeCandidates) => {
       calls.receipts += 1;
+      calls.receiptTimes.push(receipt.purchasedAtTime);
+      calls.receiptTimeCandidates.push(timeCandidates ?? null);
       return options.fail === "receipt" ? { ok: false, why: "The ledger could not be reached, so the receipt was not saved." } : { ok: true, already: options.already === true };
     },
     postOrder: async () => {
@@ -508,6 +567,77 @@ describe("drainInbox", () => {
     const result = await drainInbox([file("r.png")], status, deps);
     expect(calls.removed).toEqual([["r.png"]]);
     expect(result).toMatchObject({ receipts: 1, waiting: 0, reasons: {}, summary: "1 receipt imported." });
+  });
+
+  describe("a receipt whose header time alone disagrees with its R# line", () => {
+    const disputedWords = (time = "14:36") => tokens([
+      ["01/06/69", "|", time], ...header("12345").slice(1), ...ITEMS, ...TAIL, ...FOOTER
+    ]);
+    const BOX = { left: 130, right: 180, top: 100, bottom: 130 };
+
+    test("the re-read time equal to the R# time is posted, from one enlarged read of that box", async () => {
+      const { deps, calls } = fakes({ words: { "d.png": disputedWords() }, timeCrop: () => ({ ok: true, words: sentences(["14:35"]) }) });
+      const result = await drainInbox([file("d.png")], status, deps);
+      expect(calls.receiptTimes).toEqual(["14:35"]);
+      expect(calls.timeRereads).toEqual([{ name: "d.png", box: BOX, scale: 2 }]);
+      expect(result).toMatchObject({ receipts: 1, waiting: 0 });
+    });
+
+    test("a different time, or words with no time, post a blank time", async () => {
+      for (const words of [sentences(["14:36"]), sentences(["hello"])]) {
+        const { deps, calls } = fakes({ words: { "d.png": disputedWords() }, timeCrop: () => ({ ok: true, words }) });
+        await drainInbox([file("d.png")], status, deps);
+        expect(calls.receiptTimes).toEqual([null]);
+      }
+    });
+
+    test("a blank time is posted with its two candidates, [R# time, header time]", async () => {
+      for (const [words, header] of [[sentences(["09:00"]), "09:00"], [sentences(["hello"]), "14:36"]] as const) {
+        const { deps, calls } = fakes({ words: { "d.png": disputedWords() }, timeCrop: () => ({ ok: true, words }) });
+        await drainInbox([file("d.png")], status, deps);
+        expect(calls.receiptTimeCandidates).toEqual([["14:35", header]]);
+      }
+    });
+
+    test("a settled time posts no candidates", async () => {
+      const { deps, calls } = fakes({ words: { "d.png": disputedWords() }, timeCrop: () => ({ ok: true, words: sentences(["14:35"]) }) });
+      await drainInbox([file("d.png")], status, deps);
+      expect(calls.receiptTimeCandidates).toEqual([null]);
+    });
+
+    test("a re-read that fails posts nothing, keeps the files with its why and remembers nothing", async () => {
+      const { deps, calls } = fakes({ words: { "d.png": disputedWords() }, timeCrop: () => ({ ok: false, why: "The monthly Vision limit is reached." }) });
+      const result = await drainInbox([file("d.png")], status, deps);
+      expect(calls.receipts).toBe(0);
+      expect(result.reasons["d.png"]).toBe("The monthly Vision limit is reached.");
+      expect(result.waiting).toBe(1);
+      expect(calls.saved?.has("d.png")).toBe(false);
+    });
+
+    test("a download that fails during the re-read keeps the files with the download's why", async () => {
+      const { deps, calls } = fakes({ words: { "d.png": disputedWords() }, redownloadFails: { "d.png": "The file could not be downloaded." } });
+      const result = await drainInbox([file("d.png")], status, deps);
+      expect(calls.receipts).toBe(0);
+      expect(calls.timeRereads).toEqual([]);
+      expect(result.reasons["d.png"]).toBe("The file could not be downloaded.");
+      expect(calls.saved?.has("d.png")).toBe(false);
+    });
+
+    test("a header time with no box posts a blank time without a Vision call", async () => {
+      const words = tokens([["01/06/69|14:36"], ...header("12345").slice(1), ...ITEMS, ...TAIL, ...FOOTER]);
+      const { deps, calls } = fakes({ words: { "d.png": words } });
+      await drainInbox([file("d.png")], status, deps);
+      expect(calls.receiptTimes).toEqual([null]);
+      expect(calls.timeRereads).toEqual([]);
+    });
+
+    test("an ordinary receipt costs no re-read and no second download", async () => {
+      const { deps, calls } = fakes({ words: { "r.png": wholeReceipt() } });
+      await drainInbox([file("r.png")], status, deps);
+      expect(calls.timeRereads).toEqual([]);
+      expect(calls.downloads).toEqual(["r.png"]);
+      expect(calls.receiptTimes).toEqual(["14:35"]);
+    });
   });
 
   test("(b) a removal that Storage only partly did is not counted, and the files say so", async () => {
@@ -596,6 +726,67 @@ describe("drainInbox", () => {
     expect(result.reasons).toEqual({ "old.png": NOT_YET, "new.png": NOT_YET });
     // Pruning to the queue is the memory's own job (`pruneRemembered`); the drain hands it the new name too.
     expect([...calls.saved!.keys()].sort()).toEqual(["already-gone.png", "new.png", "old.png"]);
+  });
+
+  describe("a recognised but unreadable LINE MAN page", () => {
+    const NO_TIME = "The first screenshot shows no order time.";
+    const noTimeWords = () => sentences(LM_FIRST().filter((line) => line !== "12 SEP 26 21:00"));
+    /** The memory as the device keeps it: what one drain saved is what the next loads. */
+    const carried = (saved: ReadonlyMap<string, RememberedKind>, name: string, build: string) =>
+      parseRemembered(JSON.stringify(pruneRemembered(saved, [name], build)), build);
+
+    test("is remembered with its sentence: the second drain does not read it, and shows the same sentence", async () => {
+      const first = fakes({ words: { "n.png": noTimeWords() } });
+      const one = await drainInbox([file("n.png")], status, first.deps);
+      expect(one.reasons["n.png"]).toBe(NO_TIME);
+      expect(first.calls.ocr).toEqual(["n.png"]);
+
+      const second = fakes({ words: { "n.png": noTimeWords() } });
+      const memory = { ...second.deps.memory, load: () => carried(first.calls.saved!, "n.png", BUILD_ID) };
+      const two = await drainInbox([file("n.png")], status, { ...second.deps, memory });
+      expect(second.calls.ocr).toEqual([]);
+      expect(second.calls.downloads).toEqual([]);
+      expect(two.reasons["n.png"]).toBe(NO_TIME);
+    });
+
+    test("is read again on a new build", async () => {
+      const first = fakes({ words: { "n.png": noTimeWords() } });
+      await drainInbox([file("n.png")], status, first.deps);
+      const second = fakes({ words: { "n.png": noTimeWords() } });
+      const memory = { ...second.deps.memory, load: () => parseRemembered(JSON.stringify(pruneRemembered(first.calls.saved!, ["n.png"], BUILD_ID)), "another-build") };
+      await drainInbox([file("n.png")], status, { ...second.deps, memory });
+      expect(second.calls.ocr).toEqual(["n.png"]);
+    });
+
+    test("a page with no Menu heading is remembered too: its verdict is about this image alone", async () => {
+      const { deps, calls } = fakes({ words: { "m.png": sentences(["< Order details Contact us", "Something else"]) } });
+      const result = await drainInbox([file("m.png")], status, deps);
+      expect(result.reasons["m.png"]).toMatch(/Menu/u);
+      expect(calls.saved?.get("m.png")).toMatchObject({ kind: "refused", reason: result.reasons["m.png"] });
+    });
+
+    test("is not remembered when the scan itself failed", async () => {
+      const { deps, calls } = fakes({
+        words: { "n.png": noTimeWords() },
+        scans: { "n.png": { ok: false, code: "SCAN_FAILED", message: "No QR reader could be loaded in this browser." } }
+      });
+      await drainInbox([file("n.png")], status, deps);
+      expect(calls.saved?.has("n.png")).toBe(false);
+    });
+
+    test("is dropped from the memory once its file leaves the queue", () => {
+      const remembered = new Map<string, RememberedKind>([["n.png", { kind: "refused", reason: NO_TIME, build: "abc" }]]);
+      expect(pruneRemembered(remembered, [], "abc")).toEqual({});
+    });
+
+    test("an old-format entry without a reason is not read as a refusal, and an unrecognised one still reads as NOT_YET", async () => {
+      expect(parseRemembered('{"a.png":{"kind":"refused","build":"abc"}}', "abc").size).toBe(0);
+      expect([...parseRemembered('{"a.png":{"kind":"unrecognised","build":"abc"}}', "abc")]).toEqual([["a.png", "unrecognised"]]);
+      const { deps, calls } = fakes({ words: { "n.png": noTimeWords() }, remembered: { "n.png": "unrecognised" } });
+      const result = await drainInbox([file("n.png")], status, deps);
+      expect(calls.ocr).toEqual([]);
+      expect(result.reasons["n.png"]).toBe(NOT_YET);
+    });
   });
 
   test("a recognised file is not added to the memory", async () => {

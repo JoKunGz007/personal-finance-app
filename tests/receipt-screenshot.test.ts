@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { canonicalLine, groupScreenshotPages, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
+import { canonicalLine, groupScreenshotPages, readHeaderTime, readScreenshotPage, readScreenshotReceipt, type ScreenshotPage } from "@/lib/receipt-screenshot";
 import type { OcrWord } from "@/lib/slip-ocr";
 
 // Every value is invented (docs/FIXTURE_POLICY.md). The *shapes* — Vision spacing Thai words the
@@ -109,9 +109,98 @@ describe("readScreenshotReceipt", () => {
     expect(read).toMatchObject({ ok: false, code: "NO_OVERLAP" });
   });
 
-  test("a header that disagrees with the receipt's own R# line is refused", () => {
+  test("a header whose number or date disagrees with the R# line is refused, even with a time re-read", () => {
+    const number = ["เลข", "ที่", "ใบเสร็จ", "12346"];
+    const date = HEADER[0]!.map((token) => (token === "01/06/69" ? "02/06/69" : token));
+    for (const head of [[HEADER[0]!, number], [date, HEADER[1]!]]) {
+      const shown = page([...head, ...HEADER.slice(2), ...ITEMS, ...TAIL]);
+      expect(readScreenshotReceipt([shown])).toMatchObject({ ok: false, code: "MISMATCH" });
+      expect(readScreenshotReceipt([shown], "14:35")).toMatchObject({ ok: false, code: "MISMATCH" });
+    }
+  });
+
+  describe("a header time that alone disagrees with the R# line", () => {
     const shifted = [HEADER[0]!.map((token) => (token === "14:35" ? "14:36" : token)), ...HEADER.slice(1)];
-    expect(readScreenshotReceipt([page([...shifted, ...ITEMS, ...TAIL])])).toMatchObject({ ok: false, code: "MISMATCH" });
+    const disputed = () => page([...shifted, ...ITEMS, ...TAIL]);
+
+    test("asks for the header time to be read again", () => {
+      expect(readScreenshotReceipt([disputed()])).toMatchObject({ ok: false, code: "TIME_DISPUTED" });
+    });
+    test("keeps the R# time when the re-read equals it", () => {
+      const read = readScreenshotReceipt([disputed()], "14:35");
+      expect(read.ok && read.value.purchasedAtTime).toBe("14:35");
+    });
+    test("saves with a blank time when the re-read differs or failed", () => {
+      for (const again of ["14:36", "09:00", null]) {
+        const read = readScreenshotReceipt([disputed()], again);
+        expect(read.ok, again ?? "null").toBe(true);
+        expect(read.ok && read.value.purchasedAtTime).toBeNull();
+        expect(read.ok && read.value.completeness).toBe("complete");
+      }
+    });
+    test("a blank time carries [R# time, header time]: the re-read answer when it is a time, else the header's own", () => {
+      expect(readScreenshotReceipt([disputed()], "09:00")).toMatchObject({ ok: true, timeCandidates: ["14:35", "09:00"] });
+      expect(readScreenshotReceipt([disputed()], "14:36")).toMatchObject({ ok: true, timeCandidates: ["14:35", "14:36"] });
+      expect(readScreenshotReceipt([disputed()], null)).toMatchObject({ ok: true, timeCandidates: ["14:35", "14:36"] });
+    });
+    test("no candidates when the time is settled or the read is refused", () => {
+      const agreeing = page([...HEADER, ...ITEMS, ...TAIL]);
+      const settled = readScreenshotReceipt([agreeing]);
+      expect(settled.ok && settled.timeCandidates).toBeUndefined();
+      const rereadEqual = readScreenshotReceipt([disputed()], "14:35");
+      expect(rereadEqual.ok && rereadEqual.timeCandidates).toBeUndefined();
+      expect(readScreenshotReceipt([disputed()])).not.toHaveProperty("timeCandidates");
+    });
+    test("an agreeing header needs no re-read, and one passed is ignored", () => {
+      const agreeing = page([...HEADER, ...ITEMS, ...TAIL]);
+      expect(readScreenshotReceipt([agreeing], "09:00")).toMatchObject({ ok: true, value: { purchasedAtTime: "14:35" } });
+    });
+  });
+
+  describe("header times across the screenshots of one receipt", () => {
+    const shifted = [HEADER[0]!.map((token) => (token === "14:35" ? "14:36" : token)), ...HEADER.slice(1)];
+    const top = (head: string[][]) => page([...head, ...ITEMS.slice(0, 4), ["ก", "(", "a"], ...FOOTER]);
+    const bottom = (head: string[][]) => page([...head, ...ITEMS.slice(3), ...TAIL, ...FOOTER]);
+
+    test("a misread time on the second screenshot alone does not make them different receipts", () => {
+      const read = readScreenshotReceipt([top(HEADER), bottom(shifted)]);
+      expect(read.ok, read.ok ? "" : read.message).toBe(true);
+      expect(read.ok && read.value.purchasedAtTime).toBe("14:35");
+    });
+    test("a misread time on the first screenshot alone needs no re-read", () => {
+      const read = readScreenshotReceipt([top(shifted), bottom(HEADER)]);
+      expect(read.ok, read.ok ? "" : read.message).toBe(true);
+      expect(read.ok && read.value.purchasedAtTime).toBe("14:35");
+    });
+    test("every screenshot's time disagreeing with R# is disputed", () => {
+      expect(readScreenshotReceipt([top(shifted), bottom(shifted)])).toMatchObject({ ok: false, code: "TIME_DISPUTED" });
+    });
+    test("a different store, number or date across screenshots is still not one receipt", () => {
+      const store = HEADER.map((row) => row.includes("30219") ? ["รหัส", "ร้าน", ":", "30220"] : row);
+      const number = HEADER.map((row) => row.includes("12345") ? ["เลข", "ที่", "ใบเสร็จ", "12346"] : row);
+      const date = [HEADER[0]!.map((token) => (token === "01/06/69" ? "02/06/69" : token)), ...HEADER.slice(1)];
+      for (const other of [store, number, date]) {
+        expect(readScreenshotReceipt([top(HEADER), bottom(other)])).toMatchObject({ ok: false, code: "MISMATCH", message: "These screenshots are not all of the same receipt." });
+      }
+    });
+  });
+
+  test("the header time's box is the time word, null when it cannot be told", () => {
+    expect(page([...HEADER, ...ITEMS, ...TAIL]).headerTimeBox).toEqual({ left: 130, right: 180, top: 100, bottom: 130 });
+    // Vision split the time into three words: the box spans all three.
+    const split = [["01/06/69", "|", "14", ":", "35"], ...HEADER.slice(1)];
+    expect(page([...split, ...ITEMS, ...TAIL]).headerTimeBox).toEqual({ left: 130, right: 300, top: 100, bottom: 130 });
+    // The date and time as one word: no separate time word to crop.
+    const joined = ["01/06/69 14:35"];
+    expect(page([joined, ...HEADER.slice(1), ...ITEMS, ...TAIL]).headerTimeBox).toBeNull();
+  });
+
+  test("readHeaderTime reads exactly one time from a crop", () => {
+    expect(readHeaderTime(words([["14:35"]]))).toBe("14:35");
+    expect(readHeaderTime(words([["14", ":", "35"]]))).toBe("14:35");
+    expect(readHeaderTime(words([["hello"]]))).toBeNull();
+    expect(readHeaderTime(words([["14:35", "15:40"]]))).toBeNull();
+    expect(readHeaderTime([])).toBeNull();
   });
 
   test("an image that is not a receipt screenshot is refused", () => {

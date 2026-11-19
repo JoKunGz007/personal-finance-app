@@ -1,4 +1,5 @@
 import { receiptMatchDecisionSchema } from "@/lib/receipt-match";
+import { fillReceiptTimes } from "@/lib/server/receipt-time-fill";
 import { putLedgerMatch } from "@/lib/server/ledger-match-route";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     idField: "receipt_id",
     noun: "receipt",
     notOwned: "receipt not owned",
-    decisionSchema: receiptMatchDecisionSchema
+    decisionSchema: receiptMatchDecisionSchema,
+    // Migration 067: the owner's link may be the row a time-less receipt's candidate time fits.
+    afterMatched: (supabase, id) => fillReceiptTimes(supabase, { receiptIds: [id] })
   });
 }

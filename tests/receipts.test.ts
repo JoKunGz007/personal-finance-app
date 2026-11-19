@@ -115,6 +115,40 @@ describe("receipt capture contract", () => {
     expect(receiptCaptureSchema.safeParse(receiptCaptureBody("screenshot", { ...condensed, vat: full.vat })).success).toBe(false);
   });
 
+  describe("time candidates (a screenshot whose time was left blank)", () => {
+    const blank = { ...condensed, purchasedAtTime: null };
+    const withCandidates = (form: "screenshot" | "condensed" | "full", receipt: ParsedReceipt, candidates: unknown) =>
+      ({ ...receiptCaptureBody(form, receipt), timeCandidates: candidates });
+
+    test("a screenshot with a null time and two distinct candidates is accepted and reaches the request's top level", () => {
+      const parsed = receiptCaptureSchema.safeParse(withCandidates("screenshot", blank, ["14:35", "14:36"]));
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) return;
+      const request = captureReceiptRequest(parsed.data);
+      expect(request.timeCandidates).toEqual(["14:35", "14:36"]);
+      expect(request.purchasedAtTime).toBeNull();
+    });
+    test("receiptCaptureBody puts the candidates beside the receipt, and omits the key without them", () => {
+      expect(receiptCaptureBody("screenshot", blank, ["14:35", "14:36"]).timeCandidates).toEqual(["14:35", "14:36"]);
+      expect("timeCandidates" in receiptCaptureBody("screenshot", condensed)).toBe(false);
+      expect("timeCandidates" in captureReceiptRequest(receiptCaptureSchema.parse(receiptCaptureBody("screenshot", condensed)))).toBe(false);
+    });
+    test("a null time without candidates is refused", () => {
+      expect(receiptCaptureSchema.safeParse(receiptCaptureBody("screenshot", blank)).success).toBe(false);
+      expect(receiptCaptureSchema.safeParse(receiptCaptureBody("condensed", blank)).success).toBe(false);
+    });
+    test("candidates with a time, or on another form, are refused", () => {
+      expect(receiptCaptureSchema.safeParse(withCandidates("screenshot", condensed, ["14:35", "14:36"])).success).toBe(false);
+      expect(receiptCaptureSchema.safeParse(withCandidates("condensed", blank, ["14:35", "14:36"])).success).toBe(false);
+      expect(receiptCaptureSchema.safeParse(withCandidates("full", full, ["14:35", "14:36"])).success).toBe(false);
+    });
+    test("exactly two distinct HH:MM candidates", () => {
+      for (const bad of [["14:35"], ["14:35", "14:36", "14:37"], ["14:35", "14:35"], ["14:35", "25:00"], ["14:35", "9:00"], []]) {
+        expect(receiptCaptureSchema.safeParse(withCandidates("screenshot", blank, bad)).success, JSON.stringify(bad)).toBe(false);
+      }
+    });
+  });
+
   test("money must be canonical minor-unit text", () => {
     expect(receiptCaptureSchema.safeParse(receiptCaptureBody("condensed", { ...condensed, netMinor: "35.00" })).success).toBe(false);
   });

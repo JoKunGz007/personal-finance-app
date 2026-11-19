@@ -1,6 +1,7 @@
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
 import { loadReceiptMatches } from "@/lib/server/current-matches";
 import { captureReceipt } from "@/lib/server/receipt-store";
+import { fillReceiptTimes } from "@/lib/server/receipt-time-fill";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,12 @@ export async function POST(request: Request) {
       return routeError("This receipt's figures disagree with the copy already stored for the same purchase, so nothing was changed.", 409);
     }
     return routeError("The receipt could not be captured.", 400);
+  }
+
+  // Best effort (migration 067): a time-less capture may already have its ledger row. Never alters the response.
+  const stored = (captured.data as { receipt?: { id?: unknown; purchased_at_time?: unknown } }).receipt;
+  if (typeof stored?.id === "string" && stored.purchased_at_time == null) {
+    await fillReceiptTimes(auth.supabase, { receiptIds: [stored.id] });
   }
 
   // 201 for a new receipt, 200 when it merged into one already stored — capturing the other form

@@ -20,6 +20,8 @@ export interface LedgerMatchRouteSpec<Decision> {
   decisionSchema: z.ZodType<Decision>;
   /** Refusals only one document has, matched on the RPC's message: [fragment, what to say, status]. */
   extraRefusals?: readonly (readonly [string, string, number])[];
+  /** Runs after a stored "matched" decision; must not throw (the decision has landed). */
+  afterMatched?: (supabase: Extract<Awaited<ReturnType<typeof strongOwnerClient>>, { ok: true }>["supabase"], id: string) => Promise<unknown>;
 }
 
 export async function putLedgerMatch<Decision>(
@@ -74,5 +76,7 @@ export async function putLedgerMatch<Decision>(
     // The decision *was* stored; saying otherwise would invite a repeat of a landed write.
     return routeError("The decision was saved but could not be read back in its published shape. Reload the list.", 500);
   }
+  // Best effort and never alters the response: a document's follow-up once its link is stored.
+  if (spec.afterMatched && stored?.decision === "matched") await spec.afterMatched(auth.supabase, id);
   return Response.json({ match: match.data }, { headers: noStoreHeaders });
 }

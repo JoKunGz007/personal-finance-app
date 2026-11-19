@@ -2,6 +2,7 @@ import type { ReceiptSyncReport } from "@/lib/receipts";
 import { loadPdfJs, readReceiptPdfBytes } from "@/lib/server/receipt-pdf-node";
 import { syncReceiptMail, type StoreReceipt } from "@/lib/server/receipt-mailbox";
 import { captureReceipt } from "@/lib/server/receipt-store";
+import { fillReceiptTimes } from "@/lib/server/receipt-time-fill";
 import { logMailSyncFailure } from "@/lib/server/mail-sync-log";
 import { mailboxConfig, openMailbox } from "@/lib/server/statement-mailbox-session";
 import { noStoreHeaders, routeError, strongOwnerClient } from "@/lib/server/supabase";
@@ -63,6 +64,8 @@ export async function POST() {
 
   try {
     const report: ReceiptSyncReport = await syncReceiptMail(session.client, readReceiptPdfBytes, store, started + READ_BUDGET_MS);
+    // Best effort, once for the whole sync (not per receipt): never alters the report.
+    await fillReceiptTimes(auth.supabase);
     return Response.json(report, { headers: noStoreHeaders });
   } catch (error) {
     logMailSyncFailure("receipts/sync", "read", 502, error);

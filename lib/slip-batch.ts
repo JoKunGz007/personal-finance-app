@@ -241,7 +241,7 @@ export function classifySlip(input: {
 }
 
 /** Which box a second read crops, and how much it enlarges it (D-257, D-259). */
-export type BoxCrop = { readonly field: "year" | "amount"; readonly scale: number };
+export type BoxCrop = { readonly field: "year" | "amount" | "time"; readonly scale: number };
 
 /**
  * What a second, enlarged read of one box answered: the same shape as `ImageWordsRead`, restated so

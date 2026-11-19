@@ -12,14 +12,14 @@ import { ledgerRequest } from "@/lib/wire";
  * server; a repeat is answered as already stored.
  */
 
-export function postReceiptCapture(form: CaptureForm, receipt: ParsedReceipt) {
+export function postReceiptCapture(form: CaptureForm, receipt: ParsedReceipt, timeCandidates?: readonly [string, string]) {
   return ledgerRequest("/api/v1/receipts", receiptCaptureResultSchema, {
     fallback: "The receipt could not be saved.",
     unreachable: "The ledger could not be reached, so the receipt was not saved."
   }, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(receiptCaptureBody(form, receipt))
+    body: JSON.stringify(receiptCaptureBody(form, receipt, timeCandidates))
   });
 }
 
