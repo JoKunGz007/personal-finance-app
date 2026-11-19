@@ -141,6 +141,9 @@ Record only repeatable, non-obvious traps. Each item states the symptom, cause, 
 
 - KBank-style `Direct Debit … SHOPEEPAY` rows are ordinary ShopeePay bank debits, not SPayLater repayments
 - A Krungthai statement's period end is the requested range, not what it covers
+- Vision misreads one 7-Eleven screen-header time digit that it reads correctly on an enlarged crop
+- A screenshot receipt with a blank time is refused unless it carries two time candidates
+- A screenshot `MISMATCH` and a LINE MAN `NOT_AN_ORDER` each used to cover several different refusals
 
 ### Real data, masking and privacy
 

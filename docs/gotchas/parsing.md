@@ -231,3 +231,24 @@ the top of `GOTCHAS.md`.
 - Cause: KTB prints the date range the owner asked for. Requested mid-period, the statement stops at the request, 3–21 days before its printed `period_end`. Each statement is internally exact (opening + rows = closing = balance after the last row, 14 of 14); the rows between two "back-to-back" statements came from other, overlapping ones.
 - Avoid: for KTB, use the newest row (or the mail arrival time) as coverage, never `import_batches.period_end`. SCB's and KBANK's period end is the day before the request, so it is coverage there, except that SCB leaves out rows after about 23:00 on that day when requested the next day (PLAN Open item 12).
 - Verify: 2026-10-25 (hosted, read-only): every pair's balance difference equalled exactly the ledger rows between the two statements; only 2 claimed KTB days were covered by no statement, and neither held a row.
+
+## Vision misreads one 7-Eleven screen-header time digit that it reads correctly on an enlarged crop
+
+- Symptom: a 7-Eleven app-screenshot receipt whose receipt number and date agree with its `R#`/`TID#` lines is refused because the screen-header time differs from the `R#` time by one digit (a "1" read as "7").
+- Cause: Vision's full-image read of the header font; the same word cropped (fixed 12 px pad) and enlarged 2x or 3x reads correctly. A misread in the minutes' last digit leaves two times 6 minutes apart, so a ledger lag window of 0–120 minutes cannot always tell them apart.
+- Avoid: a time-only disagreement is `TIME_DISPUTED`, never `MISMATCH`; the caller re-reads the header time box at 2x through `resolveHeaderTime` (`lib/browser/header-time.ts`, shared by the Inbox and the receipts bench). Equal to `R#` keeps the time; anything else captures a blank time with both candidates; a transport failure saves nothing. Number or date disagreeing still refuses.
+- Verify: 2026-11-19 (D-317), 1 real image, value-free harness: full read header ≠ `R#`; 2x and 3x header crops both equal `R#`; `R#` crops unchanged. 5 direct Vision calls, uncounted in `vision_call_months`.
+
+## A screenshot receipt with a blank time is refused unless it carries two time candidates
+
+- Symptom: a 7-Eleven screenshot captured with `purchasedAtTime: null` fails at `POST /api/v1/receipts` with "A screenshot receipt always prints purchasedAtTime".
+- Cause: `receiptCaptureSchema.superRefine` (`lib/receipts.ts`) holds each form to the fields it prints. Since D-317 a screenshot may be time-less only with a top-level `timeCandidates` (2 distinct `HH:MM`); `capture_receipt` (migration 067) refuses candidates on any other form or with a time. The database alone still accepts a blank time without candidates; only the schema refuses it.
+- Avoid: send the candidates `readScreenshotReceipt` returns (`timeCandidates`, beside `value`) with every blank-time capture. They live in the `receipt.capture`/`receipt.merge` audit `detail` (D-097: no new column), read newest-first by `fill_receipt_time`.
+- Verify: 2026-11-19. The `tests/receipts.test.ts` null-time tests fail against the old schema and pass on `38e6706`; pgTAP `043_receipt_time_candidates.sql` 40/40.
+
+## A screenshot `MISMATCH` and a LINE MAN `NOT_AN_ORDER` each used to cover several different refusals
+
+- Symptom: an image the app can read is refused with a sentence that names the wrong cause, or with the generic "not yet" (`NOT_YET`), and is remembered as "unrecognised" so it is not retried until a new build.
+- Cause: before D-317, `readScreenshotReceipt`'s `MISMATCH` covered page-to-page and header-vs-`R#` disagreement in number, date and time alike; `readLinemanPage` returned `NOT_AN_ORDER` for a real order page with no order time or no restaurant, and `recogniseImage` maps `NOT_AN_ORDER` to `NOT_YET`. LINE MAN also began printing `D MON YY, HH:MM` (a comma after the year), which the old `ORDER_TIME` refused.
+- Avoid: give a refusal its own code when the remedy differs. Now: `TIME_DISPUTED` for a time-only disagreement; `MALFORMED_LINE` for the two LINE MAN cases, remembered as `{kind:"refused", reason, build}` so the real sentence shows on later opens without a Vision unit until a new build. Page-to-page sameness is store, number and date only.
+- Verify: 2026-11-19 (D-317). Each change's new tests fail against the old code.
